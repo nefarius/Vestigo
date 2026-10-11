@@ -47,6 +47,8 @@ public sealed class CaptureManager : IHostedService, IDisposable
     private readonly ILogger<CaptureManager> _logger;
     private readonly ConcurrentDictionary<string, CaptureJob> _jobs = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _sessionFileLock = new();
+    private readonly ConcurrentDictionary<string, byte> _unstoppedOrphans = new(StringComparer.Ordinal);
     private Timer? _retentionTimer;
 
     public CaptureManager(
@@ -86,7 +88,8 @@ public sealed class CaptureManager : IHostedService, IDisposable
         StartCaptureRequest request,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse(request.Level, ignoreCase: true, out TraceLevelSelection level))
+        if (!Enum.TryParse(request.Level, ignoreCase: true, out TraceLevelSelection level) ||
+            !Enum.IsDefined(level))
         {
             return OperationResult<CaptureStatus>.Fail("invalid_request", "Level must be a TraceEventLevel name.");
         }
@@ -279,15 +282,17 @@ public sealed class CaptureManager : IHostedService, IDisposable
             try
             {
                 _sessions.StopOrphan(sessionName);
+                _unstoppedOrphans.TryRemove(sessionName, out _);
                 _logger.LogInformation("Stopped orphan ETW session {SessionName}", sessionName);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                _unstoppedOrphans[sessionName] = 0;
                 _logger.LogWarning(ex, "Could not stop orphan ETW session {SessionName}", sessionName);
             }
         }
 
-        SaveSessionNames([]);
+        SaveOwnedSessions();
     }
 
     private async Task ReadLoopAsync(CaptureJob job, DecodingSourceSet sources, TimeSpan duration)
@@ -304,17 +309,16 @@ public sealed class CaptureManager : IHostedService, IDisposable
                                () => Interlocked.Increment(ref job.MissingFormatCount),
                                linked.Token))
             {
-                if (job.EventCount >= _options.MaxEvents || job.ByteCount >= _options.MaxOutputBytes)
-                {
-                    job.StopReason = "limit_reached";
-                    break;
-                }
-
                 string text = System.Text.Encoding.UTF8.GetString(item.Span);
                 await writer.WriteLineAsync(text);
                 await writer.FlushAsync();
                 job.EventCount++;
                 job.ByteCount += item.Length + 1;
+                if (job.EventCount >= _options.MaxEvents || job.ByteCount >= _options.MaxOutputBytes)
+                {
+                    job.StopReason = "limit_reached";
+                    break;
+                }
             }
 
             job.StopReason ??= linked.IsCancellationRequested && !job.Cancellation.IsCancellationRequested
@@ -371,7 +375,10 @@ public sealed class CaptureManager : IHostedService, IDisposable
     }
 
     private void SaveOwnedSessions() =>
-        SaveSessionNames(_jobs.Values.Where(job => job.State is "Starting" or "Running").Select(job => job.SessionName));
+        SaveSessionNames(_jobs.Values
+            .Where(job => job.State is "Starting" or "Running")
+            .Select(job => job.SessionName)
+            .Concat(_unstoppedOrphans.Keys));
 
     private static IReadOnlyList<string> LoadOwnedSessions()
     {
@@ -390,12 +397,24 @@ public sealed class CaptureManager : IHostedService, IDisposable
         }
     }
 
-    private static void SaveSessionNames(IEnumerable<string> names)
+    private void SaveSessionNames(IEnumerable<string> names)
     {
-        Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
-        File.WriteAllText(
-            VestigoPaths.OwnedSessionsPath,
-            JsonSerializer.Serialize(names.Where(name => name.StartsWith(SessionPrefix, StringComparison.Ordinal)).Distinct().ToArray()));
+        lock (_sessionFileLock)
+        {
+            string[] payload = names
+                .Where(name => name.StartsWith(SessionPrefix, StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            try
+            {
+                Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
+                File.WriteAllText(VestigoPaths.OwnedSessionsPath, JsonSerializer.Serialize(payload));
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Could not save owned ETW sessions");
+            }
+        }
     }
 
     private static void DeleteSpool(CaptureJob job) => TryDelete(job.SpoolPath);

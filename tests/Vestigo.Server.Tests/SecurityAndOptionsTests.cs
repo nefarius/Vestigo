@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+
 using Vestigo.Configuration;
 using Vestigo.Security;
 
@@ -28,5 +30,27 @@ public class SecurityAndOptionsTests
     {
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { ApiTokens = [""] }.Validate());
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { MaxEvents = 0 }.Validate());
+    }
+
+    [Fact]
+    public void ListenUrl_BracketsIpv6AndKeepsIpv4()
+    {
+        Assert.Equal("http://[::1]:5098", ListenEndpoint.Url("::1", 5098));
+        Assert.Equal("http://127.0.0.1:5098", ListenEndpoint.Url("127.0.0.1", 5098));
+    }
+
+    [Fact]
+    public void ListenEndpoint_RejectsKestrelEndpointOverrides()
+    {
+        IConfiguration conflicting = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Kestrel:Endpoints:Http:Url"] = "http://0.0.0.0:80"
+            })
+            .Build();
+        IConfiguration empty = new ConfigurationBuilder().Build();
+
+        Assert.Throws<InvalidOperationException>(() => ListenEndpoint.RejectConflictingKestrelEndpoints(conflicting));
+        ListenEndpoint.RejectConflictingKestrelEndpoints(empty);
     }
 }

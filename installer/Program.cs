@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 using WixSharp;
+using WixSharp.CommonTasks;
 
 namespace Vestigo.Installer;
 
@@ -65,6 +66,13 @@ static class Program
                 OutFileName = "Vestigo"
             };
             project.ControlPanelInfo.Manufacturer = Manufacturer;
+            project.MajorUpgrade = MajorUpgrade.Default;
+            project.SetNetPrerequisite(
+                "10.0.0",
+                RuntimeType.aspnet,
+                RollForward.latestMajor,
+                Platform.x64,
+                "Vestigo requires the x64 .NET 10 ASP.NET Core runtime. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 and then run this installer again.");
             WixExtension.UI.PreferredVersion = "5.0.2";
 
             Console.WriteLine(project.BuildMsi());

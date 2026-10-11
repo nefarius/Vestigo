@@ -18,7 +18,7 @@ $TempDirectory = "$PSScriptRoot\\.nuke\temp"
 
 $DotNetGlobalFile = "$PSScriptRoot\\global.json"
 $DotNetInstallUrl = "https://dot.net/v1/dotnet-install.ps1"
-$DotNetChannel = "STS"
+$DotNetChannel = "10.0"
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = 1
 $env:DOTNET_NOLOGO = 1
@@ -32,10 +32,25 @@ function ExecSafe([scriptblock] $cmd) {
     if ($LASTEXITCODE) { exit $LASTEXITCODE }
 }
 
-# If dotnet CLI is installed globally and it matches requested version, use for execution
-if ($null -ne (Get-Command "dotnet" -ErrorAction SilentlyContinue) -and `
-     $(dotnet --version) -and $LASTEXITCODE -eq 0) {
-    $env:DOTNET_EXE = (Get-Command "dotnet").Path
+function Test-Net10Sdk([string] $DotNetExe) {
+    $sdks = & $DotNetExe --list-sdks 2>$null
+    if ($LASTEXITCODE -ne 0 -or $null -eq $sdks) {
+        return $false
+    }
+
+    foreach ($sdk in @($sdks)) {
+        if ($sdk -match '^10\.') {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+# Use an installed SDK only when it can build net10.0. Otherwise install the 10.0 channel.
+$InstalledDotNet = Get-Command "dotnet" -ErrorAction SilentlyContinue
+if ($null -ne $InstalledDotNet -and (Test-Net10Sdk $InstalledDotNet.Source)) {
+    $env:DOTNET_EXE = $InstalledDotNet.Source
 }
 else {
     # Download install script
@@ -49,6 +64,9 @@ else {
         $DotNetGlobal = $(Get-Content $DotNetGlobalFile | Out-String | ConvertFrom-Json)
         if ($DotNetGlobal.PSObject.Properties["sdk"] -and $DotNetGlobal.sdk.PSObject.Properties["version"]) {
             $DotNetVersion = $DotNetGlobal.sdk.version
+            if ($DotNetVersion -notmatch '^10\.') {
+                Remove-Variable DotNetVersion
+            }
         }
     }
 
@@ -61,6 +79,10 @@ else {
     }
     $env:DOTNET_EXE = "$DotNetDirectory\dotnet.exe"
     $env:PATH = "$DotNetDirectory;$env:PATH"
+}
+
+if (-not (Test-Net10Sdk $env:DOTNET_EXE)) {
+    throw "Vestigo requires a .NET SDK compatible with net10.0."
 }
 
 Write-Output "Microsoft (R) .NET SDK version $(& $env:DOTNET_EXE --version)"

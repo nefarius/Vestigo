@@ -42,7 +42,8 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
     builder.Host.UseWindowsService(options => options.ServiceName = "Vestigo");
 }
 
-builder.WebHost.UseUrls($"http://{vestigo.ListenAddress}:{vestigo.ListenPort}");
+ListenEndpoint.RejectConflictingKestrelEndpoints(builder.Configuration);
+builder.WebHost.UseUrls(ListenEndpoint.Url(vestigo.ListenAddress, vestigo.ListenPort));
 builder.Services.AddSingleton(vestigo);
 
 if (vestigo.AuthenticationEnabled)
@@ -91,3 +92,24 @@ await app.RunAsync();
 
 /// <summary>Entry point marker used by the test host.</summary>
 public partial class Program;
+
+internal static class ListenEndpoint
+{
+    public static string Url(string address, int port)
+    {
+        System.Net.IPAddress ip = System.Net.IPAddress.Parse(address);
+        string host = ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+            ? $"[{ip}]"
+            : ip.ToString();
+        return $"http://{host}:{port}";
+    }
+
+    public static void RejectConflictingKestrelEndpoints(Microsoft.Extensions.Configuration.IConfiguration configuration)
+    {
+        if (configuration.GetSection("Kestrel:Endpoints").GetChildren().Any())
+        {
+            throw new InvalidOperationException(
+                "Kestrel:Endpoints is not supported. Set Vestigo:ListenAddress and Vestigo:ListenPort.");
+        }
+    }
+}

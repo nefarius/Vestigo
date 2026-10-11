@@ -15,3 +15,9 @@ Implements [IComparable](https://learn.microsoft.com/dotnet/api/system.icomparab
 
 | Name | Value | Description |
 | --- | --: | --- |
+| None | 0 | No events. |
+| Critical | 1 | Critical events. |
+| Error | 2 | Error events. |
+| Warning | 3 | Warning events. |
+| Information | 4 | Informational events. |
+| Verbose | 5 | Verbose events. |

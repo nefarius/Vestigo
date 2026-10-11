@@ -16,7 +16,7 @@ The generated parameter catalog is [generated/mcp-tools.md](generated/mcp-tools.
 
 `list_etw_sessions` returns every session name Windows reports. It does not stop sessions.
 
-`start_capture` accepts provider GUIDs and/or PDB paths. PDB control GUIDs are enabled automatically. TMF files contribute message formats but not provider GUIDs. The call returns when the session has started, not when the trace ends.
+`start_capture` accepts provider GUIDs and/or PDB paths. PDB control GUIDs are enabled automatically. TMF files contribute message formats but not provider GUIDs. The call returns when the session has started, not when the trace ends. Keyword bitmasks accept a decimal value or a `0x` hexadecimal value. The level must be a named `TraceLevelSelection` value.
 
 `list_captures` and `get_capture` report state, event count, bytes, missing formats, and the stop reason.
 

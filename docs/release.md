@@ -15,6 +15,6 @@ A `v*` tag:
 
 The tag pipeline requires `SIGN_RELAY_SERVER`, `SIGN_RELAY_CI_TOKEN`, and `WEBHOOK_URL`.
 
-WiX is pinned to CLI `5.0.2` and `WixToolset.UI.wixext/5.0.2`. The product code is `7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71` and the upgrade code is `9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64`.
+WiX is pinned to CLI `5.0.2` and `WixToolset.UI.wixext/5.0.2`. The WixSharp project GUID is `7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71`. The MSI product code is generated for each build. The upgrade code is `9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64`. A later MSI with that upgrade code replaces an earlier Vestigo installation. The installer stops when the x64 .NET 10 ASP.NET Core runtime is missing.
 
 Keep `installer/License.rtf` aligned with `LICENSE`.

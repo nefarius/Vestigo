@@ -97,77 +97,111 @@ public sealed class OfflineConversionService(
         int events = 0;
         long bytes = 0;
         bool truncated = false;
-
-        await using FileStream stream = new(output.FullPath!, FileMode.Create, FileAccess.Write, FileShare.Read);
-        await using StreamWriter writer = new(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        bool firstJson = true;
-        if (normalizedFormat == "json")
-        {
-            await writer.WriteAsync("[");
-            bytes++;
-        }
-
+        string finalPath = output.FullPath!;
+        string? directory = Path.GetDirectoryName(finalPath);
+        string tempPath = Path.Combine(
+            string.IsNullOrEmpty(directory) ? "." : directory,
+            "." + Path.GetFileName(finalPath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+        bool published = false;
         try
         {
-            await foreach (ReadOnlyMemory<byte> item in EtwUtil.EnumerateEventsAsync(
-                               inputs.Select(check => check.FullPath!),
-                               converter =>
-                               {
-                                   converter.WppDecodingContext = context;
-                                   converter.RewriteWppProviderName = rewrite;
-                                   converter.OnWppFormatMissing = (_, _, _) => Interlocked.Increment(ref missing);
-                               },
-                               cancellationToken))
+            await using (FileStream stream = new(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+            await using (StreamWriter writer = new(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
             {
-                if (events >= options.MaxEvents || bytes >= options.MaxOutputBytes)
+                bool firstJson = true;
+                if (normalizedFormat == "json")
                 {
-                    truncated = true;
-                    break;
+                    await writer.WriteAsync("[");
+                    bytes++;
+                }
+
+                try
+                {
+                    await foreach (ReadOnlyMemory<byte> item in EtwUtil.EnumerateEventsAsync(
+                                       inputs.Select(check => check.FullPath!),
+                                       converter =>
+                                       {
+                                           converter.WppDecodingContext = context;
+                                           converter.RewriteWppProviderName = rewrite;
+                                           converter.OnWppFormatMissing = (_, _, _) => Interlocked.Increment(ref missing);
+                                       },
+                                       cancellationToken))
+                    {
+                        long overhead = normalizedFormat == "json"
+                            ? (firstJson ? 0 : 1) + 1
+                            : 1;
+                        if (events >= options.MaxEvents || bytes + item.Length + overhead > options.MaxOutputBytes)
+                        {
+                            truncated = true;
+                            break;
+                        }
+
+                        if (normalizedFormat == "json")
+                        {
+                            if (!firstJson)
+                            {
+                                await writer.WriteAsync(",");
+                                bytes++;
+                            }
+
+                            firstJson = false;
+                        }
+
+                        string text = Encoding.UTF8.GetString(item.Span);
+                        await writer.WriteAsync(text);
+                        bytes += item.Length;
+                        if (normalizedFormat == "ndjson")
+                        {
+                            await writer.WriteAsync('\n');
+                            bytes++;
+                        }
+
+                        events++;
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+                {
+                    return OperationResult<ConversionSummary>.Fail(
+                        "convert_failed",
+                        $"{ex.GetType().Name}: {ex.Message}");
                 }
 
                 if (normalizedFormat == "json")
                 {
-                    if (!firstJson)
-                    {
-                        await writer.WriteAsync(",");
-                        bytes++;
-                    }
-
-                    firstJson = false;
-                }
-
-                string text = Encoding.UTF8.GetString(item.Span);
-                await writer.WriteAsync(text);
-                bytes += item.Length;
-                if (normalizedFormat == "ndjson")
-                {
-                    await writer.WriteAsync('\n');
+                    await writer.WriteAsync("]");
                     bytes++;
                 }
 
-                events++;
+                await writer.FlushAsync(cancellationToken);
+            }
+
+            File.Move(tempPath, finalPath, overwrite: true);
+            published = true;
+            return OperationResult<ConversionSummary>.Ok(new ConversionSummary(
+                finalPath,
+                normalizedFormat,
+                events,
+                bytes,
+                missing,
+                truncated,
+                sources.Count,
+                diagnostics));
+        }
+        finally
+        {
+            if (!published)
+            {
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch (IOException)
+                {
+                }
             }
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
-        {
-            return OperationResult<ConversionSummary>.Fail("convert_failed", $"{ex.GetType().Name}: {ex.Message}");
-        }
-
-        if (normalizedFormat == "json")
-        {
-            await writer.WriteAsync("]");
-            bytes++;
-        }
-
-        await writer.FlushAsync(cancellationToken);
-        return OperationResult<ConversionSummary>.Ok(new ConversionSummary(
-            output.FullPath!,
-            normalizedFormat,
-            events,
-            bytes,
-            missing,
-            truncated,
-            sources.Count,
-            diagnostics));
     }
 }

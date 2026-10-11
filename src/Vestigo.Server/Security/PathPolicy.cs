@@ -85,38 +85,91 @@ public sealed class PathPolicy(Vestigo.Configuration.VestigoOptions options)
             return PathCheck.Fail("roots_not_configured", $"No allowed {rootKind} roots are configured.");
         }
 
-        string fullPath;
-        try
-        {
-            fullPath = Path.GetFullPath(requestedPath);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        if (!TryResolvePath(requestedPath, out string resolvedPath))
         {
             return PathCheck.Fail("invalid_path", "Path is not a valid filesystem path.");
         }
 
         foreach (string root in roots)
         {
-            string fullRoot;
-            try
-            {
-                fullRoot = Path.GetFullPath(root);
-            }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            if (!TryResolvePath(root, out string resolvedRoot))
             {
                 continue;
             }
 
-            string prefix = fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            string prefix = resolvedRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                             + Path.DirectorySeparatorChar;
-            if (fullPath.Equals(fullRoot, PathComparison()) ||
-                fullPath.StartsWith(prefix, PathComparison()))
+            if (resolvedPath.Equals(resolvedRoot, PathComparison()) ||
+                resolvedPath.StartsWith(prefix, PathComparison()))
             {
-                return PathCheck.Ok(fullPath);
+                return PathCheck.Ok(resolvedPath);
             }
         }
 
         return PathCheck.Fail("outside_root", $"Path is outside the allowed {rootKind} roots.");
+    }
+
+    private static bool TryResolvePath(string path, out string resolved)
+    {
+        resolved = "";
+        string full;
+        try
+        {
+            full = Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        string root = Path.GetPathRoot(full) ?? "";
+        string[] parts = full[root.Length..]
+            .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+        string current = root;
+        foreach (string part in parts)
+        {
+            current = Path.Combine(current, part);
+            if (!TryFollowLink(current, out string followed))
+            {
+                return false;
+            }
+
+            current = followed;
+        }
+
+        resolved = current;
+        return true;
+    }
+
+    private static bool TryFollowLink(string path, out string followed)
+    {
+        followed = path;
+        try
+        {
+            FileSystemInfo? target = File.ResolveLinkTarget(path, returnFinalTarget: true);
+            if (target is not null)
+            {
+                followed = target.FullName;
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            string? link = new FileInfo(path).LinkTarget ?? new DirectoryInfo(path).LinkTarget;
+            if (string.IsNullOrEmpty(link))
+            {
+                return true;
+            }
+
+            string? parent = Path.GetDirectoryName(path);
+            followed = Path.GetFullPath(Path.IsPathRooted(link) || string.IsNullOrEmpty(parent) ? link : Path.Combine(parent, link));
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static bool HasExtension(string path, IReadOnlyCollection<string> extensions) =>

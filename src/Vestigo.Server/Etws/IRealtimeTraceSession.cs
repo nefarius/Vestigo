@@ -37,10 +37,21 @@ public interface IRealtimeTraceSessionFactory
 /// </summary>
 public enum TraceLevelSelection
 {
+    /// <summary>No events.</summary>
     None = 0,
+
+    /// <summary>Critical events.</summary>
     Critical = 1,
+
+    /// <summary>Error events.</summary>
     Error = 2,
+
+    /// <summary>Warning events.</summary>
     Warning = 3,
+
+    /// <summary>Informational events.</summary>
     Information = 4,
+
+    /// <summary>Verbose events.</summary>
     Verbose = 5
 }

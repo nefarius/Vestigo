@@ -1,6 +1,6 @@
 # Windows service
 
-The MSI installs an x64, per-machine service:
+The MSI installs an x64, per-machine, framework-dependent service. It requires the x64 .NET 10 ASP.NET Core runtime and replaces an earlier Vestigo installation that uses the same upgrade code.
 
 - Service name: `Vestigo`
 - Display name: `Vestigo MCP Server`

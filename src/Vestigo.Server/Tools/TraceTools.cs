@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 
 using ModelContextProtocol.Server;
 
@@ -155,7 +156,14 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
             return true;
         }
 
-        if (ulong.TryParse(value, out keyword))
+        if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            if (ulong.TryParse(value.AsSpan(2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out keyword))
+            {
+                return true;
+            }
+        }
+        else if (ulong.TryParse(value, out keyword))
         {
             return true;
         }

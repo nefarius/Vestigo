@@ -28,17 +28,26 @@ class Build : NukeBuild
         .Before(Restore)
         .Executes(() =>
         {
+            DotNetTasks.DotNetClean(settings => settings
+                .SetProject(Solution.Path)
+                .SetConfiguration(Configuration));
         });
 
     Target Restore => _ => _
         .Executes(() =>
         {
+            DotNetTasks.DotNetRestore(settings => settings
+                .SetProjectFile(Solution.Path));
         });
 
     Target Compile => _ => _
         .DependsOn(Restore)
         .Executes(() =>
         {
+            DotNetTasks.DotNetBuild(settings => settings
+                .SetProjectFile(Solution.Path)
+                .SetConfiguration(Configuration)
+                .EnableNoRestore());
         });
 
     [UsedImplicitly]
