@@ -175,7 +175,17 @@ public sealed class OfflineConversionService(
                 await writer.FlushAsync(cancellationToken);
             }
 
-            File.Move(tempPath, finalPath, overwrite: true);
+            try
+            {
+                File.Move(tempPath, finalPath, overwrite);
+            }
+            catch (IOException) when (!overwrite && File.Exists(finalPath))
+            {
+                return OperationResult<ConversionSummary>.Fail(
+                    "already_exists",
+                    $"Output already exists: '{finalPath}'.");
+            }
+
             published = true;
             return OperationResult<ConversionSummary>.Ok(new ConversionSummary(
                 finalPath,

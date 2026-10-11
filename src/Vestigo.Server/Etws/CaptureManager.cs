@@ -405,14 +405,29 @@ public sealed class CaptureManager : IHostedService, IDisposable
                 .Where(name => name.StartsWith(SessionPrefix, StringComparison.Ordinal))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
+            string tempPath = Path.Combine(
+                VestigoPaths.SettingsDirectory,
+                $".owned-sessions.{Guid.NewGuid():N}.tmp");
             try
             {
                 Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
-                File.WriteAllText(VestigoPaths.OwnedSessionsPath, JsonSerializer.Serialize(payload));
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(payload));
+                if (File.Exists(VestigoPaths.OwnedSessionsPath))
+                {
+                    File.Replace(tempPath, VestigoPaths.OwnedSessionsPath, null);
+                }
+                else
+                {
+                    File.Move(tempPath, VestigoPaths.OwnedSessionsPath);
+                }
             }
             catch (IOException ex)
             {
                 _logger.LogWarning(ex, "Could not save owned ETW sessions");
+            }
+            finally
+            {
+                TryDelete(tempPath);
             }
         }
     }

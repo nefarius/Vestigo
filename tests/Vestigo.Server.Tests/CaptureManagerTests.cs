@@ -58,6 +58,8 @@ public class CaptureManagerTests : IDisposable
         await manager.StartAsync(CancellationToken.None);
 
         Assert.Equal(["Vestigo-orphan"], factory.Stopped);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedSessionsPath));
+        Assert.Empty(Directory.GetFiles(VestigoPaths.SettingsDirectory, ".owned-sessions.*.tmp"));
     }
 
     [Fact]
