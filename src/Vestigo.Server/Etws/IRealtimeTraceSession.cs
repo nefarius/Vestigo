@@ -1,0 +1,57 @@
+using Nefarius.Utilities.ETW.Deserializer.WPP;
+
+using Vestigo.Configuration;
+
+namespace Vestigo.Etws;
+
+/// <summary>
+///     One realtime ETW session owned by a capture job.
+/// </summary>
+public interface IRealtimeTraceSession : IAsyncDisposable
+{
+    string SessionName { get; }
+
+    void EnableProvider(Guid providerId, TraceLevelSelection level, ulong matchAnyKeyword, ulong matchAllKeyword);
+
+    IAsyncEnumerable<ReadOnlyMemory<byte>> ReadEventsAsync(
+        DecodingContext? context,
+        bool rewriteProviderName,
+        Action onMissingFormat,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+///     Creates and queries realtime ETW sessions. Tests substitute a fake factory.
+/// </summary>
+public interface IRealtimeTraceSessionFactory
+{
+    IRealtimeTraceSession Create(string sessionName, VestigoOptions options);
+
+    void StopOrphan(string sessionName);
+
+    IReadOnlyList<string> ListSessions();
+}
+
+/// <summary>
+///     ETW trace level, with the same numeric values as the native trace level.
+/// </summary>
+public enum TraceLevelSelection
+{
+    /// <summary>No events.</summary>
+    None = 0,
+
+    /// <summary>Critical events.</summary>
+    Critical = 1,
+
+    /// <summary>Error events.</summary>
+    Error = 2,
+
+    /// <summary>Warning events.</summary>
+    Warning = 3,
+
+    /// <summary>Informational events.</summary>
+    Information = 4,
+
+    /// <summary>Verbose events.</summary>
+    Verbose = 5
+}
