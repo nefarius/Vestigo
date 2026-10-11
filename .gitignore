@@ -396,3 +396,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Local release output. The pinned ETW package is source for restore.
+publish-x64/
+!local-packages/
+!local-packages/*.nupkg

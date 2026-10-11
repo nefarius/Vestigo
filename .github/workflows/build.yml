@@ -1,0 +1,182 @@
+name: .NET
+
+on:
+  push:
+    branches: [ "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test -c Release --nologo --filter Category!=WindowsElevated
+
+      - name: Check generated API docs
+        run: |
+          dotnet tool install -g Nefarius.Tools.XMLDoc2Markdown --version 1.8.0
+          ./scripts/generate-api-docs.sh
+          git diff --exit-code -- docs/api
+
+  build-installer:
+    runs-on: windows-latest
+    env:
+      SIGN_RELAY_SERVER: ${{ vars.SIGN_RELAY_SERVER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install WiX CLI and UI extension
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+
+      - name: Require signing configuration
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          SIGN_RELAY_CI_TOKEN: ${{ secrets.SIGN_RELAY_CI_TOKEN }}
+        run: |
+          if (-not $env:SIGN_RELAY_SERVER) { throw 'Repository variable SIGN_RELAY_SERVER is not set.' }
+          if (-not $env:SIGN_RELAY_CI_TOKEN) { throw 'Repository secret SIGN_RELAY_CI_TOKEN is not set.' }
+
+      - name: NUKE BuildInstaller
+        if: ${{ success() && !startsWith(github.ref, 'refs/tags/v') }}
+        run: .\build.ps1 BuildInstaller
+
+      - name: Publish release binaries
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        run: .\build.ps1 PublishLocal
+
+      - name: Assert assemblies are unsigned
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'publish-x64\server\Vestigo.exe'
+            'publish-x64\server\Vestigo.dll'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file)) { throw "File not found: $file" }
+            $sig = Get-AuthenticodeSignature -LiteralPath $file
+            if ($sig.Status -ne 'NotSigned') {
+              throw "Expected unsigned $file but Get-AuthenticodeSignature returned $($sig.Status)."
+            }
+          }
+
+      - name: Sign assemblies
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        uses: nefarius/SignRelay@39ccbe0cef16a383237130380a5aef8db040d5d0
+        with:
+          server: ${{ env.SIGN_RELAY_SERVER }}
+          token: ${{ secrets.SIGN_RELAY_CI_TOKEN }}
+          in-place: true
+          files: |
+            publish-x64/server/Vestigo.exe
+            publish-x64/server/Vestigo.dll
+
+      - name: Verify signed assemblies
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'publish-x64\server\Vestigo.exe'
+            'publish-x64\server\Vestigo.dll'
+          )
+          foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $file
+            if ($sig.Status -ne 'Valid' -or -not $sig.SignerCertificate) {
+              throw "File is not validly signed: $file (Status=$($sig.Status))."
+            }
+          }
+
+      - name: Build signed MSI
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        run: .\build.ps1 BuildInstaller --skip PublishLocal
+
+      - name: Assert MSI is unsigned
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = 'publish-x64\installer\Vestigo.msi'
+          if (-not (Test-Path -LiteralPath $file)) { throw "File not found: $file" }
+          $sig = Get-AuthenticodeSignature -LiteralPath $file
+          if ($sig.Status -ne 'NotSigned') {
+            throw "Expected unsigned $file but Get-AuthenticodeSignature returned $($sig.Status)."
+          }
+
+      - name: Sign MSI
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        uses: nefarius/SignRelay@39ccbe0cef16a383237130380a5aef8db040d5d0
+        with:
+          server: ${{ env.SIGN_RELAY_SERVER }}
+          token: ${{ secrets.SIGN_RELAY_CI_TOKEN }}
+          in-place: true
+          skip-tool-install: true
+          files: publish-x64/installer/Vestigo.msi
+
+      - name: Verify signed MSI
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = 'publish-x64\installer\Vestigo.msi'
+          $sig = Get-AuthenticodeSignature -LiteralPath $file
+          if ($sig.Status -ne 'Valid' -or -not $sig.SignerCertificate) {
+            throw "File is not validly signed: $file (Status=$($sig.Status))."
+          }
+
+      - name: Upload MSI artifact
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        id: upload-msi
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-msi
+          path: publish-x64/installer/*.msi
+
+      - name: Send webhook to Buildbot
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          $artifactId = "${{ steps.upload-msi.outputs.artifact-id }}"
+          $artifactUrl = "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/${artifactId}/zip"
+          $repo = "${{ github.event.repository.name }}"
+          $refName = "${{ github.ref_name }}"
+          $payload = @{
+            artifacts = @(
+              @{
+                fileName = "$repo.zip"
+                url      = $artifactUrl
+              }
+            )
+            environmentVariables = @{
+              appveyor_project_name  = $repo
+              appveyor_repo_branch   = $refName
+              appveyor_build_version = $refName
+            }
+          } | ConvertTo-Json -Compress -Depth 10
+          Invoke-RestMethod -Uri $env:WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json" -Headers @{
+            "X-GitHub-Token" = "${{ secrets.GITHUB_TOKEN }}"
+          }
