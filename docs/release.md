@@ -12,6 +12,7 @@ A `v*` tag:
 4. Builds `publish-x64\installer\Vestigo.msi` from those signed binaries.
 5. Signs and verifies the MSI.
 6. Uploads the MSI artifact and posts the Buildbot webhook.
+7. Publishes a GitHub Release for the tag, with generated notes and the signed `Vestigo.msi` attached.
 
 The tag pipeline requires `SIGN_RELAY_SERVER`, `SIGN_RELAY_CI_TOKEN`, and `WEBHOOK_URL`.
 

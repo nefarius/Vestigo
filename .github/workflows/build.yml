@@ -189,3 +189,24 @@ jobs:
           Invoke-RestMethod -Uri $env:WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json" -Headers @{
             "X-GitHub-Token" = $env:GITHUB_TOKEN
           }
+
+  release:
+    needs: build-installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download signed MSI
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ github.event.repository.name }}-msi
+          path: dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Vestigo.msi
+          fail_on_unmatched_files: true
+          generate_release_notes: true
