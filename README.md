@@ -61,7 +61,7 @@ The MSI is `publish-x64\installer\Vestigo.msi`. A local build is unsigned. Taggi
 - Windows only. The NT Kernel Logger and kernel-mode realtime providers are not supported.
 - Vestigo decodes events; it does not record a raw ETL file.
 - WPP enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` remain numeric in the upstream decoder.
-- Symbol resolution uses the released `Nefarius.Utilities.ETW` package. This repository currently pins the local package `2.19.0-vestigo.1`, built from the upstream `feat/public-symbol-store` branch, until that package is published.
+- Symbol resolution uses the released `Nefarius.Utilities.ETW` package.
 
 ## Documentation
 
