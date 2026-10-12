@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -188,7 +189,10 @@ class Build : NukeBuild
             ManifestVersion = ManifestVersion,
             PublishedAt = string.IsNullOrWhiteSpace(PublishedAt)
                 ? DateTimeOffset.UtcNow
-                : DateTimeOffset.Parse(PublishedAt, System.Globalization.CultureInfo.InvariantCulture),
+                : DateTimeOffset.Parse(
+                    PublishedAt,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal),
             DownloadSize = msi.Length,
             Sha256 = Convert.ToHexString(SHA256.HashData(msi)).ToLowerInvariant()
         };
