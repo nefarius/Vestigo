@@ -125,14 +125,14 @@ public class UpdateFeedTests
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
         Assert.Contains("DependsOn(PublishLocal, PrepareUpdater)", build, StringComparison.Ordinal);
-        Assert.Equal("1.19.0", UpdateFeed.UpdaterVersion);
-        Assert.Equal("06015df28078bca901ab3f690bb3c213f73bdfc86f4a3093467f385dcd1c6976", UpdateFeed.UpdaterArchiveSha256);
+        Assert.Equal("1.20.0", UpdateFeed.UpdaterVersion);
+        Assert.Equal("ca627af5f9f1c87f5a54d3be8122ee4909e00e9320e62fb8229cf37a8161a3d8", UpdateFeed.UpdaterArchiveSha256);
         Assert.Equal("RWTZDJM+Ify8UukJiWfvLcLvjvrVlHcXY/A9cgbOIStr+c19FIlY8x4B", UpdateFeed.ManifestPublicKey);
 
         string notices = File.ReadAllText(Path.Combine(root, "installer", "THIRD-PARTY-NOTICES.txt"));
         Assert.Contains("BSD 3-Clause License", notices, StringComparison.Ordinal);
         Assert.Contains("Benjamin Höglinger-Stelzer", notices, StringComparison.Ordinal);
-        Assert.Contains("Vicius 1.19.0", notices, StringComparison.Ordinal);
+        Assert.Contains("Vicius 1.20.0", notices, StringComparison.Ordinal);
 
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build.yml"));
         int verified = workflow.IndexOf("Verify signed MSI", StringComparison.Ordinal);

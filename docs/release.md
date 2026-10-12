@@ -12,7 +12,7 @@ A `v*` tag:
 4. Builds `publish-x64\installer\Vestigo.msi` from those signed binaries.
 5. Signs and verifies the MSI.
 6. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key.
-7. Verifies the sidecar against the public key embedded in Vicius 1.19.0.
+7. Verifies the sidecar against the public key embedded in Vicius 1.20.0.
 8. Uploads `Vestigo.msi`, `updates.json`, and `updates.json.minisig` as one artifact and posts the Buildbot webhook.
 9. Publishes a GitHub Release for the tag, with generated notes and those three files attached. Installed clients do not download the GitHub copies.
 
@@ -26,7 +26,7 @@ WiX is pinned to CLI `5.0.2` and `WixToolset.UI.wixext/5.0.2`. The WixSharp proj
 
 Keep `installer/License.rtf` aligned with `LICENSE`.
 
-`BuildInstaller` downloads the pinned Vicius 1.19.0 x64 archive, checks its SHA-256, and requires the extracted executable to have a valid Authenticode signature for `Nefarius Software Solutions e.U.` before the MSI packages it as `Nefarius_Vestigo_Updater.exe`. The MSI also installs `Nefarius_Vestigo_Updater.json` and `THIRD-PARTY-NOTICES.txt`.
+`BuildInstaller` downloads the pinned Vicius 1.20.0 x64 archive, checks its SHA-256, and requires the extracted executable to have a valid Authenticode signature for `Nefarius Software Solutions e.U.` before the MSI packages it as `Nefarius_Vestigo_Updater.exe`. The MSI also installs `Nefarius_Vestigo_Updater.json` and `THIRD-PARTY-NOTICES.txt`.
 
 The manifest's release version is the MSI `ProductVersion`. The same version is written to `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version`. Vicius compares that registry value with the signed release version.
 
