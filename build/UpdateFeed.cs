@@ -30,9 +30,9 @@ public static class UpdateFeed
     public const string RegistryKey = @"SOFTWARE\Nefarius Software Solutions\Vestigo";
     public const string RegistryValue = "Version";
     public const string LaunchArguments = "/passive /norestart";
-    public const string UpdaterVersion = "1.19.0";
-    public const string UpdaterArchiveSha256 = "06015df28078bca901ab3f690bb3c213f73bdfc86f4a3093467f385dcd1c6976";
-    public const string UpdaterArchiveUrl = "https://github.com/nefarius/vicius/releases/download/v1.19.0/vicius-x64.zip";
+    public const string UpdaterVersion = "1.20.0";
+    public const string UpdaterArchiveSha256 = "ca627af5f9f1c87f5a54d3be8122ee4909e00e9320e62fb8229cf37a8161a3d8";
+    public const string UpdaterArchiveUrl = "https://github.com/nefarius/vicius/releases/download/v1.20.0/vicius-x64.zip";
     public const string UpdaterArchiveExecutable = "example_Demo_Updater.exe";
     public const string UpdaterExecutable = "Nefarius_Vestigo_Updater.exe";
     public const string UpdaterConfiguration = "Nefarius_Vestigo_Updater.json";
