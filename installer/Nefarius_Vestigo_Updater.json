@@ -1,0 +1,26 @@
+{
+  "instance": {
+    "serverUrlTemplate": "https://buildbot.nefarius.at/builds/Vestigo/latest/updates.json",
+    "authority": "Local",
+    "stateId": "vestigo"
+  },
+  "shared": {
+    "windowTitle": "Vestigo Updater",
+    "productName": "Vestigo",
+    "detectionMethod": "RegistryValue",
+    "detection": {
+      "view": "WOW64_64KEY",
+      "hive": "HKLM",
+      "key": "SOFTWARE\\Nefarius Software Solutions\\Vestigo",
+      "value": "Version"
+    },
+    "runAsTemporaryCopy": true,
+    "allowUserToDisableUpdates": true,
+    "signatureVerificationMode": "Required",
+    "signaturePolicy": "Strict",
+    "signatureStrategy": "FromConfiguration",
+    "signatureConfig": {
+      "subjectName": "Nefarius Software Solutions e.U."
+    }
+  }
+}

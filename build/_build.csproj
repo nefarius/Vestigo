@@ -12,6 +12,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="minisign-net" Version="1.0.0" />
+    <PackageReference Include="Nefarius.Vicius.Abstractions" Version="1.8.0" />
     <PackageReference Include="Nuke.Common" Version="10.1.0" />
   </ItemGroup>
 
