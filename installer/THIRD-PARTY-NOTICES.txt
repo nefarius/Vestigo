@@ -1,7 +1,7 @@
 Third-party notices
 
 The Vestigo MSI packages the unmodified x64 executable from the signed
-Vicius 1.18.0 release archive (vicius-x64.zip). Vestigo renames that
+Vicius 1.19.0 release archive (vicius-x64.zip). Vestigo renames that
 executable to Nefarius_Vestigo_Updater.exe. The archive digest and publisher
 are pinned by the Vestigo build.
 
