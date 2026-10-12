@@ -20,6 +20,10 @@ The listen address is not loopback, a limit is not positive, or a token entry is
 
 The process is up, but an allowed input or output root is still empty. Tools that take paths fail until those roots are set. An unhealthy result means the spool directory is not writable.
 
+## The updater does not offer a release
+
+The installed configuration must remain at `%ProgramFiles%\Nefarius Software Solutions\Vestigo\Nefarius_Vestigo_Updater.json`. The registry value `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version` must be the installed MSI product version. A manifest whose `manifestVersion` is older than the last one this user accepted is rejected. Exit code 104 means the manifest or its `.minisig` sidecar could not be verified. Exit code 116 means the downloaded MSI checksum or Authenticode publisher check failed.
+
 ## Decoded text is missing
 
 `MissingFormatCount` counts WPP events whose message format was not in the loaded PDB or TMF sources. Add the matching symbol file or enable symbol resolution for offline ETL. Enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` stay numeric.

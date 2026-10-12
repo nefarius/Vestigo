@@ -27,8 +27,9 @@
         "BuildInstaller",
         "Clean",
         "Compile",
+        "PrepareUpdater",
         "PublishLocal",
-        "PublishRemote",
+        "PublishUpdateManifest",
         "Restore"
       ]
     },
@@ -111,9 +112,14 @@
             "Release"
           ]
         },
-        "DockerImage": {
+        "ManifestVersion": {
+          "type": "integer",
+          "description": "Monotonic update-manifest version. Tag builds pass the GitHub Actions run id",
+          "format": "int64"
+        },
+        "PublishedAt": {
           "type": "string",
-          "description": "Docker image name to build and push"
+          "description": "UTC publish timestamp for updates.json (ISO 8601). Defaults to the current time"
         },
         "Solution": {
           "type": "string",

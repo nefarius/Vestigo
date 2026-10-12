@@ -54,7 +54,7 @@ wix extension add -g WixToolset.UI.wixext/5.0.2
 .\build.ps1 BuildInstaller
 ```
 
-The MSI is `publish-x64\installer\Vestigo.msi`. A local build is unsigned. Tagging `v*` signs `Vestigo.exe`, `Vestigo.dll`, and the MSI through SignRelay, then uploads the MSI. If `LICENSE` changes, update `installer\License.rtf` as well.
+The MSI is `publish-x64\installer\Vestigo.msi`. `BuildInstaller` downloads the pinned signed [Vicius](https://github.com/nefarius/vicius) 1.18.0 x64 updater and packages it with the server. A local build is unsigned. Tagging `v*` signs `Vestigo.exe`, `Vestigo.dll`, and the MSI through SignRelay, then publishes `updates.json` and `updates.json.minisig` beside the MSI on Buildbot. If `LICENSE` changes, update `installer\License.rtf` as well. Third-party terms for the updater are in [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt).
 
 ## Limitations
 
@@ -84,3 +84,4 @@ The MSI is `publish-x64\installer\Vestigo.msi`. A local build is unsigned. Taggi
 - [MinVer](https://github.com/adamralph/minver)
 - [WixSharp](https://github.com/oleg-shilo/wixsharp)
 - [WiX Toolset](https://wixtoolset.org/)
+- [Vicius](https://github.com/nefarius/vicius)

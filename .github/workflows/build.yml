@@ -59,9 +59,13 @@ jobs:
         shell: pwsh
         env:
           SIGN_RELAY_CI_TOKEN: ${{ secrets.SIGN_RELAY_CI_TOKEN }}
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
         run: |
           if (-not $env:SIGN_RELAY_SERVER) { throw 'Repository variable SIGN_RELAY_SERVER is not set.' }
           if (-not $env:SIGN_RELAY_CI_TOKEN) { throw 'Repository secret SIGN_RELAY_CI_TOKEN is not set.' }
+          if (-not $env:MINISIGN_PRIVATE_KEY) { throw 'Repository secret MINISIGN_PRIVATE_KEY is not set.' }
+          if (-not $env:MINISIGN_PASSWORD) { throw 'Repository secret MINISIGN_PASSWORD is not set.' }
 
       - name: NUKE BuildInstaller
         if: ${{ success() && !startsWith(github.ref, 'refs/tags/v') }}
@@ -152,12 +156,50 @@ jobs:
             throw "File is not validly signed: $file (Status=$($sig.Status))."
           }
 
+      - name: Sign update manifest
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+          VESTIGO_MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $keyPath = Join-Path $env:RUNNER_TEMP 'vestigo-minisign.key'
+          try {
+            [System.IO.File]::WriteAllText($keyPath, $env:MINISIGN_PRIVATE_KEY)
+            $env:VESTIGO_MINISIGN_KEY = $keyPath
+            .\build.ps1 PublishUpdateManifest --manifest-version ${{ github.run_id }}
+          }
+          finally {
+            if (Test-Path -LiteralPath $keyPath) {
+              Remove-Item -LiteralPath $keyPath -Force
+            }
+          }
+
+      - name: Assert update feed files
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'publish-x64\installer\Vestigo.msi'
+            'publish-x64\installer\updates.json'
+            'publish-x64\installer\updates.json.minisig'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file)) { throw "File not found: $file" }
+          }
+
       - name: Upload MSI artifact
         if: success() && startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         with:
           name: ${{ github.event.repository.name }}-msi
-          path: publish-x64/installer/*.msi
+          path: |
+            publish-x64/installer/Vestigo.msi
+            publish-x64/installer/updates.json
+            publish-x64/installer/updates.json.minisig
+          if-no-files-found: error
 
       - name: Send webhook to Buildbot
         if: success() && startsWith(github.ref, 'refs/tags/v')
@@ -184,6 +226,9 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Vestigo.msi
+          files: |
+            dist/Vestigo.msi
+            dist/updates.json
+            dist/updates.json.minisig
           fail_on_unmatched_files: true
           generate_release_notes: true

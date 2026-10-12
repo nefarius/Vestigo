@@ -15,6 +15,10 @@ static class Program
 
     internal const string EnvServer = "VESTIGO_INSTALLER_SERVER";
     internal const string EnvOut = "VESTIGO_INSTALLER_OUT";
+    internal const string EnvUpdater = "VESTIGO_INSTALLER_UPDATER";
+    const string UpdaterExecutableName = "Nefarius_Vestigo_Updater.exe";
+    const string UpdaterConfigurationName = "Nefarius_Vestigo_Updater.json";
+    const string NoticesName = "THIRD-PARTY-NOTICES.txt";
 
     static int Main(string[] args)
     {
@@ -24,10 +28,31 @@ static class Program
             options.Validate();
 
             string licensePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "License.rtf"));
+            string updaterConfigurationPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, UpdaterConfigurationName));
+            string noticesPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, NoticesName));
             if (!System.IO.File.Exists(licensePath))
             {
                 throw new FileNotFoundException($"License file not found: {licensePath}");
             }
+
+            if (!System.IO.File.Exists(updaterConfigurationPath))
+            {
+                throw new FileNotFoundException($"Updater configuration not found: {updaterConfigurationPath}");
+            }
+
+            if (!System.IO.File.Exists(noticesPath))
+            {
+                throw new FileNotFoundException($"Third-party notices not found: {noticesPath}");
+            }
+
+            if (!string.Equals(Path.GetFileName(options.UpdaterExe), UpdaterExecutableName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"The updater executable must be named {UpdaterExecutableName} so its configuration is discovered.");
+            }
+
+            UpdaterRegistry registry = UpdaterRegistry.Read(updaterConfigurationPath);
+            Version version = ReadProductVersion(options.ServerPublishDir);
 
             Feature feature = new("Server", "Vestigo MCP server for WPP trace capture and decoding.");
             Files files = new(feature, Path.Combine(options.ServerPublishDir, "*.*"), IncludeInPublishedFile)
@@ -53,7 +78,20 @@ static class Program
 
             Project project = new(
                 "Vestigo MCP Server",
-                new Dir(@"%ProgramFiles64Folder%\Nefarius Software Solutions\Vestigo", files))
+                new Dir(
+                    @"%ProgramFiles64Folder%\Nefarius Software Solutions\Vestigo",
+                    files,
+                    new WixSharp.File(feature, options.UpdaterExe),
+                    new WixSharp.File(feature, updaterConfigurationPath),
+                    new WixSharp.File(feature, noticesPath)),
+                new RegKey(
+                    feature,
+                    RegistryHive.LocalMachine,
+                    registry.Key,
+                    new RegValue(registry.Value, version.ToString()) { Win64 = true })
+                {
+                    Win64 = true
+                })
             {
                 GUID = new Guid("7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71"),
                 UpgradeCode = new Guid("9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64"),
@@ -61,7 +99,7 @@ static class Program
                 Scope = InstallScope.perMachine,
                 UI = WUI.WixUI_FeatureTree,
                 LicenceFile = licensePath,
-                Version = ReadProductVersion(options.ServerPublishDir),
+                Version = version,
                 OutDir = options.OutputDir,
                 OutFileName = "Vestigo"
             };
@@ -74,8 +112,29 @@ static class Program
                 Platform.x64,
                 "Vestigo requires the x64 .NET 10 ASP.NET Core runtime. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 and then run this installer again.");
             WixExtension.UI.PreferredVersion = "5.0.2";
+            // Registration is per installing user and must not fail the service install.
+            // Deregistration skips major upgrades so the replacement product can register
+            // after InstallFinalize without the old product removing that task.
+            project.AddAction(UpdaterAction(
+                "RegisterVestigoUpdater",
+                "--install --silent --override-success-code 0",
+                When.After,
+                Step.InstallFinalize,
+                new Condition("NOT REMOVE")));
+            project.AddAction(UpdaterAction(
+                "DeregisterVestigoUpdater",
+                "--uninstall --silent --override-success-code 0",
+                When.Before,
+                Step.RemoveFiles,
+                new Condition("REMOVE=\"ALL\" AND NOT UPGRADINGPRODUCTCODE")));
 
-            Console.WriteLine(project.BuildMsi());
+            string msi = project.BuildMsi();
+            if (!System.IO.File.Exists(msi))
+            {
+                throw new InvalidOperationException($"WiX did not produce '{msi}'.");
+            }
+
+            Console.WriteLine(msi);
             return 0;
         }
         catch (Exception ex)
@@ -83,6 +142,29 @@ static class Program
             Console.Error.WriteLine(ex);
             return 1;
         }
+    }
+
+    static InstalledFileAction UpdaterAction(
+        string id,
+        string arguments,
+        When when,
+        Step step,
+        Condition condition)
+    {
+        InstalledFileAction action = new(
+            new Id(id),
+            UpdaterExecutableName,
+            arguments,
+            Return.ignore,
+            when,
+            step,
+            condition)
+        {
+            Execute = Execute.immediate,
+            Impersonate = true
+        };
+        action.Name = id;
+        return action;
     }
 
     static bool IncludeInPublishedFile(string path)
@@ -137,12 +219,15 @@ static class Program
 
         public required string OutputDir { get; init; }
 
+        public required string UpdaterExe { get; init; }
+
         public static Options Parse(string[] args)
         {
             string cwd = Directory.GetCurrentDirectory();
             string server = Path.GetFullPath(Path.Combine(cwd, DefaultServerRelative));
             string output = Path.GetFullPath(Path.Combine(cwd, "publish-x64", "installer"));
-            ApplyEnvironmentOverrides(ref server, ref output);
+            string updater = "";
+            ApplyEnvironmentOverrides(ref server, ref output, ref updater);
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -155,15 +240,20 @@ static class Program
                 {
                     output = RequirePath(args, ref i, "out");
                 }
+                else if (argument is "--updater" or "-u")
+                {
+                    updater = RequirePath(args, ref i, "updater");
+                }
                 else if (argument is "--help" or "-h")
                 {
                     Console.WriteLine("""
                         Vestigo MCP Server — MSI builder (WixSharp / WiX 5.0.2)
 
-                          --server, -s <dir>   Published server output (default: ./publish-x64/server)
-                          --out,    -o <dir>   MSI output directory (default: ./publish-x64/installer)
+                          --server,  -s <dir>   Published server output (default: ./publish-x64/server)
+                          --out,     -o <dir>   MSI output directory (default: ./publish-x64/installer)
+                          --updater, -u <file>  Staged Nefarius_Vestigo_Updater.exe
 
-                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT
+                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER
                         """);
                     Environment.Exit(0);
                 }
@@ -173,7 +263,7 @@ static class Program
                 }
             }
 
-            return new Options { ServerPublishDir = server, OutputDir = output };
+            return new Options { ServerPublishDir = server, OutputDir = output, UpdaterExe = updater };
         }
 
         public void Validate()
@@ -188,10 +278,15 @@ static class Program
                 throw new FileNotFoundException($"Expected Vestigo.exe under {ServerPublishDir}");
             }
 
+            if (!System.IO.File.Exists(UpdaterExe))
+            {
+                throw new FileNotFoundException($"Updater executable not found: {UpdaterExe}");
+            }
+
             Directory.CreateDirectory(OutputDir);
         }
 
-        static void ApplyEnvironmentOverrides(ref string server, ref string output)
+        static void ApplyEnvironmentOverrides(ref string server, ref string output, ref string updater)
         {
             string? serverOverride = Environment.GetEnvironmentVariable(EnvServer);
             if (!string.IsNullOrWhiteSpace(serverOverride))
@@ -203,6 +298,12 @@ static class Program
             if (!string.IsNullOrWhiteSpace(outputOverride))
             {
                 output = Path.GetFullPath(outputOverride);
+            }
+
+            string? updaterOverride = Environment.GetEnvironmentVariable(EnvUpdater);
+            if (!string.IsNullOrWhiteSpace(updaterOverride))
+            {
+                updater = Path.GetFullPath(updaterOverride);
             }
         }
 
