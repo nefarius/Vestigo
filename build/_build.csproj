@@ -14,6 +14,13 @@
   <ItemGroup>
     <PackageReference Include="minisign-net" Version="1.0.0" />
     <PackageReference Include="Nefarius.Vicius.Abstractions" Version="1.8.0" />
+    <!--
+      Abstractions compiles [JsonSchemaType] against NJsonSchema.Annotations 11.6.1 and
+      keeps that package private. System.Text.Json still loads the attribute assembly while
+      writing updates.json. Nuke.Common only brings 11.5.2, which the loader will not use
+      for that 11.6.1.0 reference.
+    -->
+    <PackageReference Include="NJsonSchema.Annotations" Version="11.6.1" />
     <PackageReference Include="Nuke.Common" Version="10.1.0" />
   </ItemGroup>
 
