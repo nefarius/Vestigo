@@ -218,7 +218,7 @@ jobs:
       actions: read
     steps:
       - name: Download signed MSI
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ github.event.repository.name }}-msi
           path: dist
