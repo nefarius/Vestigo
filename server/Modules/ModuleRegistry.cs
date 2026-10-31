@@ -14,6 +14,7 @@ public static class ModuleRegistry
         new DevicesModule(),
         new JobsModule(),
         new ServicesModule(),
+        new SoftwareModule(),
         new Files.FilesModule(),
         new ProcessesModule(),
         new RemoteDebuggerModule(),
@@ -49,6 +50,11 @@ public static class ModuleRegistry
                         $"Vestigo:Modules:{module.Name} requires the {dependency} module, which is disabled.");
                 }
             }
+        }
+
+        if (Enabled(options).Any(module => module.Name == "Software") && options.Software.AllowUninstall && !options.AuthenticationEnabled)
+        {
+            throw new InvalidOperationException("Vestigo:Software:AllowUninstall runs vendor uninstallers and requires at least one entry in Vestigo:ApiTokens.");
         }
 
         if (Enabled(options).Any(module => module.Name == "Processes") && !options.AuthenticationEnabled)

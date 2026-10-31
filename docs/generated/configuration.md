@@ -38,6 +38,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` |
 | `Roots` | `empty` |
 | `Services` | `defaults (see Services:*)` |
+| `Software` | `Vestigo.Software.SoftwareOptions` |
 | `SpoolRetention` | `1.00:00:00` |
 | `SymbolCache` | `null` |
 | `SymbolServer` | `null` |
