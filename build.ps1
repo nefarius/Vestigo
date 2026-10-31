@@ -14,7 +14,7 @@ $PSScriptRoot = Split-Path $MyInvocation.MyCommand.Path -Parent
 ###########################################################################
 
 $BuildProjectFile = "$PSScriptRoot\build\_build.csproj"
-$TempDirectory = "$PSScriptRoot\\.nuke\temp"
+$TempDirectory = "$PSScriptRoot\\.fallout\temp"
 
 $DotNetGlobalFile = "$PSScriptRoot\\global.json"
 $DotNetInstallUrl = "https://dot.net/v1/dotnet-install.ps1"
@@ -32,25 +32,25 @@ function ExecSafe([scriptblock] $cmd) {
     if ($LASTEXITCODE) { exit $LASTEXITCODE }
 }
 
-function Test-Net10Sdk([string] $DotNetExe) {
-    $sdks = & $DotNetExe --list-sdks 2>$null
-    if ($LASTEXITCODE -ne 0 -or $null -eq $sdks) {
-        return $false
+# If dotnet CLI is installed globally and is a .NET 10+ SDK, use for execution
+$DotNetOk = $false
+if ($null -ne (Get-Command "dotnet" -ErrorAction SilentlyContinue)) {
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "SilentlyContinue"
+        $InstalledVersion = "$(dotnet --version 2>$null)"
+        $InstalledExitCode = $LASTEXITCODE
+        $InstalledRuntimes = "$(dotnet --list-runtimes 2>$null)"
+        $RuntimesExitCode = $LASTEXITCODE
     }
-
-    foreach ($sdk in @($sdks)) {
-        if ($sdk -match '^10\.') {
-            return $true
-        }
+    finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
     }
-
-    return $false
+    # The build project targets net10.0, so a .NET 10 runtime must exist (no roll-forward to newer majors by default)
+    if ($InstalledExitCode -eq 0 -and $RuntimesExitCode -eq 0 -and $InstalledVersion -match '^(\d+)\.' -and [int]$Matches[1] -ge 10 -and $InstalledRuntimes -match '(?m)^Microsoft\.NETCore\.App 10\.') { $DotNetOk = $true }
 }
-
-# Use an installed SDK only when it can build net10.0. Otherwise install the 10.0 channel.
-$InstalledDotNet = Get-Command "dotnet" -ErrorAction SilentlyContinue
-if ($null -ne $InstalledDotNet -and (Test-Net10Sdk $InstalledDotNet.Source)) {
-    $env:DOTNET_EXE = $InstalledDotNet.Source
+if ($DotNetOk) {
+    $env:DOTNET_EXE = (Get-Command "dotnet").Path
 }
 else {
     # Download install script
@@ -64,9 +64,6 @@ else {
         $DotNetGlobal = $(Get-Content $DotNetGlobalFile | Out-String | ConvertFrom-Json)
         if ($DotNetGlobal.PSObject.Properties["sdk"] -and $DotNetGlobal.sdk.PSObject.Properties["version"]) {
             $DotNetVersion = $DotNetGlobal.sdk.version
-            if ($DotNetVersion -notmatch '^10\.') {
-                Remove-Variable DotNetVersion
-            }
         }
     }
 
@@ -81,16 +78,7 @@ else {
     $env:PATH = "$DotNetDirectory;$env:PATH"
 }
 
-if (-not (Test-Net10Sdk $env:DOTNET_EXE)) {
-    throw "Vestigo requires a .NET SDK compatible with net10.0."
-}
-
 Write-Output "Microsoft (R) .NET SDK version $(& $env:DOTNET_EXE --version)"
-
-if (Test-Path env:NUKE_ENTERPRISE_TOKEN) {
-    & $env:DOTNET_EXE nuget remove source "nuke-enterprise" > $null
-    & $env:DOTNET_EXE nuget add source "https://f.feedz.io/nuke/enterprise/nuget" --name "nuke-enterprise" --username "PAT" --password $env:NUKE_ENTERPRISE_TOKEN > $null
-}
 
 ExecSafe { & $env:DOTNET_EXE build $BuildProjectFile /nodeReuse:false /p:UseSharedCompilation=false -nologo -clp:NoSummary --verbosity quiet }
 ExecSafe { & $env:DOTNET_EXE run --project $BuildProjectFile --no-build -- $BuildArguments }
