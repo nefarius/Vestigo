@@ -19,20 +19,34 @@ public static class ConfigurationCatalog
         builder.AppendLine("| Setting | Default |");
         builder.AppendLine("| --- | --- |");
 
-        foreach (PropertyInfo property in typeof(VestigoOptions)
+        AppendRows(builder, options, string.Empty);
+
+        builder.AppendLine();
+        return builder.ToString().Replace("\r\n", "\n", StringComparison.Ordinal);
+    }
+
+    private static void AppendRows(StringBuilder builder, object options, string prefix)
+    {
+        foreach (PropertyInfo property in options.GetType()
                      .GetProperties(BindingFlags.Instance | BindingFlags.Public)
                      .Where(property => property.CanWrite)
                      .OrderBy(property => property.Name, StringComparer.Ordinal))
         {
+            object? value = property.GetValue(options);
+            if (value is not null && property.PropertyType.Namespace == typeof(VestigoOptions).Namespace
+                && property.PropertyType.IsClass && property.PropertyType.Name.EndsWith("Options", StringComparison.Ordinal))
+            {
+                AppendRows(builder, value, prefix + property.Name + ":");
+                continue;
+            }
+
             builder.Append("| `")
+                .Append(prefix)
                 .Append(property.Name)
                 .Append("` | `")
-                .Append(Format(property.GetValue(options)))
+                .Append(Format(value))
                 .AppendLine("` |");
         }
-
-        builder.AppendLine();
-        return builder.ToString().Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
     private static string Format(object? value) => value switch

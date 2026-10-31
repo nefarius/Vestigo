@@ -9,10 +9,15 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `ApiTokens` | `empty` |
 | `BufferSizeKb` | `64` |
 | `ClockResolution` | `QueryPerformanceCounter` |
+| `Environment:ProtectedNames` | `COMSPEC, SystemRoot, windir` |
+| `EventLog:MaxEvents` | `500` |
+| `EventLog:MaxScannedEvents` | `20000` |
 | `FlushTimerSeconds` | `1` |
 | `JobRetention` | `1.00:00:00` |
 | `ListenAddress` | `127.0.0.1` |
 | `ListenPort` | `5098` |
+| `Logs:MaxTailBytes` | `1048576` |
+| `Logs:MaxTailLines` | `2000` |
 | `MaxCaptureDuration` | `01:00:00` |
 | `MaxConcurrentCaptures` | `4` |
 | `MaxConcurrentJobs` | `8` |
