@@ -14,7 +14,7 @@ TEMP_DIRECTORY="$SCRIPT_DIR//.fallout/temp"
 
 DOTNET_GLOBAL_FILE="$SCRIPT_DIR//global.json"
 DOTNET_INSTALL_URL="https://dot.net/v1/dotnet-install.sh"
-DOTNET_CHANNEL="STS"
+DOTNET_CHANNEL="10.0"
 
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_NOLOGO=1
@@ -27,8 +27,12 @@ function FirstJsonValue {
     perl -nle 'print $1 if m{"'"$1"'": "([^"]+)",?}' <<< "${@:2}"
 }
 
-# If dotnet CLI is installed globally and it matches requested version, use for execution
-if [ -x "$(command -v dotnet)" ] && dotnet --version &>/dev/null; then
+# If dotnet CLI is installed globally and is a .NET 10+ SDK, use for execution
+DOTNET_INSTALLED_MAJOR=""
+if [ -x "$(command -v dotnet)" ]; then
+    DOTNET_INSTALLED_MAJOR=$(dotnet --version 2>/dev/null | cut -d. -f1 || true)
+fi
+if [[ "$DOTNET_INSTALLED_MAJOR" =~ ^[0-9]+$ ]] && [ "$DOTNET_INSTALLED_MAJOR" -ge 10 ]; then
     export DOTNET_EXE="$(command -v dotnet)"
 else
     # Download install script
