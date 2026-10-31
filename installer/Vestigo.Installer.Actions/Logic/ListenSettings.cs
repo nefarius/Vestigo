@@ -165,7 +165,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         /// <summary>
         ///     Combines explicit MSI property values with the existing file and defaults. Blank inputs fall back to the
-        ///     existing value, then to the default (any address, token, port 5098). A missing token in token mode keeps the
+        ///     existing value, then to the default (any address, token, port 5098; on an upgrade with no readable settings, localhost without a token so an existing loopback setup is never widened). A missing token in token mode keeps the
         ///     existing token or generates a new one. When <paramref name="tokenIsSuggestion" /> is true the token is only an
         ///     auto-suggested value the user never edited, so an existing token wins. Throws <see cref="ArgumentException" /> for invalid values.
         /// </summary>
@@ -175,7 +175,8 @@ namespace Vestigo.Installer.Actions.Logic
             string? portText,
             string? token,
             ExistingSettings? existing,
-            bool tokenIsSuggestion = false)
+            bool tokenIsSuggestion = false,
+            bool isUpgrade = false)
         {
             string? mappedListen = null;
             string? mappedAuth = null;
@@ -186,8 +187,8 @@ namespace Vestigo.Installer.Actions.Logic
                 mappedAuth = a;
             }
 
-            string listen = Normalize(listenMode, "VESTIGO_LISTEN_MODE", mappedListen ?? ListenAny, ListenLocalhost, ListenAny);
-            string auth = Normalize(authMode, "VESTIGO_AUTH_MODE", mappedAuth ?? AuthToken, AuthNone, AuthToken);
+            string listen = Normalize(listenMode, "VESTIGO_LISTEN_MODE", mappedListen ?? (isUpgrade ? ListenLocalhost : ListenAny), ListenLocalhost, ListenAny);
+            string auth = Normalize(authMode, "VESTIGO_AUTH_MODE", mappedAuth ?? (isUpgrade ? AuthNone : AuthToken), AuthNone, AuthToken);
 
             int port = existing?.Port is int existingPort && IsValidPort(existingPort) ? existingPort : DefaultPort;
             if (!string.IsNullOrWhiteSpace(portText))

@@ -84,6 +84,15 @@ public class InstallerSettingsTests
     }
 
     [Fact]
+    public void Resolve_UpgradeWithoutReadableSettingsDefaultsToLocalhostWithoutToken()
+    {
+        ResolvedSettings resolved = ListenSettings.Resolve(null, null, null, null, null, isUpgrade: true);
+
+        Assert.Equal(ListenSettings.ListenLocalhost, resolved.ListenMode);
+        Assert.Equal(ListenSettings.AuthNone, resolved.AuthMode);
+        Assert.Equal(string.Empty, resolved.Token);
+    }
+    [Fact]
     public void Resolve_DefaultsToAnyWithGeneratedToken()
     {
         ResolvedSettings resolved = ListenSettings.Resolve(null, null, null, null, null);

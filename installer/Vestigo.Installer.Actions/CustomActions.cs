@@ -51,7 +51,8 @@ namespace Vestigo.Installer.Actions
                     session[PortProperty],
                     requestedToken,
                     existing,
-                    suggestion && string.Equals(requestedToken, session[SuggestedProperty], StringComparison.Ordinal));
+                    suggestion && string.Equals(requestedToken, session[SuggestedProperty], StringComparison.Ordinal),
+                    IsUpgrade(session));
 
                 Publish(session, resolved);
                 if (!hadToken && resolved.AuthMode == ListenSettings.AuthToken)
@@ -111,7 +112,7 @@ namespace Vestigo.Installer.Actions
                     portText = ListenSettings.DefaultPort.ToString();
                 }
 
-                ResolvedSettings resolved = ListenSettings.Resolve(listen, auth, portText, token, existing, suggestion);
+                ResolvedSettings resolved = ListenSettings.Resolve(listen, auth, portText, token, existing, suggestion, IsUpgrade(session));
                 Publish(session, resolved);
             }
             catch (ArgumentException ex)
@@ -180,15 +181,13 @@ namespace Vestigo.Installer.Actions
                 {
                     string backup = path + ".bak-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
                     session.Log("Existing settings file is not valid JSON (" + ex.Message + "). Keeping it as " + backup + ".");
-                    File.Copy(path, backup, true);
-                    SecureFile(backup);
+                    WriteSecureFile(backup, File.ReadAllBytes(path));
                     merged = ListenSettings.Merge(null, resolved);
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
                 string temp = path + ".tmp";
-                File.WriteAllText(temp, merged, new UTF8Encoding(false));
-                SecureFile(temp);
+                WriteSecureFile(temp, new UTF8Encoding(false).GetBytes(merged));
                 if (File.Exists(path))
                 {
                     File.Delete(path);
@@ -204,6 +203,12 @@ namespace Vestigo.Installer.Actions
                 session.Log("Could not write Vestigo settings: " + ex.GetType().Name + ": " + ex.Message);
                 return ActionResult.Failure;
             }
+        }
+
+        /// <summary>True when FindRelatedProducts flagged an older version (set before AppSearch in both sequences).</summary>
+        private static bool IsUpgrade(Session session)
+        {
+            return !string.IsNullOrWhiteSpace(session["WIX_UPGRADE_DETECTED"]);
         }
 
         private static void Publish(Session session, ResolvedSettings resolved)
@@ -238,7 +243,33 @@ namespace Vestigo.Installer.Actions
             }
         }
 
+        /// <summary>Creates the file with the restricted ACL already applied, so the token is never readable by others.</summary>
+        private static void WriteSecureFile(string path, byte[] content)
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            using (FileStream stream = new FileStream(
+                       path,
+                       FileMode.CreateNew,
+                       FileSystemRights.WriteData | FileSystemRights.ReadPermissions | FileSystemRights.ChangePermissions,
+                       FileShare.None,
+                       4096,
+                       FileOptions.None,
+                       RestrictedSecurity()))
+            {
+                stream.Write(content, 0, content.Length);
+            }
+        }
+
         private static void SecureFile(string path)
+        {
+            new FileInfo(path).SetAccessControl(RestrictedSecurity());
+        }
+
+        private static FileSecurity RestrictedSecurity()
         {
             FileSecurity security = new FileSecurity();
             security.SetAccessRuleProtection(true, false);
@@ -250,7 +281,7 @@ namespace Vestigo.Installer.Actions
                 new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
                 FileSystemRights.FullControl,
                 AccessControlType.Allow));
-            new FileInfo(path).SetAccessControl(security);
+            return security;
         }
     }
 }

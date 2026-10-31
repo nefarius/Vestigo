@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <!-- Expose the packaged CA assembly next to the regular build output so the installer project can embed it. -->
-  <Target Name="CopyCustomActionPackage" AfterTargets="Build" DependsOnTargets="PackCustomAction">
+  <Target Name="CopyCustomActionPackage" AfterTargets="Build" DependsOnTargets="PackCustomAction" Condition="'$(OS)' == 'Windows_NT'">
     <Copy SourceFiles="$(IntermediateOutputPath)$(TargetCAFileName)" DestinationFolder="$(OutDir)" />
   </Target>
 
