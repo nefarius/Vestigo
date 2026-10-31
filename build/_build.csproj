@@ -11,17 +11,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="JetBrains.Annotations" Version="2026.2.0" />
-    <PackageReference Include="minisign-net" Version="1.0.0" />
-    <PackageReference Include="Nefarius.Vicius.Abstractions" Version="1.8.0" />
+    <PackageReference Include="JetBrains.Annotations" />
+    <PackageReference Include="minisign-net" />
+    <PackageReference Include="Nefarius.Vicius.Abstractions" />
     <!--
       Abstractions compiles [JsonSchemaType] against NJsonSchema.Annotations 11.6.1 and
       keeps that package private. System.Text.Json still loads the attribute assembly while
       writing updates.json. Fallout.Common may bring an older NJsonSchema.Annotations, which
       the loader will not use for that 11.6.1.0 reference.
     -->
-    <PackageReference Include="NJsonSchema.Annotations" Version="11.6.1" />
-    <PackageReference Include="Fallout.Common" Version="10.4.0" />
+    <PackageReference Include="NJsonSchema.Annotations" />
+    <PackageReference Include="Fallout.Common" />
   </ItemGroup>
 
 </Project>
