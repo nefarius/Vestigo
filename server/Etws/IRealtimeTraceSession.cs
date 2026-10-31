@@ -27,6 +27,11 @@ public interface IRealtimeTraceSessionFactory
 {
     IRealtimeTraceSession Create(string sessionName, VestigoOptions options);
 
+    /// <summary>
+    ///     Opens a consumer-only view of an existing session. Disposing it never stops the session.
+    /// </summary>
+    IRealtimeTraceSession Attach(string sessionName);
+
     void StopOrphan(string sessionName);
 
     IReadOnlyList<string> ListSessions();

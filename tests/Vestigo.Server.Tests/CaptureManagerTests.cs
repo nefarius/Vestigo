@@ -204,6 +204,162 @@ public class CaptureManagerTests : IDisposable
         Assert.Equal("invalid_request", bad.ErrorCode);
     }
 
+    private static StartCaptureRequest AnyRequest() =>
+        new([], [], [Guid.NewGuid()], "Verbose", ulong.MaxValue, 0, null);
+
+    [Fact]
+    public async Task ReadAsync_ReturnsAsSoonAsAnEventArrives()
+    {
+        FakeSessionFactory factory = new() { Feed = System.Threading.Channels.Channel.CreateUnbounded<string>() };
+        CaptureManager manager = CreateManager(factory, out VestigoOptions options);
+        options.MaxReadWait = TimeSpan.FromSeconds(10);
+        OperationResult<CaptureStatus> started = await manager.StartAsync(AnyRequest(), CancellationToken.None);
+        string id = started.Value!.Id;
+
+        Task<OperationResult<CapturePage>> pending = manager.ReadAsync(id, 0, null, TimeSpan.FromSeconds(10), CancellationToken.None);
+        await Task.Delay(100);
+        Assert.False(pending.IsCompleted);
+        await factory.Feed.Writer.WriteAsync("{\"Event\":1}");
+
+        CapturePage page = (await pending.WaitAsync(TimeSpan.FromSeconds(5))).Value!;
+        Assert.Single(page.Events);
+        Assert.False(page.Completed);
+        Assert.Equal("Running", page.State);
+        await manager.StopAsync(id);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ReturnsEmptyAtTimeout()
+    {
+        FakeSessionFactory factory = new() { Feed = System.Threading.Channels.Channel.CreateUnbounded<string>() };
+        CaptureManager manager = CreateManager(factory, out _);
+        OperationResult<CaptureStatus> started = await manager.StartAsync(AnyRequest(), CancellationToken.None);
+        string id = started.Value!.Id;
+
+        CapturePage page = (await manager.ReadAsync(id, 0, null, TimeSpan.FromMilliseconds(100), CancellationToken.None)).Value!;
+
+        Assert.Empty(page.Events);
+        Assert.False(page.Completed);
+        await manager.StopAsync(id);
+    }
+
+    [Fact]
+    public async Task ReadAsync_CompletesWaitersWhenStopped()
+    {
+        FakeSessionFactory factory = new() { Feed = System.Threading.Channels.Channel.CreateUnbounded<string>() };
+        CaptureManager manager = CreateManager(factory, out _);
+        OperationResult<CaptureStatus> started = await manager.StartAsync(AnyRequest(), CancellationToken.None);
+        string id = started.Value!.Id;
+
+        Task<OperationResult<CapturePage>> pending = manager.ReadAsync(id, 0, null, TimeSpan.FromSeconds(10), CancellationToken.None);
+        await manager.StopAsync(id);
+
+        CapturePage page = (await pending.WaitAsync(TimeSpan.FromSeconds(5))).Value!;
+        Assert.True(page.Completed);
+        Assert.Equal("Stopped", page.State);
+    }
+
+    [Fact]
+    public async Task ReadAsync_HonorsCancellation()
+    {
+        FakeSessionFactory factory = new() { Feed = System.Threading.Channels.Channel.CreateUnbounded<string>() };
+        CaptureManager manager = CreateManager(factory, out _);
+        OperationResult<CaptureStatus> started = await manager.StartAsync(AnyRequest(), CancellationToken.None);
+        using CancellationTokenSource cts = new(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => manager.ReadAsync(started.Value!.Id, 0, null, TimeSpan.FromSeconds(10), cts.Token));
+        await manager.StopAsync(started.Value!.Id);
+    }
+
+    [Fact]
+    public async Task Read_PagesAcrossCheckpointBoundary()
+    {
+        const int count = 2100;
+        FakeSessionFactory factory = new() { Events = Enumerable.Range(1, count).Select(i => "{\"Event\":" + i + "}").ToArray() };
+        CaptureManager manager = CreateManager(factory, out VestigoOptions options);
+        options.MaxReadBatch = 500;
+        OperationResult<CaptureStatus> started = await manager.StartAsync(AnyRequest(), CancellationToken.None);
+        await WaitForTerminalAsync(manager, started.Value!.Id, 500);
+
+        long sequence = 0;
+        int seen = 0;
+        while (true)
+        {
+            CapturePage page = manager.Read(started.Value.Id, sequence, null).Value!;
+            foreach (string line in page.Events)
+            {
+                seen++;
+                Assert.Equal("{\"Event\":" + seen + "}", line);
+            }
+
+            sequence = page.NextSequence;
+            if (page.Completed)
+            {
+                break;
+            }
+        }
+
+        Assert.Equal(count, seen);
+        CapturePage tail = manager.Read(started.Value.Id, 1500, 3).Value!;
+        Assert.Equal("{\"Event\":1501}", tail.Events[0]);
+    }
+
+    [Fact]
+    public async Task Attach_DecodesEventsAndNeverStopsOrPersistsTheSession()
+    {
+        FakeSessionFactory factory = new()
+        {
+            Events = ["{\"Event\":1}"],
+            Feed = System.Threading.Channels.Channel.CreateUnbounded<string>()
+        };
+        CaptureManager manager = CreateManager(factory, out VestigoOptions options);
+        options.AttachableSessions = ["External*"];
+
+        OperationResult<CaptureStatus> attached = await manager.AttachAsync(
+            new AttachSessionRequest("external session", [], null),
+            CancellationToken.None);
+        Assert.True(attached.Success);
+        Assert.Equal("Attached", attached.Value!.Mode);
+        Assert.Equal(["External Session"], factory.Attached);
+
+        CapturePage page = (await manager.ReadAsync(attached.Value.Id, 0, null, TimeSpan.FromSeconds(5), CancellationToken.None)).Value!;
+        Assert.Single(page.Events);
+        string owned = File.Exists(VestigoPaths.OwnedSessionsPath) ? File.ReadAllText(VestigoPaths.OwnedSessionsPath) : "[]";
+        Assert.DoesNotContain("External", owned, StringComparison.Ordinal);
+
+        OperationResult<CaptureStatus> stopped = await manager.StopAsync(attached.Value.Id);
+        Assert.Equal("Stopped", stopped.Value!.State);
+        Assert.Empty(factory.Stopped);
+    }
+
+    [Fact]
+    public async Task Attach_EnforcesAllowlistPrefixAndExistence()
+    {
+        FakeSessionFactory factory = new();
+        CaptureManager manager = CreateManager(factory, out VestigoOptions options);
+
+        OperationResult<CaptureStatus> disabled = await manager.AttachAsync(
+            new AttachSessionRequest("External Session", [], null), CancellationToken.None);
+        options.AttachableSessions = ["*"];
+        OperationResult<CaptureStatus> prefixed = await manager.AttachAsync(
+            new AttachSessionRequest("Vestigo-live", [], null), CancellationToken.None);
+        OperationResult<CaptureStatus> missing = await manager.AttachAsync(
+            new AttachSessionRequest("Nope", [], null), CancellationToken.None);
+
+        Assert.Equal("attach_not_allowed", disabled.ErrorCode);
+        Assert.Equal("invalid_request", prefixed.ErrorCode);
+        Assert.Equal("session_not_found", missing.ErrorCode);
+        Assert.Empty(factory.Attached);
+    }
+
+    [Fact]
+    public void Options_ValidateReadWaitAndAttachableSessions()
+    {
+        Assert.Throws<InvalidOperationException>(() => new VestigoOptions { MaxReadWait = TimeSpan.FromMinutes(3) }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new VestigoOptions { AttachableSessions = [" "] }.Validate());
+    }
+
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", null);
@@ -222,9 +378,9 @@ public class CaptureManagerTests : IDisposable
         return new CaptureManager(options, symbols, factory, NullLogger<CaptureManager>.Instance);
     }
 
-    private static async Task<CaptureStatus> WaitForTerminalAsync(CaptureManager manager, string id)
+    private static async Task<CaptureStatus> WaitForTerminalAsync(CaptureManager manager, string id, int attempts = 50)
     {
-        for (int attempt = 0; attempt < 50; attempt++)
+        for (int attempt = 0; attempt < attempts; attempt++)
         {
             CaptureStatus status = manager.Get(id).Value!;
             if (status.State is "Stopped" or "Failed")
@@ -270,14 +426,27 @@ public class CaptureManagerTests : IDisposable
             Stopped.Add(sessionName);
         }
 
-        public IReadOnlyList<string> ListSessions() => ["Vestigo-live", "Other Session"];
+        public IReadOnlyList<string> ListSessions() => ["Vestigo-live", "Other Session", "External Session"];
+
+        public System.Threading.Channels.Channel<string>? Feed { get; set; }
+
+        public List<string> Attached { get; } = [];
+
+        public int AttachedDisposed { get; set; }
+
+        public IRealtimeTraceSession Attach(string sessionName)
+        {
+            Attached.Add(sessionName);
+            return new FakeSession(sessionName, Events, WaitUntilCancelled, this, attached: true);
+        }
     }
 
     private sealed class FakeSession(
         string sessionName,
         string[] events,
         bool waitUntilCancelled,
-        FakeSessionFactory factory) : IRealtimeTraceSession
+        FakeSessionFactory factory,
+        bool attached = false) : IRealtimeTraceSession
     {
         public string SessionName { get; } = sessionName;
 
@@ -300,13 +469,29 @@ public class CaptureManagerTests : IDisposable
                 await Task.Yield();
             }
 
+            if (factory.Feed is not null)
+            {
+                await foreach (string item in factory.Feed.Reader.ReadAllAsync(cancellationToken))
+                {
+                    yield return System.Text.Encoding.UTF8.GetBytes(item);
+                }
+            }
+
             if (waitUntilCancelled)
             {
                 await Task.Delay(Timeout.Infinite, cancellationToken);
             }
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            if (attached)
+            {
+                factory.AttachedDisposed++;
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class UnusedHttpClientFactory : IHttpClientFactory

@@ -22,6 +22,10 @@ The generated parameter catalog is [generated/mcp-tools.md](generated/mcp-tools.
 
 `read_capture` returns NDJSON lines after `afterSequence`. Pass the returned `NextSequence` to the next call. `limit` is clamped to `MaxReadBatch`.
 
+To follow a capture live, loop on `read_capture` with `waitSeconds` greater than zero (clamped to `MaxReadWait`). The call returns as soon as new events are spooled, or empty at the timeout, and stops waiting when the capture ends. Each page carries `State` and `Completed`; stop looping when `Completed` is true.
+
+`attach_etw_session` attaches read-only to an existing realtime session that is not owned by Vestigo, such as one started by `tracelog`, and decodes its events with optional PDB or TMF paths. The session name must match `Vestigo:AttachableSessions` (empty by default, which disables attach). The job appears in `list_captures` with `Mode` `Attached` and is read with `read_capture`. `stop_capture` only detaches; the session itself is never stopped, and it is never recorded as a Vestigo-owned session.
+
 `stop_capture` cancels the reader and disposes the ETW session.
 
 Capture duration cannot exceed `MaxCaptureDuration`. The spool is removed after `SpoolRetention` once the capture has stopped.

@@ -60,7 +60,7 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
     }
 
     [McpServerTool(Name = "start_capture")]
-    [Description("Starts a managed realtime WPP capture. Events are spooled locally; use read_capture to page them.")]
+    [Description("Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them.")]
     public Task<OperationResult<CaptureStatus>> StartCapture(
         [Description("PDB paths whose WPP control GUIDs should be enabled.")] string[]? pdbPaths = null,
         [Description("TMF paths used only for message decoding.")] string[]? tmfPaths = null,
@@ -112,15 +112,44 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
         captures.Get(captureId);
 
     [McpServerTool(Name = "read_capture")]
-    [Description("Reads a page of decoded NDJSON events from a capture spool.")]
-    public OperationResult<CapturePage> ReadCapture(
+    [Description("Reads a page of decoded NDJSON events from a capture spool. To follow a live capture, call repeatedly with afterSequence set to the previous nextSequence and waitSeconds > 0 (long-poll); stop when completed is true.")]
+    public Task<OperationResult<CapturePage>> ReadCapture(
         [Description("Capture identifier.")] string captureId,
         [Description("Return events after this sequence. Use 0 to start at the beginning.")] long afterSequence = 0,
-        [Description("Maximum events to return. The server clamps this to its configured batch size.")] int? limit = null) =>
-        captures.Read(captureId, afterSequence, limit);
+        [Description("Maximum events to return. The server clamps this to its configured batch size.")] int? limit = null,
+        [Description("When no events are available yet, wait up to this many seconds for new ones. Clamped to the server's MaxReadWait.")] double waitSeconds = 0,
+        CancellationToken cancellationToken = default) =>
+        captures.ReadAsync(
+            captureId,
+            afterSequence,
+            limit,
+            TimeSpan.FromSeconds(double.IsFinite(waitSeconds) ? Math.Clamp(waitSeconds, 0, 3600) : 0),
+            cancellationToken);
+
+    [McpServerTool(Name = "attach_etw_session")]
+    [Description("Attaches read-only to an existing realtime ETW session (not Vestigo-owned) allowed by Vestigo:AttachableSessions and decodes its events live. Read with read_capture; stop_capture only detaches and never stops the session.")]
+    public Task<OperationResult<CaptureStatus>> AttachEtwSession(
+        [Description("Exact name of a running ETW session, as listed by list_etw_sessions.")] string sessionName,
+        [Description("Optional PDB and TMF paths inside an allowed input root used to decode WPP messages.")] string[]? symbolPaths = null,
+        [Description("Maximum attach duration, for example 00:05:00. Capped by server configuration.")] string? duration = null,
+        CancellationToken cancellationToken = default)
+    {
+        TimeSpan? parsed = null;
+        if (!string.IsNullOrWhiteSpace(duration))
+        {
+            if (!TimeSpan.TryParse(duration, out TimeSpan value))
+            {
+                return Task.FromResult(OperationResult<CaptureStatus>.Fail("invalid_request", "Duration is not a valid timespan."));
+            }
+
+            parsed = value;
+        }
+
+        return captures.AttachAsync(new AttachSessionRequest(sessionName, symbolPaths ?? [], parsed), cancellationToken);
+    }
 
     [McpServerTool(Name = "stop_capture")]
-    [Description("Stops a capture and its ETW session.")]
+    [Description("Stops a capture. For managed captures this also stops the ETW session; for attached captures it only detaches.")]
     public Task<OperationResult<CaptureStatus>> StopCapture([Description("Capture identifier.")] string captureId) =>
         captures.StopAsync(captureId);
 

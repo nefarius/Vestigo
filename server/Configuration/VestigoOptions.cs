@@ -63,6 +63,12 @@ public sealed class VestigoOptions
 
     public int MaxReadBatch { get; set; } = 200;
 
+    /// <summary>Longest time a read_capture call may wait for new events.</summary>
+    public TimeSpan MaxReadWait { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Exact names or '*' globs of external ETW sessions that attach_etw_session may read. Empty disables attach.</summary>
+    public string[] AttachableSessions { get; set; } = [];
+
     public uint BufferSizeKb { get; set; } = 64;
 
     public uint FlushTimerSeconds { get; set; } = 1;
@@ -163,6 +169,16 @@ public sealed class VestigoOptions
         Logs.Validate();
         EventLog.Validate();
         RemoteDebugger.Validate();
+
+        if (MaxReadWait < TimeSpan.Zero || MaxReadWait > TimeSpan.FromMinutes(2))
+        {
+            throw new InvalidOperationException("Vestigo:MaxReadWait must be between 00:00:00 and 00:02:00.");
+        }
+
+        if (AttachableSessions.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidOperationException("Vestigo:AttachableSessions cannot contain blank entries.");
+        }
 
         if (BufferSizeKb == 0 || FlushTimerSeconds == 0)
         {

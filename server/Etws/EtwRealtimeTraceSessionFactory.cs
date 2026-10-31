@@ -30,6 +30,16 @@ public sealed class EtwRealtimeTraceSessionFactory : IRealtimeTraceSessionFactor
         return new EtwRealtimeTraceSession(session);
     }
 
+    public IRealtimeTraceSession Attach(string sessionName)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Realtime ETW capture requires Windows.");
+        }
+
+        return new AttachedTraceSession(sessionName);
+    }
+
     public void StopOrphan(string sessionName)
     {
         if (OperatingSystem.IsWindows() && sessionName.StartsWith(CaptureManager.SessionPrefix, StringComparison.Ordinal))
@@ -46,6 +56,32 @@ public sealed class EtwRealtimeTraceSessionFactory : IRealtimeTraceSessionFactor
         }
 
         return EtwUtil.EnumerateSessionNames();
+    }
+
+    private sealed class AttachedTraceSession(string sessionName) : IRealtimeTraceSession
+    {
+        public string SessionName { get; } = sessionName;
+
+        public void EnableProvider(Guid providerId, TraceLevelSelection level, ulong matchAnyKeyword, ulong matchAllKeyword) =>
+            throw new NotSupportedException("Attached sessions are read-only.");
+
+        public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadEventsAsync(
+            DecodingContext? context,
+            bool rewriteProviderName,
+            Action onMissingFormat,
+            CancellationToken cancellationToken) =>
+            EtwUtil.EnumerateRealtimeEventsAsync(
+                SessionName,
+                configure =>
+                {
+                    configure.WppDecodingContext = context;
+                    configure.RewriteWppProviderName = rewriteProviderName;
+                    configure.OnWppFormatMissing = (_, _, _) => onMissingFormat();
+                },
+                cancellationToken);
+
+        // The session belongs to someone else; cancelling the enumeration closes only our consumer.
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class EtwRealtimeTraceSession(EtwRealtimeSession session) : IRealtimeTraceSession

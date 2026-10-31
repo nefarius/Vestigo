@@ -12,6 +12,16 @@ Adds an existing driver service to a device class's upper or lower filter list.
 | `serviceName` | `string` | Filter driver service name. |
 | `position` | `string` | upper or lower. |
 
+## `attach_etw_session`
+
+Attaches read-only to an existing realtime ETW session (not Vestigo-owned) allowed by Vestigo:AttachableSessions and decodes its events live. Read with read_capture; stop_capture only detaches and never stops the session.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `sessionName` | `string` | Exact name of a running ETW session, as listed by list_etw_sessions. |
+| `symbolPaths` | `string[]` | Optional PDB and TMF paths inside an allowed input root used to decode WPP messages. |
+| `duration` | `string` | Maximum attach duration, for example 00:05:00. Capped by server configuration. |
+
 ## `cancel_job`
 
 Requests cancellation of a running job. Process jobs kill their process tree.
@@ -426,13 +436,14 @@ Queries a Windows event log channel or an .evtx file under a root with Read acce
 
 ## `read_capture`
 
-Reads a page of decoded NDJSON events from a capture spool.
+Reads a page of decoded NDJSON events from a capture spool. To follow a live capture, call repeatedly with afterSequence set to the previous nextSequence and waitSeconds > 0 (long-poll); stop when completed is true.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `captureId` | `string` | Capture identifier. |
 | `afterSequence` | `long` | Return events after this sequence. Use 0 to start at the beginning. |
 | `limit` | `int?` | Maximum events to return. The server clamps this to its configured batch size. |
+| `waitSeconds` | `Double` | When no events are available yet, wait up to this many seconds for new ones. Clamped to the server's MaxReadWait. |
 
 ## `read_job_output`
 
@@ -548,7 +559,7 @@ Sets the start type: boot, system, auto, demand or disabled. boot and system are
 
 ## `start_capture`
 
-Starts a managed realtime WPP capture. Events are spooled locally; use read_capture to page them.
+Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -597,7 +608,7 @@ Returns metadata for a file or directory: size, times, optional SHA-256, PE vers
 
 ## `stop_capture`
 
-Stops a capture and its ETW session.
+Stops a capture. For managed captures this also stops the ETW session; for attached captures it only detaches.
 
 | Parameter | Type | Description |
 | --- | --- | --- |

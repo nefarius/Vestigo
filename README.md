@@ -62,6 +62,7 @@ The MSI is `publish-x64\installer\Vestigo.msi`. Its listen/security page offers 
 
 - Windows only. The NT Kernel Logger and kernel-mode realtime providers are not supported.
 - Vestigo decodes events; it does not record a raw ETL file.
+- There is no server push. Follow a live capture by long-polling `read_capture` with `waitSeconds`; external sessions can be read with `attach_etw_session` once allowed by `Vestigo:AttachableSessions`.
 - WPP enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` remain numeric in the upstream decoder.
 - Symbol resolution uses the released `Nefarius.Utilities.ETW` package.
 

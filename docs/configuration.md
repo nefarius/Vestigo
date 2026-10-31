@@ -42,7 +42,9 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `MaxConcurrentCaptures` | 4 | Running capture limit. |
 | `MaxReadBatch` | 200 | Maximum events returned by one `read_capture` call. |
 | `BufferSizeKb` | 64 | ETW buffer size. |
-| `FlushTimerSeconds` | 1 | ETW flush interval. |
+| `MaxReadWait` | 00:00:30 | Longest `read_capture` long-poll (0 to 2 minutes). |
+| `AttachableSessions` | `[]` | Exact names or `*` globs of external ETW sessions `attach_etw_session` may read. Empty disables attach. |
+| `FlushTimerSeconds` | 1 | ETW flush interval; bounds live latency for managed captures. Attached sessions keep their owner's settings. |
 | `ClockResolution` | `QueryPerformanceCounter` | `QueryPerformanceCounter`, `SystemTime`, or `CpuCycle`. |
 
 Serilog writes console output and daily files under the settings `logs` directory. The default level is Information.
