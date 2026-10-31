@@ -7,6 +7,7 @@ using ModelContextProtocol.AspNetCore;
 using Serilog;
 
 using Vestigo.Configuration;
+using Vestigo.Devices;
 using Vestigo.Etws;
 using Vestigo.Hosting;
 using Vestigo.Modules;
@@ -72,6 +73,7 @@ if (vestigo.AuthenticationEnabled)
 builder.Services.AddHealthChecks().AddCheck<VestigoHealthCheck>("vestigo");
 builder.Services.AddSingleton<PathPolicy>();
 builder.Services.AddSingleton<RootPolicy>();
+builder.Services.AddDevices();
 
 ModuleRegistry.ValidateConfiguration(vestigo);
 IReadOnlyList<VestigoModule> modules = ModuleRegistry.Enabled(vestigo);
@@ -87,6 +89,10 @@ builder.Services.AddMcpServer()
 
 WebApplication app = builder.Build();
 Log.Information("Vestigo modules enabled: {Modules}", string.Join(", ", modules.Select(module => module.Name)));
+if (vestigo.GetExposureWarning() is { } exposureWarning)
+{
+    app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
+}
 foreach (VestigoModule module in modules)
 {
     module.MapEndpoints(app, vestigo);

@@ -30,6 +30,8 @@ class Build : FalloutBuild
     static AbsolutePath PublishServerDir => PublishRoot / "server";
     static AbsolutePath InstallerOutputDir => PublishRoot / "installer";
     static AbsolutePath UpdaterStageDir => PublishRoot / "updater";
+    static AbsolutePath ToolsStageDir => PublishRoot / NefconPin.StageDirectoryName;
+    static AbsolutePath StagedNefconExe => ToolsStageDir / NefconPin.Executable;
     static AbsolutePath InstallerProjectFile => RootDirectory / "installer" / "Vestigo.Installer.csproj";
     static AbsolutePath StagedUpdaterExe => UpdaterStageDir / UpdateFeed.UpdaterExecutable;
 
@@ -81,9 +83,14 @@ class Build : FalloutBuild
         .Executes(StageUpdater);
 
     [UsedImplicitly]
+    public Target PrepareNefcon => _ => _
+        .Description("Stage the pinned, signed nefcon x64 CLI (tools\\nefconc.exe) for the MSI")
+        .Executes(StageNefcon);
+
+    [UsedImplicitly]
     public Target BuildInstaller => _ => _
         .Description("Publish Vestigo and build the x64 MSI. Requires Windows and WiX 5.0.2.")
-        .DependsOn(PublishLocal, PrepareUpdater)
+        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon)
         .Executes(() =>
         {
             if (!OperatingSystem.IsWindows())
@@ -95,11 +102,13 @@ class Build : FalloutBuild
             const string envServer = "VESTIGO_INSTALLER_SERVER";
             const string envOut = "VESTIGO_INSTALLER_OUT";
             const string envUpdater = "VESTIGO_INSTALLER_UPDATER";
+            const string envNefcon = "VESTIGO_INSTALLER_NEFCON";
             try
             {
                 Environment.SetEnvironmentVariable(envServer, PublishServerDir);
                 Environment.SetEnvironmentVariable(envOut, InstallerOutputDir);
                 Environment.SetEnvironmentVariable(envUpdater, StagedUpdaterExe);
+                Environment.SetEnvironmentVariable(envNefcon, StagedNefconExe);
                 DotNetTasks.DotNetRun(settings => settings
                     .SetProjectFile(InstallerProjectFile)
                     .SetConfiguration(Configuration.Release));
@@ -109,6 +118,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envServer, null);
                 Environment.SetEnvironmentVariable(envOut, null);
                 Environment.SetEnvironmentVariable(envUpdater, null);
+                Environment.SetEnvironmentVariable(envNefcon, null);
             }
         });
 
@@ -149,6 +159,47 @@ class Build : FalloutBuild
         {
             throw new InvalidOperationException(
                 $"Expected one {UpdateFeed.UpdaterArchiveExecutable} entry in the Vicius archive but found {matches.Length}.");
+        }
+
+        matches[0].ExtractToFile(stagedPath);
+        AuthenticodeTrust.RequireTrustedPublisher(stagedPath, UpdateFeed.PublisherSubject);
+    }
+
+    void StageNefcon()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new InvalidOperationException("PrepareNefcon requires Windows to verify Authenticode.");
+        }
+
+        Directory.CreateDirectory(ToolsStageDir);
+        using HttpClient client = new() { Timeout = TimeSpan.FromMinutes(2) };
+        byte[] archive = client.GetByteArrayAsync(NefconPin.ArchiveUrl).GetAwaiter().GetResult();
+        string actualHash = Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant();
+        if (!string.Equals(actualHash, NefconPin.ArchiveSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"nefcon {NefconPin.Version} archive hash {actualHash} does not match the pinned digest.");
+        }
+
+        string stagedPath = StagedNefconExe;
+        if (File.Exists(stagedPath))
+        {
+            File.Delete(stagedPath);
+        }
+
+        using MemoryStream stream = new(archive, writable: false);
+        using ZipArchive zip = new(stream, ZipArchiveMode.Read);
+        ZipArchiveEntry[] matches = zip.Entries
+            .Where(entry => string.Equals(
+                entry.FullName.Replace('\\', '/'),
+                NefconPin.ArchiveEntryPath,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected one {NefconPin.ArchiveEntryPath} entry in the nefcon archive but found {matches.Length}.");
         }
 
         matches[0].ExtractToFile(stagedPath);

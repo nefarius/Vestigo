@@ -12,7 +12,29 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The custom action project lives in a subfolder; keep its sources and obj/bin out of this project. -->
+    <Compile Remove="Vestigo.Installer.Actions\**" />
+    <EmbeddedResource Remove="Vestigo.Installer.Actions\**" />
+    <None Remove="Vestigo.Installer.Actions\**" />
+    <Content Remove="Vestigo.Installer.Actions\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- net48 DTF custom actions; built first, then embedded in the MSI as a binary. -->
+    <ProjectReference Include="Vestigo.Installer.Actions\Vestigo.Installer.Actions.csproj"
+                      ReferenceOutputAssembly="false"
+                      SkipGetTargetFrameworkProperties="true" />
+    <Content Include="Vestigo.Installer.Actions\bin\$(Configuration)\net48\Vestigo.Installer.Actions.CA.dll"
+             Link="Vestigo.Installer.Actions.CA.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="License.rtf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="nefcon-LICENSE.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Nefarius_Vestigo_Updater.json">

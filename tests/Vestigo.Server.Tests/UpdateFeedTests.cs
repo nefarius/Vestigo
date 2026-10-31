@@ -124,7 +124,11 @@ public class UpdateFeedTests
         Assert.Contains("THIRD-PARTY-NOTICES.txt", installer, StringComparison.Ordinal);
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
-        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater)", build, StringComparison.Ordinal);
+        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon)", build, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_NEFCON", build, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_NEFCON", installer, StringComparison.Ordinal);
+        Assert.Contains("nefcon-LICENSE.txt", installer, StringComparison.Ordinal);
+        Assert.Contains("RequireTrustedPublisher(stagedPath, UpdateFeed.PublisherSubject)", build, StringComparison.Ordinal);
         Assert.Equal("1.20.0", UpdateFeed.UpdaterVersion);
         Assert.Equal("ca627af5f9f1c87f5a54d3be8122ee4909e00e9320e62fb8229cf37a8161a3d8", UpdateFeed.UpdaterArchiveSha256);
         Assert.Equal("RWTZDJM+Ify8UukJiWfvLcLvjvrVlHcXY/A9cgbOIStr+c19FIlY8x4B", UpdateFeed.ManifestPublicKey);

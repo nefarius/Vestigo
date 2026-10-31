@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
 
+using Vestigo.Devices;
+using Vestigo.Services;
+
 namespace Vestigo.Configuration;
 
 /// <summary>
@@ -27,6 +30,12 @@ public sealed class VestigoOptions
     public ProcessesOptions Processes { get; set; } = new();
 
     public RemoteDebuggerOptions RemoteDebugger { get; set; } = new();
+
+    public FilesOptions Files { get; set; } = new();
+
+    public DevicesOptions Devices { get; set; } = new();
+
+    public ServicesOptions Services { get; set; } = new();
 
     public int MaxConcurrentJobs { get; set; } = 8;
 
@@ -60,7 +69,30 @@ public sealed class VestigoOptions
 
     public string ClockResolution { get; set; } = "QueryPerformanceCounter";
 
+    public EnvironmentOptions Environment { get; set; } = new();
+
+    public LogsOptions Logs { get; set; } = new();
+
+    public EventLogOptions EventLog { get; set; } = new();
+
     public bool AuthenticationEnabled => ApiTokens.Count > 0;
+
+    /// <summary>
+    ///     True when <see cref="ListenAddress" /> is an IP address other than loopback, such as 0.0.0.0 or ::.
+    /// </summary>
+    public bool IsBoundBeyondLoopback =>
+        IPAddress.TryParse(ListenAddress, out IPAddress? address) && !IPAddress.IsLoopback(address);
+
+    /// <summary>
+    ///     Returns a startup warning when the server is reachable from the network without any API token, otherwise null.
+    ///     The message never contains token values.
+    /// </summary>
+    public string? GetExposureWarning() =>
+        IsBoundBeyondLoopback && !AuthenticationEnabled
+            ? $"SECURITY WARNING: Vestigo is listening on non-loopback address {ListenAddress}:{ListenPort} and no Vestigo:ApiTokens are configured. " +
+              "Anyone who can reach this port can use /mcp to capture traces and read files within the allowed roots. " +
+              "Configure Vestigo:ApiTokens or bind to a loopback address."
+            : null;
 
     public void Validate()
     {
@@ -69,10 +101,6 @@ public sealed class VestigoOptions
             throw new InvalidOperationException($"Vestigo:ListenAddress '{ListenAddress}' is not an IP address.");
         }
 
-        if (!IPAddress.IsLoopback(address))
-        {
-            throw new InvalidOperationException("Vestigo only accepts loopback listen addresses.");
-        }
 
         if (ListenPort is < 1 or > 65535)
         {
@@ -99,6 +127,13 @@ public sealed class VestigoOptions
             throw new InvalidOperationException("Vestigo job limits must be positive.");
         }
 
+        if (Files.MaxUploadBytes < 1)
+        {
+            throw new InvalidOperationException("Vestigo:Files:MaxUploadBytes must be positive.");
+        }
+        Devices.Validate();
+        Services.Validate();
+
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
         foreach (RootDefinition root in Roots)
         {
@@ -124,6 +159,9 @@ public sealed class VestigoOptions
             }
         }
 
+        Environment.Validate();
+        Logs.Validate();
+        EventLog.Validate();
         RemoteDebugger.Validate();
 
         if (BufferSizeKb == 0 || FlushTimerSeconds == 0)

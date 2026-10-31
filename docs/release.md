@@ -22,7 +22,7 @@ The tag pipeline requires `SIGN_RELAY_SERVER`, `SIGN_RELAY_CI_TOKEN`, `WEBHOOK_U
 
 Buildbot publishes the three files together under `https://buildbot.nefarius.at/builds/Vestigo/latest/`. The updater requests only `updates.json` and `updates.json.minisig` from that directory, then downloads `Vestigo.msi` from the URL in the signed manifest. A check that races a symlink update fails the MSI checksum and retries on the next run.
 
-WiX is pinned to CLI `5.0.2` and `WixToolset.UI.wixext/5.0.2`. The WixSharp project GUID is `7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71`. The MSI product code is generated for each build. The upgrade code is `9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64`. A later MSI with that upgrade code replaces an earlier Vestigo installation. The installer stops when the x64 .NET 10 ASP.NET Core runtime is missing.
+WiX is pinned to CLI `5.0.2`, `WixToolset.UI.wixext/5.0.2`, and `WixToolset.Firewall.wixext/5.0.2` (install each with `wix extension add -g <name>/5.0.2`). The installer also builds `installer/Vestigo.Installer.Actions` (net48, WiX DTF 5.0.2): `dotnet run` on the installer builds it first and embeds `Vestigo.Installer.Actions.CA.dll` in the MSI, so no extra release step is needed. The WixSharp project GUID is `7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71`. The MSI product code is generated for each build. The upgrade code is `9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64`. A later MSI with that upgrade code replaces an earlier Vestigo installation. The installer stops when the x64 .NET 10 ASP.NET Core runtime is missing.
 
 Keep `installer/License.rtf` aligned with `LICENSE`.
 
@@ -40,3 +40,14 @@ On a Windows machine with the x64 .NET 10 ASP.NET Core runtime:
 - Cancel the MSI once and confirm Vestigo remains on the previous version.
 - Repeat an update that returns MSI exit code 3010 and confirm the updater treats it as success and asks for a restart.
 - Uninstall Vestigo and confirm the autostart entry and scheduled task are gone.
+
+## nefcon pin
+
+`PrepareNefcon` (a dependency of `BuildInstaller`) downloads the pinned nefcon release archive, checks its SHA-256, extracts `x64\nefconc.exe` to `publish-x64\tools\`, and requires a valid Authenticode signature for `Nefarius Software Solutions e.U.`. The MSI installs it as `tools\nefconc.exe` with `tools\nefcon-LICENSE.txt`; the MIT notice is also in `installer\THIRD-PARTY-NOTICES.txt`.
+
+To bump nefcon manually:
+
+1. Download the new `nefcon_vX.Y.Z.zip` from the [nefcon releases](https://github.com/nefarius/nefcon/releases) (`gh release download vX.Y.Z -R nefarius/nefcon -p 'nefcon_vX.Y.Z.zip'`).
+2. Compute its SHA-256 (`Get-FileHash`) and confirm `Get-AuthenticodeSignature` on `x64\nefconc.exe` reports a valid Nefarius signature.
+3. Update `Version`, `ArchiveSha256`, and `ArchiveUrl` in `build/NefconPin.cs`, and the version in `installer\THIRD-PARTY-NOTICES.txt` and `installer\nefcon-LICENSE.txt` if the license changed.
+4. Run `.\build.ps1 PrepareNefcon` and the test suite.

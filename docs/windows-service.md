@@ -17,6 +17,37 @@ The service account needs:
 
 `list_etw_sessions`, ETL scanning, and ETL conversion use Windows ETW but do not create a session. A session left behind by a crash is recorded in `owned-sessions.json`. The next startup stops those `Vestigo-` names and ignores every other session.
 
+## Listen mode and API token
+
+After the license page the installer asks how the server is reachable. The four modes and their effect on `Vestigo:ListenAddress`, `ApiTokens`, and the firewall:
+
+| Mode | `ListenAddress` | `ApiTokens` | Firewall rule |
+| --- | --- | --- | --- |
+| 1. Localhost, no token | `127.0.0.1` | empty | none |
+| 2. Localhost, with token | `127.0.0.1` | one token | none |
+| 3. Any address, no token (shows a warning) | `0.0.0.0` | empty | inbound TCP, chosen port |
+| 4. Any address, with token (default) | `0.0.0.0` | one token | inbound TCP, chosen port |
+
+The page also takes the port (default 5098) and, for token modes, the token. It is pre-filled with a random suggestion (32 random bytes, base64url) that you can replace; tokens must be at least 16 characters without spaces. A deferred, elevated action runs before the service starts and merges only `Vestigo:ListenAddress`, `ListenPort`, and `ApiTokens` into `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. Every other key is kept. The file is UTF-8 without BOM and its ACL allows only SYSTEM and Administrators. It holds the token in clear text. If the existing file is not valid JSON it is kept as `appsettings.json.bak-<time>` and a new one is written.
+
+On upgrade the page is pre-filled from the existing file: a loopback address maps to localhost, any other address to "any address", and a non-empty `ApiTokens` to token mode. The existing token is kept unless you change it. The page can only read the file when the installer runs elevated; otherwise it shows the defaults, and an untouched suggested token never replaces an existing one. A specific non-loopback address already in the file (for example `192.168.1.5`) is kept in the "any address" modes.
+
+Silent installs set the same choices as public MSI properties (`VESTIGO_API_TOKEN` is hidden, so it is not written to the MSI log, but the command line itself may be recorded by your shell or deployment tool):
+
+| Property | Values | Default |
+| --- | --- | --- |
+| `VESTIGO_LISTEN_MODE` | `localhost` or `any` | existing setting, else `any` |
+| `VESTIGO_AUTH_MODE` | `none` or `token` | existing setting, else `token` |
+| `VESTIGO_PORT` | 1-65535 | existing setting, else `5098` |
+| `VESTIGO_API_TOKEN` | token text | existing token, else a generated one |
+
+```powershell
+msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=localhost VESTIGO_AUTH_MODE=none VESTIGO_PORT=5098
+msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=token VESTIGO_API_TOKEN=<your-token>
+```
+
+With token mode and no token on the command line (and none stored), the installer generates one; read it from the settings file. Invalid values fail the install. The firewall rule is removed on uninstall and when a repair or upgrade switches to a localhost mode.
+
 Listen address and port are read at process start. Restart the service after changing them.
 
 The MSI registers Vicius for the installing user. At logon, and once a day, that user's scheduled task checks Buildbot and shows an update window when a newer signed release exists. Approving it elevates and runs the MSI with `/passive /norestart`. The MSI stops and restarts the service, so an in-flight capture ends. Another Windows user does not receive the schedule until an administrator runs `Nefarius_Vestigo_Updater.exe --install --silent --override-success-code 0` in that user's session. The update window can disable later notifications; `Nefarius_Vestigo_Updater.exe --show-options` restores them. Uninstall removes the current user's autostart entry and scheduled task. A failure to register or remove Vicius does not fail the service installation.
