@@ -25,10 +25,10 @@ The server listens on loopback by default and can be bound to any IP address wit
 
 ## Projects
 
-- [`Vestigo.Server`](server) â€” ASP.NET Core host, MCP tools, and capture manager.
+- [`Vestigo.Server`](server) — ASP.NET Core host, MCP tools, and capture manager.
 - [`Vestigo.Installer.Actions`](installer/Vestigo.Installer.Actions) — net48 MSI custom actions and the pure listen-settings logic shared with the tests.
-- [`Vestigo.Installer`](installer) â€” WixSharp project that builds the per-machine x64 MSI and Windows service.
-- [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) â€” path, authentication, capture, and package-boundary tests.
+- [`Vestigo.Installer`](installer) — WixSharp project that builds the per-machine x64 MSI and Windows service.
+- [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) — path, authentication, capture, and package-boundary tests.
 
 ## Security
 
