@@ -32,7 +32,12 @@ DOTNET_INSTALLED_MAJOR=""
 if [ -x "$(command -v dotnet)" ]; then
     DOTNET_INSTALLED_MAJOR=$(dotnet --version 2>/dev/null | cut -d. -f1 || true)
 fi
-if [[ "$DOTNET_INSTALLED_MAJOR" =~ ^[0-9]+$ ]] && [ "$DOTNET_INSTALLED_MAJOR" -ge 10 ]; then
+DOTNET_HAS_NET10_RUNTIME=0
+if [ -x "$(command -v dotnet)" ] && dotnet --list-runtimes 2>/dev/null | grep -Eq '^Microsoft\.NETCore\.App 10\.'; then
+    DOTNET_HAS_NET10_RUNTIME=1
+fi
+# The build project targets net10.0, so a .NET 10 runtime must exist (no roll-forward to newer majors by default)
+if [[ "$DOTNET_INSTALLED_MAJOR" =~ ^[0-9]+$ ]] && [ "$DOTNET_INSTALLED_MAJOR" -ge 10 ] && [ "$DOTNET_HAS_NET10_RUNTIME" -eq 1 ]; then
     export DOTNET_EXE="$(command -v dotnet)"
 else
     # Download install script
