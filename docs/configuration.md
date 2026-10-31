@@ -8,18 +8,30 @@ Property defaults are generated in [generated/configuration.md](generated/config
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `ListenAddress` | `127.0.0.1` | Loopback address, including `::1`. Other addresses and `Kestrel:Endpoints` are rejected at startup. |
+| `ListenAddress` | `127.0.0.1` | IP address to bind: loopback (`127.0.0.1`, `::1`) or any other address such as `0.0.0.0` or `::` to accept network clients. Host names are rejected, as is `Kestrel:Endpoints`. Binding beyond loopback without `ApiTokens` logs a startup warning. |
 | `ListenPort` | `5098` | HTTP port. Changing it requires a service restart. |
-| `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`. |
+| `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`; strongly recommended whenever `ListenAddress` is not loopback. |
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |
-| `Modules` | `Trace` and `Jobs` enabled; `Devices` disabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Devices`) on or off. Unknown names fail startup. |
+| `Modules` | all enabled except `Processes`, `Devices` and `RemoteDebugger` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `Logs`, `EventLog`, `Services`, `Processes`, `Devices`, `RemoteDebugger`) on or off. Unknown names fail startup. `Processes`, `Devices` and `RemoteDebugger` are disabled by default. A module whose dependency is disabled fails startup: `Processes` needs `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes` (directly or through `RemoteDebugger`) also requires at least one `ApiTokens` entry. |
 | `Devices` | defaults | Device management: `Devices:NefconPath` (absolute path of `nefconc.exe`, default `tools\nefconc.exe` next to `Vestigo.exe`) and `Devices:NefconTimeout` (`00:02:00`, upper bound for one nefcon run). |
+| `Services` | defaults | Services module: `Services:ProtectedNames` (default `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs`) lists service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
+| `Processes:AllowPathLookup` | `true` | Lets `run_process` resolve bare names such as `cmd.exe` from the service `PATH`. When `false`, only files under roots with `Execute` access can be started. |
+
+| `RemoteDebugger:DefaultPort` | `4026` | Port `start_remote_debugger` uses when the caller gives none. |
+| `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` | Upper bound for the installer download inside the install job. |
+| `RemoteDebugger:ExtraSearchPaths` | empty | Absolute directories probed for `msvsmon.exe` (directly or as `<dir>\<arch>\msvsmon.exe`); a hit counts only when the file major version is 17 or 18 for the requested version. |
 | `MaxConcurrentJobs` | 8 | Running background job limit. |
 | `MaxJobOutputBytes` | 67108864 | Output kept per job; later output is dropped with a marker. |
 | `JobRetention` | `1.00:00:00` | How long finished jobs and their output are kept. |
 | `MaxJobReadBytes` | 65536 | Maximum bytes returned by one `read_job_output` call. |
+| `Files:MaxUploadBytes` | 4294967296 | Largest accepted `PUT /files` upload or `fetch_file` download. Larger uploads get HTTP 413; larger downloads fail the job with `too_large`. The partial file is discarded in both cases. |
+| `Environment:ProtectedNames` | `COMSPEC`, `SystemRoot`, `windir` | Variable names (case-insensitive) that `set_environment_variable` refuses to set or unset in any scope. |
+| `Logs:MaxTailLines` | 2000 | Maximum lines returned by one `tail_text_file` or `read_text_file_since` call. |
+| `Logs:MaxTailBytes` | 1048576 | Maximum bytes examined by one call; a longer single line is cut. |
+| `EventLog:MaxEvents` | 500 | Maximum events returned by one `query_event_log` call. |
+| `EventLog:MaxScannedEvents` | 20000 | Maximum events examined per query, which bounds message text filters. |
 | `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. |
 | `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. |
 | `MaxInputBytes` | 4294967296 | Maximum size of one input file. |

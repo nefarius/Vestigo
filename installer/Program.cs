@@ -22,6 +22,7 @@ static class Program
     const string UpdaterExecutableName = "Nefarius_Vestigo_Updater.exe";
     const string UpdaterConfigurationName = "Nefarius_Vestigo_Updater.json";
     const string NoticesName = "THIRD-PARTY-NOTICES.txt";
+    const string ActionsPackageName = "Vestigo.Installer.Actions.CA.dll";
 
     static int Main(string[] args)
     {
@@ -145,6 +146,14 @@ static class Program
                 When.Before,
                 Step.RemoveFiles,
                 new Condition("REMOVE=\"ALL\" AND NOT UPGRADINGPRODUCTCODE")));
+
+            string actionsPackagePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ActionsPackageName));
+            if (!System.IO.File.Exists(actionsPackagePath))
+            {
+                throw new FileNotFoundException($"Custom action package not found: {actionsPackagePath}");
+            }
+
+            ListenPage.Apply(project, actionsPackagePath);
 
             string msi = project.BuildMsi();
             if (!System.IO.File.Exists(msi))
