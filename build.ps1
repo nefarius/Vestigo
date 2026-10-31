@@ -18,7 +18,7 @@ $TempDirectory = "$PSScriptRoot\\.fallout\temp"
 
 $DotNetGlobalFile = "$PSScriptRoot\\global.json"
 $DotNetInstallUrl = "https://dot.net/v1/dotnet-install.ps1"
-$DotNetChannel = "STS"
+$DotNetChannel = "10.0"
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = 1
 $env:DOTNET_NOLOGO = 1
@@ -32,9 +32,13 @@ function ExecSafe([scriptblock] $cmd) {
     if ($LASTEXITCODE) { exit $LASTEXITCODE }
 }
 
-# If dotnet CLI is installed globally and it matches requested version, use for execution
-if ($null -ne (Get-Command "dotnet" -ErrorAction SilentlyContinue) -and `
-     $(dotnet --version) -and $LASTEXITCODE -eq 0) {
+# If dotnet CLI is installed globally and is a .NET 10+ SDK, use for execution
+$DotNetOk = $false
+if ($null -ne (Get-Command "dotnet" -ErrorAction SilentlyContinue)) {
+    $InstalledVersion = "$(dotnet --version 2>$null)"
+    if ($LASTEXITCODE -eq 0 -and $InstalledVersion -match '^(\d+)\.' -and [int]$Matches[1] -ge 10) { $DotNetOk = $true }
+}
+if ($DotNetOk) {
     $env:DOTNET_EXE = (Get-Command "dotnet").Path
 }
 else {

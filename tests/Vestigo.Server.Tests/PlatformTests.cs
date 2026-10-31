@@ -131,6 +131,43 @@ public class PlatformTests : IDisposable
     }
 
     [Fact]
+    public async Task JobManager_ParallelStartsNeverExceedConcurrencyLimit()
+    {
+        JobManager jobs = new(new VestigoOptions { MaxConcurrentJobs = 2 }, Path.Combine(_root, "jobs"));
+        TaskCompletionSource gate = new();
+
+        OperationResult<JobInfo>[] results = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
+            jobs.Start("test", "hold", async (_, _) =>
+            {
+                await gate.Task;
+                return 0;
+            }))));
+        gate.SetResult();
+
+        Assert.Equal(2, results.Count(result => result.Success));
+        foreach (OperationResult<JobInfo> ok in results.Where(result => result.Success))
+        {
+            await jobs.WaitAsync(ok.Value!.Id, TimeSpan.FromSeconds(10), default);
+        }
+    }
+
+    [Fact]
+    public async Task JobManager_ReadOutput_AdvancesPastTinyWindowAndFlushesPartialTail()
+    {
+        JobManager jobs = new(new VestigoOptions(), Path.Combine(_root, "jobs"));
+        OperationResult<JobInfo> started = jobs.Start("test", "utf8", (context, _) =>
+        {
+            context.Write("é");
+            return Task.FromResult(0);
+        });
+        await jobs.WaitAsync(started.Value!.Id, TimeSpan.FromSeconds(10), default);
+
+        JobOutputPage page = jobs.ReadOutput(started.Value.Id, 0, 1).Value!;
+
+        Assert.True(page.NextOffset > 0);
+    }
+
+    [Fact]
     public void Utf8SafeLength_DoesNotSplitCharacters()
     {
         byte[] bytes = System.Text.Encoding.UTF8.GetBytes("aé");
