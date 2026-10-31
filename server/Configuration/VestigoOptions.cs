@@ -27,6 +27,10 @@ public sealed class VestigoOptions
 
     public Dictionary<string, ModuleSettings> Modules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public ProcessesOptions Processes { get; set; } = new();
+
+    public FilesOptions Files { get; set; } = new();
+
     public DevicesOptions Devices { get; set; } = new();
 
     public ServicesOptions Services { get; set; } = new();
@@ -62,6 +66,12 @@ public sealed class VestigoOptions
     public uint FlushTimerSeconds { get; set; } = 1;
 
     public string ClockResolution { get; set; } = "QueryPerformanceCounter";
+
+    public EnvironmentOptions Environment { get; set; } = new();
+
+    public LogsOptions Logs { get; set; } = new();
+
+    public EventLogOptions EventLog { get; set; } = new();
 
     public bool AuthenticationEnabled => ApiTokens.Count > 0;
 
@@ -102,6 +112,10 @@ public sealed class VestigoOptions
             throw new InvalidOperationException("Vestigo job limits must be positive.");
         }
 
+        if (Files.MaxUploadBytes < 1)
+        {
+            throw new InvalidOperationException("Vestigo:Files:MaxUploadBytes must be positive.");
+        }
         Devices.Validate();
         Services.Validate();
 
@@ -129,6 +143,10 @@ public sealed class VestigoOptions
                 throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs at least one access flag.");
             }
         }
+
+        Environment.Validate();
+        Logs.Validate();
+        EventLog.Validate();
 
         if (BufferSizeKb == 0 || FlushTimerSeconds == 0)
         {

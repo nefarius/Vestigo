@@ -93,6 +93,26 @@ public sealed class JobContext
     }
 
     public void WriteLine(string text) => Write(text + Environment.NewLine);
+
+    /// <summary>True once the spool, including bytes a child wrote directly, has passed the output limit.</summary>
+    public bool LimitExceeded => OutputBytes > _limit;
+
+    /// <summary>Appends the truncation marker once; later writes are dropped.</summary>
+    public void WriteTruncationMarker()
+    {
+        lock (_gate)
+        {
+            if (_truncated)
+            {
+                return;
+            }
+
+            _truncated = true;
+            byte[] bytes = Encoding.UTF8.GetBytes(Environment.NewLine + "[output truncated by MaxJobOutputBytes]" + Environment.NewLine);
+            using FileStream stream = new(OutputPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            stream.Write(bytes);
+        }
+    }
 }
 
 /// <summary>

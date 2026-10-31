@@ -11,7 +11,15 @@ using Vestigo.Devices;
 using Vestigo.Etws;
 using Vestigo.Hosting;
 using Vestigo.Modules;
+using Vestigo.Processes;
 using Vestigo.Security;
+
+// Session helper: started by the service inside the console user's session; must not boot the web host.
+if (SessionHelper.IsInvocation(args))
+{
+    Environment.ExitCode = SessionHelper.Run(args);
+    return;
+}
 
 WebApplicationOptions webOptions = new()
 {
