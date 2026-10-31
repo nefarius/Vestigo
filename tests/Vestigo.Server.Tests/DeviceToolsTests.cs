@@ -204,6 +204,152 @@ public sealed class DeviceToolsTests : IDisposable
         Assert.Equal("windows_required", _tools.FindDevicesByInterface(ClassGuidText).ErrorCode);
     }
 
+    private static DeviceEntry Dev(string id, string desc, Guid cls, string className, bool present = true, params string[] hwids) =>
+        new(id, desc, cls, className, hwids, "svc", null, present);
+
+    [Fact]
+    public void FindDevices_FiltersAndPages()
+    {
+        Guid usb = Guid.NewGuid();
+        _control.Devices =
+        [
+            Dev("USB\\A\\1", "Xbox Controller", usb, "USB", true, "USB\\VID_045E&PID_028E"),
+            Dev("USB\\A\\2", "Other Hub", usb, "USB", true, "USB\\ROOT_HUB30"),
+            Dev("ROOT\\B\\0", "Xbox Ghost", ClassGuid, "System", false, "ROOT\\XBOX")
+        ];
+
+        Assert.Equal(["USB\\A\\1", "USB\\A\\2", "ROOT\\B\\0"], _tools.FindDevices(presentOnly: false).Value!.Devices.Select(d => d.InstanceId));
+        Assert.Equal(["USB\\A\\1"], _tools.FindDevices("xbox").Value!.Devices.Select(d => d.InstanceId));
+        Assert.Equal(["USB\\A\\2"], _tools.FindDevices(hardwareId: "usb\\root_hub30").Value!.Devices.Select(d => d.InstanceId));
+        Assert.Equal(["USB\\A\\1"], _tools.FindDevices(hardwareId: "usb\\vid_*").Value!.Devices.Select(d => d.InstanceId));
+        Assert.Equal(2, _tools.FindDevices(deviceClass: "usb").Value!.Devices.Count);
+        Assert.Equal(["ROOT\\B\\0"], _tools.FindDevices(deviceClass: ClassGuidText, presentOnly: false).Value!.Devices.Select(d => d.InstanceId));
+
+        OperationResult<DeviceListResult> page = _tools.FindDevices(presentOnly: false, limit: 1);
+        Assert.Single(page.Value!.Devices);
+        Assert.Equal(3, page.Value.Total);
+        Assert.True(page.Value.Truncated);
+        Assert.Equal(3, _tools.FindDevices(presentOnly: false, limit: 0).Value!.Total);
+        Assert.Single(_tools.FindDevices(limit: -5).Value!.Devices);
+        Assert.True(_control.PresentOnlyRequests.Contains(false));
+    }
+
+    [Fact]
+    public void FindDevices_MapsErrors()
+    {
+        _control.Throw = new DeviceControlException(DeviceControlException.WindowsRequired, "no");
+        Assert.Equal("windows_required", _tools.FindDevices().ErrorCode);
+    }
+
+    [Fact]
+    public void GetDevice_ValidatesAndMaps()
+    {
+        Assert.Equal("invalid_instance_id", _tools.GetDevice("NOSLASH").ErrorCode);
+
+        OperationResult<DeviceDetails> ok = _tools.GetDevice("ROOT\\SYSTEM\\0001");
+        Assert.True(ok.Success);
+        Assert.Equal("ROOT\\SYSTEM\\0001", ok.Value!.InstanceId);
+        Assert.Equal(0u, ok.Value.ProblemCode);
+
+        _control.Throw = new DeviceControlException(DeviceControlException.DeviceNotFound, "gone");
+        Assert.Equal("device_not_found", _tools.GetDevice("ROOT\\SYSTEM\\0002").ErrorCode);
+    }
+
+    [Fact]
+    public void GetClassFilters_ParsesGuidAndReturnsBothLists()
+    {
+        Assert.Equal("invalid_guid", _tools.GetClassFilters("nope").ErrorCode);
+
+        _control.Filters = new ClassFilterSet(["up1"], ["low1", "low2"]);
+        OperationResult<ClassFilterSet> result = _tools.GetClassFilters(ClassGuidText);
+        Assert.Equal(["up1"], result.Value!.Upper);
+        Assert.Equal(["low1", "low2"], result.Value.Lower);
+        Assert.Equal(ClassGuid, _control.FilterQuery);
+    }
+
+    [Fact]
+    public void ListDriverStore_FiltersAndPages()
+    {
+        _control.Packages =
+        [
+            Pkg("oem1.inf", "foo.inf", "Contoso", "Net", Guid.NewGuid(), false),
+            Pkg("oem2.inf", "bar.inf", "Fabrikam", "System", ClassGuid, false),
+            Pkg("bt.inf", "bt.inf", "Microsoft", "Net", Guid.NewGuid(), true)
+        ];
+
+        Assert.Equal(["oem1.inf", "oem2.inf", "bt.inf"], _tools.ListDriverStore(includeInbox: true).Value!.Packages.Select(p => p.PublishedName));
+        Assert.True(_control.InboxRequests.Contains(true));
+        Assert.Equal(["oem1.inf"], _tools.ListDriverStore(nameContains: "FOO").Value!.Packages.Select(p => p.PublishedName));
+        Assert.Equal(["oem2.inf"], _tools.ListDriverStore(provider: "fabri").Value!.Packages.Select(p => p.PublishedName));
+        Assert.Equal(["oem2.inf"], _tools.ListDriverStore(deviceClass: ClassGuidText).Value!.Packages.Select(p => p.PublishedName));
+        Assert.Equal(["oem1.inf", "bt.inf"], _tools.ListDriverStore(deviceClass: "net", includeInbox: true).Value!.Packages.Select(p => p.PublishedName));
+
+        OperationResult<DriverStoreListResult> page = _tools.ListDriverStore(limit: 1);
+        Assert.Single(page.Value!.Packages);
+        Assert.True(page.Value.Truncated);
+
+        _control.Throw = new DeviceControlException(DeviceControlException.Win32Failed, "denied");
+        Assert.Equal("win32_failed", _tools.ListDriverStore().ErrorCode);
+    }
+
+    private static DriverStoreEntry Pkg(string published, string original, string provider, string className, Guid cls, bool inbox) =>
+        new(published, original, provider, className, cls, "1.0.0.0", null, "amd64", inbox, "C:\\store\\" + original, []);
+
+    [Fact]
+    public void RealDeviceControl_EnumeratesAndDescribesDevices_OrSkips()
+    {
+        RunReal(real =>
+        {
+            IReadOnlyList<DeviceEntry> present = real.EnumerateDevices(presentOnly: true);
+            Assert.NotEmpty(present);
+            Assert.All(present, d => Assert.False(string.IsNullOrEmpty(d.InstanceId)));
+
+            DeviceDetails details = real.GetDevice(present[0].InstanceId);
+            Assert.Equal(present[0].InstanceId, details.InstanceId, ignoreCase: true);
+        });
+    }
+
+    [Fact]
+    public void RealDeviceControl_ReadsClassFilters_OrSkips() =>
+        RunReal(real =>
+        {
+            ClassFilterSet filters = real.GetClassFilters(ClassGuid);
+            Assert.NotNull(filters.Upper);
+            Assert.NotNull(filters.Lower);
+        });
+
+    [Fact]
+    public void RealDeviceControl_ListsDriverStore_OrSkips() =>
+        RunReal(real =>
+        {
+            IReadOnlyList<DriverStoreEntry> store = real.GetDriverStore(includeInbox: false);
+            Assert.All(store, p => Assert.False(p.IsInbox));
+        });
+
+    [Fact]
+    public void RealDeviceControl_UnknownDevice_FailsWithDeviceError_OrSkips() =>
+        RunReal(real =>
+        {
+            DeviceControlException ex = Assert.Throws<DeviceControlException>(() => real.GetDevice("ROOT\\VESTIGO_NO_SUCH_DEVICE\\9999"));
+            Assert.NotEmpty(ex.Code);
+        });
+
+    private static void RunReal(Action<DeviceControl> action)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Requires Windows.");
+        }
+
+        try
+        {
+            action(new DeviceControl());
+        }
+        catch (DeviceControlException ex) when (ex.Code != DeviceControlException.DeviceNotFound || !ex.Message.Contains("VESTIGO_NO_SUCH"))
+        {
+            Assert.Skip($"Device queries are not available here: {ex.Message}");
+        }
+    }
     [Fact]
     public void LibraryExceptions_MapToStableCodes()
     {
@@ -280,6 +426,52 @@ public sealed class DeviceToolsTests : IDisposable
             return InstanceIds;
         }
 
+        public IReadOnlyList<DeviceEntry> Devices { get; set; } = [];
+
+        public List<bool> PresentOnlyRequests { get; } = [];
+
+        public List<bool> InboxRequests { get; } = [];
+
+        public ClassFilterSet Filters { get; set; } = new([], []);
+
+        public Guid FilterQuery { get; private set; }
+
+        public IReadOnlyList<DriverStoreEntry> Packages { get; set; } = [];
+
+        public IReadOnlyList<DeviceEntry> EnumerateDevices(bool presentOnly)
+        {
+            ThrowIfConfigured();
+            PresentOnlyRequests.Add(presentOnly);
+            return presentOnly ? Devices.Where(d => d.IsPresent).ToList() : Devices;
+        }
+
+        public DeviceDetails GetDevice(string instanceId)
+        {
+            ThrowIfConfigured();
+            return new DeviceDetails(instanceId, null, [], [], null, null, null, null, true, 0, 0, null, null, null, null, null, null);
+        }
+
+        public ClassFilterSet GetClassFilters(Guid classGuid)
+        {
+            ThrowIfConfigured();
+            FilterQuery = classGuid;
+            return Filters;
+        }
+
+        public IReadOnlyList<DriverStoreEntry> GetDriverStore(bool includeInbox)
+        {
+            ThrowIfConfigured();
+            InboxRequests.Add(includeInbox);
+            return includeInbox ? Packages : Packages.Where(p => !p.IsInbox).ToList();
+        }
+
+        private void ThrowIfConfigured()
+        {
+            if (Throw is not null)
+            {
+                throw Throw;
+            }
+        }
         private void Record(string action, string instanceId)
         {
             if (Throw is not null)

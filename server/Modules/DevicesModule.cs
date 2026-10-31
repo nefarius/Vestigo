@@ -9,7 +9,7 @@ public sealed class DevicesModule : VestigoModule
 {
     public override string Name => "Devices";
 
-    public override string Description => "Driver install, device nodes, class filters, and device state via nefcon and device management.";
+    public override string Description => "Driver install, device nodes, class filters, and device queries and state via nefcon and device management.";
 
     public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(DeviceTools)];
 
