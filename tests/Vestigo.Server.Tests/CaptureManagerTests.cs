@@ -385,7 +385,8 @@ public class CaptureManagerTests : IDisposable
             CaptureStatus status = manager.Get(id).Value!;
             if (status.State is "Stopped" or "Failed")
             {
-                return status;
+                // State flips before the reader's finally block saves owned sessions; wait for the reader to finish.
+                return (await manager.StopAsync(id)).Value!;
             }
 
             await Task.Delay(20);
