@@ -69,11 +69,11 @@ internal sealed class WindowsServiceControl : IServiceControl
         {
             _ = controller.Status;
         }
-        catch (InvalidOperationException ex) when (NativeCode(ex) == ErrorServiceDoesNotExist)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception && NativeCode(ex) == ErrorServiceDoesNotExist)
         {
             return null;
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
             throw Map(ex, name);
         }
@@ -82,11 +82,11 @@ internal sealed class WindowsServiceControl : IServiceControl
         {
             return Describe(controller, detailed: true);
         }
-        catch (InvalidOperationException ex) when (NativeCode(ex) == ErrorServiceDoesNotExist)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception && NativeCode(ex) == ErrorServiceDoesNotExist)
         {
             return null;
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
             throw Map(ex, name);
         }
@@ -99,7 +99,7 @@ internal sealed class WindowsServiceControl : IServiceControl
         {
             controller.Start(arguments.ToArray());
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
             throw Map(ex, name);
         }
@@ -112,7 +112,7 @@ internal sealed class WindowsServiceControl : IServiceControl
         {
             controller.Stop();
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
             throw Map(ex, name);
         }
@@ -127,7 +127,7 @@ internal sealed class WindowsServiceControl : IServiceControl
             using ServiceController root = new(name);
             Collect(root);
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
             throw Map(ex, name);
         }
@@ -155,7 +155,7 @@ internal sealed class WindowsServiceControl : IServiceControl
         }
     }
 
-    public void SetStartType(string name, ServiceStartType startType)
+    public unsafe void SetStartType(string name, ServiceStartType startType)
     {
         using CloseServiceHandleSafeHandle manager = PInvoke.OpenSCManager(null, null, PInvoke.SC_MANAGER_CONNECT);
         if (manager.IsInvalid)
@@ -169,14 +169,15 @@ internal sealed class WindowsServiceControl : IServiceControl
             throw Map(new Win32Exception(Marshal.GetLastWin32Error()), name);
         }
 
+        // lpdwTagId must be NULL when lpLoadOrderGroup is NULL, so use the pointer overload.
         bool changed = PInvoke.ChangeServiceConfig(
-            service,
+            (SC_HANDLE)service.DangerousGetHandle(),
             ENUM_SERVICE_TYPE.SERVICE_NO_CHANGE,
             (SERVICE_START_TYPE)startType,
             (SERVICE_ERROR)PInvoke.SERVICE_NO_CHANGE,
             null,
             null,
-            out _,
+            (uint*)null,
             null,
             null,
             null,
