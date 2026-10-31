@@ -25,6 +25,12 @@ public sealed record InterfaceSearchResult(IReadOnlyList<DeviceInterfaceMatch> D
 /// <summary>Instance IDs matching a hardware ID.</summary>
 public sealed record HardwareIdSearchResult(IReadOnlyList<string> InstanceIds);
 
+/// <summary>A page of devices. <paramref name="Total" /> counts all matches before the limit.</summary>
+public sealed record DeviceListResult(IReadOnlyList<DeviceEntry> Devices, int Total, bool Truncated);
+
+/// <summary>A page of driver store packages. <paramref name="Total" /> counts all matches before the limit.</summary>
+public sealed record DriverStoreListResult(IReadOnlyList<DriverStoreEntry> Packages, int Total, bool Truncated);
+
 /// <summary>
 ///     MCP tools for driver installation and device state. Drivers run in the kernel and every tool here needs
 ///     the elevated service account; that is by design.
@@ -33,6 +39,8 @@ public sealed record HardwareIdSearchResult(IReadOnlyList<string> InstanceIds);
 public sealed class DeviceTools(INefconRunner nefcon, IDeviceControl devices, RootPolicy roots)
 {
     internal const int MaxInterfaceResults = 256;
+    internal const int DefaultListLimit = 100;
+    internal const int MaxListLimit = 500;
     internal const int MaxInstanceIdLength = 400;
 
     // ---- nefcon-backed driver actions ----
@@ -292,7 +300,165 @@ public sealed class DeviceTools(INefconRunner nefcon, IDeviceControl devices, Ro
         }
     }
 
+    [McpServerTool(Name = "find_devices")]
+    [Description("Lists device nodes, filtered by name substring, hardware ID, and device class. Returns instance ID, description, class, hardware IDs, service, driver INF, and whether the device is present. All filters are optional and combined with AND.")]
+    public OperationResult<DeviceListResult> FindDevices(
+        [Description("Case-insensitive substring of the device description.")] string? nameContains = null,
+        [Description("Case-insensitive hardware ID; exact match unless it ends with '*' (prefix match).")] string? hardwareId = null,
+        [Description("Device class name (for example USB) or class GUID.")] string? deviceClass = null,
+        [Description("Only currently present devices. False also lists phantom devices.")] bool presentOnly = true,
+        [Description("Maximum devices to return. Clamped to 1-500.")] int limit = DefaultListLimit)
+    {
+        Guid? classGuid = null;
+        string? className = null;
+        if (!string.IsNullOrWhiteSpace(deviceClass))
+        {
+            if (Guid.TryParse(deviceClass, out Guid parsed))
+            {
+                classGuid = parsed;
+            }
+            else
+            {
+                className = deviceClass;
+            }
+        }
+
+        try
+        {
+            IEnumerable<DeviceEntry> query = devices.EnumerateDevices(presentOnly);
+            if (!string.IsNullOrWhiteSpace(nameContains))
+            {
+                query = query.Where(d => d.Description?.Contains(nameContains, StringComparison.OrdinalIgnoreCase) == true);
+            }
+
+            if (!string.IsNullOrWhiteSpace(hardwareId))
+            {
+                bool prefix = hardwareId.EndsWith('*');
+                string wanted = prefix ? hardwareId[..^1] : hardwareId;
+                query = query.Where(d => d.HardwareIds.Any(h => prefix
+                    ? h.StartsWith(wanted, StringComparison.OrdinalIgnoreCase)
+                    : string.Equals(h, wanted, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            if (classGuid is { } guid)
+            {
+                query = query.Where(d => d.ClassGuid == guid);
+            }
+            else if (className is not null)
+            {
+                query = query.Where(d => string.Equals(d.ClassName, className, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return OperationResult<DeviceListResult>.Ok(Page(query, limit, (items, total, truncated) => new DeviceListResult(items, total, truncated)));
+        }
+        catch (DeviceControlException ex)
+        {
+            return OperationResult<DeviceListResult>.Fail(ex.Code, ex.Message);
+        }
+    }
+
+    [McpServerTool(Name = "get_device")]
+    [Description("Returns details of one device by instance ID: hardware and compatible IDs, class, service, present flag, problem code and devnode status (problemCode 0 means no problem), and installed driver key, description, provider, version, date and INF.")]
+    public OperationResult<DeviceDetails> GetDevice([Description("Device instance ID, for example ROOT\\SYSTEM\\0001.")] string instanceId)
+    {
+        if (!IsValidInstanceId(instanceId))
+        {
+            return OperationResult<DeviceDetails>.Fail(
+                "invalid_instance_id",
+                $"Instance ID must be 1-{MaxInstanceIdLength} characters, contain a '\\', and have no control characters or leading '-'.");
+        }
+
+        try
+        {
+            return OperationResult<DeviceDetails>.Ok(devices.GetDevice(instanceId));
+        }
+        catch (DeviceControlException ex)
+        {
+            return OperationResult<DeviceDetails>.Fail(ex.Code, ex.Message);
+        }
+    }
+
+    [McpServerTool(Name = "get_class_filters")]
+    [Description("Returns the upper and lower filter driver service names registered for a device setup class GUID (read from the registry).")]
+    public OperationResult<ClassFilterSet> GetClassFilters([Description("Device setup class GUID.")] string classGuid)
+    {
+        if (!TryParseGuid(classGuid, nameof(classGuid), out Guid guid, out OperationResult<ClassFilterSet>? failure))
+        {
+            return failure!;
+        }
+
+        try
+        {
+            return OperationResult<ClassFilterSet>.Ok(devices.GetClassFilters(guid));
+        }
+        catch (DeviceControlException ex)
+        {
+            return OperationResult<ClassFilterSet>.Fail(ex.Code, ex.Message);
+        }
+    }
+
+    [McpServerTool(Name = "list_driver_store")]
+    [Description("Lists driver packages staged in the driver store: published name (oemNN.inf), original INF, provider, class, version, date, architecture, and bound device instance IDs. Third-party packages only unless includeInbox is true.")]
+    public OperationResult<DriverStoreListResult> ListDriverStore(
+        [Description("Case-insensitive substring of the published or original INF name.")] string? nameContains = null,
+        [Description("Case-insensitive substring of the provider.")] string? provider = null,
+        [Description("Device class name (for example Net) or class GUID.")] string? deviceClass = null,
+        [Description("Also list inbox packages that ship with Windows.")] bool includeInbox = false,
+        [Description("Maximum packages to return. Clamped to 1-500.")] int limit = DefaultListLimit)
+    {
+        Guid? classGuid = null;
+        string? className = null;
+        if (!string.IsNullOrWhiteSpace(deviceClass))
+        {
+            if (Guid.TryParse(deviceClass, out Guid parsed))
+            {
+                classGuid = parsed;
+            }
+            else
+            {
+                className = deviceClass;
+            }
+        }
+
+        try
+        {
+            IEnumerable<DriverStoreEntry> query = devices.GetDriverStore(includeInbox);
+            if (!string.IsNullOrWhiteSpace(nameContains))
+            {
+                query = query.Where(p => p.PublishedName.Contains(nameContains, StringComparison.OrdinalIgnoreCase)
+                    || p.OriginalInfName.Contains(nameContains, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(provider))
+            {
+                query = query.Where(p => p.Provider?.Contains(provider, StringComparison.OrdinalIgnoreCase) == true);
+            }
+
+            if (classGuid is { } guid)
+            {
+                query = query.Where(p => p.ClassGuid == guid);
+            }
+            else if (className is not null)
+            {
+                query = query.Where(p => string.Equals(p.ClassName, className, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return OperationResult<DriverStoreListResult>.Ok(Page(query, limit, (items, total, truncated) => new DriverStoreListResult(items, total, truncated)));
+        }
+        catch (DeviceControlException ex)
+        {
+            return OperationResult<DriverStoreListResult>.Fail(ex.Code, ex.Message);
+        }
+    }
+
     // ---- helpers ----
+
+    private static TResult Page<TItem, TResult>(IEnumerable<TItem> query, int limit, Func<IReadOnlyList<TItem>, int, bool, TResult> create)
+    {
+        List<TItem> all = query.ToList();
+        int take = Math.Clamp(limit, 1, MaxListLimit);
+        return create(all.Take(take).ToList(), all.Count, all.Count > take);
+    }
 
     private OperationResult<DeviceStateResult> ChangeState(string instanceId, string action, Action<string> operation)
     {

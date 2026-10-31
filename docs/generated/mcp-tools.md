@@ -129,6 +129,18 @@ Downloads an HTTP(S) URL or copies a UNC file into a root with Write access as a
 | `expectedSha256` | `string` | Expected SHA-256 (hex). The file is discarded on mismatch. |
 | `overwrite` | `bool` | Replace an existing destination file. |
 
+## `find_devices`
+
+Lists device nodes, filtered by name substring, hardware ID, and device class. Returns instance ID, description, class, hardware IDs, service, driver INF, and whether the device is present. All filters are optional and combined with AND.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `nameContains` | `string` | Case-insensitive substring of the device description. |
+| `hardwareId` | `string` | Case-insensitive hardware ID; exact match unless it ends with '*' (prefix match). |
+| `deviceClass` | `string` | Device class name (for example USB) or class GUID. |
+| `presentOnly` | `bool` | Only currently present devices. False also lists phantom devices. |
+| `limit` | `int` | Maximum devices to return. Clamped to 1-500. |
+
 ## `find_devices_by_hardware_id`
 
 Finds devices in a device class whose hardware IDs match, and returns their instance IDs.
@@ -156,6 +168,22 @@ Returns status, counters, and the last error for one capture.
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `captureId` | `string` | Capture identifier. |
+
+## `get_class_filters`
+
+Returns the upper and lower filter driver service names registered for a device setup class GUID (read from the registry).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `classGuid` | `string` | Device setup class GUID. |
+
+## `get_device`
+
+Returns details of one device by instance ID: hardware and compatible IDs, class, service, present flag, problem code and devnode status (problemCode 0 means no problem), and installed driver key, description, provider, version, date and INF.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `instanceId` | `string` | Device instance ID, for example ROOT\SYSTEM\0001. |
 
 ## `get_environment_variable`
 
@@ -278,6 +306,18 @@ Lists the entries of a directory inside a root with Read access.
 | --- | --- | --- |
 | `path` | `string` | Directory as root:relative\path or an absolute path inside a root. |
 | `maxEntries` | `int` | Maximum entries to return, 1 to 5000. |
+
+## `list_driver_store`
+
+Lists driver packages staged in the driver store: published name (oemNN.inf), original INF, provider, class, version, date, architecture, and bound device instance IDs. Third-party packages only unless includeInbox is true.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `nameContains` | `string` | Case-insensitive substring of the published or original INF name. |
+| `provider` | `string` | Case-insensitive substring of the provider. |
+| `deviceClass` | `string` | Device class name (for example Net) or class GUID. |
+| `includeInbox` | `bool` | Also list inbox packages that ship with Windows. |
+| `limit` | `int` | Maximum packages to return. Clamped to 1-500. |
 
 ## `list_environment_variables`
 

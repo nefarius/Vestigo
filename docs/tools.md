@@ -140,10 +140,14 @@ INF paths (`install_driver`, `uninstall_driver`, `install_filter_driver`, `unins
 | `restart_device`, `enable_device`, `disable_device` | Change state by instance ID (for example `ROOT\SYSTEM\0001`). |
 | `find_devices_by_interface` | Instance IDs and device paths exposing an interface GUID (at most 256; `truncated` tells if the cap was hit; `presentOnly` false includes phantom devices). |
 | `find_devices_by_hardware_id` | Instance IDs in a device class whose hardware IDs match (`presentOnly`, `allowPartial`). |
+| `find_devices` | Enumerate device nodes with optional AND filters `nameContains` (description substring), `hardwareId` (exact, or prefix with a trailing `*`), `deviceClass` (class name or GUID), `presentOnly` (default true) and `limit` (default 100, max 500). Returns `devices`, `total` and `truncated`. |
+| `get_device` | Details of one device by `instanceId`: hardware and compatible IDs, class, service, present flag, `problemCode` (0 is healthy), `devNodeStatus` and driver key, description, provider, version, date and INF. Properties a device lacks are null. |
+| `get_class_filters` | Upper and lower filter driver service names registered for a `classGuid` (registry read, no elevation needed). |
+| `list_driver_store` | Driver store packages with `nameContains` (published or original INF), `provider`, `deviceClass` (name or GUID), `includeInbox` (default false) and `limit` (default 100, max 500); each has published name, original INF, provider, class, version, date, architecture and bound device instance IDs. |
 
 Class GUIDs may be written with or without braces and must not be empty. Instance IDs must contain a `\`, and no value may be empty, start with `-`, or contain control characters. Device state tools map library failures to stable error codes: `device_not_found`, `config_manager_failed`, `win32_failed`, `windows_required` and `device_operation_failed`.
 
-The query tools are what Nefarius.Utilities.DeviceManagement 6.1.0 supports today. Enumerating all devices and listing the driver store need a newer upstream release and will be added in a later change.
+The query tools (`find_devices`, `get_device`, `get_class_filters`, `list_driver_store`) run in-process through Nefarius.Utilities.DeviceManagement 6.2.0 and never start nefcon. They are read-only and mostly work without elevation, though some device properties or driver store details may be missing for an unprivileged service account.
 
 ### Typical driver development workflows
 

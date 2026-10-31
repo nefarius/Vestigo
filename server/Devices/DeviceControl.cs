@@ -1,10 +1,11 @@
+using Nefarius.Utilities.DeviceManagement.Drivers;
 using Nefarius.Utilities.DeviceManagement.Exceptions;
 using Nefarius.Utilities.DeviceManagement.PnP;
 
 namespace Vestigo.Devices;
 
 /// <summary>
-///     <see cref="IDeviceControl" /> over Nefarius.Utilities.DeviceManagement 6.1.0. Restart, enable and
+///     <see cref="IDeviceControl" /> over Nefarius.Utilities.DeviceManagement 6.2.0. Restart, enable and
 ///     disable need an elevated service account.
 /// </summary>
 internal sealed class DeviceControl : IDeviceControl
@@ -49,6 +50,98 @@ internal sealed class DeviceControl : IDeviceControl
             return Devcon.FindInDeviceClassByHardwareId(classGuid, hardwareId, out IEnumerable<string> instanceIds, presentOnly, allowPartial)
                 ? instanceIds.ToList()
                 : [];
+        }
+        catch (Exception ex) when (Map(ex) is { } mapped)
+        {
+            throw mapped;
+        }
+    }
+
+    public IReadOnlyList<DeviceEntry> EnumerateDevices(bool presentOnly) =>
+        Query(() => (IReadOnlyList<DeviceEntry>)Devcon.EnumerateDevices(presentOnly)
+            .Select(d => new DeviceEntry(d.InstanceId, d.Description, d.ClassGuid, d.ClassName, d.HardwareIds ?? [], d.Service, d.DriverInfPath, d.IsPresent))
+            .ToList());
+
+    public DeviceDetails GetDevice(string instanceId) => Query(() =>
+    {
+        PnPDevice device = PnPDevice.GetDeviceByInstanceId(instanceId);
+        DeviceEntry? summary = Devcon.EnumerateDevices(presentOnly: false)
+            .Where(d => string.Equals(d.InstanceId, device.InstanceId, StringComparison.OrdinalIgnoreCase))
+            .Select(d => new DeviceEntry(d.InstanceId, d.Description, d.ClassGuid, d.ClassName, d.HardwareIds ?? [], d.Service, d.DriverInfPath, d.IsPresent))
+            .FirstOrDefault();
+
+        return new DeviceDetails(
+            device.InstanceId,
+            device.DeviceId,
+            device.HardwareIds?.ToList() ?? [],
+            device.CompatibleIds?.ToList() ?? [],
+            summary?.Description,
+            summary?.ClassName,
+            summary?.ClassGuid,
+            summary?.Service ?? Optional<string>(device, DevicePropertyKey.Device_Service),
+            OptionalStruct<bool>(device, DevicePropertyKey.Device_IsPresent) is { } present ? present : summary?.IsPresent,
+            OptionalStruct<uint>(device, DevicePropertyKey.Device_ProblemCode),
+            OptionalStruct<uint>(device, DevicePropertyKey.Device_DevNodeStatus),
+            Optional<string>(device, DevicePropertyKey.Device_Driver),
+            Optional<string>(device, DevicePropertyKey.Device_DriverDesc),
+            Optional<string>(device, DevicePropertyKey.Device_DriverProvider),
+            Optional<string>(device, DevicePropertyKey.Device_DriverVersion),
+            OptionalStruct<DateTimeOffset>(device, DevicePropertyKey.Device_DriverDate),
+            Optional<string>(device, DevicePropertyKey.Device_DriverInfPath) ?? summary?.DriverInfPath);
+    });
+
+    public ClassFilterSet GetClassFilters(Guid classGuid) => Query(() => new ClassFilterSet(
+        DeviceClassFilters.GetUpper(classGuid)?.ToList() ?? [],
+        DeviceClassFilters.GetLower(classGuid)?.ToList() ?? []));
+
+    public IReadOnlyList<DriverStoreEntry> GetDriverStore(bool includeInbox) =>
+        Query(() => (IReadOnlyList<DriverStoreEntry>)DriverStore.GetPackages(includeInbox)
+            .Select(p => new DriverStoreEntry(
+                p.PublishedName,
+                p.OriginalInfName,
+                p.Provider,
+                p.ClassName,
+                p.ClassGuid,
+                p.DriverVersion?.ToString(),
+                p.DriverDate,
+                p.Architecture,
+                p.IsInbox,
+                p.StoreInfPath,
+                p.BoundDeviceInstanceIds ?? []))
+            .ToList());
+
+    /// <summary>Reads one device property; a missing or unreadable property yields null instead of failing the query.</summary>
+    private static T? Optional<T>(PnPDevice device, DevicePropertyKey key)
+        where T : class
+    {
+        try
+        {
+            return device.GetProperty<T>(key);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    private static T? OptionalStruct<T>(PnPDevice device, DevicePropertyKey key)
+        where T : struct
+    {
+        try
+        {
+            return device.GetProperty<T>(key);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    private static T Query<T>(Func<T> query)
+    {
+        try
+        {
+            return query();
         }
         catch (Exception ex) when (Map(ex) is { } mapped)
         {
