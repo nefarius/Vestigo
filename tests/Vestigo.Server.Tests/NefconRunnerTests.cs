@@ -197,6 +197,8 @@ public sealed class NefconRunnerTests : IDisposable
     {
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Devices = new DevicesOptions { NefconPath = "nefconc.exe" } }.Validate());
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Devices = new DevicesOptions { NefconTimeout = TimeSpan.Zero } }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Devices = new DevicesOptions { NefconTimeout = TimeSpan.FromMilliseconds(uint.MaxValue) } }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Devices = new DevicesOptions { NefconPath = @"C:nefconc.exe" } }.Validate());
     }
 
     private sealed class FakeProcess : INefconProcess

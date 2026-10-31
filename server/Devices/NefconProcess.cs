@@ -29,6 +29,9 @@ internal sealed class NefconProcess : INefconProcess
             startInfo.ArgumentList.Add(argument);
         }
 
+        using CancellationTokenSource timeoutSource = new(timeout);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
+
         using Process process = new() { StartInfo = startInfo };
         OutputTail tail = new(MaxOutputChars);
         process.OutputDataReceived += (_, e) => tail.Append(e.Data);
@@ -37,8 +40,6 @@ internal sealed class NefconProcess : INefconProcess
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        using CancellationTokenSource timeoutSource = new(timeout);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
         try
         {
             await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
