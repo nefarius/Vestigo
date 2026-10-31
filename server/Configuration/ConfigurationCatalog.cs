@@ -38,6 +38,7 @@ public static class ConfigurationCatalog
     private static string Format(object? value) => value switch
     {
         null => "null",
+        FilesOptions files => $"MaxUploadBytes={files.MaxUploadBytes}",
         Vestigo.Devices.DevicesOptions => "defaults (see Devices:*)",
         string text => text,
         IEnumerable<string> items => items.Any() ? string.Join(", ", items) : "empty",
