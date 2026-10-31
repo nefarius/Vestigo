@@ -25,9 +25,9 @@ The server listens on loopback only. `/health` is anonymous. `/mcp` is anonymous
 
 ## Projects
 
-- [`Vestigo.Server`](server) â€” ASP.NET Core host, MCP tools, and capture manager.
-- [`Vestigo.Installer`](installer) â€” WixSharp project that builds the per-machine x64 MSI and Windows service.
-- [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) â€” path, authentication, capture, and package-boundary tests.
+- [`Vestigo.Server`](server) — ASP.NET Core host, MCP tools, and capture manager.
+- [`Vestigo.Installer`](installer) — WixSharp project that builds the per-machine x64 MSI and Windows service.
+- [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) — path, authentication, capture, and package-boundary tests.
 
 ## Security
 
