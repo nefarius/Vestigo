@@ -24,6 +24,8 @@ public sealed class VestigoOptions
 
     public Dictionary<string, ModuleSettings> Modules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public FilesOptions Files { get; set; } = new();
+
     public int MaxConcurrentJobs { get; set; } = 8;
 
     public long MaxJobOutputBytes { get; set; } = 64L * 1024 * 1024;
@@ -93,6 +95,11 @@ public sealed class VestigoOptions
         if (MaxConcurrentJobs < 1 || MaxJobOutputBytes < 1 || MaxJobReadBytes < 1 || JobRetention <= TimeSpan.Zero)
         {
             throw new InvalidOperationException("Vestigo job limits must be positive.");
+        }
+
+        if (Files.MaxUploadBytes < 1)
+        {
+            throw new InvalidOperationException("Vestigo:Files:MaxUploadBytes must be positive.");
         }
 
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);

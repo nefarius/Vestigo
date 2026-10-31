@@ -9,6 +9,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `ApiTokens` | `empty` |
 | `BufferSizeKb` | `64` |
 | `ClockResolution` | `QueryPerformanceCounter` |
+| `Files` | `MaxUploadBytes=4294967296` |
 | `FlushTimerSeconds` | `1` |
 | `JobRetention` | `1.00:00:00` |
 | `ListenAddress` | `127.0.0.1` |
