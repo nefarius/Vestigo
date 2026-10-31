@@ -13,6 +13,12 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`. |
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
+| `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |
+| `Modules` | all enabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`) on or off. Unknown names fail startup. |
+| `MaxConcurrentJobs` | 8 | Running background job limit. |
+| `MaxJobOutputBytes` | 67108864 | Output kept per job; later output is dropped with a marker. |
+| `JobRetention` | `1.00:00:00` | How long finished jobs and their output are kept. |
+| `MaxJobReadBytes` | 65536 | Maximum bytes returned by one `read_job_output` call. |
 | `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. |
 | `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. |
 | `MaxInputBytes` | 4294967296 | Maximum size of one input file. |

@@ -1,0 +1,153 @@
+using Vestigo.Configuration;
+using Vestigo.Jobs;
+using Vestigo.Modules;
+using Vestigo.Security;
+
+namespace Vestigo.Server.Tests;
+
+public class PlatformTests : IDisposable
+{
+    private readonly string _root = Directory.CreateTempSubdirectory("vestigo-platform-").FullName;
+
+    public void Dispose() => Directory.Delete(_root, recursive: true);
+
+    private VestigoOptions Options(RootAccess access = RootAccess.Read | RootAccess.Write) => new()
+    {
+        Roots = [new RootDefinition { Name = "artifacts", Path = _root, Access = access }]
+    };
+
+    [Fact]
+    public void RootPolicy_ResolvesNamedRoot()
+    {
+        PathCheck check = new RootPolicy(Options()).Resolve(@"artifacts:bin\a.sys", RootAccess.Write);
+
+        Assert.True(check.Success);
+        Assert.Equal(Path.Combine(_root, "bin", "a.sys"), check.FullPath);
+    }
+
+    [Fact]
+    public void RootPolicy_RejectsTraversalOutOfNamedRoot()
+    {
+        PathCheck check = new RootPolicy(Options()).Resolve(@"artifacts:..\outside.txt", RootAccess.Read);
+
+        Assert.False(check.Success);
+        Assert.Equal("outside_root", check.ErrorCode);
+    }
+
+    [Fact]
+    public void RootPolicy_EnforcesAccessFlags()
+    {
+        RootPolicy policy = new(Options(RootAccess.Read));
+
+        Assert.Equal("access_denied", policy.Resolve(@"artifacts:a.txt", RootAccess.Execute).ErrorCode);
+        Assert.Equal("access_denied", policy.Resolve(Path.Combine(_root, "a.txt"), RootAccess.Write).ErrorCode);
+        Assert.True(policy.Resolve(Path.Combine(_root, "a.txt"), RootAccess.Read).Success);
+    }
+
+    [Fact]
+    public void RootPolicy_ReportsUnknownRootAndMissingConfiguration()
+    {
+        Assert.Equal("unknown_root", new RootPolicy(Options()).Resolve("other:a.txt", RootAccess.Read).ErrorCode);
+        Assert.Equal("roots_not_configured", new RootPolicy(new VestigoOptions()).Resolve("artifacts:a", RootAccess.Read).ErrorCode);
+    }
+
+    [Fact]
+    public void Options_RejectBadRoots()
+    {
+        VestigoOptions duplicate = Options();
+        duplicate.Roots.Add(new RootDefinition { Name = "ARTIFACTS", Path = _root, Access = RootAccess.Read });
+        VestigoOptions relative = new() { Roots = [new RootDefinition { Name = "rel", Path = "relative", Access = RootAccess.Read }] };
+        VestigoOptions shortName = new() { Roots = [new RootDefinition { Name = "c", Path = _root, Access = RootAccess.Read }] };
+
+        Assert.Throws<InvalidOperationException>(duplicate.Validate);
+        Assert.Throws<InvalidOperationException>(relative.Validate);
+        Assert.Throws<InvalidOperationException>(shortName.Validate);
+    }
+
+    [Fact]
+    public async Task JobManager_CapturesOutputAndExitCode()
+    {
+        JobManager jobs = new(new VestigoOptions(), Path.Combine(_root, "jobs"));
+        OperationResult<JobInfo> started = jobs.Start("test", "echo", (context, _) =>
+        {
+            context.WriteLine("héllo");
+            return Task.FromResult(3);
+        });
+
+        OperationResult<JobInfo> done = await jobs.WaitAsync(started.Value!.Id, TimeSpan.FromSeconds(10), default);
+        OperationResult<JobOutputPage> page = jobs.ReadOutput(started.Value.Id, 0, null);
+
+        Assert.Equal(JobState.Failed, done.Value!.State);
+        Assert.Equal(3, done.Value.ExitCode);
+        Assert.Contains("héllo", page.Value!.Text, StringComparison.Ordinal);
+        Assert.True(page.Value.Completed);
+    }
+
+    [Fact]
+    public async Task JobManager_CancelsRunningJob()
+    {
+        JobManager jobs = new(new VestigoOptions(), Path.Combine(_root, "jobs"));
+        OperationResult<JobInfo> started = jobs.Start("test", "wait", async (_, token) =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            return 0;
+        });
+
+        jobs.Cancel(started.Value!.Id);
+        OperationResult<JobInfo> done = await jobs.WaitAsync(started.Value.Id, TimeSpan.FromSeconds(10), default);
+
+        Assert.Equal(JobState.Cancelled, done.Value!.State);
+    }
+
+    [Fact]
+    public async Task JobManager_EnforcesConcurrencyAndOutputLimits()
+    {
+        JobManager jobs = new(new VestigoOptions { MaxConcurrentJobs = 1, MaxJobOutputBytes = 32 }, Path.Combine(_root, "jobs"));
+        TaskCompletionSource gate = new();
+        OperationResult<JobInfo> first = jobs.Start("test", "hold", async (context, _) =>
+        {
+            context.Write(new string('x', 100));
+            await gate.Task;
+            return 0;
+        });
+
+        OperationResult<JobInfo> second = jobs.Start("test", "extra", (_, _) => Task.FromResult(0));
+        gate.SetResult();
+        await jobs.WaitAsync(first.Value!.Id, TimeSpan.FromSeconds(10), default);
+
+        Assert.Equal("too_many_jobs", second.ErrorCode);
+        Assert.Contains("truncated", jobs.ReadOutput(first.Value.Id, 0, null).Value!.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task JobManager_PurgesOldJobs()
+    {
+        JobManager jobs = new(new VestigoOptions { JobRetention = TimeSpan.FromMinutes(1) }, Path.Combine(_root, "jobs"));
+        OperationResult<JobInfo> started = jobs.Start("test", "quick", (_, _) => Task.FromResult(0));
+        await jobs.WaitAsync(started.Value!.Id, TimeSpan.FromSeconds(10), default);
+
+        Assert.Equal(1, jobs.Purge(DateTimeOffset.UtcNow.AddHours(1)));
+        Assert.Equal("job_not_found", jobs.Get(started.Value.Id).ErrorCode);
+    }
+
+    [Fact]
+    public void Utf8SafeLength_DoesNotSplitCharacters()
+    {
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes("aé");
+
+        Assert.Equal(1, JobManager.Utf8SafeLength(bytes, 2, endOfData: false));
+        Assert.Equal(3, JobManager.Utf8SafeLength(bytes, 3, endOfData: false));
+    }
+
+    [Fact]
+    public void Modules_HonourConfigurationAndRejectUnknownNames()
+    {
+        VestigoOptions off = new() { Modules = { ["Trace"] = new ModuleSettings { Enabled = false } } };
+        VestigoOptions unknown = new() { Modules = { ["Nope"] = new ModuleSettings() } };
+
+        Assert.DoesNotContain(ModuleRegistry.Enabled(off), module => module.Name == "Trace");
+        Assert.Contains(ModuleRegistry.Enabled(new VestigoOptions()), module => module.Name == "Trace");
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(unknown));
+        Assert.All(ModuleRegistry.All, module => Assert.NotEmpty(module.ToolTypes));
+    }
+}

@@ -40,6 +40,7 @@ public static class ConfigurationCatalog
         null => "null",
         string text => text,
         IEnumerable<string> items => items.Any() ? string.Join(", ", items) : "empty",
+        System.Collections.IEnumerable items when value is not string => items.Cast<object>().Any() ? "configured" : "empty",
         TimeSpan duration => duration.ToString(),
         _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty
     };
