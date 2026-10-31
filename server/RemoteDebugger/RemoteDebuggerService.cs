@@ -220,6 +220,11 @@ public sealed class RemoteDebuggerService(
             output.WriteLine("Install failed: " + ex.Message);
             return 1;
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            output.WriteLine("Install failed: the download exceeded InstallerDownloadTimeout.");
+            return 1;
+        }
         finally
         {
             try
