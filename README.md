@@ -75,7 +75,6 @@ The MSI is `publish-x64\installer\Vestigo.msi`. Its listen/security page offers 
 - [Symbols](docs/symbols.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Release](docs/release.md)
-- [API reference](docs/api/index.md)
 
 ## Sources & 3rd party credits
 
