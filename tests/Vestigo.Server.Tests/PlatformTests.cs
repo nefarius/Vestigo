@@ -206,6 +206,24 @@ public class PlatformTests : IDisposable
     }
 
     [Fact]
+    public void ValidateConfiguration_RejectsModuleWhoseDependencyIsDisabled()
+    {
+        VestigoOptions options = new()
+        {
+            ApiTokens = ["t"],
+            Modules =
+            {
+                ["Jobs"] = new ModuleSettings { Enabled = false },
+                ["Processes"] = new ModuleSettings { Enabled = true },
+                ["RemoteDebugger"] = new ModuleSettings { Enabled = true }
+            }
+        };
+
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(options));
+        ModuleRegistry.ValidateConfiguration(new VestigoOptions());
+    }
+
+    [Fact]
     public void ProcessesModule_IsOptInAndRequiresJobsAndTokens()
     {
         ModuleSettings on = new() { Enabled = true };
@@ -222,6 +240,24 @@ public class PlatformTests : IDisposable
         ModuleRegistry.ValidateConfiguration(defaults);
         Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noTokens));
         Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noJobs));
+        ModuleRegistry.ValidateConfiguration(valid);
+    }
+
+    [Fact]
+    public void RemoteDebuggerModule_IsOptInAndRequiresJobsAndProcesses()
+    {
+        ModuleSettings on = new() { Enabled = true };
+        VestigoOptions defaults = new();
+        VestigoOptions noProcesses = new() { ApiTokens = ["t"], Modules = { ["RemoteDebugger"] = on } };
+        VestigoOptions valid = new()
+        {
+            ApiTokens = ["t"],
+            Modules = { ["Processes"] = on, ["RemoteDebugger"] = on }
+        };
+
+        Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "RemoteDebugger");
+        ModuleRegistry.ValidateConfiguration(defaults);
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noProcesses));
         ModuleRegistry.ValidateConfiguration(valid);
     }
 }

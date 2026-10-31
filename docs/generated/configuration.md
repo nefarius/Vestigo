@@ -31,6 +31,9 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `MaxReadBatch` | `200` |
 | `Modules` | `empty` |
 | `Processes:AllowPathLookup` | `True` |
+| `RemoteDebugger:DefaultPort` | `4026` |
+| `RemoteDebugger:ExtraSearchPaths` | `empty` |
+| `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` |
 | `Roots` | `empty` |
 | `Services` | `defaults (see Services:*)` |
 | `SpoolRetention` | `1.00:00:00` |

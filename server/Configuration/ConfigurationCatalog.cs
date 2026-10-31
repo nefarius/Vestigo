@@ -60,6 +60,7 @@ public static class ConfigurationCatalog
         System.Collections.IEnumerable items when value is not string => items.Cast<object>().Any() ? "configured" : "empty",
         TimeSpan duration => duration.ToString(),
         ProcessesOptions processes => $"AllowPathLookup={processes.AllowPathLookup}",
+        RemoteDebuggerOptions debugger => $"DefaultPort={debugger.DefaultPort}, InstallerDownloadTimeout={debugger.InstallerDownloadTimeout}, ExtraSearchPaths={(debugger.ExtraSearchPaths.Count == 0 ? "empty" : string.Join("; ", debugger.ExtraSearchPaths))}",
         _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty
     };
 }

@@ -13,11 +13,13 @@ public sealed class ProcessesModule : VestigoModule
     /// <summary>Runs arbitrary programs, so it is opt-in and requires API tokens.</summary>
     public override bool EnabledByDefault => false;
 
+    public override IReadOnlyList<string> Dependencies { get; } = ["Jobs"];
+
     public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(ProcessTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
-        // The module needs JobManager from the Jobs module.
+        // JobManager comes from the Jobs module (declared in Dependencies).
         services.AddSingleton<IProcessLauncher, ProcessLauncher>();
         services.AddSingleton<ExecutableResolver>();
         services.AddSingleton<AppCloser>();

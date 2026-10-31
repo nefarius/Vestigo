@@ -29,6 +29,8 @@ public sealed class VestigoOptions
 
     public ProcessesOptions Processes { get; set; } = new();
 
+    public RemoteDebuggerOptions RemoteDebugger { get; set; } = new();
+
     public FilesOptions Files { get; set; } = new();
 
     public DevicesOptions Devices { get; set; } = new();
@@ -160,6 +162,7 @@ public sealed class VestigoOptions
         Environment.Validate();
         Logs.Validate();
         EventLog.Validate();
+        RemoteDebugger.Validate();
 
         if (BufferSizeKb == 0 || FlushTimerSeconds == 0)
         {

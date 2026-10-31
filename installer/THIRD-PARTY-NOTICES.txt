@@ -115,8 +115,8 @@ CliWrap
 
 The Vestigo server uses the CliWrap NuGet package 3.10.5
 (https://github.com/Tyrrrz/CliWrap) to run external processes: the nefcon
-runner and the Processes module's service-account launcher. CliWrap is
-licensed under the MIT License:
+runner, the Processes module's service-account launcher and the remote debugger's
+vswhere and PowerShell probes. CliWrap is licensed under the MIT License:
 
 MIT License
 

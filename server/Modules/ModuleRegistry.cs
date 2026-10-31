@@ -16,6 +16,7 @@ public static class ModuleRegistry
         new ServicesModule(),
         new Files.FilesModule(),
         new ProcessesModule(),
+        new RemoteDebuggerModule(),
         new TraceModule(),
         new EnvironmentModule(),
         new LogsModule(),
@@ -37,18 +38,22 @@ public static class ModuleRegistry
             }
         }
 
-        bool Active(string name) => Enabled(options).Any(module => module.Name == name);
-        if (Active("Processes"))
+        foreach (VestigoModule module in Enabled(options))
         {
-            if (!Active("Jobs"))
+            foreach (string dependency in module.Dependencies)
             {
-                throw new InvalidOperationException("Vestigo:Modules:Processes requires Vestigo:Modules:Jobs to be enabled.");
+                VestigoModule? required = All.FirstOrDefault(item => string.Equals(item.Name, dependency, StringComparison.OrdinalIgnoreCase));
+                if (required is null || !required.IsEnabled(options))
+                {
+                    throw new InvalidOperationException(
+                        $"Vestigo:Modules:{module.Name} requires the {dependency} module, which is disabled.");
+                }
             }
+        }
 
-            if (!options.AuthenticationEnabled)
-            {
-                throw new InvalidOperationException("Vestigo:Modules:Processes runs arbitrary programs and requires at least one entry in Vestigo:ApiTokens.");
-            }
+        if (Enabled(options).Any(module => module.Name == "Processes") && !options.AuthenticationEnabled)
+        {
+            throw new InvalidOperationException("Vestigo:Modules:Processes runs arbitrary programs and requires at least one entry in Vestigo:ApiTokens.");
         }
     }
 }

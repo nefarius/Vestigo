@@ -174,6 +174,15 @@ Returns state, exit code, and output size for one job.
 | --- | --- | --- |
 | `jobId` | `string` | Job identifier. |
 
+## `get_remote_debugger_status`
+
+Reports, for each Visual Studio version (2022, 2026) and architecture (x64, arm64, x86), whether msvsmon.exe is installed (path, file version, how it was found), plus running msvsmon processes with pid, session id, port (from the command line when readable) and whether that port is listening.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `version` | `string` | Optional filter: '2022' or '2026'. |
+| `arch` | `string` | Optional filter: 'x64', 'arm64' or 'x86'. |
+
 ## `get_service`
 
 Returns state, start type, binary path, type (including KERNEL_DRIVER), error control, dependencies, exit codes, and the process id while running.
@@ -234,6 +243,16 @@ Installs a filter driver from an INF inside a readable root and registers it as 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `infPath` | `string` | INF path inside an allowed root. |
+
+## `install_remote_debugger`
+
+Installs the Visual Studio Remote Debugging Tools as a job: downloads the official installer (aka.ms) into the spool, requires a valid Microsoft Corporation Authenticode signature, then runs it silently (/install /quiet /norestart) as the service account. Returns the job id; poll with wait_job or read_job_output. Skipped when msvsmon is already installed unless force is true.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `version` | `string` | '2022' or '2026'. |
+| `arch` | `string` | 'x64' (default), 'arm64' or 'x86'. |
+| `force` | `bool` | Reinstall even when msvsmon.exe is already present. |
 
 ## `kill_process`
 
@@ -336,6 +355,16 @@ Moves or renames a file or directory. Both paths need Write access. Refuses to m
 | `source` | `string` | Source path. |
 | `destination` | `string` | Destination path (the new name). |
 | `overwrite` | `bool` | Replace an existing destination file. |
+
+## `prepare_remote_debugger_computer`
+
+Runs 'msvsmon /prepcomputer /private /quiet' as a job: configures the Windows firewall and permissions for remote debugging on private networks. It changes firewall rules; needs the service context (default). Returns the job id.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `version` | `string` | '2022' or '2026'. |
+| `arch` | `string` | 'x64' (default), 'arm64' or 'x86'. |
+| `context` | `string` | 'service' (default) or 'interactive'. |
 
 ## `query_event_log`
 
@@ -491,6 +520,22 @@ Starts a managed realtime WPP capture. Events are spooled locally; use read_capt
 | `matchAllKeyword` | `string` | Match-all keyword bitmask. Omit for no match-all filter. |
 | `duration` | `string` | Maximum capture duration, for example 00:05:00. Capped by server configuration. |
 
+## `start_remote_debugger`
+
+Starts msvsmon.exe with /nostatus /silent /nofirewallwarn, /port, /timeout and the chosen authentication. Default context is 'interactive' (the console user's desktop), so attach rights match that user. auth 'windows' (default) authenticates callers; allowUsers adds /allow entries. auth 'none' disables authentication completely and requires iUnderstandNoAuthIsInsecure: true. Refuses a second instance on the same port. Connect Visual Studio to <host>:<port> afterwards.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `version` | `string` | '2022' or '2026'. |
+| `arch` | `string` | 'x64' (default), 'arm64' or 'x86'. |
+| `port` | `int?` | TCP port; defaults to Vestigo:RemoteDebugger:DefaultPort (4026). |
+| `timeoutSeconds` | `int` | Seconds msvsmon waits without a connection before exiting, 30 to 86400. |
+| `auth` | `string` | 'windows' (default) or 'none'. |
+| `iUnderstandNoAuthIsInsecure` | `bool` | Required to be true when auth is 'none'. Acknowledges that anyone reaching the port can run code. |
+| `allowUsers` | `string[]` | Windows users allowed to connect (DOMAIN\user or user@domain), each passed as /allow. Only with auth 'windows'. |
+| `context` | `string` | 'interactive' (default) or 'service'. |
+| `elevated` | `bool` | Interactive only: run with the elevated linked token so elevated processes can be debugged. |
+
 ## `start_service`
 
 Starts a service or driver and waits until it is running. Starting an unsigned driver may fail unless test-signing is enabled.
@@ -517,6 +562,16 @@ Stops a capture and its ETW session.
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `captureId` | `string` | Capture identifier. |
+
+## `stop_remote_debugger`
+
+Stops msvsmon.exe by pid, or every instance started by Vestigo (all: true). Tries a graceful close, waits gracefulTimeoutSeconds, then kills the process. Only msvsmon.exe processes are accepted.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `pid` | `int?` | Process id of an msvsmon.exe. |
+| `all` | `bool` | Stop all instances started by Vestigo. |
+| `gracefulTimeoutSeconds` | `int` | Seconds to wait after the graceful close before killing, 0 to 120. |
 
 ## `stop_service`
 

@@ -14,11 +14,14 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |
-| `Modules` | all enabled except `Processes` and `Devices` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `Logs`, `EventLog`, `Services`, `Processes`, `Devices`) on or off. Unknown names fail startup. `Processes` and `Devices` are disabled by default; enabling `Processes` fails startup unless `Jobs` is enabled and `ApiTokens` has at least one entry. |
+| `Modules` | all enabled except `Processes`, `Devices` and `RemoteDebugger` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `Logs`, `EventLog`, `Services`, `Processes`, `Devices`, `RemoteDebugger`) on or off. Unknown names fail startup. `Processes`, `Devices` and `RemoteDebugger` are disabled by default. A module whose dependency is disabled fails startup: `Processes` needs `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes` (directly or through `RemoteDebugger`) also requires at least one `ApiTokens` entry. |
 | `Devices` | defaults | Device management: `Devices:NefconPath` (absolute path of `nefconc.exe`, default `tools\nefconc.exe` next to `Vestigo.exe`) and `Devices:NefconTimeout` (`00:02:00`, upper bound for one nefcon run). |
 | `Services` | defaults | Services module: `Services:ProtectedNames` (default `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs`) lists service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
 | `Processes:AllowPathLookup` | `true` | Lets `run_process` resolve bare names such as `cmd.exe` from the service `PATH`. When `false`, only files under roots with `Execute` access can be started. |
 
+| `RemoteDebugger:DefaultPort` | `4026` | Port `start_remote_debugger` uses when the caller gives none. |
+| `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` | Upper bound for the installer download inside the install job. |
+| `RemoteDebugger:ExtraSearchPaths` | empty | Absolute directories probed for `msvsmon.exe` (directly or as `<dir>\<arch>\msvsmon.exe`); a hit counts only when the file major version is 17 or 18 for the requested version. |
 | `MaxConcurrentJobs` | 8 | Running background job limit. |
 | `MaxJobOutputBytes` | 67108864 | Output kept per job; later output is dropped with a marker. |
 | `JobRetention` | `1.00:00:00` | How long finished jobs and their output are kept. |
