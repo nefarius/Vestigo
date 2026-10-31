@@ -204,4 +204,24 @@ public class PlatformTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(unknown));
         Assert.All(ModuleRegistry.All, module => Assert.NotEmpty(module.ToolTypes));
     }
+
+    [Fact]
+    public void ProcessesModule_IsOptInAndRequiresJobsAndTokens()
+    {
+        ModuleSettings on = new() { Enabled = true };
+        VestigoOptions defaults = new();
+        VestigoOptions noTokens = new() { Modules = { ["Processes"] = on } };
+        VestigoOptions noJobs = new()
+        {
+            ApiTokens = ["t"],
+            Modules = { ["Processes"] = on, ["Jobs"] = new ModuleSettings { Enabled = false } }
+        };
+        VestigoOptions valid = new() { ApiTokens = ["t"], Modules = { ["Processes"] = on } };
+
+        Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "Processes");
+        ModuleRegistry.ValidateConfiguration(defaults);
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noTokens));
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noJobs));
+        ModuleRegistry.ValidateConfiguration(valid);
+    }
 }

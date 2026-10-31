@@ -30,6 +30,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `MaxOutputBytes` | `536870912` |
 | `MaxReadBatch` | `200` |
 | `Modules` | `empty` |
+| `Processes:AllowPathLookup` | `True` |
 | `Roots` | `empty` |
 | `SpoolRetention` | `1.00:00:00` |
 | `SymbolCache` | `null` |
