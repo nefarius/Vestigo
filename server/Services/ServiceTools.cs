@@ -235,7 +235,7 @@ public sealed partial class ServiceTools(
             return OperationResult<ServiceChangeResult>.Fail(path.ErrorCode!, path.Error!);
         }
 
-        if (!string.Equals(Path.GetExtension(path.FullPath), ".sys", StringComparison.OrdinalIgnoreCase))
+        if (!File.Exists(path.FullPath) || !string.Equals(Path.GetExtension(path.FullPath), ".sys", StringComparison.OrdinalIgnoreCase))
         {
             return OperationResult<ServiceChangeResult>.Fail("unsupported_extension", "Driver binaries must have the .sys extension.");
         }
@@ -316,14 +316,16 @@ public sealed partial class ServiceTools(
 
         if (stopDependents)
         {
-            foreach (string dependent in control.ActiveDependents(name))
+            IReadOnlyList<string> dependents = control.ActiveDependents(name);
+            string? protectedDependent = dependents.FirstOrDefault(IsProtected);
+            if (protectedDependent is not null)
             {
-                if (IsProtected(dependent))
-                {
-                    return OperationResult<ServiceInfo>.Fail(
-                        "protected_service", $"Dependent service '{dependent}' is protected and cannot be stopped.");
-                }
+                return OperationResult<ServiceInfo>.Fail(
+                    "protected_service", $"Dependent service '{protectedDependent}' is protected and cannot be stopped.");
+            }
 
+            foreach (string dependent in dependents)
+            {
                 try
                 {
                     control.Stop(dependent);
@@ -430,6 +432,6 @@ public sealed partial class ServiceTools(
         }
     }
 
-    [GeneratedRegex(@"^[A-Za-z0-9_][A-Za-z0-9_.$#@ -]{0,255}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A[A-Za-z0-9_](?:[A-Za-z0-9_.$#@ -]{0,254}[A-Za-z0-9_.$#@-])?\z", RegexOptions.CultureInvariant)]
     private static partial Regex ValidName();
 }

@@ -141,7 +141,7 @@ public sealed class ServiceToolsTests : IDisposable
     [Fact]
     public async Task Stop_WithProtectedDependent_Refuses()
     {
-        _control.Dependents["Spooler"] = ["RpcSs"];
+        _control.Dependents["Spooler"] = ["Dependent", "RpcSs"];
         OperationResult<ServiceInfo> result = await _tools.StopService("Spooler", stopDependents: true);
         Assert.Equal("protected_service", result.ErrorCode);
         Assert.Empty(_control.Calls);
@@ -224,6 +224,10 @@ public sealed class ServiceToolsTests : IDisposable
         Assert.NotEqual(
             null,
             (await _tools.CreateDriverService("NewDrv", @"drv:..\..\Windows\System32\drivers\null.sys")).ErrorCode);
+        Directory.CreateDirectory(Path.Combine(_root, "evil.sys"));
+        Assert.Equal("unsupported_extension", (await _tools.CreateDriverService("NewDrv", "drv:evil.sys")).ErrorCode);
+        Assert.Equal("invalid_name", (await _tools.CreateDriverService("NewDrv\n", "drv:good.sys")).ErrorCode);
+        Assert.Equal("invalid_name", (await _tools.CreateDriverService("NewDrv ", "drv:good.sys")).ErrorCode);
         Assert.Equal("invalid_name", (await _tools.CreateDriverService("-bad", "drv:good.sys")).ErrorCode);
         Assert.Equal("already_exists", (await _tools.CreateDriverService("MyDrv", "drv:good.sys")).ErrorCode);
         Assert.Empty(_nefcon.Created);

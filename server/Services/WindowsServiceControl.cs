@@ -30,26 +30,33 @@ internal sealed class WindowsServiceControl : IServiceControl
     public IReadOnlyList<ServiceInfo> List(ServiceKind kind)
     {
         List<ServiceInfo> result = [];
-        if (kind is ServiceKind.All or ServiceKind.Win32)
+        try
         {
-            foreach (ServiceController controller in ServiceController.GetServices())
+            if (kind is ServiceKind.All or ServiceKind.Win32)
             {
-                using (controller)
+                foreach (ServiceController controller in ServiceController.GetServices())
                 {
-                    result.Add(Describe(controller, detailed: false));
+                    using (controller)
+                    {
+                        result.Add(Describe(controller, detailed: false));
+                    }
+                }
+            }
+
+            if (kind is ServiceKind.All or ServiceKind.Driver)
+            {
+                foreach (ServiceController controller in ServiceController.GetDevices())
+                {
+                    using (controller)
+                    {
+                        result.Add(Describe(controller, detailed: false));
+                    }
                 }
             }
         }
-
-        if (kind is ServiceKind.All or ServiceKind.Driver)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
-            foreach (ServiceController controller in ServiceController.GetDevices())
-            {
-                using (controller)
-                {
-                    result.Add(Describe(controller, detailed: false));
-                }
-            }
+            throw Map(ex, "*");
         }
 
         return result;
@@ -71,7 +78,18 @@ internal sealed class WindowsServiceControl : IServiceControl
             throw Map(ex, name);
         }
 
-        return Describe(controller, detailed: true);
+        try
+        {
+            return Describe(controller, detailed: true);
+        }
+        catch (InvalidOperationException ex) when (NativeCode(ex) == ErrorServiceDoesNotExist)
+        {
+            return null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw Map(ex, name);
+        }
     }
 
     public void Start(string name, IReadOnlyList<string> arguments)
