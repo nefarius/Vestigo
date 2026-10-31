@@ -102,6 +102,11 @@ public static class StateDirectories
             throw Unsafe($"'{after}' is a reparse point (link or junction), which Vestigo does not follow");
         }
 
+        if (OperatingSystem.IsWindows())
+        {
+            RequireTrustedOwners(root, full, CurrentUserSid());
+        }
+
         return full;
     }
 
@@ -223,13 +228,44 @@ public static class StateDirectories
         }
 
         info.SetAccessControl(ProtectedSecurity(extra));
-        ResetChildren(info);
+        ResetChildren(info, extra);
         repairs.Add($"Reset permissions of '{path}' to SYSTEM and Administrators only" +
                     (writer is null ? " (inheritance was enabled)." : $" (it was writable by {writer})."));
     }
 
+    /// <summary>Requires a trusted owner for the root and every component down to <paramref name="full" />.</summary>
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    private static void ResetChildren(DirectoryInfo directory)
+    private static void RequireTrustedOwners(string root, string full, string? extra)
+    {
+        string current = root;
+        foreach (string part in full[root.Length..].Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries).Prepend(string.Empty))
+        {
+            current = part.Length == 0 ? current : Path.Combine(current, part);
+            DirectoryInfo info = new(current);
+            if (!info.Exists)
+            {
+                continue;
+            }
+
+            bool trusted;
+            try
+            {
+                trusted = AclTrust.IsOwnerTrusted(info.GetAccessControl(), extra);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                throw Unsafe($"permissions of '{current}' could not be read ({ex.GetType().Name})");
+            }
+
+            if (!trusted)
+            {
+                throw Unsafe($"'{current}' is owned by an untrusted principal");
+            }
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void ResetChildren(DirectoryInfo directory, string? extra)
     {
         foreach (FileSystemInfo entry in directory.EnumerateFileSystemInfos())
         {
@@ -238,25 +274,43 @@ public static class StateDirectories
                 throw Unsafe($"'{entry.FullName}' is a reparse point (link or junction), which Vestigo does not follow");
             }
 
+            bool trusted;
             try
             {
                 if (entry is DirectoryInfo child)
                 {
                     DirectorySecurity security = child.GetAccessControl();
-                    Inherit(security);
-                    child.SetAccessControl(security);
-                    ResetChildren(child);
+                    trusted = AclTrust.IsOwnerTrusted(security, extra);
+                    if (trusted)
+                    {
+                        Inherit(security);
+                        child.SetAccessControl(security);
+                    }
                 }
-                else if (entry is FileInfo file)
+                else
                 {
-                    FileSecurity security = file.GetAccessControl();
-                    Inherit(security);
-                    file.SetAccessControl(security);
+                    FileSecurity security = ((FileInfo)entry).GetAccessControl();
+                    trusted = AclTrust.IsOwnerTrusted(security, extra);
+                    if (trusted)
+                    {
+                        Inherit(security);
+                        ((FileInfo)entry).SetAccessControl(security);
+                    }
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
                 throw Unsafe($"permissions of '{entry.FullName}' could not be reset ({ex.GetType().Name})");
+            }
+
+            if (!trusted)
+            {
+                throw Unsafe($"'{entry.FullName}' is owned by an untrusted principal");
+            }
+
+            if (entry is DirectoryInfo directoryEntry)
+            {
+                ResetChildren(directoryEntry, extra);
             }
         }
     }

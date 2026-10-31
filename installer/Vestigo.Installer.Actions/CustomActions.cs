@@ -174,6 +174,8 @@ namespace Vestigo.Installer.Actions
         {
             try
             {
+                // First, so reparse points are rejected before any settings-file read or write.
+                SecureStateDirectories(session);
                 CustomActionData data = session.CustomActionData;
                 string path = SettingsFilePath();
                 string current = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
@@ -200,7 +202,6 @@ namespace Vestigo.Installer.Actions
                     merged = ListenSettings.Merge(null, resolved, modules);
                 }
 
-                SecureStateDirectories(session);
                 string temp = path + ".tmp";
                 WriteSecureFile(temp, new UTF8Encoding(false).GetBytes(merged));
                 if (File.Exists(path))
