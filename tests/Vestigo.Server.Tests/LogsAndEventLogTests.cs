@@ -129,6 +129,21 @@ public class LogsAndEventLogTests : IDisposable
     }
 
     [Fact]
+    public void ReadSince_AdvancesByRawBytesForInvalidUtf8()
+    {
+        byte[] data = [.. "a"u8, 0xE4, 0xE4, (byte)'\n', .. "b\n"u8];
+        MemoryStream stream = Growable(data);
+        TextSlice first = TextTailer.ReadSince(stream, 1, new TextCursor(0, 0, 1), 1, 1024);
+
+        Assert.Single(first.Lines);
+        Assert.Equal(4, first.Cursor.Offset);
+        TextSlice second = TextTailer.ReadSince(stream, 1, first.Cursor, 10, 1024);
+        Assert.Equal(["b"], second.Lines);
+        Assert.False(second.Rotated);
+        Assert.Equal(data.Length, second.Cursor.Offset);
+    }
+
+    [Fact]
     public void ReadSince_PagesByLineLimit()
     {
         MemoryStream stream = Utf8("1\n2\n3\n4\n5\n");
@@ -304,6 +319,7 @@ public class LogsAndEventLogTests : IDisposable
         VestigoOptions options = new();
         EventLogService service = new(options, new RootPolicy(options));
 
+        Assert.Equal("invalid_query", service.Query("Application", new EventLogFilter(), "<QueryList/>", null, 1, true, false, default).ErrorCode);
         Assert.Equal("invalid_channel", service.Query(" ", new EventLogFilter(), null, null, 1, true, false, default).ErrorCode);
         Assert.Equal("invalid_query", service.Query("Application", new EventLogFilter(EventIds: [1]), "*", null, 1, true, false, default).ErrorCode);
         Assert.Equal("not_found", service.Query("No-Such-Vestigo-Channel", new EventLogFilter(), null, null, 1, true, false, default).ErrorCode);

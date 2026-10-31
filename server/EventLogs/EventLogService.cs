@@ -94,6 +94,11 @@ public sealed class EventLogService(VestigoOptions options, RootPolicy roots)
             return OperationResult<EventQueryResult>.Fail("invalid_query", "Use either xpath or the structured filters, not both.");
         }
 
+        if (!string.IsNullOrWhiteSpace(xpath) && xpath.TrimStart().StartsWith('<'))
+        {
+            return OperationResult<EventQueryResult>.Fail("invalid_query", "Structured XML queries are not supported; pass an XPath expression such as *[System[EventID=4624]].");
+        }
+
         string query;
         try
         {

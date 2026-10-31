@@ -134,10 +134,32 @@ public static class TextTailer
             truncated = true;
         }
 
-        long consumed = file.Encoding.GetByteCount(text.AsSpan(0, position));
+        // Advance by raw bytes: re-encoding decoded text is wrong for bytes that are invalid in the assumed encoding.
+        long consumed = truncated ? usable : BytesThroughNewline(buffer, usable, lines.Count, file);
         long next = offset + consumed;
         bool hasMore = lines.Count >= maxLines || more;
         return new TextSlice(lines, new TextCursor(next, length, identity), truncated, rotated, hasMore && next < length, file.Name);
+    }
+
+    private static int BytesThroughNewline(byte[] buffer, int usable, int newlines, FileEncoding file)
+    {
+        int step = file.UnitSize;
+        int seen = 0;
+        for (int i = 0; i + step <= usable && seen < newlines; i += step)
+        {
+            bool isNewline = file.Name switch
+            {
+                "utf-16le" => buffer[i] == 0x0A && buffer[i + 1] == 0,
+                "utf-16be" => buffer[i] == 0 && buffer[i + 1] == 0x0A,
+                _ => buffer[i] == 0x0A
+            };
+            if (isNewline && ++seen == newlines)
+            {
+                return i + step;
+            }
+        }
+
+        return 0;
     }
 
     private static List<string> SplitAll(string text)
