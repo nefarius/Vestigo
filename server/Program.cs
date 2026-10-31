@@ -93,6 +93,10 @@ if (vestigo.GetExposureWarning() is { } exposureWarning)
 {
     app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
 }
+if (ModuleRegistry.GetPrivilegedModuleWarning(vestigo) is { } privilegedWarning)
+{
+    app.Logger.LogWarning("{PrivilegedWarning}", privilegedWarning);
+}
 foreach (VestigoModule module in modules)
 {
     module.MapEndpoints(app, vestigo);

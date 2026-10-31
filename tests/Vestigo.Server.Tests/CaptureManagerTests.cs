@@ -9,6 +9,7 @@ using Vestigo.Tools;
 
 namespace Vestigo.Server.Tests;
 
+[Collection("VestigoHost")] // shares the machine-wide owned-sessions.json
 public class CaptureManagerTests : IDisposable
 {
     private readonly string _settings = Directory.CreateTempSubdirectory("vestigo-settings").FullName;

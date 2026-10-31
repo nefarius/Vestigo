@@ -52,14 +52,52 @@ public static class ModuleRegistry
             }
         }
 
-        if (Enabled(options).Any(module => module.Name == "Software") && options.Software.AllowUninstall && !options.AuthenticationEnabled)
+    }
+
+    /// <summary>
+    ///     Returns a startup warning naming administrator-equivalent capabilities that are enabled while no API token
+    ///     is configured, otherwise null. This is a warning, never a failure: an operator may deliberately run an open
+    ///     server on an isolated network. The message never contains token values.
+    /// </summary>
+    public static string? GetPrivilegedModuleWarning(VestigoOptions options)
+    {
+        if (options.AuthenticationEnabled)
         {
-            throw new InvalidOperationException("Vestigo:Software:AllowUninstall runs vendor uninstallers and requires at least one entry in Vestigo:ApiTokens.");
+            return null;
         }
 
-        if (Enabled(options).Any(module => module.Name == "Processes") && !options.AuthenticationEnabled)
+        IReadOnlyList<VestigoModule> enabled = Enabled(options);
+        List<string> capabilities = [];
+        // Services is on by default, so it only counts once the server is reachable from the network;
+        // otherwise every default loopback install would warn.
+        foreach (string name in new[] { "Processes", "RemoteDebugger", "Devices", "Services" })
         {
-            throw new InvalidOperationException("Vestigo:Modules:Processes runs arbitrary programs and requires at least one entry in Vestigo:ApiTokens.");
+            if (name == "Services" && !options.IsBoundBeyondLoopback)
+            {
+                continue;
+            }
+
+            if (enabled.Any(module => module.Name == name))
+            {
+                capabilities.Add(name);
+            }
         }
+
+        if (options.Software.AllowUninstall && enabled.Any(module => module.Name == "Software"))
+        {
+            capabilities.Add("Software uninstall");
+        }
+
+        if (capabilities.Count == 0)
+        {
+            return null;
+        }
+
+        string reach = options.IsBoundBeyondLoopback
+            ? $"The server listens on {options.ListenAddress}:{options.ListenPort}, so anyone who can reach this port on the network"
+            : "Any local client";
+        return $"SECURITY WARNING: Vestigo has no Vestigo:ApiTokens and these administrator-equivalent capabilities are enabled: {string.Join(", ", capabilities)}. " +
+               $"{reach} can run programs, control services or drivers, or uninstall software as the service account. " +
+               "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
 }

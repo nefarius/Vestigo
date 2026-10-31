@@ -1,5 +1,7 @@
 using System.Xml.Linq;
 
+using Vestigo.Installer.Actions.Logic;
+
 using WixSharp;
 
 namespace Vestigo.Installer;
@@ -49,7 +51,8 @@ static class ListenPage
 
         // Public, secure properties so silent installs (and the UI-to-server hand-off) can carry the choices.
         // Hidden keeps the token out of the MSI log by adding it to MsiHiddenProperties.
-        foreach (string name in new[] { "VESTIGO_LISTEN_MODE", "VESTIGO_AUTH_MODE", "VESTIGO_PORT" })
+        foreach (string name in new[] { "VESTIGO_LISTEN_MODE", "VESTIGO_AUTH_MODE", "VESTIGO_PORT" }
+                     .Concat(ModuleSelection.All.Select(m => m.PropertyName)))
         {
             package.Add(new XElement(Wix + "Property", new XAttribute("Id", name), new XAttribute("Secure", "yes")));
         }
@@ -77,6 +80,7 @@ static class ListenPage
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving)));
 
         AddFirewallComponent(package);
+        ConfigureFeatures(package);
         package.Add(BuildUi());
     }
 
@@ -98,7 +102,8 @@ static class ListenPage
 
     static void AddFirewallComponent(XElement package)
     {
-        XElement feature = package.Elements(Wix + "Feature").FirstOrDefault()
+        XElement feature = package.Elements(Wix + "Feature")
+                .FirstOrDefault(f => (string?)f.Attribute("Id") == ModuleSelection.ServerFeature)
             ?? throw new InvalidOperationException("The generated WiX source has no Feature element.");
 
         // Registry-only component so Windows Installer has a key path. The rule exists only for the "any" modes
@@ -132,6 +137,46 @@ static class ListenPage
             Wix + "Fragment",
             new XElement(Wix + "ComponentGroup", new XAttribute("Id", "VestigoFirewallGroup"), component)));
         feature.Add(new XElement(Wix + "ComponentGroupRef", new XAttribute("Id", "VestigoFirewallGroup")));
+    }
+
+    /// <summary>
+    ///     Titles, descriptions, install levels, and the existing-settings conditions of the module features. Default-off
+    ///     modules sit at level 1000 (unchecked but selectable). VESTIGO_MOD_* ("1" or "0", set from the existing
+    ///     settings or on the command line) override the default level.
+    /// </summary>
+    static void ConfigureFeatures(XElement package)
+    {
+        XElement server = package.Elements(Wix + "Feature")
+            .First(f => (string?)f.Attribute("Id") == ModuleSelection.ServerFeature);
+        server.SetAttributeValue("Title", "Vestigo MCP Server");
+        server.SetAttributeValue("AllowAbsent", "no");
+        server.SetAttributeValue("Display", "expand");
+
+        foreach (ModuleDefinition module in ModuleSelection.All)
+        {
+            XElement? feature = server.Descendants(Wix + "Feature")
+                .FirstOrDefault(f => (string?)f.Attribute("Id") == module.Name);
+            if (feature is null)
+            {
+                throw new InvalidOperationException($"The generated WiX source has no feature '{module.Name}'.");
+            }
+
+            feature.SetAttributeValue("Title", module.Title);
+            feature.SetAttributeValue("Description", module.Description);
+            feature.SetAttributeValue("Level", module.DefaultOn ? "1" : "1000");
+            // WixSharp marks every feature expanded; only features that have children should be.
+            feature.SetAttributeValue("Display", ModuleSelection.All.Any(m => m.Parent == module.Name) ? "expand" : "collapse");
+
+            feature.Add(
+                new XElement(
+                    Wix + "Level",
+                    new XAttribute("Value", "1"),
+                    new XAttribute("Condition", $"{module.PropertyName}=\"1\"")),
+                new XElement(
+                    Wix + "Level",
+                    new XAttribute("Value", "1000"),
+                    new XAttribute("Condition", $"{module.PropertyName}=\"0\"")));
+        }
     }
 
     static XElement BuildUi()
@@ -170,16 +215,28 @@ static class ListenPage
                     20,
                     150,
                     330,
-                    24,
-                    "{\\WixUI_Font_Title}Warning: with no token, anyone who can reach this PC on the network can use the server.",
+                    30,
+                    "{\\WixUI_Font_Title}No token: anyone who can reach this PC on the network can use the server and every module you enable next, including processes, services, drivers and uninstalls.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
                 "VESTIGO_UI_MODE=\"3\""),
+            WithShow(
+                Control(
+                    "LocalOpenNote",
+                    "Text",
+                    20,
+                    150,
+                    330,
+                    24,
+                    "{\\WixUI_Font_Title}No token: any program on this PC can use every module you enable next, including processes, services, drivers and uninstalls.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                "VESTIGO_UI_MODE=\"1\""),
             Control(
                 "Note",
                 "Text",
                 20,
-                180,
+                182,
                 330,
                 48,
                 "A suggested token is filled in; you can replace it. The token is stored in clear text in %ProgramData%\\Nefarius Software Solutions\\Vestigo\\appsettings.json, readable only by SYSTEM and Administrators. " +
