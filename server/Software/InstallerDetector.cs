@@ -57,7 +57,8 @@ public static partial class InstallerDetector
 
     private static bool IsMsi(string keyName, IReadOnlyDictionary<string, object?> values, string? uninstall)
     {
-        if (values.TryGetValue("WindowsInstaller", out object? flag) && Convert.ToInt64(flag ?? 0, System.Globalization.CultureInfo.InvariantCulture) == 1)
+        if (values.TryGetValue("WindowsInstaller", out object? flag) && flag is int or long or uint
+            && Convert.ToInt64(flag, System.Globalization.CultureInfo.InvariantCulture) == 1)
         {
             return true;
         }
@@ -69,7 +70,7 @@ public static partial class InstallerDetector
 
     private static bool LooksLikeInno(string? executable)
     {
-        if (executable is null || !InnoUninstaller().IsMatch(Path.GetFileName(executable)))
+        if (executable is null || !IsLocalDrivePath(executable) || !InnoUninstaller().IsMatch(Path.GetFileName(executable)))
         {
             return false;
         }
@@ -86,7 +87,7 @@ public static partial class InstallerDetector
 
     private static bool HasNsisMarker(string? executable)
     {
-        if (executable is null)
+        if (executable is null || !IsLocalDrivePath(executable))
         {
             return false;
         }
@@ -108,6 +109,13 @@ public static partial class InstallerDetector
             return false;
         }
     }
+
+    /// <summary>
+    ///     True for <c>X:\...</c> or <c>X:/...</c>. Registry-supplied paths are probed only when local, so UNC and
+    ///     device paths never cause network or device access from the service account.
+    /// </summary>
+    public static bool IsLocalDrivePath(string path) =>
+        path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] is '\\' or '/';
 
     private static string? Text(IReadOnlyDictionary<string, object?> values, string name) =>
         values.TryGetValue(name, out object? value) && value is string text && !string.IsNullOrWhiteSpace(text) ? text : null;

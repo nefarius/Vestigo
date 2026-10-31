@@ -144,6 +144,45 @@ public class SoftwareToolsTests : IDisposable
     }
 
     [Fact]
+    public void Planner_TokenizesBurnWithCrtRulesAndOthersByQuoteToggle()
+    {
+        string exe = TempExe("t.exe");
+
+        Assert.Equal(["/x", "a\"b"], UninstallPlanner.SplitCommandLine($"\"{exe}\" /x \"a\\\"b\"", InstallerTypes.Burn)!.Arguments);
+        Assert.Equal([@"C:\dir\", "next"], UninstallPlanner.SplitCommandLine($"\"{exe}\" \"C:\\dir\\\\\" next", InstallerTypes.Burn)!.Arguments);
+        Assert.Equal([@"/LOG=C:\logs\", "next"], UninstallPlanner.SplitCommandLine($"\"{exe}\" \"/LOG=C:\\logs\\\" next", InstallerTypes.Inno)!.Arguments);
+        Assert.Equal([@"/D=C:\a b\"], UninstallPlanner.SplitCommandLine($"\"{exe}\" /D=\"C:\\a b\\\"", InstallerTypes.Nsis)!.Arguments);
+    }
+
+    [Fact]
+    public void Planner_QuietStringGetsRestartSuppressionAndLocalPathsOnly()
+    {
+        UninstallPlanner planner = new();
+        string exe = TempExe("q.exe");
+
+        Assert.Equal(["/quiet", "/norestart"], planner.Plan(Item(type: InstallerTypes.Burn, quiet: $"\"{exe}\" /quiet"), null).Value!.Arguments);
+        Assert.Equal(["/SILENT", "/NORESTART"], planner.Plan(Item(type: InstallerTypes.Inno, quiet: $"\"{exe}\" /SILENT"), null).Value!.Arguments);
+        Assert.Equal(["/q"], planner.Plan(Item(type: InstallerTypes.Nsis, quiet: $"\"{exe}\" /q"), null).Value!.Arguments);
+        Assert.Equal("invalid_uninstall_string", planner.Plan(Item(type: InstallerTypes.Nsis, uninstall: @"""\\server\share\u.exe"""), null).ErrorCode);
+        Assert.False(InstallerDetector.IsLocalDrivePath(@"\\server\share\u.exe"));
+        Assert.False(InstallerDetector.IsLocalDrivePath(@"\\?\C:\u.exe"));
+        Assert.True(InstallerDetector.IsLocalDrivePath(@"C:\u.exe"));
+    }
+
+    [Fact]
+    public void Detector_IgnoresMalformedWindowsInstallerValue()
+    {
+        Dictionary<string, object?> values = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["WindowsInstaller"] = "oops",
+            ["UninstallString"] = "x"
+        };
+        Assert.Equal(InstallerTypes.Unknown, InstallerDetector.Detect("App", values));
+        values["WindowsInstaller"] = new byte[] { 1 };
+        Assert.Equal(InstallerTypes.Unknown, InstallerDetector.Detect("App", values));
+    }
+
+    [Fact]
     public void Planner_MsiIgnoresStoredStringAndUsesQuiet()
     {
         UninstallPlanner planner = new();
