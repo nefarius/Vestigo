@@ -2,6 +2,16 @@
 
 Generated from `McpServerTool` attributes. Do not edit by hand.
 
+## `add_class_filter`
+
+Adds an existing driver service to a device class's upper or lower filter list.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `classGuid` | `string` | Device class GUID. |
+| `serviceName` | `string` | Filter driver service name. |
+| `position` | `string` | upper or lower. |
+
 ## `cancel_job`
 
 Requests cancellation of a running job. Process jobs kill their process tree.
@@ -46,6 +56,17 @@ Copies a file or directory tree. Source needs Read access, destination needs Wri
 | `destination` | `string` | Destination path (the new name, not the parent directory). |
 | `overwrite` | `bool` | Replace existing destination files. |
 
+## `create_device_node`
+
+Creates a ROOT-enumerated device node with a hardware ID and device class. Install a driver on it afterwards with install_driver.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `className` | `string` | Device class name, for example System. |
+| `classGuid` | `string` | Device class GUID. |
+| `hardwareId` | `string` | Hardware ID of the new node, for example Root\MyDriver. |
+| `noDuplicates` | `bool` | Do nothing when a node with this hardware ID already exists. |
+
 ## `delete_file_on_reboot`
 
 Schedules a file for deletion at the next reboot (MoveFileEx delay-until-reboot). Needs Write access and administrator rights.
@@ -63,6 +84,22 @@ Deletes a file or directory inside a root with Write access. Refuses to delete a
 | `path` | `string` | Path to delete. |
 | `recursive` | `bool` | Delete directory contents too. |
 
+## `disable_device`
+
+Disables a device by instance ID.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `instanceId` | `string` | Device instance ID. |
+
+## `enable_device`
+
+Enables a device by instance ID.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `instanceId` | `string` | Device instance ID. |
+
 ## `fetch_file`
 
 Downloads an HTTP(S) URL or copies a UNC file into a root with Write access as a background job. Poll with wait_job and read_job_output; the output ends with the stored file's path, size and SHA-256.
@@ -73,6 +110,26 @@ Downloads an HTTP(S) URL or copies a UNC file into a root with Write access as a
 | `destination` | `string` | Destination file as root:relative\path. |
 | `expectedSha256` | `string` | Expected SHA-256 (hex). The file is discarded on mismatch. |
 | `overwrite` | `bool` | Replace an existing destination file. |
+
+## `find_devices_by_hardware_id`
+
+Finds devices in a device class whose hardware IDs match, and returns their instance IDs.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `classGuid` | `string` | Device class GUID to search in. |
+| `hardwareId` | `string` | Hardware ID to match. |
+| `presentOnly` | `bool` | Only currently present devices. |
+| `allowPartial` | `bool` | Match substrings instead of the exact ID. |
+
+## `find_devices_by_interface`
+
+Finds devices that expose a device interface GUID and returns their instance IDs and device paths.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `interfaceGuid` | `string` | Device interface GUID. |
+| `presentOnly` | `bool` | Only currently present devices. False also returns phantom devices. |
 
 ## `get_capture`
 
@@ -109,6 +166,22 @@ Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-
 | `overwrite` | `bool` | Replace an existing file. |
 | `deferToReboot` | `bool` | Replace a locked file at the next reboot instead of renaming it aside. |
 
+## `inf_default_install`
+
+Runs the [DefaultInstall] section of an INF inside a readable root (nefcon --inf-default-install).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `infPath` | `string` | INF path inside an allowed root. |
+
+## `inf_default_uninstall`
+
+Runs the [DefaultUninstall] section of an INF inside a readable root (nefcon --inf-default-uninstall).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `infPath` | `string` | INF path inside an allowed root. |
+
 ## `inspect_wpp_pdb`
 
 Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root.
@@ -116,6 +189,25 @@ Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed inpu
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `pdbPath` | `string` | Absolute or rooted path to a .pdb file. |
+
+## `install_driver`
+
+Installs a driver from an INF inside a readable root. With hardwareId it creates the ROOT device node and installs the driver on it (devcon install); without it the package is only staged and installed. The result has exitCode, outputTail and rebootRequired.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `infPath` | `string` | INF path inside an allowed root (name:relative\path or absolute). |
+| `hardwareId` | `string` | Optional hardware ID, for example Root\MyDriver. Enables the duplicate options. |
+| `noDuplicates` | `bool` | Skip creating the node when a device with this hardware ID already exists. Needs hardwareId. |
+| `removeDuplicates` | `bool` | Remove duplicate device nodes. Needs hardwareId and noDuplicates. |
+
+## `install_filter_driver`
+
+Installs a filter driver from an INF inside a readable root and registers it as a class filter (nefcon --install-filter-driver).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `infPath` | `string` | INF path inside an allowed root. |
 
 ## `kill_process`
 
@@ -258,6 +350,43 @@ Returns complete lines after a cursor from tail_text_file or an earlier call. If
 | `maxLines` | `int?` | Maximum lines to return. Clamped to MaxTailLines. |
 | `maxBytes` | `int?` | Maximum bytes to examine. Clamped to MaxTailBytes. |
 
+## `remove_class_filter`
+
+Removes a driver service from a device class's upper or lower filter list.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `classGuid` | `string` | Device class GUID. |
+| `serviceName` | `string` | Filter driver service name. |
+| `position` | `string` | upper or lower. |
+
+## `remove_device_node`
+
+Removes a device node by hardware ID and class GUID (nefcon --remove-device-node).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `hardwareId` | `string` | Hardware ID of the node. |
+| `classGuid` | `string` | Device class GUID. |
+
+## `remove_driver_store_package`
+
+Removes driver store packages by original INF file name (for example mydriver.inf). Optional class GUID and service name narrow the match. nefcon offers no all-versions switch here.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `infName` | `string` | Original INF base name, no directory, for example mydriver.inf. |
+| `classGuid` | `string` | Optional device class GUID to narrow the match. |
+| `serviceName` | `string` | Optional driver service name to narrow the match. |
+
+## `restart_device`
+
+Restarts a device (remove and re-enumerate) by instance ID, for example after installing a filter driver.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `instanceId` | `string` | Device instance ID, for example ROOT\SYSTEM\0001. |
+
 ## `run_process`
 
 Starts a process as a job. path is a file under a root with Execute access (name:relative\path or absolute), or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\default (elevated: true uses the linked administrator token). stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.
@@ -332,6 +461,26 @@ Returns the last lines of a text file under a root with Read access. The file is
 | `path` | `string` | File path: root:relative\path or an absolute path inside a root. |
 | `lines` | `int` | Number of lines to return. Clamped to MaxTailLines. |
 | `maxBytes` | `int?` | Maximum bytes to examine from the end of the file. Clamped to MaxTailBytes. |
+
+## `uninstall_driver`
+
+Uninstalls the driver described by an INF inside a readable root (nefcon --uninstall-driver).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `infPath` | `string` | INF path inside an allowed root. |
+
+## `uninstall_filter_driver`
+
+Removes a class filter and its driver service. With infPath it also purges that driver store package; allVersions then purges every version of it.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `classGuid` | `string` | Device class GUID the filter is registered in. |
+| `serviceName` | `string` | Filter driver service name. |
+| `position` | `string` | upper or lower. |
+| `infPath` | `string` | Optional INF path inside an allowed root whose driver store package is also removed. |
+| `allVersions` | `bool` | Remove all versions of the driver store package. Needs infPath. |
 
 ## `validate_decoding_sources`
 

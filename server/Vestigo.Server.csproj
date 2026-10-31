@@ -26,6 +26,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="Nefarius.Utilities.DeviceManagement" />
     <PackageReference Include="Nefarius.Utilities.ETW" />
     <PackageReference Include="Serilog.AspNetCore" />
   </ItemGroup>
