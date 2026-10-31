@@ -13,7 +13,12 @@ public static class ModuleRegistry
     [
         new DevicesModule(),
         new JobsModule(),
-        new TraceModule()
+        new Files.FilesModule(),
+        new ProcessesModule(),
+        new TraceModule(),
+        new EnvironmentModule(),
+        new LogsModule(),
+        new EventLogModule()
     ];
 
     public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options) =>
@@ -28,6 +33,20 @@ public static class ModuleRegistry
             {
                 throw new InvalidOperationException(
                     $"Vestigo:Modules:{name} does not match a known module ({string.Join(", ", All.Select(module => module.Name))}).");
+            }
+        }
+
+        bool Active(string name) => Enabled(options).Any(module => module.Name == name);
+        if (Active("Processes"))
+        {
+            if (!Active("Jobs"))
+            {
+                throw new InvalidOperationException("Vestigo:Modules:Processes requires Vestigo:Modules:Jobs to be enabled.");
+            }
+
+            if (!options.AuthenticationEnabled)
+            {
+                throw new InvalidOperationException("Vestigo:Modules:Processes runs arbitrary programs and requires at least one entry in Vestigo:ApiTokens.");
             }
         }
     }

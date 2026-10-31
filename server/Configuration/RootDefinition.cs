@@ -31,3 +31,11 @@ public sealed class ModuleSettings
 {
     public bool Enabled { get; set; } = true;
 }
+
+/// <summary>
+///     File transfer limits read from <c>Vestigo:Files</c>.
+/// </summary>
+public sealed class FilesOptions
+{
+    public long MaxUploadBytes { get; set; } = 4L * 1024 * 1024 * 1024;
+}
