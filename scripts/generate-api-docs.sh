@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-dll="$root/src/Vestigo.Server/bin/Release/net10.0-windows8.0/Vestigo.dll"
+dll="$root/server/bin/Release/net10.0-windows8.0/Vestigo.dll"
 out="$root/docs/api"
 level="$out/vestigo.etws.tracelevelselection.md"
 result="$out/vestigo.etws.operationresult-1.md"

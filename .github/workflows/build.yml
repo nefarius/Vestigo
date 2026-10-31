@@ -24,7 +24,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Test
-        run: dotnet test -c Release --nologo --filter Category!=WindowsElevated
+        run: dotnet test -c Release --nologo --filter-not-trait "Category=WindowsElevated"
 
       - name: Check generated API docs
         run: |

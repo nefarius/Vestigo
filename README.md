@@ -17,7 +17,7 @@ Reading an existing ETL file does not by itself require elevation. Creating a re
 
 ## Quick start
 
-1. Install the MSI or run `dotnet run --project src/Vestigo.Server`.
+1. Install the MSI or run `dotnet run --project server`.
 2. Edit `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`.
 3. Point an MCP client at `http://127.0.0.1:5098/mcp`.
 
@@ -25,9 +25,9 @@ The server listens on loopback only. `/health` is anonymous. `/mcp` is anonymous
 
 ## Projects
 
-- [`Vestigo.Server`](src/Vestigo.Server) — ASP.NET Core host, MCP tools, and capture manager.
-- [`Vestigo.Installer`](installer) — WixSharp project that builds the per-machine x64 MSI and Windows service.
-- [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) — path, authentication, capture, and package-boundary tests.
+- [`Vestigo.Server`](server) â€” ASP.NET Core host, MCP tools, and capture manager.
+- [`Vestigo.Installer`](installer) â€” WixSharp project that builds the per-machine x64 MSI and Windows service.
+- [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) â€” path, authentication, capture, and package-boundary tests.
 
 ## Security
 
