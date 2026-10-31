@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 
 using Vestigo.Devices;
+using Vestigo.Services;
 
 namespace Vestigo.Configuration;
 
@@ -27,6 +28,8 @@ public sealed class VestigoOptions
     public Dictionary<string, ModuleSettings> Modules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public DevicesOptions Devices { get; set; } = new();
+
+    public ServicesOptions Services { get; set; } = new();
 
     public int MaxConcurrentJobs { get; set; } = 8;
 
@@ -100,6 +103,7 @@ public sealed class VestigoOptions
         }
 
         Devices.Validate();
+        Services.Validate();
 
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
         foreach (RootDefinition root in Roots)
