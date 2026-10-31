@@ -26,6 +26,8 @@ public sealed class VestigoOptions
 
     public ProcessesOptions Processes { get; set; } = new();
 
+    public RemoteDebuggerOptions RemoteDebugger { get; set; } = new();
+
     public int MaxConcurrentJobs { get; set; } = 8;
 
     public long MaxJobOutputBytes { get; set; } = 64L * 1024 * 1024;
@@ -121,6 +123,8 @@ public sealed class VestigoOptions
                 throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs at least one access flag.");
             }
         }
+
+        RemoteDebugger.Validate();
 
         if (BufferSizeKb == 0 || FlushTimerSeconds == 0)
         {

@@ -13,6 +13,7 @@ public static class ModuleRegistry
     [
         new JobsModule(),
         new ProcessesModule(),
+        new RemoteDebuggerModule(),
         new TraceModule()
     ];
 

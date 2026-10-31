@@ -14,8 +14,11 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |
-| `Modules` | all enabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Processes`) on or off. Unknown names fail startup. |
+| `Modules` | all enabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Processes`, `RemoteDebugger`) on or off. Unknown names fail startup. |
 | `Processes:AllowPathLookup` | `true` | Lets `run_process` resolve bare names such as `cmd.exe` from the service `PATH`. When `false`, only files under roots with `Execute` access can be started. |
+| `RemoteDebugger:DefaultPort` | `4026` | Port `start_remote_debugger` uses when the caller gives none. |
+| `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` | Upper bound for the installer download inside the install job. |
+| `RemoteDebugger:ExtraSearchPaths` | empty | Absolute directories probed for `msvsmon.exe` (directly or as `<dir>\<arch>\msvsmon.exe`); a hit counts only when the file major version is 17 or 18 for the requested version. |
 | `MaxConcurrentJobs` | 8 | Running background job limit. |
 | `MaxJobOutputBytes` | 67108864 | Output kept per job; later output is dropped with a marker. |
 | `JobRetention` | `1.00:00:00` | How long finished jobs and their output are kept. |

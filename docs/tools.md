@@ -45,3 +45,21 @@ The `Processes` module requires the `Jobs` module. These tools run arbitrary cod
 `close_app` posts `WM_CLOSE` to visible top-level windows selected by `pid`, `processName` and/or `titleRegex` (pid or name, narrowed by the title pattern). Windows belong to a desktop, so the default `interactive` context starts `Vestigo.exe --session-helper close-window ...` in the console user's session; it prints JSON and exits. After `gracefulTimeoutSeconds` the result lists the processes that are still alive (`StillRunning`); Vestigo never kills them. Use `elevated: true` to close elevated windows. `context: service` only sees the service's own desktop.
 
 `kill_process` terminates by `pid` or exact `processName` (every match). `entireTree` also kills descendants. It refuses its own pid, pid 0 and pid 4.
+
+## Remote debugger
+
+The `RemoteDebugger` module requires the `Jobs` and `Processes` modules. It manages the Visual Studio Remote Debugging Tools (`msvsmon.exe`) for Visual Studio 2022 (17) and 2026 (18). A running monitor lets a remote debugger run code on this machine; read [security.md](security.md#remote-debugger) first.
+
+Workflow: `get_remote_debugger_status` (is it installed?) -> `install_remote_debugger` (job) -> optionally `prepare_remote_debugger_computer` (firewall) -> `start_remote_debugger` -> connect Visual Studio (Debug > Attach to Process, connection target `host:4026`) -> `stop_remote_debugger`.
+
+Every tool takes `version` (`2022` or `2026`) and `arch` (`x64` default, `arm64`, `x86`).
+
+`get_remote_debugger_status` lists every version and architecture with the discovered `msvsmon.exe` path, how it was found (`standalone`, `ide`, `vswhere`, `registry`, `extra`), its file version and the installer URL, plus each running `msvsmon.exe` with pid, session id, port, whether that port is listening and whether Vestigo started it. The port comes from the process command line (read through CIM) and falls back to the port Vestigo used or the default.
+
+`install_remote_debugger` downloads `https://aka.ms/vs/<17|18>/release/RemoteTools.<amd64|arm64|x86>ret.enu.exe` to a temporary directory under the spool, requires a valid Authenticode signature (`WinVerifyTrust`) whose signer CN or O is `Microsoft Corporation`, and runs it as the service account with `/install /quiet /norestart`. Everything happens inside a job so the call returns a job id at once; the temporary files are removed at the end. It returns `Skipped` when `msvsmon.exe` is already found, unless `force` is true. `Vestigo:RemoteDebugger:InstallerDownloadTimeout` limits the download.
+
+`start_remote_debugger` runs `msvsmon.exe /nostatus /silent /nofirewallwarn /port <port> /timeout <seconds>` in the `interactive` context by default (`elevated` uses the user's linked administrator token). `port` defaults to `Vestigo:RemoteDebugger:DefaultPort` (4026); `timeoutSeconds` (30 to 86400, default 3600) is how long the monitor waits without a connection. `auth` is `windows` (default; `allowUsers` entries become `/allow`) or `none` (`/noauth /anyuser`), which needs `iUnderstandNoAuthIsInsecure: true` and adds a warning to the result and the log. A second instance on a port that is in use is refused with `port_in_use`. The result has the pid, port, the sanitised arguments, whether the port is listening, and the job id.
+
+`stop_remote_debugger` takes a `pid` of a running `msvsmon.exe` or `all: true` for the instances Vestigo started. It posts a close request, waits `gracefulTimeoutSeconds`, then kills the process tree.
+
+`prepare_remote_debugger_computer` runs `msvsmon.exe /prepcomputer /private /quiet` as a job (default `service` context) to configure firewall rules and permissions for private networks.

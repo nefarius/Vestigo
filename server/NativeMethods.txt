@@ -34,3 +34,8 @@ JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 INFINITE
 FILE_ACCESS_RIGHTS
 JOB_OBJECT_LIMIT
+
+// RemoteDebugger module: Authenticode verification of the downloaded installer
+WinVerifyTrust
+WINTRUST_DATA
+WINTRUST_FILE_INFO
