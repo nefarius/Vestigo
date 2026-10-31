@@ -6,6 +6,7 @@ using ModelContextProtocol.Server;
 using Vestigo.Configuration;
 using Vestigo.Jobs;
 using Vestigo.Processes;
+using Vestigo.Security;
 
 namespace Vestigo.Software;
 
@@ -60,7 +61,9 @@ public sealed class SoftwareTools(
     private const int TailBytes = 16 * 1024;
     private const int ErrorTimeout = 1460;
 
-    internal string LogDirectory { get; init; } = Path.Combine(VestigoPaths.SpoolDirectory, "software");
+    private static string DefaultLogDirectory => Path.Combine(VestigoPaths.SpoolDirectory, "software");
+
+    internal string LogDirectory { get; init; } = DefaultLogDirectory;
 
     [McpServerTool(Name = "list_installed_software")]
     [Description("Lists installed programs from the Uninstall registry keys (machine 64/32-bit and loaded user hives) with version, publisher, install location, uninstall strings, and detected installer type, sorted by name.")]
@@ -167,7 +170,22 @@ public sealed class SoftwareTools(
 
         if (logPath is not null)
         {
-            Directory.CreateDirectory(LogDirectory);
+            try
+            {
+                // Test overrides point elsewhere; the default always lives in the verified spool tree.
+                if (string.Equals(LogDirectory, DefaultLogDirectory, StringComparison.Ordinal))
+                {
+                    StateDirectories.EnsureSubdirectory(LogDirectory);
+                }
+                else
+                {
+                    Directory.CreateDirectory(LogDirectory);
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Fail("untrusted_path", ex.Message);
+            }
         }
 
         Outcome outcome = new();

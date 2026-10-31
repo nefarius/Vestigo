@@ -8,10 +8,14 @@ public static class VestigoPaths
     public const string CompanyFolderName = "Nefarius Software Solutions";
     public const string ProductFolderName = "Vestigo";
 
-    public static string SettingsDirectory =>
+    /// <summary>True when <c>VESTIGO_SETTINGS_DIR</c> relocates the state tree (tests and development).</summary>
+    public static bool IsSettingsDirectoryOverridden =>
         Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR") is string overrideDirectory &&
-        !string.IsNullOrWhiteSpace(overrideDirectory)
-            ? Path.GetFullPath(overrideDirectory)
+        !string.IsNullOrWhiteSpace(overrideDirectory);
+
+    public static string SettingsDirectory =>
+        IsSettingsDirectoryOverridden
+            ? Path.GetFullPath(Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR")!)
             : Path.Combine(SettingsRoot, CompanyFolderName, ProductFolderName);
 
     public static string SettingsFilePath => Path.Combine(SettingsDirectory, "appsettings.json");

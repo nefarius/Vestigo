@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 
 using Vestigo.Configuration;
+using Vestigo.Security;
 
 namespace Vestigo.Jobs;
 
@@ -128,7 +129,7 @@ public sealed class JobManager : BackgroundService
     private readonly object _startLock = new();
 
     public JobManager(VestigoOptions options, ILogger<JobManager>? logger = null)
-        : this(options, Path.Combine(VestigoPaths.SpoolDirectory, "jobs"), logger)
+        : this(options, StateDirectories.EnsureSubdirectory(Path.Combine(VestigoPaths.SpoolDirectory, "jobs")), logger)
     {
     }
 

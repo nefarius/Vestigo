@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 
 using Vestigo.Configuration;
 using Vestigo.Jobs;
+using Vestigo.Security;
 
 namespace Vestigo.Processes;
 
@@ -40,8 +41,16 @@ public sealed class AppCloser(IProcessLauncher launcher)
             return OperationResult<CloseReport>.Fail(available.ErrorCode!, available.Error!);
         }
 
-        string directory = Path.Combine(VestigoPaths.SpoolDirectory, "helper");
-        Directory.CreateDirectory(directory);
+        string directory;
+        try
+        {
+            directory = StateDirectories.EnsureSubdirectory(Path.Combine(VestigoPaths.SpoolDirectory, "helper"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return OperationResult<CloseReport>.Fail("untrusted_path", ex.Message);
+        }
+
         string outputPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".json");
         File.WriteAllBytes(outputPath, []);
         try

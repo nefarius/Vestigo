@@ -5,6 +5,7 @@ using Nefarius.Utilities.ETW.Deserializer.WPP;
 using Nefarius.Utilities.ETW.Symbols;
 
 using Vestigo.Configuration;
+using Vestigo.Security;
 
 namespace Vestigo.Etws;
 
@@ -77,7 +78,7 @@ public sealed class CaptureManager : IHostedService, IDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(VestigoPaths.SpoolDirectory);
+        StateDirectories.EnsureSubdirectory(VestigoPaths.SpoolDirectory);
         await RecoverOwnedSessionsAsync().ConfigureAwait(false);
         CleanupExpired();
         _retentionTimer = new Timer(_ => CleanupExpired(), null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
@@ -580,7 +581,7 @@ public sealed class CaptureManager : IHostedService, IDisposable
                 $".owned-sessions.{Guid.NewGuid():N}.tmp");
             try
             {
-                Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
+                StateDirectories.EnsureSubdirectory(VestigoPaths.SettingsDirectory);
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(payload));
                 if (File.Exists(VestigoPaths.OwnedSessionsPath))
                 {
@@ -591,7 +592,7 @@ public sealed class CaptureManager : IHostedService, IDisposable
                     File.Move(tempPath, VestigoPaths.OwnedSessionsPath);
                 }
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is IOException or InvalidOperationException)
             {
                 _logger.LogWarning(ex, "Could not save owned ETW sessions");
             }

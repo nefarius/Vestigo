@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 using Vestigo.Configuration;
+using Vestigo.Security;
 
 namespace Vestigo.Hosting;
 
@@ -15,12 +16,12 @@ public sealed class VestigoHealthCheck(VestigoOptions options) : IHealthCheck
     {
         try
         {
-            Directory.CreateDirectory(VestigoPaths.SpoolDirectory);
-            string probe = Path.Combine(VestigoPaths.SpoolDirectory, ".health");
+            string spool = StateDirectories.EnsureSubdirectory(VestigoPaths.SpoolDirectory);
+            string probe = Path.Combine(spool, ".health");
             File.WriteAllText(probe, "ok");
             File.Delete(probe);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy("Capture spool is not writable.", ex));
         }
