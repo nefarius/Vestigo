@@ -62,6 +62,40 @@ public class SecurityAndOptionsTests
         }
     }
 
+    [Theory]
+    [InlineData("0.0.0.0", false, true, "anyone who can reach")]
+    [InlineData("127.0.0.1", false, true, "Any local client")]
+    [InlineData("0.0.0.0", true, false, "")]
+    public void PrivilegedModules_WarnOnlyWithoutTokens(string address, bool withToken, bool expectWarning, string fragment)
+    {
+        VestigoOptions options = new()
+        {
+            ListenAddress = address,
+            Software = { AllowUninstall = true },
+            Modules =
+            {
+                ["Processes"] = new ModuleSettings { Enabled = true },
+                ["Devices"] = new ModuleSettings { Enabled = true }
+            }
+        };
+        if (withToken)
+        {
+            options.ApiTokens.Add("secret-value");
+        }
+
+        string? warning = Vestigo.Modules.ModuleRegistry.GetPrivilegedModuleWarning(options);
+
+        Assert.Equal(expectWarning, warning is not null);
+        if (warning is not null)
+        {
+            Assert.Contains(fragment, warning);
+            Assert.Contains("Processes", warning);
+            Assert.Contains("Devices", warning);
+            Assert.Contains("Software uninstall", warning);
+            Assert.DoesNotContain("secret-value", warning);
+        }
+    }
+
     [Fact]
     public void Options_RejectBlankTokensAndNonPositiveLimits()
     {

@@ -224,7 +224,7 @@ public class PlatformTests : IDisposable
     }
 
     [Fact]
-    public void ProcessesModule_IsOptInAndRequiresJobsAndTokens()
+    public void ProcessesModule_IsOptInAndRequiresJobs_NoTokenOnlyWarns()
     {
         ModuleSettings on = new() { Enabled = true };
         VestigoOptions defaults = new();
@@ -238,7 +238,8 @@ public class PlatformTests : IDisposable
 
         Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "Processes");
         ModuleRegistry.ValidateConfiguration(defaults);
-        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noTokens));
+        ModuleRegistry.ValidateConfiguration(noTokens);
+        Assert.Contains("Processes", ModuleRegistry.GetPrivilegedModuleWarning(noTokens));
         Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noJobs));
         ModuleRegistry.ValidateConfiguration(valid);
     }

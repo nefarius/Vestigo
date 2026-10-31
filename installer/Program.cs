@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
+using Vestigo.Installer.Actions.Logic;
+
 using WixSharp;
 using WixSharp.CommonTasks;
 
@@ -69,7 +71,27 @@ static class Program
             UpdaterRegistry registry = UpdaterRegistry.Read(updaterConfigurationPath);
             Version version = ReadProductVersion(options.ServerPublishDir);
 
-            Feature feature = new("Server", "Vestigo MCP server for WPP trace capture and decoding.");
+            Feature feature = new(ModuleSelection.ServerFeature, "Vestigo MCP server for WPP trace capture and decoding.");
+
+            // One child feature per module; nesting follows the module dependencies. Each owns only a registry marker
+            // so Windows Installer tracks its state; the binaries all live in the Server feature.
+            Dictionary<string, Feature> moduleFeatures = new(StringComparer.OrdinalIgnoreCase);
+            List<RegKey> moduleRegistry = [];
+            foreach (ModuleDefinition module in ModuleSelection.All)
+            {
+                Feature moduleFeature = new(module.Name, module.Description) { Id = module.Name };
+                moduleFeatures[module.Name] = moduleFeature;
+                (module.Parent is null ? feature : moduleFeatures[module.Parent]).Add(moduleFeature);
+                moduleRegistry.Add(new RegKey(
+                    moduleFeature,
+                    RegistryHive.LocalMachine,
+                    @"SOFTWARE\Nefarius Software Solutions\Vestigo\Modules",
+                    new RegValue(module.Name, "1") { Win64 = true })
+                {
+                    Win64 = true
+                });
+            }
+
             Files files = new(feature, Path.Combine(options.ServerPublishDir, "*.*"), IncludeInPublishedFile)
             {
                 OnProcess = file =>
@@ -91,8 +113,8 @@ static class Program
                 }
             };
 
-            Project project = new(
-                "Vestigo MCP Server",
+            WixObject[] items =
+            [
                 new Dir(
                     @"%ProgramFiles64Folder%\Nefarius Software Solutions\Vestigo",
                     files,
@@ -110,7 +132,11 @@ static class Program
                     new RegValue(registry.Value, version.ToString()) { Win64 = true })
                 {
                     Win64 = true
-                })
+                },
+                .. moduleRegistry
+            ];
+
+            Project project = new("Vestigo MCP Server", items)
             {
                 GUID = new Guid("7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71"),
                 UpgradeCode = new Guid("9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64"),

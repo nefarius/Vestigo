@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The pure module list is shared with the custom actions and the tests. -->
+    <Compile Include="Vestigo.Installer.Actions\Logic\*.cs" LinkBase="Logic" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- net48 DTF custom actions; built first, then embedded in the MSI as a binary. -->
     <ProjectReference Include="Vestigo.Installer.Actions\Vestigo.Installer.Actions.csproj"
                       ReferenceOutputAssembly="false"

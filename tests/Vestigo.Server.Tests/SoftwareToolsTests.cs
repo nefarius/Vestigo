@@ -326,13 +326,15 @@ public class SoftwareToolsTests : IDisposable
     }
 
     [Fact]
-    public void Modules_RequireTokensForUninstall()
+    public void Modules_UninstallWithoutTokenOnlyWarns()
     {
         VestigoOptions open = new() { Software = { AllowUninstall = true } };
         VestigoOptions tokens = new() { ApiTokens = ["t"], Software = { AllowUninstall = true } };
 
-        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(open));
+        ModuleRegistry.ValidateConfiguration(open);
+        Assert.Contains("Software uninstall", ModuleRegistry.GetPrivilegedModuleWarning(open));
         ModuleRegistry.ValidateConfiguration(tokens);
+        Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
         ModuleRegistry.ValidateConfiguration(new VestigoOptions());
         Assert.Throws<InvalidOperationException>(() => new SoftwareOptions { MaxUninstallDuration = TimeSpan.Zero }.Validate());
     }

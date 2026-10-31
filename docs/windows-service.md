@@ -48,6 +48,21 @@ msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=token VESTI
 
 With token mode and no token on the command line (and none stored), the installer generates one; read it from the settings file. Invalid values fail the install. The firewall rule is removed on uninstall and when a repair or upgrade switches to a localhost mode.
 
+## Modules
+
+The page after the listen page is the standard feature tree. `Vestigo MCP Server` (binaries and service) is required; each module is a child feature whose id is the module name, nested by dependency: `Processes` and `Software` sit below `Jobs`, `RemoteDebugger` below `Processes`, and `SoftwareUninstall` (`Vestigo:Software:AllowUninstall`) below `Software`. A child cannot be installed without its parent, which matches the server's dependency checks.
+
+The defaults equal the server defaults in every listen mode: all modules selected except `Devices`, `Processes`, `RemoteDebugger` and `SoftwareUninstall`. Nothing is blocked by the listen or token mode. The listen page only shows a note when no token is chosen, because every module you enable is then open to whoever can reach the server. A lab VLAN with any address, no token, and `Processes` plus `SoftwareUninstall` is allowed; the service logs a `SECURITY WARNING` at startup.
+
+The same deferred action that writes the listen settings also writes `Vestigo:Modules:<Name>:Enabled` for every module and `Vestigo:Software:AllowUninstall`, from the feature states. The installer therefore owns those keys; a repair or modify rewrites them. On upgrade the page starts from the modules in the existing settings file (when the installer runs elevated, otherwise from the defaults). Silent installs use the standard feature properties, or `VESTIGO_MOD_<NAME>` (`1` or `0`, for example `VESTIGO_MOD_PROCESSES=1`) to seed the default level:
+
+```powershell
+msiexec /i Vestigo.msi /qn ADDLOCAL=Server,Jobs,Processes,Software,SoftwareUninstall VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=none
+msiexec /i Vestigo.msi /qn ADDLOCAL=ALL REMOVE=Devices
+```
+
+With `ADDLOCAL` only the listed features (and their required parents) are installed, so list every module you want.
+
 Listen address and port are read at process start. Restart the service after changing them.
 
 The MSI registers Vicius for the installing user. At logon, and once a day, that user's scheduled task checks Buildbot and shows an update window when a newer signed release exists. Approving it elevates and runs the MSI with `/passive /norestart`. The MSI stops and restarts the service, so an in-flight capture ends. Another Windows user does not receive the schedule until an administrator runs `Nefarius_Vestigo_Updater.exe --install --silent --override-success-code 0` in that user's session. The update window can disable later notifications; `Nefarius_Vestigo_Updater.exe --show-options` restores them. Uninstall removes the current user's autostart entry and scheduled task. A failure to register or remove Vicius does not fail the service installation.

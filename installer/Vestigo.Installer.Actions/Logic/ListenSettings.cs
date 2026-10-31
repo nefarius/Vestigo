@@ -260,7 +260,7 @@ namespace Vestigo.Installer.Actions.Logic
         ///     everything else. Existing tokens are kept untouched when the chosen token is already among them.
         /// </summary>
         /// <param name="existingJson">Current file contents, or null/blank for a new file. Throws <see cref="FormatException" /> when unparseable.</param>
-        public static string Merge(string? existingJson, ResolvedSettings settings)
+        public static string Merge(string? existingJson, ResolvedSettings settings, IDictionary<string, bool>? modules = null)
         {
             JsonObject root;
             if (string.IsNullOrWhiteSpace(existingJson))
@@ -300,6 +300,11 @@ namespace Vestigo.Installer.Actions.Logic
             else
             {
                 vestigo.Set("ApiTokens", new List<object?>());
+            }
+
+            if (modules != null)
+            {
+                ModuleSelection.Apply(vestigo, modules);
             }
 
             return MiniJson.Write(root);

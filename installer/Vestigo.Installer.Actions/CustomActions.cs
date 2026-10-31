@@ -1,5 +1,6 @@
 #nullable disable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -55,6 +56,17 @@ namespace Vestigo.Installer.Actions
                     IsUpgrade(session));
 
                 Publish(session, resolved);
+
+                // Carry existing module choices into the feature tree (Level conditions read these properties).
+                foreach (KeyValuePair<string, bool> state in ModuleSelection.ReadExisting(TryReadSettingsFile()))
+                {
+                    ModuleDefinition module = ModuleSelection.Find(state.Key);
+                    if (module != null && string.IsNullOrWhiteSpace(session[module.PropertyName]))
+                    {
+                        session[module.PropertyName] = state.Value ? "1" : "0";
+                    }
+                }
+
                 if (!hadToken && resolved.AuthMode == ListenSettings.AuthToken)
                 {
                     session[SuggestedProperty] = resolved.Token;
@@ -140,6 +152,7 @@ namespace Vestigo.Installer.Actions
                 bool suggestion = !string.IsNullOrWhiteSpace(session[SuggestedProperty]) &&
                                   string.Equals(session[TokenProperty], session[SuggestedProperty], StringComparison.Ordinal);
                 data["TokenIsSuggestion"] = suggestion ? "1" : "0";
+                data["Modules"] = ModuleSelection.Serialize(ReadFeatureStates(session));
                 session[WriteDataProperty] = data.ToString();
                 return ActionResult.Success;
             }
@@ -171,18 +184,19 @@ namespace Vestigo.Installer.Actions
                     data["Token"],
                     existing,
                     data["TokenIsSuggestion"] == "1");
+                IDictionary<string, bool> modules = ModuleSelection.Parse(data["Modules"]);
 
                 string merged;
                 try
                 {
-                    merged = ListenSettings.Merge(current, resolved);
+                    merged = ListenSettings.Merge(current, resolved, modules);
                 }
                 catch (FormatException ex)
                 {
                     string backup = path + ".bak-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
                     session.Log("Existing settings file is not valid JSON (" + ex.Message + "). Keeping it as " + backup + ".");
                     WriteSecureFile(backup, File.ReadAllBytes(path));
-                    merged = ListenSettings.Merge(null, resolved);
+                    merged = ListenSettings.Merge(null, resolved, modules);
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -203,6 +217,35 @@ namespace Vestigo.Installer.Actions
                 session.Log("Could not write Vestigo settings: " + ex.GetType().Name + ": " + ex.Message);
                 return ActionResult.Failure;
             }
+        }
+
+        /// <summary>
+        ///     A module is enabled when its feature will be installed locally; when the request state is unknown the
+        ///     current state decides (repair and modify keep untouched features as they are).
+        /// </summary>
+        private static IDictionary<string, bool> ReadFeatureStates(Session session)
+        {
+            Dictionary<string, bool> states = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (ModuleDefinition module in ModuleSelection.All)
+            {
+                try
+                {
+                    FeatureInfo feature = session.Features[module.Name];
+                    InstallState state = feature.RequestState;
+                    if (state == InstallState.Unknown || state == InstallState.Default || state == InstallState.NotUsed)
+                    {
+                        state = feature.CurrentState;
+                    }
+
+                    states[module.Name] = state == InstallState.Local;
+                }
+                catch (InstallerException ex)
+                {
+                    session.Log("Could not read feature " + module.Name + ": " + ex.Message);
+                }
+            }
+
+            return states;
         }
 
         /// <summary>True when FindRelatedProducts flagged an older version (set before AppSearch in both sequences).</summary>
