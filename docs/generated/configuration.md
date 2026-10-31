@@ -32,6 +32,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Modules` | `empty` |
 | `Processes:AllowPathLookup` | `True` |
 | `Roots` | `empty` |
+| `Services` | `defaults (see Services:*)` |
 | `SpoolRetention` | `1.00:00:00` |
 | `SymbolCache` | `null` |
 | `SymbolServer` | `null` |

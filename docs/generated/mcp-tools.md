@@ -67,6 +67,16 @@ Creates a ROOT-enumerated device node with a hardware ID and device class. Insta
 | `hardwareId` | `string` | Hardware ID of the new node, for example Root\MyDriver. |
 | `noDuplicates` | `bool` | Do nothing when a node with this hardware ID already exists. |
 
+## `create_driver_service`
+
+Creates a kernel driver service through nefcon. The .sys binary must be an existing file inside a configured root that allows Execute. The service starts on demand; use start_service afterwards.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `serviceName` | `string` | New service name. |
+| `binaryPath` | `string` | Driver .sys path: root:relative\path or an absolute path inside a root that allows Execute. |
+| `displayName` | `string` | Display name. Defaults to the service name. |
+
 ## `delete_file_on_reboot`
 
 Schedules a file for deletion at the next reboot (MoveFileEx delay-until-reboot). Needs Write access and administrator rights.
@@ -83,6 +93,14 @@ Deletes a file or directory inside a root with Write access. Refuses to delete a
 | --- | --- | --- |
 | `path` | `string` | Path to delete. |
 | `recursive` | `bool` | Delete directory contents too. |
+
+## `delete_service`
+
+Deletes a kernel driver service through nefcon. Win32 services are refused. Stop the driver first.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Driver service name (not a path). |
 
 ## `disable_device`
 
@@ -155,6 +173,14 @@ Returns state, exit code, and output size for one job.
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `jobId` | `string` | Job identifier. |
+
+## `get_service`
+
+Returns state, start type, binary path, type (including KERNEL_DRIVER), error control, dependencies, exit codes, and the process id while running.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Service name (not the display name). |
 
 ## `get_upload_url`
 
@@ -282,6 +308,17 @@ Lists the configured named roots with their access flags and free disk space.
 
 No parameters.
 
+## `list_services`
+
+Lists Win32 services and kernel/file-system drivers with state, start type, image path, account, and dependencies, sorted by name.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `kind` | `string` | win32, driver or all. |
+| `nameContains` | `string` | Case-insensitive substring of the service name or display name. |
+| `state` | `string` | Only services in this state: stopped, running, paused, start_pending, stop_pending, continue_pending or pause_pending. |
+| `limit` | `int` | Maximum entries to return, 1 to 1000. |
+
 ## `make_directory`
 
 Creates a directory, including missing parents, inside a root with Write access.
@@ -387,6 +424,16 @@ Restarts a device (remove and re-enumerate) by instance ID, for example after in
 | --- | --- | --- |
 | `instanceId` | `string` | Device instance ID, for example ROOT\SYSTEM\0001. |
 
+## `restart_service`
+
+Stops a service (waiting for Stopped) and starts it again (waiting for Running). Dependents stopped by stopDependents are not restarted.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Service name. |
+| `stopDependents` | `bool` | Also stop running dependent services first. |
+| `timeoutSeconds` | `int` | Seconds to wait for each phase, 1 to 300. |
+
 ## `run_process`
 
 Starts a process as a job. path is a file under a root with Execute access (name:relative\path or absolute), or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\default (elevated: true uses the linked administrator token). stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.
@@ -421,6 +468,15 @@ Changes a persistent environment variable and broadcasts WM_SETTINGCHANGE. Machi
 | `value` | `string` | Value or list entries. Ignored for unset. |
 | `expand` | `bool` | Write REG_EXPAND_SZ so %VAR% references are expanded by readers. List operations keep an existing REG_EXPAND_SZ kind. |
 
+## `set_service_start_type`
+
+Sets the start type: boot, system, auto, demand or disabled. boot and system are only valid for drivers.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Service name. |
+| `startType` | `string` | boot, system, auto, demand or disabled. |
+
 ## `start_capture`
 
 Starts a managed realtime WPP capture. Events are spooled locally; use read_capture to page them.
@@ -434,6 +490,16 @@ Starts a managed realtime WPP capture. Events are spooled locally; use read_capt
 | `matchAnyKeyword` | `string` | Match-any keyword bitmask. Omit for all keywords. |
 | `matchAllKeyword` | `string` | Match-all keyword bitmask. Omit for no match-all filter. |
 | `duration` | `string` | Maximum capture duration, for example 00:05:00. Capped by server configuration. |
+
+## `start_service`
+
+Starts a service or driver and waits until it is running. Starting an unsigned driver may fail unless test-signing is enabled.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Service name. |
+| `arguments` | `string[]` | Optional start arguments passed to the service. |
+| `timeoutSeconds` | `int` | Seconds to wait for Running, 0 to 300. 0 returns without waiting. |
 
 ## `stat_path`
 
@@ -451,6 +517,16 @@ Stops a capture and its ETW session.
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `captureId` | `string` | Capture identifier. |
+
+## `stop_service`
+
+Stops a service or driver and waits until it is stopped.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Service name. |
+| `stopDependents` | `bool` | Also stop running dependent services first. |
+| `timeoutSeconds` | `int` | Seconds to wait for Stopped, 0 to 300. 0 returns without waiting. |
 
 ## `tail_text_file`
 

@@ -54,6 +54,7 @@ public static class ConfigurationCatalog
         null => "null",
         FilesOptions files => $"MaxUploadBytes={files.MaxUploadBytes}",
         Vestigo.Devices.DevicesOptions => "defaults (see Devices:*)",
+        Vestigo.Services.ServicesOptions => "defaults (see Services:*)",
         string text => text,
         IEnumerable<string> items => items.Any() ? string.Join(", ", items) : "empty",
         System.Collections.IEnumerable items when value is not string => items.Cast<object>().Any() ? "configured" : "empty",

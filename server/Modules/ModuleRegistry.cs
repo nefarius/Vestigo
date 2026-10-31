@@ -13,6 +13,7 @@ public static class ModuleRegistry
     [
         new DevicesModule(),
         new JobsModule(),
+        new ServicesModule(),
         new Files.FilesModule(),
         new ProcessesModule(),
         new TraceModule(),
