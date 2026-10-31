@@ -61,6 +61,12 @@ public sealed class VestigoOptions
 
     public string ClockResolution { get; set; } = "QueryPerformanceCounter";
 
+    public EnvironmentOptions Environment { get; set; } = new();
+
+    public LogsOptions Logs { get; set; } = new();
+
+    public EventLogOptions EventLog { get; set; } = new();
+
     public bool AuthenticationEnabled => ApiTokens.Count > 0;
 
     public void Validate()
@@ -130,6 +136,10 @@ public sealed class VestigoOptions
                 throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs at least one access flag.");
             }
         }
+
+        Environment.Validate();
+        Logs.Validate();
+        EventLog.Validate();
 
         if (BufferSizeKb == 0 || FlushTimerSeconds == 0)
         {

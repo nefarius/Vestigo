@@ -13,7 +13,10 @@ public static class ModuleRegistry
     [
         new JobsModule(),
         new Files.FilesModule(),
-        new TraceModule()
+        new TraceModule(),
+        new EnvironmentModule(),
+        new LogsModule(),
+        new EventLogModule()
     ];
 
     public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options) =>
