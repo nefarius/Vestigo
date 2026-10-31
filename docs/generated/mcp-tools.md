@@ -2,6 +2,14 @@
 
 Generated from `McpServerTool` attributes. Do not edit by hand.
 
+## `cancel_job`
+
+Requests cancellation of a running job. Process jobs kill their process tree.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `jobId` | `string` | Job identifier. |
+
 ## `convert_etl`
 
 Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary.
@@ -23,6 +31,14 @@ Returns status, counters, and the last error for one capture.
 | --- | --- | --- |
 | `captureId` | `string` | Capture identifier. |
 
+## `get_job`
+
+Returns state, exit code, and output size for one job.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `jobId` | `string` | Job identifier. |
+
 ## `inspect_wpp_pdb`
 
 Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root.
@@ -43,6 +59,12 @@ Lists ETW session names currently running on this machine.
 
 No parameters.
 
+## `list_jobs`
+
+Lists background jobs owned by this Vestigo process, newest first.
+
+No parameters.
+
 ## `read_capture`
 
 Reads a page of decoded NDJSON events from a capture spool.
@@ -52,6 +74,16 @@ Reads a page of decoded NDJSON events from a capture spool.
 | `captureId` | `string` | Capture identifier. |
 | `afterSequence` | `long` | Return events after this sequence. Use 0 to start at the beginning. |
 | `limit` | `int?` | Maximum events to return. The server clamps this to its configured batch size. |
+
+## `read_job_output`
+
+Reads a page of text output from a job. Pass the returned NextOffset to continue.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `jobId` | `string` | Job identifier. |
+| `offset` | `long` | Byte offset to read from. Use 0 for the beginning. |
+| `limit` | `int?` | Maximum bytes to return. Clamped to MaxJobReadBytes. |
 
 ## `scan_etl_metadata`
 
@@ -90,4 +122,13 @@ Loads PDB and TMF files and reports whether they can decode WPP messages.
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `symbolPaths` | `string[]` | PDB and TMF paths inside an allowed input root. |
+
+## `wait_job`
+
+Waits up to the given number of seconds for a job to finish and returns its state.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `jobId` | `string` | Job identifier. |
+| `timeoutSeconds` | `int` | Maximum seconds to wait, 0 to 300. |
 

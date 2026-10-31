@@ -25,3 +25,7 @@ The generated parameter catalog is [generated/mcp-tools.md](generated/mcp-tools.
 `stop_capture` cancels the reader and disposes the ETW session.
 
 Capture duration cannot exceed `MaxCaptureDuration`. The spool is removed after `SpoolRetention` once the capture has stopped.
+
+## Jobs
+
+`list_jobs`, `get_job`, `wait_job`, `read_job_output` and `cancel_job` manage background jobs that other tools start. `read_job_output` returns text after a byte `offset`; pass the returned `NextOffset` to continue. Finished jobs are kept for `JobRetention`.

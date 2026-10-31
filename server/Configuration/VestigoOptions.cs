@@ -20,6 +20,18 @@ public sealed class VestigoOptions
 
     public List<string> AllowedOutputRoots { get; set; } = [];
 
+    public List<RootDefinition> Roots { get; set; } = [];
+
+    public Dictionary<string, ModuleSettings> Modules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public int MaxConcurrentJobs { get; set; } = 8;
+
+    public long MaxJobOutputBytes { get; set; } = 64L * 1024 * 1024;
+
+    public TimeSpan JobRetention { get; set; } = TimeSpan.FromHours(24);
+
+    public int MaxJobReadBytes { get; set; } = 64 * 1024;
+
     public string? SymbolServer { get; set; }
 
     public string? SymbolCache { get; set; }
@@ -76,6 +88,36 @@ public sealed class VestigoOptions
         if (MaxCaptureDuration <= TimeSpan.Zero || SpoolRetention <= TimeSpan.Zero)
         {
             throw new InvalidOperationException("Vestigo durations must be positive.");
+        }
+
+        if (MaxConcurrentJobs < 1 || MaxJobOutputBytes < 1 || MaxJobReadBytes < 1 || JobRetention <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("Vestigo job limits must be positive.");
+        }
+
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        foreach (RootDefinition root in Roots)
+        {
+            if (string.IsNullOrWhiteSpace(root.Name) || !System.Text.RegularExpressions.Regex.IsMatch(root.Name, "^[A-Za-z][A-Za-z0-9_-]+$"))
+            {
+                throw new InvalidOperationException(
+                    $"Vestigo:Roots name '{root.Name}' must be at least two characters of letters, digits, '_' or '-' and start with a letter.");
+            }
+
+            if (!names.Add(root.Name))
+            {
+                throw new InvalidOperationException($"Vestigo:Roots contains duplicate name '{root.Name}'.");
+            }
+
+            if (string.IsNullOrWhiteSpace(root.Path) || !System.IO.Path.IsPathFullyQualified(root.Path))
+            {
+                throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs an absolute Path.");
+            }
+
+            if (root.Access == RootAccess.None)
+            {
+                throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs at least one access flag.");
+            }
         }
 
         if (BufferSizeKb == 0 || FlushTimerSeconds == 0)
