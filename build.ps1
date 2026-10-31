@@ -35,8 +35,19 @@ function ExecSafe([scriptblock] $cmd) {
 # If dotnet CLI is installed globally and is a .NET 10+ SDK, use for execution
 $DotNetOk = $false
 if ($null -ne (Get-Command "dotnet" -ErrorAction SilentlyContinue)) {
-    $InstalledVersion = "$(dotnet --version 2>$null)"
-    if ($LASTEXITCODE -eq 0 -and $InstalledVersion -match '^(\d+)\.' -and [int]$Matches[1] -ge 10) { $DotNetOk = $true }
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "SilentlyContinue"
+        $InstalledVersion = "$(dotnet --version 2>$null)"
+        $InstalledExitCode = $LASTEXITCODE
+        $InstalledRuntimes = "$(dotnet --list-runtimes 2>$null)"
+        $RuntimesExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+    # The build project targets net10.0, so a .NET 10 runtime must exist (no roll-forward to newer majors by default)
+    if ($InstalledExitCode -eq 0 -and $RuntimesExitCode -eq 0 -and $InstalledVersion -match '^(\d+)\.' -and [int]$Matches[1] -ge 10 -and $InstalledRuntimes -match '(?m)^Microsoft\.NETCore\.App 10\.') { $DotNetOk = $true }
 }
 if ($DotNetOk) {
     $env:DOTNET_EXE = (Get-Command "dotnet").Path
