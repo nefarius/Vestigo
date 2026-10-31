@@ -1,12 +1,16 @@
-using System.Diagnostics;
 using System.Text;
+
+using CliWrap;
 
 namespace Vestigo.Devices;
 
-/// <summary>Real <see cref="INefconProcess" /> backed by <see cref="Process" />.</summary>
+/// <summary>Real <see cref="INefconProcess" /> backed by CliWrap.</summary>
 internal sealed class NefconProcess : INefconProcess
 {
     internal const int MaxOutputChars = 16 * 1024;
+
+    /// <summary>How long a graceful (Ctrl+C) stop may take before the process tree is killed.</summary>
+    internal static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(2);
 
     public async Task<NefconProcessOutput> RunAsync(
         string executable,
@@ -14,40 +18,38 @@ internal sealed class NefconProcess : INefconProcess
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        ProcessStartInfo startInfo = new(executable)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = false,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-        foreach (string argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
+        OutputTail tail = new(MaxOutputChars);
+        PipeTarget sink = PipeTarget.ToDelegate(tail.Append, Encoding.UTF8);
+
+        Command command = Cli.Wrap(executable)
+            .WithArguments(args =>
+            {
+                foreach (string argument in arguments)
+                {
+                    args.Add(argument);
+                }
+            })
+            .WithValidation(CommandResultValidation.None)
+            .WithStandardOutputPipe(sink)
+            .WithStandardErrorPipe(sink);
 
         using CancellationTokenSource timeoutSource = new(timeout);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
-
-        using Process process = new() { StartInfo = startInfo };
-        OutputTail tail = new(MaxOutputChars);
-        process.OutputDataReceived += (_, e) => tail.Append(e.Data);
-        process.ErrorDataReceived += (_, e) => tail.Append(e.Data);
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
+        using CancellationTokenSource gracefulSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
+        using CancellationTokenSource forcefulSource = new();
+        // Ask the process to stop first; escalate to killing the whole process tree after the grace period.
+        using CancellationTokenRegistration escalation = gracefulSource.Token.Register(
+            static state => ((CancellationTokenSource)state!).CancelAfter(GracePeriod),
+            forcefulSource);
 
         try
         {
-            await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
+            CommandResult result = await command
+                .ExecuteAsync(forcefulSource.Token, gracefulSource.Token)
+                .ConfigureAwait(false);
+            return new NefconProcessOutput(result.ExitCode, tail.ToString(), TimedOut: false);
         }
         catch (OperationCanceledException)
         {
-            Kill(process);
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested)
             {
                 throw;
@@ -55,24 +57,7 @@ internal sealed class NefconProcess : INefconProcess
 
             return new NefconProcessOutput(-1, tail.ToString(), TimedOut: true);
         }
-
-        // Parameterless WaitForExit lets the asynchronous output readers drain.
-        process.WaitForExit();
-        return new NefconProcessOutput(process.ExitCode, tail.ToString(), TimedOut: false);
     }
-
-    private static void Kill(Process process)
-    {
-        try
-        {
-            process.Kill(entireProcessTree: true);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            // Already exited.
-        }
-    }
-
     /// <summary>Keeps only the last <c>capacity</c> characters of the output.</summary>
     internal sealed class OutputTail(int capacity)
     {
