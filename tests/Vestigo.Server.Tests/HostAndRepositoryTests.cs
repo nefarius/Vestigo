@@ -137,7 +137,7 @@ public class RepositoryBoundaryTests
                      "ListenAddress", "ListenPort", "ApiTokens", "AllowedInputRoots", "AllowedOutputRoots",
                      "SymbolServer", "SymbolCache", "MaxInputBytes", "MaxEvents", "MaxOutputBytes",
                      "MaxCaptureDuration", "SpoolRetention", "MaxConcurrentCaptures", "MaxReadBatch",
-                     "BufferSizeKb", "FlushTimerSeconds", "ClockResolution"
+                     "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds", "ClockResolution"
                  })
         {
             Assert.Contains(name, generated, StringComparison.Ordinal);

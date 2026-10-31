@@ -8,6 +8,8 @@ When `ApiTokens` is empty, `/mcp` accepts anonymous clients. That is the default
 
 Every client path is canonicalized, including existing directory links, and must stay inside the resolved input or output root. A root of `D:\traces` does not allow `D:\traces-extra` or a link that resolves outside that root. The accepted path is the resolved location, so a later open does not follow a link that was swapped after the check. Unsupported extensions are rejected. Existing outputs are kept unless `overwrite` is true. Input size, event count, output size, and capture lifetime are capped.
 
+`attach_etw_session` exposes another session's machine-wide trace data to API clients, so it is disabled until `Vestigo:AttachableSessions` lists the sessions that may be read. Attaching is read-only and Vestigo-owned sessions cannot be attached.
+
 `Kestrel:Endpoints` is rejected at startup. The process binds only `Vestigo:ListenAddress` and `Vestigo:ListenPort`. IPv6 addresses are formatted with brackets.
 
 ## Network exposure

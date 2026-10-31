@@ -7,6 +7,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `AllowedInputRoots` | `empty` |
 | `AllowedOutputRoots` | `empty` |
 | `ApiTokens` | `empty` |
+| `AttachableSessions` | `empty` |
 | `BufferSizeKb` | `64` |
 | `ClockResolution` | `QueryPerformanceCounter` |
 | `Devices` | `defaults (see Devices:*)` |
@@ -29,6 +30,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `MaxJobReadBytes` | `65536` |
 | `MaxOutputBytes` | `536870912` |
 | `MaxReadBatch` | `200` |
+| `MaxReadWait` | `00:00:30` |
 | `Modules` | `empty` |
 | `Processes:AllowPathLookup` | `True` |
 | `RemoteDebugger:DefaultPort` | `4026` |

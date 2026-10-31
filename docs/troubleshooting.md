@@ -20,6 +20,10 @@ The listen address is not an IP address, a limit is not positive, or a token ent
 
 `elevation_required` means the process could not create an ETW session. Run the service elevated. `session_exists` means that session name is already active; restart Vestigo so it can stop its own orphan, or stop the named session deliberately. `providers_required` means the call had neither provider GUIDs nor a PDB with WPP control GUIDs.
 
+## Attaching to a session fails
+
+`attach_not_allowed` means the name is not matched by `Vestigo:AttachableSessions`. `session_not_found` means no running session has that name (see `list_etw_sessions`). `invalid_request` for a `Vestigo-` name means that session is owned by a capture; use `read_capture` on it. `attach_failed`, or a capture that ends `Failed`, usually means the session is not a realtime session or the process lacks permission to consume it.
+
 ## Health is degraded
 
 The process is up, but an allowed input or output root is still empty. Tools that take paths fail until those roots are set. An unhealthy result means the spool directory is not writable.
