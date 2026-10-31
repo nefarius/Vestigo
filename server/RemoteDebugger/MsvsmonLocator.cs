@@ -124,35 +124,17 @@ public sealed class SystemMsvsmonProbe : IMsvsmonProbe
 
         try
         {
-            ProcessStartInfo info = new(vswhere)
-            {
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8
-            };
-            foreach (string argument in new[] { "-all", "-prerelease", "-version", $"[{major}.0,{major + 1}.0)", "-property", "installationPath", "-utf8" })
-            {
-                info.ArgumentList.Add(argument);
-            }
-
-            using Process? process = Process.Start(info);
-            if (process is null)
+            CliOutput? result = CliRunner.Run(
+                vswhere,
+                ["-all", "-prerelease", "-version", $"[{major}.0,{major + 1}.0)", "-property", "installationPath", "-utf8"],
+                TimeSpan.FromSeconds(10),
+                System.Text.Encoding.UTF8);
+            if (result is null)
             {
                 return [];
             }
 
-            Task<string> reader = process.StandardOutput.ReadToEndAsync();
-            if (!reader.Wait(TimeSpan.FromSeconds(10)))
-            {
-                process.Kill(entireProcessTree: true);
-                return [];
-            }
-
-            string output = reader.Result;
-            process.WaitForExit(2_000);
-
-            return output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            return result.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Where(line => System.IO.Path.IsPathRooted(line)).ToList();
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)

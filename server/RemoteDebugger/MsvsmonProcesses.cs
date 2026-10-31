@@ -100,33 +100,16 @@ public static class MsvsmonProcesses
     {
         try
         {
-            ProcessStartInfo info = new(System.IO.Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"))
-            {
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            info.ArgumentList.Add("-NoProfile");
-            info.ArgumentList.Add("-NonInteractive");
-            info.ArgumentList.Add("-Command");
-            info.ArgumentList.Add("Get-CimInstance Win32_Process -Filter \"Name='msvsmon.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress");
-            using Process? process = Process.Start(info);
-            if (process is null)
-            {
-                return [];
-            }
-
-            using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(15));
-            try
-            {
-                string output = process.StandardOutput.ReadToEndAsync(timeout.Token).GetAwaiter().GetResult();
-                return ParseCommandLines(output);
-            }
-            catch (OperationCanceledException)
-            {
-                process.Kill(true);
-                return [];
-            }
+            CliOutput? result = CliRunner.Run(
+                System.IO.Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+                [
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Get-CimInstance Win32_Process -Filter \"Name='msvsmon.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
+                ],
+                TimeSpan.FromSeconds(15));
+            return result is null ? [] : ParseCommandLines(result.StandardOutput);
         }
         catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or IOException)
         {
