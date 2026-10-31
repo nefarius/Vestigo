@@ -241,6 +241,7 @@ public class ProcessesTests : IDisposable
 
         Assert.Contains(typeof(ProcessTools), module.ToolTypes);
         Assert.True(new VestigoOptions().Processes.AllowPathLookup);
+        Assert.False(module.EnabledByDefault);
     }
 
     [Fact]

@@ -73,7 +73,11 @@ internal static class InteractiveProcessRunner
             }
 
             using CancellationTokenRegistration registration = cancellationToken.Register(() => PInvoke.TerminateJobObject(job, 1));
+            using CancellationTokenSource monitorStop = new();
+            Task monitor = MonitorOutputLimitAsync(output, job, monitorStop.Token);
             await Task.Run(() => PInvoke.WaitForSingleObject(process, PInvoke.INFINITE), CancellationToken.None).ConfigureAwait(false);
+            await monitorStop.CancelAsync().ConfigureAwait(false);
+            await monitor.ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
             return PInvoke.GetExitCodeProcess(process, out uint exitCode) ? unchecked((int)exitCode) : -1;
@@ -82,6 +86,31 @@ internal static class InteractiveProcessRunner
         {
             // KILL_ON_JOB_CLOSE: closing the job (by disposing `job`) ends any descendants still running.
             PInvoke.TerminateJobObject(job, 1);
+        }
+    }
+
+    /// <summary>
+    ///     The child writes the spool file directly, bypassing <see cref="JobContext.Write" />, so poll its size and
+    ///     end the whole job tree once it passes the output limit.
+    /// </summary>
+    private static async Task MonitorOutputLimitAsync(JobContext output, SafeFileHandle job, CancellationToken stop)
+    {
+        try
+        {
+            using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(250));
+            while (await timer.WaitForNextTickAsync(stop).ConfigureAwait(false))
+            {
+                if (output.LimitExceeded)
+                {
+                    output.WriteTruncationMarker();
+                    PInvoke.TerminateJobObject(job, 1);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The process ended first.
         }
     }
 

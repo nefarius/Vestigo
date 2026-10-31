@@ -14,7 +14,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |
-| `Modules` | all enabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Processes`) on or off. Unknown names fail startup. |
+| `Modules` | `Trace` and `Jobs` enabled; `Processes` disabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Processes`) on or off. Unknown names fail startup. Enabling `Processes` fails startup unless `Jobs` is enabled and `ApiTokens` has at least one entry. |
 | `Processes:AllowPathLookup` | `true` | Lets `run_process` resolve bare names such as `cmd.exe` from the service `PATH`. When `false`, only files under roots with `Execute` access can be started. |
 | `MaxConcurrentJobs` | 8 | Running background job limit. |
 | `MaxJobOutputBytes` | 67108864 | Output kept per job; later output is dropped with a marker. |

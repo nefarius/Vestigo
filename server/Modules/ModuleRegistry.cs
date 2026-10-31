@@ -30,5 +30,19 @@ public static class ModuleRegistry
                     $"Vestigo:Modules:{name} does not match a known module ({string.Join(", ", All.Select(module => module.Name))}).");
             }
         }
+
+        bool Active(string name) => Enabled(options).Any(module => module.Name == name);
+        if (Active("Processes"))
+        {
+            if (!Active("Jobs"))
+            {
+                throw new InvalidOperationException("Vestigo:Modules:Processes requires Vestigo:Modules:Jobs to be enabled.");
+            }
+
+            if (!options.AuthenticationEnabled)
+            {
+                throw new InvalidOperationException("Vestigo:Modules:Processes runs arbitrary programs and requires at least one entry in Vestigo:ApiTokens.");
+            }
+        }
     }
 }
