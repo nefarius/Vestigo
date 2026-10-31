@@ -276,7 +276,7 @@ internal sealed partial class NefconRunner(
     private static string RequireFilePath(string value, string parameter)
     {
         RequireValue(value, parameter);
-        return Path.IsPathRooted(value)
+        return Path.IsPathFullyQualified(value)
             ? value
             : throw new ArgumentException("The path must be absolute.", parameter);
     }

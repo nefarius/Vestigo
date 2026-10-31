@@ -115,7 +115,7 @@ public sealed class VestigoOptions
                 throw new InvalidOperationException($"Vestigo:Roots contains duplicate name '{root.Name}'.");
             }
 
-            if (string.IsNullOrWhiteSpace(root.Path) || !System.IO.Path.IsPathRooted(root.Path))
+            if (string.IsNullOrWhiteSpace(root.Path) || !System.IO.Path.IsPathFullyQualified(root.Path))
             {
                 throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs an absolute Path.");
             }
