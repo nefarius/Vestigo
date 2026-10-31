@@ -366,6 +366,12 @@ public sealed class FileTools(
         }
 
         bool unc = source.StartsWith(@"\\", StringComparison.Ordinal);
+        if (unc && (source.StartsWith(@"\\?\", StringComparison.Ordinal) ||
+                    source.StartsWith(@"\\.\", StringComparison.Ordinal)))
+        {
+            return OperationResult<JobInfo>.Fail("invalid_source", "Source must be an ordinary UNC path.");
+        }
+
         Uri? uri = null;
         if (!unc && (!Uri.TryCreate(source, UriKind.Absolute, out uri) ||
                      (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)))

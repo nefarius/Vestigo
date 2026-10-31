@@ -38,7 +38,7 @@ Paths are `root:relative\path` (or an absolute path inside a root). Reads need `
 
 `copy_path`, `move_path`, `delete_path` (non-empty directories need `recursive`) and `make_directory` do what they say. Directory copies skip links.
 
-`fetch_file` downloads an HTTP(S) URL or copies a UNC file into a root as a background job; use `wait_job` and `read_job_output`. Pass `expectedSha256` to reject a wrong file, and `overwrite` to replace an existing one. The size is capped by `Vestigo:Files:MaxUploadBytes`.
+`fetch_file` downloads an HTTP(S) URL or copies an ordinary UNC file (not `\\?\` or `\\.\` device paths) into a root as a background job; use `wait_job` and `read_job_output`. Pass `expectedSha256` to reject a wrong file, and `overwrite` to replace an existing one. The size is capped by `Vestigo:Files:MaxUploadBytes`.
 
 `get_upload_url` returns the `PUT` URL for a root-relative path plus ready-to-run `curl.exe` and `Invoke-WebRequest` commands. `delete_file_on_reboot` schedules a deletion with `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)`; the service must run elevated.
 

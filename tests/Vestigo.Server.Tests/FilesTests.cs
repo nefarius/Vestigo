@@ -448,6 +448,8 @@ public class FileToolTests : IDisposable
 
         Assert.Equal("invalid_source", tools.FetchFile("ftp://x/y", "work:y").ErrorCode);
         Assert.Equal("invalid_source", tools.FetchFile("relative.txt", "work:y").ErrorCode);
+        Assert.Equal("invalid_source", tools.FetchFile(@"\\?\C:\Windows\notepad.exe", "work:y").ErrorCode);
+        Assert.Equal("invalid_source", tools.FetchFile(@"\\.\C:\Windows\notepad.exe", "work:y").ErrorCode);
         Assert.Equal("access_denied", tools.FetchFile("https://x/y", "ro:y").ErrorCode);
     }
 
@@ -574,7 +576,8 @@ public class FilesEndpointTests : IDisposable
 
         Assert.Equal(HttpStatusCode.Forbidden, readOnly.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
-        // Encoded separators are not decoded by the server, so the name stays one segment inside the root.`r`n        Assert.True(traversal.StatusCode == HttpStatusCode.BadRequest || (await traversal.Content.ReadAsStringAsync()).Contains(Path.GetFileName(_work), StringComparison.Ordinal));
+        // Encoded separators are not decoded by the server, so the name stays one segment inside the root.
+        Assert.True(traversal.StatusCode == HttpStatusCode.BadRequest || (await traversal.Content.ReadAsStringAsync()).Contains(Path.GetFileName(_work), StringComparison.Ordinal));
         Assert.Equal(HttpStatusCode.BadRequest, stream.StatusCode);
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, tooLarge.StatusCode);
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, chunked.StatusCode);

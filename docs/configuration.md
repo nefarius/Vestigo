@@ -19,7 +19,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `MaxJobOutputBytes` | 67108864 | Output kept per job; later output is dropped with a marker. |
 | `JobRetention` | `1.00:00:00` | How long finished jobs and their output are kept. |
 | `MaxJobReadBytes` | 65536 | Maximum bytes returned by one `read_job_output` call. |
-| `Files:MaxUploadBytes` | 4294967296 | Largest accepted `PUT /files` upload or `fetch_file` download. Larger bodies are rejected with 413 and discarded. |
+| `Files:MaxUploadBytes` | 4294967296 | Largest accepted `PUT /files` upload or `fetch_file` download. Larger uploads get HTTP 413; larger downloads fail the job with `too_large`. The partial file is discarded in both cases. |
 | `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. |
 | `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. |
 | `MaxInputBytes` | 4294967296 | Maximum size of one input file. |
