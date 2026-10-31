@@ -10,6 +10,8 @@ public sealed class RemoteDebuggerModule : VestigoModule
 
     public override string Description => "Install, start, and stop Visual Studio Remote Debugging Tools (msvsmon). Needs Jobs and Processes.";
 
+    public override IReadOnlyList<string> Dependencies { get; } = ["Jobs", "Processes"];
+
     public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(RemoteDebuggerTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)

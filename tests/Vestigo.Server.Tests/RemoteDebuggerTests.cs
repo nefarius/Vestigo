@@ -76,6 +76,7 @@ public class RemoteDebuggerTests : IDisposable
     [InlineData(4026, 900, "none", true, "CORP\\dev", "allowUsers")]
     [InlineData(4026, 900, "windows", false, "dev /noauth", "allowUsers")]
     [InlineData(4026, 900, "windows", false, "a\"b", "allowUsers")]
+    [InlineData(4026, 900, "windows", false, "dev\n", "allowUsers")]
     public void ValidateStart_RefusesUnsafeRequests(int port, int timeout, string auth, bool confirm, string? user, string expected)
     {
         RemoteDebuggerPlanner.TryParseAuth(auth, out DebuggerAuth parsed);

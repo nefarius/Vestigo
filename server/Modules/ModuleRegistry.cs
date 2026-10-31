@@ -31,5 +31,18 @@ public static class ModuleRegistry
                     $"Vestigo:Modules:{name} does not match a known module ({string.Join(", ", All.Select(module => module.Name))}).");
             }
         }
+
+        foreach (VestigoModule module in Enabled(options))
+        {
+            foreach (string dependency in module.Dependencies)
+            {
+                VestigoModule? required = All.FirstOrDefault(item => string.Equals(item.Name, dependency, StringComparison.OrdinalIgnoreCase));
+                if (required is null || !required.IsEnabled(options))
+                {
+                    throw new InvalidOperationException(
+                        $"Vestigo:Modules:{module.Name} requires the {dependency} module, which is disabled.");
+                }
+            }
+        }
     }
 }

@@ -150,4 +150,13 @@ public class PlatformTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(unknown));
         Assert.All(ModuleRegistry.All, module => Assert.NotEmpty(module.ToolTypes));
     }
+
+    [Fact]
+    public void ValidateConfiguration_RejectsModuleWhoseDependencyIsDisabled()
+    {
+        VestigoOptions options = new() { Modules = { ["Jobs"] = new ModuleSettings { Enabled = false } } };
+
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(options));
+        ModuleRegistry.ValidateConfiguration(new VestigoOptions());
+    }
 }

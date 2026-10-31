@@ -142,12 +142,15 @@ public sealed class SystemMsvsmonProbe : IMsvsmonProbe
                 return [];
             }
 
-            string output = process.StandardOutput.ReadToEnd();
-            if (!process.WaitForExit(10_000))
+            Task<string> reader = process.StandardOutput.ReadToEndAsync();
+            if (!reader.Wait(TimeSpan.FromSeconds(10)))
             {
-                process.Kill();
+                process.Kill(entireProcessTree: true);
                 return [];
             }
+
+            string output = reader.Result;
+            process.WaitForExit(2_000);
 
             return output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Where(line => System.IO.Path.IsPathRooted(line)).ToList();

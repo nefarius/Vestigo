@@ -237,7 +237,7 @@ public static partial class RemoteDebuggerPlanner
     /// <summary>The full command line for an argument list; used for length checks and tests.</summary>
     public static string CommandLine(string executable, IReadOnlyList<string> args) => CommandLineBuilder.Build(executable, args);
 
-    [GeneratedRegex(@"^[A-Za-z0-9_.\-$ ]{1,128}(\\[A-Za-z0-9_.\-$ ]{1,128}|@[A-Za-z0-9_.\-]{1,255})?$")]
+    [GeneratedRegex(@"^[A-Za-z0-9_.\-$ ]{1,128}(\\[A-Za-z0-9_.\-$ ]{1,128}|@[A-Za-z0-9_.\-]{1,255})?\z")]
     private static partial Regex UserPattern();
 
     [GeneratedRegex(@"(?:^|\s)/port(?:\s+|:)(\d{1,5})(?:\s|$)", RegexOptions.IgnoreCase)]

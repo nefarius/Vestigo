@@ -206,7 +206,14 @@ public sealed class RemoteDebuggerService(
             output.WriteLine($"Signature valid, signer: {signature.Value}");
             LaunchRequest request = new(file, RemoteDebuggerPlanner.InstallArguments, directory, new Dictionary<string, string>(), LaunchContext.Service, false);
             output.WriteLine("Running: " + RemoteDebuggerPlanner.Describe(RemoteDebuggerPlanner.InstallArguments));
-            return await launcher.RunAsync(request, output, cancellationToken).ConfigureAwait(false);
+            int exitCode = await launcher.RunAsync(request, output, cancellationToken).ConfigureAwait(false);
+            if (exitCode == 3010)
+            {
+                output.WriteLine("Installation succeeded; a restart is required to finish.");
+                return 0;
+            }
+
+            return exitCode;
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or IOException)
         {
@@ -318,14 +325,18 @@ public sealed class RemoteDebuggerService(
                 await Task.Delay(250, cancellationToken).ConfigureAwait(false);
             }
 
-            if (pid is { } started)
+            if (pid is not { } started)
             {
-                _started[started] = new StartedInstance(started, port, jobId);
+                jobs.Cancel(jobId);
+                return Fail<StartRemoteDebuggerResult>("start_failed", $"The msvsmon process id could not be determined within the startup window; the start job {jobId} was cancelled.");
             }
-            else
-            {
-                warnings.Add("The msvsmon process id could not be determined yet; check get_remote_debugger_status.");
-            }
+
+            _started[started] = new StartedInstance(started, port, jobId);
+        }
+        catch (OperationCanceledException)
+        {
+            jobs.Cancel(jobId);
+            throw;
         }
         finally
         {

@@ -20,6 +20,9 @@ public abstract class VestigoModule
     /// <summary>Whether the module runs when configuration does not mention it.</summary>
     public virtual bool EnabledByDefault => true;
 
+    /// <summary>Names of modules that must be enabled whenever this module is enabled.</summary>
+    public virtual IReadOnlyList<string> Dependencies => [];
+
     public virtual void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
     }
