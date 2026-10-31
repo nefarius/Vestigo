@@ -12,14 +12,26 @@ namespace Vestigo.Software;
 /// <summary>Runs an uninstall plan and appends its output to the job spool. Tests replace it.</summary>
 public interface IUninstallRunner
 {
+    /// <summary>Returns null when the plan's executable may run as the service, otherwise the reason it may not.</summary>
+    string? Verify(UninstallPlan plan);
+
     Task<int> RunAsync(UninstallPlan plan, JobContext output, CancellationToken cancellationToken);
 }
 
 /// <summary>Runs the plan as the Vestigo service account through CliWrap (the process tree is killed on cancel).</summary>
 public sealed class ServiceUninstallRunner : IUninstallRunner
 {
-    public Task<int> RunAsync(UninstallPlan plan, JobContext output, CancellationToken cancellationToken) =>
-        ServiceProcessRunner.RunAsync(
+    public string? Verify(UninstallPlan plan) => ExecutableTrust.Check(plan.Executable);
+
+    public Task<int> RunAsync(UninstallPlan plan, JobContext output, CancellationToken cancellationToken)
+    {
+        // Re-check at launch to keep the window between verification and execution small.
+        if (Verify(plan) is { } reason)
+        {
+            throw new ProcessLaunchException("untrusted_executable", reason);
+        }
+
+        return ServiceProcessRunner.RunAsync(
             new LaunchRequest(
                 plan.Executable,
                 plan.Arguments,
@@ -29,6 +41,7 @@ public sealed class ServiceUninstallRunner : IUninstallRunner
                 Elevated: false),
             output,
             cancellationToken);
+    }
 }
 
 /// <summary>
@@ -140,6 +153,13 @@ public sealed class SoftwareTools(
         }
 
         UninstallPlan plan = planned.Value!;
+        if (runner.Verify(plan) is { } untrusted)
+        {
+            return Fail(
+                "untrusted_executable",
+                $"Refusing to run '{plan.Executable}' as the service account: {untrusted}. Only uninstallers that SYSTEM, Administrators, and TrustedInstaller alone can modify are run.");
+        }
+
         if (dryRun)
         {
             return OperationResult<UninstallResult>.Ok(new UninstallResult(plan, true, null, null, null, null, null));

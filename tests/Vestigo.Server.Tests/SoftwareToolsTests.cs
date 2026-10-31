@@ -40,9 +40,11 @@ public class SoftwareToolsTests : IDisposable
         public IReadOnlyList<InstalledSoftware> List() => Items;
     }
 
-    private sealed class FakeRunner(int exitCode = 0) : IUninstallRunner
+    private sealed class FakeRunner(int exitCode = 0, string? untrusted = null) : IUninstallRunner
     {
         public UninstallPlan? Last { get; private set; }
+
+        public string? Verify(UninstallPlan plan) => untrusted;
 
         public Task<int> RunAsync(UninstallPlan plan, JobContext output, CancellationToken cancellationToken)
         {
@@ -254,6 +256,29 @@ public class SoftwareToolsTests : IDisposable
         Assert.Equal("not_removable", (await tools.UninstallSoftware("machine-x64:n")).ErrorCode);
         Assert.Equal("not_removable", (await tools.UninstallSoftware("machine-x64:s")).ErrorCode);
         Assert.Equal("unsupported_scope", (await tools.UninstallSoftware("user:S-1:u")).ErrorCode);
+    }
+
+    [Fact]
+    public async Task Uninstall_RefusesUntrustedExecutable()
+    {
+        string exe = TempExe("x.exe");
+        FakeRunner runner = new(untrusted: "writable by users");
+        SoftwareTools tools = Tools(new FakeInventory(Item(type: InstallerTypes.Nsis, uninstall: $"\"{exe}\"")), runner);
+
+        Assert.Equal("untrusted_executable", (await tools.UninstallSoftware("machine-x64:App", dryRun: true)).ErrorCode);
+        Assert.Equal("untrusted_executable", (await tools.UninstallSoftware("machine-x64:App")).ErrorCode);
+        Assert.Null(runner.Last);
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void ExecutableTrust_AcceptsSystemFilesAndRejectsUserWritableOnes()
+    {
+        string msiexec = Path.Combine(Environment.SystemDirectory, "msiexec.exe");
+
+        Assert.Null(ExecutableTrust.Check(msiexec));
+        Assert.NotNull(ExecutableTrust.Check(TempExe("user-owned.exe")));
+        Assert.NotNull(ExecutableTrust.Check(Path.Combine(_root, "missing.exe")));
     }
 
     [Fact]
