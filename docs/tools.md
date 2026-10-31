@@ -32,7 +32,7 @@ Capture duration cannot exceed `MaxCaptureDuration`. The spool is removed after 
 
 ## Files
 
-Paths are `root:relative\path` (or an absolute path inside a root). Reads need `Read`, everything that changes files needs `Write`. A root itself can never be deleted or moved, and NTFS stream syntax (`file:stream`) is rejected.
+Paths are `root:relative\path` (or an absolute path inside a root). Reads need `Read`, everything that changes files needs `Write`. A root, or a directory containing a root, can never be deleted or moved, and NTFS stream syntax (`file:stream`) is rejected.
 
 `list_roots` returns each root with its access flags and free space. `list_directory` lists a directory (`maxEntries` up to 5000, `Truncated` tells you more exist). `stat_path` returns size and times, an optional SHA-256, and for `.exe`, `.dll` and `.sys` files the version resource plus the embedded Authenticode status from `WinVerifyTrust` (`Signed`, `Unsigned` or `Invalid`). Catalog-signed files, such as many Windows binaries, have no embedded signature and report `Unsigned`.
 

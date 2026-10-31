@@ -43,7 +43,7 @@ Schedules a file for deletion at the next reboot (MoveFileEx delay-until-reboot)
 
 ## `delete_path`
 
-Deletes a file or directory inside a root with Write access. Refuses to delete a root itself. Non-empty directories need recursive=true.
+Deletes a file or directory inside a root with Write access. Refuses to delete a root or a directory containing a root. Non-empty directories need recursive=true.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -138,7 +138,7 @@ Creates a directory, including missing parents, inside a root with Write access.
 
 ## `move_path`
 
-Moves or renames a file or directory. Both paths need Write access. Refuses to move a root itself.
+Moves or renames a file or directory. Both paths need Write access. Refuses to move a root or a directory containing a root.
 
 | Parameter | Type | Description |
 | --- | --- | --- |

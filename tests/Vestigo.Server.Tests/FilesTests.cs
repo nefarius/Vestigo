@@ -356,6 +356,17 @@ public class FileToolTests : IDisposable
     }
 
     [Fact]
+    public void IsRoot_TreatsAncestorsOfRootsAsRoots()
+    {
+        var policy = new RootPolicy(_options);
+
+        Assert.True(FileAccessGuard.IsRoot(policy, _root));
+        Assert.True(FileAccessGuard.IsRoot(policy, Path.GetDirectoryName(_root)!));
+        Assert.False(FileAccessGuard.IsRoot(policy, _root + "-sibling"));
+        Assert.False(FileAccessGuard.IsRoot(policy, Path.Combine(_root, "sub")));
+    }
+
+    [Fact]
     public void Tools_RejectAlternateDataStreams()
     {
         Assert.Equal("invalid_path", Tools().MakeDirectory("work:a.txt:stream").ErrorCode);
@@ -389,7 +400,7 @@ public class FileToolTests : IDisposable
         Assert.Equal(
             "http://127.0.0.1:5098/files/work/bin/my%20driver.sys?overwrite=true&deferToReboot=false",
             result.Value!.Url);
-        Assert.Contains("curl.exe -X PUT", result.Value.Curl, StringComparison.Ordinal);
+        Assert.Contains("--upload-file", result.Value.Curl, StringComparison.Ordinal);
         Assert.Contains("Bearer <token>", result.Value.Curl, StringComparison.Ordinal);
         Assert.Contains("Invoke-WebRequest -Method Put", result.Value.PowerShell, StringComparison.Ordinal);
         Assert.Equal("access_denied", Tools().GetUploadUrl("ro:x.sys").ErrorCode);

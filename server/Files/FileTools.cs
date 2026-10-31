@@ -231,7 +231,7 @@ public sealed class FileTools(
     }
 
     [McpServerTool(Name = "move_path")]
-    [Description("Moves or renames a file or directory. Both paths need Write access. Refuses to move a root itself.")]
+    [Description("Moves or renames a file or directory. Both paths need Write access. Refuses to move a root or a directory containing a root.")]
     public OperationResult<PathOperationResult> MovePath(
         [Description("Source path.")] string source,
         [Description("Destination path (the new name).")] string destination,
@@ -251,7 +251,7 @@ public sealed class FileTools(
 
         if (IsRoot(from.FullPath!))
         {
-            return OperationResult<PathOperationResult>.Fail("is_root", "A root itself cannot be moved.");
+            return OperationResult<PathOperationResult>.Fail("is_root", "A root or a directory containing a root cannot be moved.");
         }
 
         return Guard(() =>
@@ -292,7 +292,7 @@ public sealed class FileTools(
     }
 
     [McpServerTool(Name = "delete_path")]
-    [Description("Deletes a file or directory inside a root with Write access. Refuses to delete a root itself. Non-empty directories need recursive=true.")]
+    [Description("Deletes a file or directory inside a root with Write access. Refuses to delete a root or a directory containing a root. Non-empty directories need recursive=true.")]
     public OperationResult<PathOperationResult> DeletePath(
         [Description("Path to delete.")] string path,
         [Description("Delete directory contents too.")] bool recursive = false)
@@ -305,7 +305,7 @@ public sealed class FileTools(
 
         if (IsRoot(check.FullPath!))
         {
-            return OperationResult<PathOperationResult>.Fail("is_root", "A root itself cannot be deleted.");
+            return OperationResult<PathOperationResult>.Fail("is_root", "A root or a directory containing a root cannot be deleted.");
         }
 
         return Guard(() =>
@@ -458,7 +458,7 @@ public sealed class FileTools(
         string template = $"{baseUrl}/files/{{root}}/{{path}}?overwrite=false&deferToReboot=false";
         string auth = options.AuthenticationEnabled ? " -H \"Authorization: Bearer <token>\"" : string.Empty;
         string psAuth = options.AuthenticationEnabled ? " -Headers @{ Authorization = 'Bearer <token>' }" : string.Empty;
-        string curl = $"curl.exe -X PUT{auth} -H \"X-Content-SHA256: <sha256>\" --data-binary \"@<local file>\" \"{url}\"";
+        string curl = $"curl.exe{auth} -H \"X-Content-SHA256: <sha256>\" --upload-file \"<local file>\" \"{url}\"";
         string powershell = $"Invoke-WebRequest -Method Put -Uri '{url}' -InFile '<local file>'{psAuth}";
         return OperationResult<UploadUrlInfo>.Ok(new UploadUrlInfo(url, template, curl, powershell, options.Files.MaxUploadBytes));
     }
@@ -476,7 +476,7 @@ public sealed class FileTools(
 
         if (IsRoot(check.FullPath!))
         {
-            return OperationResult<RebootScheduleResult>.Fail("is_root", "A root itself cannot be deleted.");
+            return OperationResult<RebootScheduleResult>.Fail("is_root", "A root or a directory containing a root cannot be deleted.");
         }
 
         int error = scheduler.ScheduleDelete(check.FullPath!);
@@ -577,9 +577,15 @@ internal static class FileAccessGuard
     public static bool IsRoot(RootPolicy roots, string fullPath)
     {
         string normalized = System.IO.Path.TrimEndingDirectorySeparator(fullPath);
-        return roots.Roots.Any(root => string.Equals(
-            System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(root.Path)),
-            normalized,
-            StringComparison.OrdinalIgnoreCase));
+        string prefix = normalized.EndsWith(System.IO.Path.DirectorySeparatorChar) ||
+                        normalized.EndsWith(System.IO.Path.AltDirectorySeparatorChar)
+            ? normalized
+            : normalized + System.IO.Path.DirectorySeparatorChar;
+        return roots.Roots.Any(root =>
+        {
+            string rootPath = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(root.Path));
+            return string.Equals(rootPath, normalized, StringComparison.OrdinalIgnoreCase) ||
+                   rootPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        });
     }
 }
