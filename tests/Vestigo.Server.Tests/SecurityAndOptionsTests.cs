@@ -69,6 +69,16 @@ public class SecurityAndOptionsTests
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { MaxEvents = 0 }.Validate());
     }
 
+    [Theory]
+    [InlineData("\\data")]
+    [InlineData("C:data")]
+    [InlineData("relative")]
+    public void Options_RejectNonFullyQualifiedRootPaths(string path)
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            new VestigoOptions { Roots = [new RootDefinition { Name = "rt", Path = path }] }.Validate());
+    }
+
     [Fact]
     public void ListenUrl_BracketsIpv6AndKeepsIpv4()
     {

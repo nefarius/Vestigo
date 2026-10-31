@@ -27,6 +27,7 @@
         "BuildInstaller",
         "Clean",
         "Compile",
+        "PrepareNefcon",
         "PrepareUpdater",
         "PublishLocal",
         "PublishUpdateManifest",

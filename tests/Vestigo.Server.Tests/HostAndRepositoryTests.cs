@@ -103,10 +103,20 @@ public class RepositoryBoundaryTests
         }
     }
 
+    /// <summary>Set VESTIGO_REGENERATE_DOCS=1 when running tests to rewrite docs/generated.</summary>
+    private static void RegenerateIfRequested(string path, string content)
+    {
+        if (Environment.GetEnvironmentVariable("VESTIGO_REGENERATE_DOCS") == "1")
+        {
+            File.WriteAllText(path, content, new System.Text.UTF8Encoding(false));
+        }
+    }
+
     [Fact]
     public void GeneratedToolCatalog_MatchesAttributes()
     {
         string root = FindRepositoryRoot();
+        RegenerateIfRequested(Path.Combine(root, "docs", "generated", "mcp-tools.md"), McpToolCatalog.Markdown());
         string catalog = File.ReadAllText(Path.Combine(root, "docs", "generated", "mcp-tools.md"));
 
         Assert.Equal(McpToolCatalog.Markdown(), catalog.Replace("\r\n", "\n", StringComparison.Ordinal));
@@ -116,6 +126,7 @@ public class RepositoryBoundaryTests
     public void GeneratedConfiguration_MatchesOptionDefaults()
     {
         string root = FindRepositoryRoot();
+        RegenerateIfRequested(Path.Combine(root, "docs", "generated", "configuration.md"), ConfigurationCatalog.Markdown());
         string catalog = File.ReadAllText(Path.Combine(root, "docs", "generated", "configuration.md"));
         string reference = File.ReadAllText(Path.Combine(root, "docs", "configuration.md"));
         string generated = ConfigurationCatalog.Markdown();

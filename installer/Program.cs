@@ -16,6 +16,9 @@ static class Program
     internal const string EnvServer = "VESTIGO_INSTALLER_SERVER";
     internal const string EnvOut = "VESTIGO_INSTALLER_OUT";
     internal const string EnvUpdater = "VESTIGO_INSTALLER_UPDATER";
+    internal const string EnvNefcon = "VESTIGO_INSTALLER_NEFCON";
+    const string NefconExecutableName = "nefconc.exe";
+    const string NefconLicenseName = "nefcon-LICENSE.txt";
     const string UpdaterExecutableName = "Nefarius_Vestigo_Updater.exe";
     const string UpdaterConfigurationName = "Nefarius_Vestigo_Updater.json";
     const string NoticesName = "THIRD-PARTY-NOTICES.txt";
@@ -41,9 +44,20 @@ static class Program
                 throw new FileNotFoundException($"Updater configuration not found: {updaterConfigurationPath}");
             }
 
+            string nefconLicensePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, NefconLicenseName));
             if (!System.IO.File.Exists(noticesPath))
             {
                 throw new FileNotFoundException($"Third-party notices not found: {noticesPath}");
+            }
+
+            if (!System.IO.File.Exists(nefconLicensePath))
+            {
+                throw new FileNotFoundException($"nefcon license not found: {nefconLicensePath}");
+            }
+
+            if (!string.Equals(Path.GetFileName(options.NefconExe), NefconExecutableName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"The nefcon executable must be named {NefconExecutableName}.");
             }
 
             if (!string.Equals(Path.GetFileName(options.UpdaterExe), UpdaterExecutableName, StringComparison.OrdinalIgnoreCase))
@@ -84,7 +98,11 @@ static class Program
                     files,
                     new WixSharp.File(feature, options.UpdaterExe),
                     new WixSharp.File(feature, updaterConfigurationPath),
-                    new WixSharp.File(feature, noticesPath)),
+                    new WixSharp.File(feature, noticesPath),
+                    new Dir(
+                        "tools",
+                        new WixSharp.File(feature, options.NefconExe),
+                        new WixSharp.File(feature, nefconLicensePath))),
                 new RegKey(
                     feature,
                     RegistryHive.LocalMachine,
@@ -230,13 +248,16 @@ static class Program
 
         public required string UpdaterExe { get; init; }
 
+        public required string NefconExe { get; init; }
+
         public static Options Parse(string[] args)
         {
             string cwd = Directory.GetCurrentDirectory();
             string server = Path.GetFullPath(Path.Combine(cwd, DefaultServerRelative));
             string output = Path.GetFullPath(Path.Combine(cwd, "publish-x64", "installer"));
             string updater = "";
-            ApplyEnvironmentOverrides(ref server, ref output, ref updater);
+            string nefcon = "";
+            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon);
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -253,6 +274,10 @@ static class Program
                 {
                     updater = RequirePath(args, ref i, "updater");
                 }
+                else if (argument is "--nefcon" or "-n")
+                {
+                    nefcon = RequirePath(args, ref i, "nefcon");
+                }
                 else if (argument is "--help" or "-h")
                 {
                     Console.WriteLine("""
@@ -261,8 +286,9 @@ static class Program
                           --server,  -s <dir>   Published server output (default: ./publish-x64/server)
                           --out,     -o <dir>   MSI output directory (default: ./publish-x64/installer)
                           --updater, -u <file>  Staged Nefarius_Vestigo_Updater.exe
+                          --nefcon,  -n <file>  Staged nefconc.exe (installed under tools\)
 
-                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER
+                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON
                         """);
                     Environment.Exit(0);
                 }
@@ -272,7 +298,7 @@ static class Program
                 }
             }
 
-            return new Options { ServerPublishDir = server, OutputDir = output, UpdaterExe = updater };
+            return new Options { ServerPublishDir = server, OutputDir = output, UpdaterExe = updater, NefconExe = nefcon };
         }
 
         public void Validate()
@@ -292,11 +318,22 @@ static class Program
                 throw new FileNotFoundException($"Updater executable not found: {UpdaterExe}");
             }
 
+            if (!System.IO.File.Exists(NefconExe))
+            {
+                throw new FileNotFoundException($"nefcon executable not found: {NefconExe}");
+            }
+
             Directory.CreateDirectory(OutputDir);
         }
 
-        static void ApplyEnvironmentOverrides(ref string server, ref string output, ref string updater)
+        static void ApplyEnvironmentOverrides(ref string server, ref string output, ref string updater, ref string nefcon)
         {
+            string? nefconOverride = Environment.GetEnvironmentVariable(EnvNefcon);
+            if (!string.IsNullOrWhiteSpace(nefconOverride))
+            {
+                nefcon = Path.GetFullPath(nefconOverride);
+            }
+
             string? serverOverride = Environment.GetEnvironmentVariable(EnvServer);
             if (!string.IsNullOrWhiteSpace(serverOverride))
             {

@@ -40,3 +40,14 @@ On a Windows machine with the x64 .NET 10 ASP.NET Core runtime:
 - Cancel the MSI once and confirm Vestigo remains on the previous version.
 - Repeat an update that returns MSI exit code 3010 and confirm the updater treats it as success and asks for a restart.
 - Uninstall Vestigo and confirm the autostart entry and scheduled task are gone.
+
+## nefcon pin
+
+`PrepareNefcon` (a dependency of `BuildInstaller`) downloads the pinned nefcon release archive, checks its SHA-256, extracts `x64\nefconc.exe` to `publish-x64\tools\`, and requires a valid Authenticode signature for `Nefarius Software Solutions e.U.`. The MSI installs it as `tools\nefconc.exe` with `tools\nefcon-LICENSE.txt`; the MIT notice is also in `installer\THIRD-PARTY-NOTICES.txt`.
+
+To bump nefcon manually:
+
+1. Download the new `nefcon_vX.Y.Z.zip` from the [nefcon releases](https://github.com/nefarius/nefcon/releases) (`gh release download vX.Y.Z -R nefarius/nefcon -p 'nefcon_vX.Y.Z.zip'`).
+2. Compute its SHA-256 (`Get-FileHash`) and confirm `Get-AuthenticodeSignature` on `x64\nefconc.exe` reports a valid Nefarius signature.
+3. Update `Version`, `ArchiveSha256`, and `ArchiveUrl` in `build/NefconPin.cs`, and the version in `installer\THIRD-PARTY-NOTICES.txt` and `installer\nefcon-LICENSE.txt` if the license changed.
+4. Run `.\build.ps1 PrepareNefcon` and the test suite.

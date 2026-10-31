@@ -7,9 +7,19 @@ using ModelContextProtocol.AspNetCore;
 using Serilog;
 
 using Vestigo.Configuration;
+using Vestigo.Devices;
 using Vestigo.Etws;
 using Vestigo.Hosting;
+using Vestigo.Modules;
+using Vestigo.Processes;
 using Vestigo.Security;
+
+// Session helper: started by the service inside the console user's session; must not boot the web host.
+if (SessionHelper.IsInvocation(args))
+{
+    Environment.ExitCode = SessionHelper.Run(args);
+    return;
+}
 
 WebApplicationOptions webOptions = new()
 {
@@ -61,23 +71,31 @@ if (vestigo.AuthenticationEnabled)
 }
 
 builder.Services.AddHealthChecks().AddCheck<VestigoHealthCheck>("vestigo");
-builder.Services.AddHttpClient("symbols");
 builder.Services.AddSingleton<PathPolicy>();
-builder.Services.AddSingleton<SymbolCatalogService>();
-builder.Services.AddSingleton<OfflineConversionService>();
-builder.Services.AddSingleton<IRealtimeTraceSessionFactory, EtwRealtimeTraceSessionFactory>();
-builder.Services.AddSingleton<CaptureManager>();
-builder.Services.AddHostedService(provider => provider.GetRequiredService<CaptureManager>());
+builder.Services.AddSingleton<RootPolicy>();
+builder.Services.AddDevices();
+
+ModuleRegistry.ValidateConfiguration(vestigo);
+IReadOnlyList<VestigoModule> modules = ModuleRegistry.Enabled(vestigo);
+foreach (VestigoModule module in modules)
+{
+    module.ConfigureServices(builder.Services, vestigo);
+}
 
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
     .AddAuthorizationFilters()
-    .WithToolsFromAssembly();
+    .WithTools(modules.SelectMany(module => module.ToolTypes));
 
 WebApplication app = builder.Build();
+Log.Information("Vestigo modules enabled: {Modules}", string.Join(", ", modules.Select(module => module.Name)));
 if (vestigo.GetExposureWarning() is { } exposureWarning)
 {
     app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
+}
+foreach (VestigoModule module in modules)
+{
+    module.MapEndpoints(app, vestigo);
 }
 
 if (vestigo.AuthenticationEnabled)

@@ -1,4 +1,4 @@
-namespace Vestigo.Etws;
+namespace Vestigo.Abstractions;
 
 /// <summary>
 ///     Success value or a stable error code returned by a tool or service.

@@ -73,7 +73,7 @@ public sealed class PathPolicy(Vestigo.Configuration.VestigoOptions options)
         return results;
     }
 
-    private static PathCheck Locate(string requestedPath, IReadOnlyList<string> roots, string rootKind)
+    internal static PathCheck Locate(string requestedPath, IReadOnlyList<string> roots, string rootKind)
     {
         if (string.IsNullOrWhiteSpace(requestedPath))
         {
@@ -172,7 +172,7 @@ public sealed class PathPolicy(Vestigo.Configuration.VestigoOptions options)
         }
     }
 
-    private static bool HasExtension(string path, IReadOnlyCollection<string> extensions) =>
+    internal static bool HasExtension(string path, IReadOnlyCollection<string> extensions) =>
         extensions.Any(extension => path.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
 
     private static StringComparison PathComparison() =>
