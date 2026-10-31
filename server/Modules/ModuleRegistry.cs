@@ -12,8 +12,12 @@ public static class ModuleRegistry
     public static IReadOnlyList<VestigoModule> All { get; } =
     [
         new JobsModule(),
+        new Files.FilesModule(),
         new ProcessesModule(),
-        new TraceModule()
+        new TraceModule(),
+        new EnvironmentModule(),
+        new LogsModule(),
+        new EventLogModule()
     ];
 
     public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options) =>
