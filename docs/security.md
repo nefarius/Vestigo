@@ -45,6 +45,12 @@ Controls that do apply: programs must be files inside a root that has the `Execu
 
 The interactive context needs the service to run as SYSTEM (for `WTSQueryUserToken`). The process runs as the logged-on user on the visible desktop, and `elevated` uses that user's own linked administrator token; it never grants rights the user does not have. Job output files hold the process output and are readable through `read_job_output` until `JobRetention` expires, so do not run commands that print secrets. The session helper only accepts `close-window` arguments and does no network or file access.
 
+## Software
+
+`list_installed_software` and `get_installed_software` only read the registry. `uninstall_software` runs vendor uninstallers as the service account (normally SYSTEM), so treat a token that can call it as administrator-equivalent. It is off until `Vestigo:Software:AllowUninstall` is `true`, and enabling it without at least one entry in `ApiTokens` fails startup. The Software module depends on `Jobs`.
+
+Controls: uninstall strings are split into an executable and an argument list and run through CliWrap with no shell; the executable must be an existing absolute path (MSI uses `msiexec.exe` from the system directory). Unknown installer types are refused rather than run interactively. `NoRemove` and system-component entries, per-user entries (a SYSTEM uninstaller would act on the wrong profile) and display names matching `ProtectedNames` are refused. Runs are bounded by `MaxUninstallDuration` and the job output limits; the process tree is killed on timeout or cancel. Uninstaller output and MSI logs are readable through `read_job_output` until `JobRetention` expires.
+
 ## Remote debugger
 
 A running `msvsmon.exe` lets any authenticated remote debugger attach to processes and execute code as the user the monitor runs as. `start_remote_debugger` therefore defaults to Windows authentication; use `allowUsers` to limit who may connect. `auth: none` runs `/noauth /anyuser`, which disables authentication completely: anyone who can reach the port gets code execution. It needs `iUnderstandNoAuthIsInsecure: true` and writes a warning to the result and the log. Use it only on isolated networks and stop the monitor afterwards. Vestigo only listens on loopback, but `msvsmon.exe` listens on the port you choose on all interfaces, subject to the firewall (`prepare_remote_debugger_computer` changes firewall rules).

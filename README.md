@@ -64,6 +64,7 @@ The MSI is `publish-x64\installer\Vestigo.msi`. Its listen/security page offers 
 - Vestigo decodes events; it does not record a raw ETL file.
 - WPP enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` remain numeric in the upstream decoder.
 - Symbol resolution uses the released `Nefarius.Utilities.ETW` package.
+- Silent uninstall covers MSI, Burn, Inno Setup, NSIS and entries that publish a `QuietUninstallString`. Other installers are refused, per-user entries cannot be uninstalled, and AppX/MSIX packages are not listed.
 
 ## Documentation
 

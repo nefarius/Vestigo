@@ -194,6 +194,14 @@ Reads one environment variable. Machine scope reads the Session Manager registry
 | `scope` | `string` | Scope: machine, user, or process. |
 | `name` | `string` | Variable name. |
 
+## `get_installed_software`
+
+Returns one entry by id (from list_installed_software) with the silent uninstall command Vestigo would run, or the reason none is available.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | Entry id such as machine-x64:{KeyName}. |
+
 ## `get_job`
 
 Returns state, exit code, and output size for one job.
@@ -343,6 +351,19 @@ Lists Windows event log channels with record count and enabled state. Channels t
 | --- | --- | --- |
 | `nameContains` | `string` | Only channels whose name contains this text (case-insensitive). |
 | `includeCounts` | `bool` | Include record counts. Disable for a faster listing. |
+
+## `list_installed_software`
+
+Lists installed programs from the Uninstall registry keys (machine 64/32-bit and loaded user hives) with version, publisher, install location, uninstall strings, and detected installer type, sorted by name.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `nameContains` | `string` | Case-insensitive substring of the display name. |
+| `publisherContains` | `string` | Case-insensitive substring of the publisher. |
+| `scope` | `string` | machine, user or all. |
+| `includeSystemComponents` | `bool` | Include entries flagged SystemComponent. |
+| `includeUpdates` | `bool` | Include updates and patches that belong to a parent product. |
+| `limit` | `int` | Maximum entries to return, 1 to 1000. |
 
 ## `list_jobs`
 
@@ -652,6 +673,16 @@ Removes a class filter and its driver service. With infPath it also purges that 
 | `position` | `string` | upper or lower. |
 | `infPath` | `string` | Optional INF path inside an allowed root whose driver store package is also removed. |
 | `allVersions` | `bool` | Remove all versions of the driver store package. Needs infPath. |
+
+## `uninstall_software`
+
+Silently uninstalls a machine-scope program as a job. MSI uses msiexec /x /qn; EXE installers use QuietUninstallString or known switches for Burn, Inno Setup and NSIS; other installers are refused. Requires Vestigo:Software:AllowUninstall. dryRun returns the planned command only. wait > 0 waits that many seconds and returns the outcome.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | Entry id from list_installed_software. |
+| `dryRun` | `bool` | Return the planned command without running it. |
+| `wait` | `int` | Seconds to wait (0 to 300) before returning. 0 returns the job immediately. |
 
 ## `validate_decoding_sources`
 
