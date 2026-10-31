@@ -8,14 +8,16 @@ using System.Security.Cryptography;
 
 using JetBrains.Annotations;
 
-using Nuke.Common;
-using Nuke.Common.IO;
-using Nuke.Common.ProjectModel;
-using Nuke.Common.Tools.DotNet;
+using Fallout.Common;
+using Fallout.Common.IO;
+using Fallout.Common.Tools.DotNet;
+using Fallout.Solutions;
 
 using Vestigo.Build;
 
-class Build : NukeBuild
+using Project = Fallout.Solutions.Project;
+
+class Build : FalloutBuild
 {
     public static int Main() => Execute<Build>(x => x.Compile);
 

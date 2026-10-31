@@ -399,3 +399,6 @@ FodyWeavers.xsd
 
 # Local release output.
 publish-x64/
+
+# Fallout build temp
+.fallout/temp/
