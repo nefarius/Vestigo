@@ -131,6 +131,43 @@ public class PlatformTests : IDisposable
     }
 
     [Fact]
+    public async Task JobManager_ParallelStartsNeverExceedConcurrencyLimit()
+    {
+        JobManager jobs = new(new VestigoOptions { MaxConcurrentJobs = 2 }, Path.Combine(_root, "jobs"));
+        TaskCompletionSource gate = new();
+
+        OperationResult<JobInfo>[] results = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
+            jobs.Start("test", "hold", async (_, _) =>
+            {
+                await gate.Task;
+                return 0;
+            }))));
+        gate.SetResult();
+
+        Assert.Equal(2, results.Count(result => result.Success));
+        foreach (OperationResult<JobInfo> ok in results.Where(result => result.Success))
+        {
+            await jobs.WaitAsync(ok.Value!.Id, TimeSpan.FromSeconds(10), default);
+        }
+    }
+
+    [Fact]
+    public async Task JobManager_ReadOutput_AdvancesPastTinyWindowAndFlushesPartialTail()
+    {
+        JobManager jobs = new(new VestigoOptions(), Path.Combine(_root, "jobs"));
+        OperationResult<JobInfo> started = jobs.Start("test", "utf8", (context, _) =>
+        {
+            context.Write("é");
+            return Task.FromResult(0);
+        });
+        await jobs.WaitAsync(started.Value!.Id, TimeSpan.FromSeconds(10), default);
+
+        JobOutputPage page = jobs.ReadOutput(started.Value.Id, 0, 1).Value!;
+
+        Assert.True(page.NextOffset > 0);
+    }
+
+    [Fact]
     public void Utf8SafeLength_DoesNotSplitCharacters()
     {
         byte[] bytes = System.Text.Encoding.UTF8.GetBytes("aé");
@@ -154,9 +191,56 @@ public class PlatformTests : IDisposable
     [Fact]
     public void ValidateConfiguration_RejectsModuleWhoseDependencyIsDisabled()
     {
-        VestigoOptions options = new() { Modules = { ["Jobs"] = new ModuleSettings { Enabled = false } } };
+        VestigoOptions options = new()
+        {
+            ApiTokens = ["t"],
+            Modules =
+            {
+                ["Jobs"] = new ModuleSettings { Enabled = false },
+                ["Processes"] = new ModuleSettings { Enabled = true },
+                ["RemoteDebugger"] = new ModuleSettings { Enabled = true }
+            }
+        };
 
         Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(options));
         ModuleRegistry.ValidateConfiguration(new VestigoOptions());
+    }
+
+    [Fact]
+    public void ProcessesModule_IsOptInAndRequiresJobsAndTokens()
+    {
+        ModuleSettings on = new() { Enabled = true };
+        VestigoOptions defaults = new();
+        VestigoOptions noTokens = new() { Modules = { ["Processes"] = on } };
+        VestigoOptions noJobs = new()
+        {
+            ApiTokens = ["t"],
+            Modules = { ["Processes"] = on, ["Jobs"] = new ModuleSettings { Enabled = false } }
+        };
+        VestigoOptions valid = new() { ApiTokens = ["t"], Modules = { ["Processes"] = on } };
+
+        Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "Processes");
+        ModuleRegistry.ValidateConfiguration(defaults);
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noTokens));
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noJobs));
+        ModuleRegistry.ValidateConfiguration(valid);
+    }
+
+    [Fact]
+    public void RemoteDebuggerModule_IsOptInAndRequiresJobsAndProcesses()
+    {
+        ModuleSettings on = new() { Enabled = true };
+        VestigoOptions defaults = new();
+        VestigoOptions noProcesses = new() { ApiTokens = ["t"], Modules = { ["RemoteDebugger"] = on } };
+        VestigoOptions valid = new()
+        {
+            ApiTokens = ["t"],
+            Modules = { ["Processes"] = on, ["RemoteDebugger"] = on }
+        };
+
+        Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "RemoteDebugger");
+        ModuleRegistry.ValidateConfiguration(defaults);
+        Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noProcesses));
+        ModuleRegistry.ValidateConfiguration(valid);
     }
 }

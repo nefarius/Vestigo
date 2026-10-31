@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -94,6 +95,11 @@ public static class WindowCloser
             catch (ArgumentException)
             {
                 // Exited already.
+            }
+            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+            {
+                // Cannot open the process to wait on it: its state is unknown, so report it as surviving.
+                surviving.Add(new SurvivingProcess(item.Pid, item.Name));
             }
         }
 

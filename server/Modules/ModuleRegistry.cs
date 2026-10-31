@@ -44,5 +44,10 @@ public static class ModuleRegistry
                 }
             }
         }
+
+        if (Enabled(options).Any(module => module.Name == "Processes") && !options.AuthenticationEnabled)
+        {
+            throw new InvalidOperationException("Vestigo:Modules:Processes runs arbitrary programs and requires at least one entry in Vestigo:ApiTokens.");
+        }
     }
 }

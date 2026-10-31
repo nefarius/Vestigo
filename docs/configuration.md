@@ -14,7 +14,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |
-| `Modules` | all enabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Processes`, `RemoteDebugger`) on or off. Unknown names fail startup. |
+| `Modules` | `Trace` and `Jobs` enabled; `Processes` and `RemoteDebugger` disabled | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Processes`, `RemoteDebugger`) on or off. Unknown names fail startup. A module whose dependency is disabled fails startup: `Processes` needs `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes` (directly or through `RemoteDebugger`) also requires at least one `ApiTokens` entry. |
 | `Processes:AllowPathLookup` | `true` | Lets `run_process` resolve bare names such as `cmd.exe` from the service `PATH`. When `false`, only files under roots with `Execute` access can be started. |
 | `RemoteDebugger:DefaultPort` | `4026` | Port `start_remote_debugger` uses when the caller gives none. |
 | `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` | Upper bound for the installer download inside the install job. |

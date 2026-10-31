@@ -93,6 +93,26 @@ public sealed class JobContext
     }
 
     public void WriteLine(string text) => Write(text + Environment.NewLine);
+
+    /// <summary>True once the spool, including bytes a child wrote directly, has passed the output limit.</summary>
+    public bool LimitExceeded => OutputBytes > _limit;
+
+    /// <summary>Appends the truncation marker once; later writes are dropped.</summary>
+    public void WriteTruncationMarker()
+    {
+        lock (_gate)
+        {
+            if (_truncated)
+            {
+                return;
+            }
+
+            _truncated = true;
+            byte[] bytes = Encoding.UTF8.GetBytes(Environment.NewLine + "[output truncated by MaxJobOutputBytes]" + Environment.NewLine);
+            using FileStream stream = new(OutputPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            stream.Write(bytes);
+        }
+    }
 }
 
 /// <summary>
@@ -105,6 +125,7 @@ public sealed class JobManager : BackgroundService
     private readonly VestigoOptions _options;
     private readonly string _directory;
     private readonly ILogger<JobManager>? _logger;
+    private readonly object _startLock = new();
 
     public JobManager(VestigoOptions options, ILogger<JobManager>? logger = null)
         : this(options, Path.Combine(VestigoPaths.SpoolDirectory, "jobs"), logger)
@@ -124,17 +145,22 @@ public sealed class JobManager : BackgroundService
         string description,
         Func<JobContext, CancellationToken, Task<int>> work)
     {
-        if (_jobs.Values.Count(entry => entry.State == JobState.Running) >= _options.MaxConcurrentJobs)
-        {
-            return OperationResult<JobInfo>.Fail("too_many_jobs", $"At most {_options.MaxConcurrentJobs} jobs may run at once.");
-        }
-
         string id = Guid.NewGuid().ToString("N")[..12];
         string outputPath = Path.Combine(_directory, id + ".log");
-        File.WriteAllBytes(outputPath, []);
-        JobEntry entry = new(id, kind, description, new JobContext(id, outputPath, _options.MaxJobOutputBytes));
-        _jobs[id] = entry;
-        entry.Task = Task.Run(() => RunAsync(entry, work));
+        JobEntry entry;
+        lock (_startLock)
+        {
+            if (_jobs.Values.Count(e => e.State == JobState.Running) >= _options.MaxConcurrentJobs)
+            {
+                return OperationResult<JobInfo>.Fail("too_many_jobs", $"At most {_options.MaxConcurrentJobs} jobs may run at once.");
+            }
+
+            File.WriteAllBytes(outputPath, []);
+            entry = new JobEntry(id, kind, description, new JobContext(id, outputPath, _options.MaxJobOutputBytes));
+            _jobs[id] = entry;
+            entry.Task = Task.Run(() => RunAsync(entry, work));
+        }
+
         return OperationResult<JobInfo>.Ok(entry.Snapshot());
     }
 
@@ -185,9 +211,11 @@ public sealed class JobManager : BackgroundService
             return OperationResult<JobOutputPage>.Fail("invalid_request", "offset cannot be negative.");
         }
 
+        bool finished = entry.State != JobState.Running;
         int count = Math.Clamp(limit ?? _options.MaxJobReadBytes, 1, _options.MaxJobReadBytes);
         byte[] buffer = new byte[count];
         int read;
+        bool atEnd;
         using (FileStream stream = new(entry.Context.OutputPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         {
             if (offset > stream.Length)
@@ -197,11 +225,18 @@ public sealed class JobManager : BackgroundService
 
             stream.Seek(offset, SeekOrigin.Begin);
             read = stream.Read(buffer, 0, count);
+            atEnd = offset + read >= stream.Length;
         }
 
-        int safe = Utf8SafeLength(buffer, read, endOfData: false);
+        int safe = Utf8SafeLength(buffer, read, endOfData: finished && atEnd);
+        if (safe == 0 && read > 0)
+        {
+            // Never stall on a window smaller than one character; decode with replacement characters.
+            safe = read;
+        }
+
         string text = Encoding.UTF8.GetString(buffer, 0, safe);
-        bool completed = entry.State != JobState.Running && offset + safe >= entry.Context.OutputBytes;
+        bool completed = finished && offset + safe >= entry.Context.OutputBytes;
         return OperationResult<JobOutputPage>.Ok(new JobOutputPage(text, offset + safe, completed));
     }
 

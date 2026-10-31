@@ -78,7 +78,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 CliWrap
 
-The Vestigo server uses the CliWrap NuGet package (https://github.com/Tyrrrz/CliWrap) to launch helper processes. CliWrap is licensed under the MIT License:
+The Vestigo server uses the CliWrap NuGet package (https://github.com/Tyrrrz/CliWrap) to launch child processes: the Processes module's service-account launcher and the remote debugger's vswhere and PowerShell probes. CliWrap is licensed under the MIT License:
+
+MIT License
 
 Copyright (c) Oleksii Holub
 
