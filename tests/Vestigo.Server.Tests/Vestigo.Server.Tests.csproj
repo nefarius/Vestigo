@@ -25,6 +25,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Pure installer logic, shared with the net48 custom action assembly. -->
+    <Compile Include="..\..\installer\Vestigo.Installer.Actions\Logic\*.cs" LinkBase="InstallerLogic" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\build\_build.csproj" />
     <ProjectReference Include="..\..\server\Vestigo.Server.csproj" />
   </ItemGroup>

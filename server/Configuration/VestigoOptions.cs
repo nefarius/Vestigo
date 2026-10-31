@@ -46,6 +46,23 @@ public sealed class VestigoOptions
 
     public bool AuthenticationEnabled => ApiTokens.Count > 0;
 
+    /// <summary>
+    ///     True when <see cref="ListenAddress" /> is an IP address other than loopback, such as 0.0.0.0 or ::.
+    /// </summary>
+    public bool IsBoundBeyondLoopback =>
+        IPAddress.TryParse(ListenAddress, out IPAddress? address) && !IPAddress.IsLoopback(address);
+
+    /// <summary>
+    ///     Returns a startup warning when the server is reachable from the network without any API token, otherwise null.
+    ///     The message never contains token values.
+    /// </summary>
+    public string? GetExposureWarning() =>
+        IsBoundBeyondLoopback && !AuthenticationEnabled
+            ? $"SECURITY WARNING: Vestigo is listening on non-loopback address {ListenAddress}:{ListenPort} and no Vestigo:ApiTokens are configured. " +
+              "Anyone who can reach this port can use /mcp to capture traces and read files within the allowed roots. " +
+              "Configure Vestigo:ApiTokens or bind to a loopback address."
+            : null;
+
     public void Validate()
     {
         if (!IPAddress.TryParse(ListenAddress, out IPAddress? address) || address.AddressFamily == AddressFamily.Unspecified)
@@ -53,10 +70,6 @@ public sealed class VestigoOptions
             throw new InvalidOperationException($"Vestigo:ListenAddress '{ListenAddress}' is not an IP address.");
         }
 
-        if (!IPAddress.IsLoopback(address))
-        {
-            throw new InvalidOperationException("Vestigo only accepts loopback listen addresses.");
-        }
 
         if (ListenPort is < 1 or > 65535)
         {

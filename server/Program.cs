@@ -75,6 +75,11 @@ builder.Services.AddMcpServer()
     .WithToolsFromAssembly();
 
 WebApplication app = builder.Build();
+if (vestigo.GetExposureWarning() is { } exposureWarning)
+{
+    app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
+}
+
 if (vestigo.AuthenticationEnabled)
 {
     app.UseAuthentication();

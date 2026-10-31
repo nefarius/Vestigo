@@ -18,11 +18,48 @@ public class SecurityAndOptionsTests
     }
 
     [Fact]
-    public void Options_RejectNonLoopbackListenAddress()
+    public void Options_RejectNonIpListenAddress()
     {
-        VestigoOptions options = new() { ListenAddress = "0.0.0.0" };
+        Assert.Throws<InvalidOperationException>(new VestigoOptions { ListenAddress = "localhost" }.Validate);
+        Assert.Throws<InvalidOperationException>(new VestigoOptions { ListenAddress = "" }.Validate);
+    }
 
-        Assert.Throws<InvalidOperationException>(options.Validate);
+    [Theory]
+    [InlineData("0.0.0.0")]
+    [InlineData("::")]
+    [InlineData("192.168.1.20")]
+    [InlineData("fe80::1")]
+    public void Options_AcceptNonLoopbackListenAddress(string address)
+    {
+        VestigoOptions options = new() { ListenAddress = address };
+
+        options.Validate();
+
+        Assert.True(options.IsBoundBeyondLoopback);
+    }
+
+    [Theory]
+    [InlineData("0.0.0.0", false, true)]
+    [InlineData("::", false, true)]
+    [InlineData("0.0.0.0", true, false)]
+    [InlineData("127.0.0.1", false, false)]
+    [InlineData("::1", false, false)]
+    public void Options_WarnOnlyWhenExposedWithoutTokens(string address, bool withToken, bool expectWarning)
+    {
+        VestigoOptions options = new() { ListenAddress = address };
+        if (withToken)
+        {
+            options.ApiTokens.Add("secret-value");
+        }
+
+        string? warning = options.GetExposureWarning();
+
+        Assert.Equal(expectWarning, warning is not null);
+        if (warning is not null)
+        {
+            Assert.Contains(address, warning);
+            Assert.DoesNotContain("secret-value", warning);
+        }
     }
 
     [Fact]
