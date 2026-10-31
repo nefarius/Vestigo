@@ -109,13 +109,19 @@ public sealed partial class ServiceTools(
                 return NotFound<ServiceInfo>(name);
             }
 
+            OperationResult<ServiceInfo>? blocked = RefuseProtectedCanonical<ServiceInfo>(current);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
+
             if (current.State == ServiceStates.Running)
             {
                 return OperationResult<ServiceInfo>.Ok(current);
             }
 
-            control.Start(name, arguments ?? []);
-            return await WaitFor(name, ServiceStates.Running, timeoutSeconds, cancellationToken);
+            control.Start(current.Name, arguments ?? []);
+            return await WaitFor(current.Name, ServiceStates.Running, timeoutSeconds, cancellationToken);
         }
         catch (ServiceControlException ex)
         {
@@ -139,7 +145,19 @@ public sealed partial class ServiceTools(
 
         try
         {
-            return await StopCore(name, stopDependents, timeoutSeconds, cancellationToken);
+            ServiceInfo? current = control.Get(name);
+            if (current is null)
+            {
+                return NotFound<ServiceInfo>(name);
+            }
+
+            OperationResult<ServiceInfo>? blocked = RefuseProtectedCanonical<ServiceInfo>(current);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
+
+            return await StopCore(current.Name, stopDependents, timeoutSeconds, cancellationToken);
         }
         catch (ServiceControlException ex)
         {
@@ -164,14 +182,26 @@ public sealed partial class ServiceTools(
         int timeout = Math.Clamp(timeoutSeconds, 1, MaxWaitSeconds);
         try
         {
-            OperationResult<ServiceInfo> stopped = await StopCore(name, stopDependents, timeout, cancellationToken);
+            ServiceInfo? current = control.Get(name);
+            if (current is null)
+            {
+                return NotFound<ServiceInfo>(name);
+            }
+
+            OperationResult<ServiceInfo>? blocked = RefuseProtectedCanonical<ServiceInfo>(current);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
+
+            OperationResult<ServiceInfo> stopped = await StopCore(current.Name, stopDependents, timeout, cancellationToken);
             if (!stopped.Success)
             {
                 return stopped;
             }
 
-            control.Start(name, []);
-            return await WaitFor(name, ServiceStates.Running, timeout, cancellationToken);
+            control.Start(current.Name, []);
+            return await WaitFor(current.Name, ServiceStates.Running, timeout, cancellationToken);
         }
         catch (ServiceControlException ex)
         {
@@ -210,8 +240,14 @@ public sealed partial class ServiceTools(
                     "invalid_start_type", "boot and system start types are only valid for drivers.");
             }
 
-            control.SetStartType(name, parsed);
-            return control.Get(name) is { } updated ? OperationResult<ServiceInfo>.Ok(updated) : NotFound<ServiceInfo>(name);
+            OperationResult<ServiceInfo>? blocked = RefuseProtectedCanonical<ServiceInfo>(current);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
+
+            control.SetStartType(current.Name, parsed);
+            return control.Get(current.Name) is { } updated ? OperationResult<ServiceInfo>.Ok(updated) : NotFound<ServiceInfo>(name);
         });
     }
 
@@ -288,8 +324,14 @@ public sealed partial class ServiceTools(
                     "not_a_driver", $"Service '{name}' is not a kernel driver. Only KERNEL_DRIVER services can be deleted.");
             }
 
-            NefconResult result = await nefcon.RemoveDriverService(name, cancellationToken);
-            return MapNefcon(result, name, "delete");
+            OperationResult<ServiceChangeResult>? blocked = RefuseProtectedCanonical<ServiceChangeResult>(current);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
+
+            NefconResult result = await nefcon.RemoveDriverService(current.Name, cancellationToken);
+            return MapNefcon(result, current.Name, "delete");
         }
         catch (ServiceControlException ex)
         {
@@ -399,6 +441,15 @@ public sealed partial class ServiceTools(
 
         return OperationResult<ServiceChangeResult>.Ok(new ServiceChangeResult(name, result.RebootRequired, result.Output, null));
     }
+
+    /// <summary>
+    ///     <c>ServiceController</c> resolves display names to service names, so the protected-name check must
+    ///     also run against the canonical name returned by <see cref="IServiceControl.Get" />.
+    /// </summary>
+    private OperationResult<T>? RefuseProtectedCanonical<T>(ServiceInfo info) =>
+        IsProtected(info.Name)
+            ? OperationResult<T>.Fail("protected_service", $"Service '{info.Name}' is protected by Vestigo:Services:ProtectedNames.")
+            : null;
 
     private bool IsProtected(string name) => options.Services.IsProtected(name);
 

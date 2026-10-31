@@ -84,6 +84,17 @@ public sealed class ServiceToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task MutatingTools_RefuseProtectedServices_ReachedThroughDisplayNameAlias()
+    {
+        _control.Aliases["Remote Procedure Call"] = "RpcSs";
+        Assert.Equal("protected_service", (await _tools.StartService("Remote Procedure Call")).ErrorCode);
+        Assert.Equal("protected_service", (await _tools.StopService("Remote Procedure Call")).ErrorCode);
+        Assert.Equal("protected_service", (await _tools.RestartService("Remote Procedure Call")).ErrorCode);
+        Assert.Equal("protected_service", _tools.SetServiceStartType("Remote Procedure Call", "disabled").ErrorCode);
+        Assert.Empty(_control.Calls);
+    }
+
+    [Fact]
     public async Task Start_WaitsForRunning()
     {
         _control.PollsUntilTransition = 3;
@@ -308,8 +319,16 @@ public sealed class ServiceToolsTests : IDisposable
             .Where(service => kind == ServiceKind.All || service.Kind == kind.ToString().ToLowerInvariant())
             .ToList();
 
+        /// <summary>Display-name aliases that resolve to a service name, like ServiceController does.</summary>
+        public Dictionary<string, string> Aliases { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public ServiceInfo? Get(string name)
         {
+            if (Aliases.TryGetValue(name, out string? canonical))
+            {
+                name = canonical;
+            }
+
             if (!_services.TryGetValue(name, out ServiceInfo? info))
             {
                 return null;

@@ -110,7 +110,7 @@ internal sealed class WindowsServiceControl : IServiceControl
         using ServiceController controller = new(name);
         try
         {
-            controller.Stop();
+            controller.Stop(stopDependentServices: false);
         }
         catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
