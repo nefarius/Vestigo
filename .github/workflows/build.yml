@@ -27,7 +27,20 @@ jobs:
       - name: Test
         run: dotnet test -c Release --filter-not-trait "Category=WindowsElevated"
 
+      # Build once: the payload staged here is the only input the installer job consumes.
+      - name: Fallout publish and stage installer payload
+        run: .\build.ps1 PublishLocal PrepareUpdater PrepareNefcon
+
+      - name: Upload publish payload
+        uses: actions/upload-artifact@v7
+        with:
+          name: vestigo-publish-x64
+          path: publish-x64/
+          if-no-files-found: error
+          retention-days: 3
+
   build-installer:
+    needs: build
     runs-on: windows-latest
     permissions:
       contents: read
@@ -63,13 +76,29 @@ jobs:
           if (-not $env:MINISIGN_PRIVATE_KEY) { throw 'Repository secret MINISIGN_PRIVATE_KEY is not set.' }
           if (-not $env:MINISIGN_PASSWORD) { throw 'Repository secret MINISIGN_PASSWORD is not set.' }
 
+      - name: Download publish payload
+        uses: actions/download-artifact@v8
+        with:
+          name: vestigo-publish-x64
+          path: publish-x64
+
+      - name: Assert publish payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'publish-x64\server\Vestigo.exe'
+            'publish-x64\server\Vestigo.dll'
+            'publish-x64\updater\Nefarius_Vestigo_Updater.exe'
+            'publish-x64\tools\nefconc.exe'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file)) { throw "File not found in downloaded payload: $file" }
+          }
+
       - name: Fallout BuildInstaller
         if: ${{ success() && !startsWith(github.ref, 'refs/tags/v') }}
-        run: .\build.ps1 BuildInstaller
-
-      - name: Publish release binaries
-        if: success() && startsWith(github.ref, 'refs/tags/v')
-        run: .\build.ps1 PublishLocal
+        run: .\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon
 
       - name: Assert assemblies are unsigned
         if: success() && startsWith(github.ref, 'refs/tags/v')
@@ -117,7 +146,7 @@ jobs:
 
       - name: Build signed MSI
         if: success() && startsWith(github.ref, 'refs/tags/v')
-        run: .\build.ps1 BuildInstaller --skip PublishLocal
+        run: .\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon
 
       - name: Assert MSI is unsigned
         if: success() && startsWith(github.ref, 'refs/tags/v')

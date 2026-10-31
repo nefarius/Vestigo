@@ -2,12 +2,21 @@
 
 Version numbers come from MinVer and `v*` tags. The MSI product version is read from the published `Vestigo.exe`.
 
-Pull requests and `master` build an unsigned MSI on Windows and run the test suite. They do not upload the MSI.
+## CI pipeline
 
-A `v*` tag:
+The workflow (`.github/workflows/build.yml`) builds the app once and hands the result to the installer job:
 
-1. Publishes `win-x64` Release binaries once.
-2. Checks that `Vestigo.exe` and `Vestigo.dll` are unsigned.
+`build` -> `build-installer` -> `release` (tags only)
+
+- `build` (Windows) runs the tests, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon`, and uploads `publish-x64/` (`server`, `updater`, `tools`) as the `vestigo-publish-x64` artifact (3-day retention).
+- `build-installer` (Windows, `needs: build`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything.
+- `release` (tags only) publishes the signed files.
+
+Pull requests and `master` build an unsigned MSI as a smoke test and do not upload it.
+
+A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
+
+1. Checks that `Vestigo.exe` and `Vestigo.dll` are unsigned.
 3. Signs both with SignRelay.
 4. Builds `publish-x64\installer\Vestigo.msi` from those signed binaries.
 5. Signs and verifies the MSI.
@@ -43,7 +52,7 @@ On a Windows machine with the x64 .NET 10 ASP.NET Core runtime:
 
 ## nefcon pin
 
-`PrepareNefcon` (a dependency of `BuildInstaller`) downloads the pinned nefcon release archive, checks its SHA-256, extracts `x64\nefconc.exe` to `publish-x64\tools\`, and requires a valid Authenticode signature for `Nefarius Software Solutions e.U.`. The MSI installs it as `tools\nefconc.exe` with `tools\nefcon-LICENSE.txt`; the MIT notice is also in `installer\THIRD-PARTY-NOTICES.txt`.
+`PrepareNefcon` (a dependency of `BuildInstaller`, run by the `build` CI job) downloads the pinned nefcon release archive, checks its SHA-256, extracts `x64\nefconc.exe` to `publish-x64\tools\`, and requires a valid Authenticode signature for `Nefarius Software Solutions e.U.`. The MSI installs it as `tools\nefconc.exe` with `tools\nefcon-LICENSE.txt`; the MIT notice is also in `installer\THIRD-PARTY-NOTICES.txt`.
 
 To bump nefcon manually:
 
