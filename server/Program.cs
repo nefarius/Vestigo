@@ -7,6 +7,7 @@ using ModelContextProtocol.AspNetCore;
 using Serilog;
 
 using Vestigo.Configuration;
+using Vestigo.Devices;
 using Vestigo.Etws;
 using Vestigo.Hosting;
 using Vestigo.Modules;
@@ -64,6 +65,7 @@ if (vestigo.AuthenticationEnabled)
 builder.Services.AddHealthChecks().AddCheck<VestigoHealthCheck>("vestigo");
 builder.Services.AddSingleton<PathPolicy>();
 builder.Services.AddSingleton<RootPolicy>();
+builder.Services.AddDevices();
 
 ModuleRegistry.ValidateConfiguration(vestigo);
 IReadOnlyList<VestigoModule> modules = ModuleRegistry.Enabled(vestigo);

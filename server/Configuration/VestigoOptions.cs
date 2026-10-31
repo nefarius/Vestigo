@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
 
+using Vestigo.Devices;
+
 namespace Vestigo.Configuration;
 
 /// <summary>
@@ -25,6 +27,7 @@ public sealed class VestigoOptions
     public Dictionary<string, ModuleSettings> Modules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public FilesOptions Files { get; set; } = new();
+    public DevicesOptions Devices { get; set; } = new();
 
     public int MaxConcurrentJobs { get; set; } = 8;
 
@@ -101,6 +104,7 @@ public sealed class VestigoOptions
         {
             throw new InvalidOperationException("Vestigo:Files:MaxUploadBytes must be positive.");
         }
+        Devices.Validate();
 
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
         foreach (RootDefinition root in Roots)
