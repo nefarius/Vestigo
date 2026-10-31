@@ -12,6 +12,7 @@ public static class ModuleRegistry
     public static IReadOnlyList<VestigoModule> All { get; } =
     [
         new JobsModule(),
+        new ProcessesModule(),
         new TraceModule()
     ];
 

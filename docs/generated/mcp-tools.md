@@ -10,6 +10,19 @@ Requests cancellation of a running job. Process jobs kill their process tree.
 | --- | --- | --- |
 | `jobId` | `string` | Job identifier. |
 
+## `close_app`
+
+Politely closes applications by posting WM_CLOSE to their top-level windows. Select by pid, processName and/or titleRegex (filters combine: pid or name, narrowed by title). Waits gracefulTimeoutSeconds, then reports which processes are still alive; it never kills them. context 'interactive' (default) acts on the console user's desktop.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `pid` | `int?` | Process id. |
+| `processName` | `string` | Process name, with or without .exe. |
+| `titleRegex` | `string` | .NET regular expression matched against window titles (case-insensitive). |
+| `gracefulTimeoutSeconds` | `int` | Seconds to wait for exit after WM_CLOSE, 0 to 600. |
+| `context` | `string` | 'interactive' (default) or 'service'. |
+| `elevated` | `bool` | Interactive only: use the elevated token so elevated windows can be closed. |
+
 ## `convert_etl`
 
 Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary.
@@ -47,6 +60,16 @@ Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed inpu
 | --- | --- | --- |
 | `pdbPath` | `string` | Absolute or rooted path to a .pdb file. |
 
+## `kill_process`
+
+Terminates a process by pid or exact name. entireTree also kills its descendants. Refuses the Vestigo process, pid 0 and pid 4.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `pid` | `int?` | Process id. |
+| `processName` | `string` | Exact process name, with or without .exe. Every match is killed. |
+| `entireTree` | `bool` | Also kill child processes. |
+
 ## `list_captures`
 
 Lists captures owned by this Vestigo process.
@@ -64,6 +87,17 @@ No parameters.
 Lists background jobs owned by this Vestigo process, newest first.
 
 No parameters.
+
+## `list_processes`
+
+Lists running processes with pid, name, session id and start time. Filters are optional.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `nameFilter` | `string` | Case-insensitive substring of the process name. |
+| `pid` | `int?` | Only this process id. |
+| `sessionId` | `int?` | Only this session id (0 is services, the console session is usually 1). |
+| `limit` | `int` | Maximum rows, 1 to 2000. |
 
 ## `read_capture`
 
@@ -84,6 +118,20 @@ Reads a page of text output from a job. Pass the returned NextOffset to continue
 | `jobId` | `string` | Job identifier. |
 | `offset` | `long` | Byte offset to read from. Use 0 for the beginning. |
 | `limit` | `int?` | Maximum bytes to return. Clamped to MaxJobReadBytes. |
+
+## `run_process`
+
+Starts a process as a job. path is a file under a root with Execute access (name:relative\path or absolute), or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\default (elevated: true uses the linked administrator token). stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` | `string` | Executable or script path, or a bare name resolved from PATH. |
+| `args` | `string[]` | Command-line arguments, one array element per argument. |
+| `workingDirectory` | `string` | Working directory under a root with Read access. Defaults to the executable's directory. |
+| `env` | `Dictionary`2` | Environment variable overrides. |
+| `context` | `string` | 'service' (default) or 'interactive'. |
+| `elevated` | `bool` | Interactive only: run with the elevated linked token. |
+| `wait` | `int` | Seconds to wait (0 to 300) before returning. 0 returns the job id immediately. |
 
 ## `scan_etl_metadata`
 

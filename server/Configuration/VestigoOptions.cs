@@ -24,6 +24,8 @@ public sealed class VestigoOptions
 
     public Dictionary<string, ModuleSettings> Modules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public ProcessesOptions Processes { get; set; } = new();
+
     public int MaxConcurrentJobs { get; set; } = 8;
 
     public long MaxJobOutputBytes { get; set; } = 64L * 1024 * 1024;
