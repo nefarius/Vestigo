@@ -170,6 +170,30 @@ public class SoftwareToolsTests : IDisposable
     }
 
     [Fact]
+    public void SafeLocalPath_RejectsReparsePointsAndAcceptsPlainFiles()
+    {
+        string target = Directory.CreateDirectory(Path.Combine(_root, "real")).FullName;
+        string exe = TempExe(Path.Combine("real", "u.exe"));
+        string link = Path.Combine(_root, "link");
+        bool linked = true;
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            linked = false; // No symlink privilege on this machine.
+        }
+
+        Assert.True(InstallerDetector.IsSafeLocalPath(exe));
+        Assert.False(InstallerDetector.IsSafeLocalPath(@"\\server\share\u.exe"));
+        if (linked)
+        {
+            Assert.False(InstallerDetector.IsSafeLocalPath(Path.Combine(link, "u.exe")));
+        }
+    }
+
+    [Fact]
     public void Detector_IgnoresMalformedWindowsInstallerValue()
     {
         Dictionary<string, object?> values = new(StringComparer.OrdinalIgnoreCase)

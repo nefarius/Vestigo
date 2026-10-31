@@ -70,7 +70,7 @@ public static partial class InstallerDetector
 
     private static bool LooksLikeInno(string? executable)
     {
-        if (executable is null || !IsLocalDrivePath(executable) || !InnoUninstaller().IsMatch(Path.GetFileName(executable)))
+        if (executable is null || !IsSafeLocalPath(executable) || !InnoUninstaller().IsMatch(Path.GetFileName(executable)))
         {
             return false;
         }
@@ -87,7 +87,7 @@ public static partial class InstallerDetector
 
     private static bool HasNsisMarker(string? executable)
     {
-        if (executable is null || !IsLocalDrivePath(executable))
+        if (executable is null || !IsSafeLocalPath(executable))
         {
             return false;
         }
@@ -116,6 +116,52 @@ public static partial class InstallerDetector
     /// </summary>
     public static bool IsLocalDrivePath(string path) =>
         path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] is '\\' or '/';
+
+    /// <summary>
+    ///     <see cref="IsLocalDrivePath" /> plus: the drive is a fixed disk (not a mapped network or removable drive)
+    ///     and no existing component of the path is a reparse point (junction or symlink that could redirect the
+    ///     probe to a network share). Call before any <c>File.Exists</c> or open on a registry-derived path.
+    /// </summary>
+    public static bool IsSafeLocalPath(string path)
+    {
+        if (!IsLocalDrivePath(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            string full = Path.GetFullPath(path);
+            string root = Path.GetPathRoot(full)!;
+            if (!IsLocalDrivePath(full) || new DriveInfo(root).DriveType != DriveType.Fixed)
+            {
+                return false;
+            }
+
+            string current = root;
+            foreach (string part in full[root.Length..].Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, part);
+                try
+                {
+                    if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    {
+                        return false;
+                    }
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+                {
+                    return true;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 
     private static string? Text(IReadOnlyDictionary<string, object?> values, string name) =>
         values.TryGetValue(name, out object? value) && value is string text && !string.IsNullOrWhiteSpace(text) ? text : null;

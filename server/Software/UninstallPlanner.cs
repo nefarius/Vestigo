@@ -76,7 +76,7 @@ public sealed class UninstallPlanner
             return Fail("invalid_uninstall_string", "The uninstall command could not be parsed.");
         }
 
-        if (!InstallerDetector.IsLocalDrivePath(split.Executable) || !File.Exists(split.Executable))
+        if (!InstallerDetector.IsSafeLocalPath(split.Executable) || !File.Exists(split.Executable))
         {
             return Fail("invalid_uninstall_string", $"Uninstaller '{split.Executable}' is not an existing path on a local drive.");
         }
@@ -221,7 +221,7 @@ public sealed class UninstallPlanner
                     firstExe = end;
                 }
 
-                if (InstallerDetector.IsLocalDrivePath(text) && File.Exists(text[..end]))
+                if (InstallerDetector.IsSafeLocalPath(text[..end]) && File.Exists(text[..end]))
                 {
                     return end;
                 }
