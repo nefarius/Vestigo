@@ -91,6 +91,18 @@ public uint FlushTimerSeconds { get; set; }
 
 [UInt32](https://learn.microsoft.com/dotnet/api/system.uint32)<br>
 
+### <a id="properties-isboundbeyondloopback"/>**IsBoundBeyondLoopback**
+
+True when [VestigoOptions.ListenAddress](./vestigo.configuration.vestigooptions.md#listenaddress) is an IP address other than loopback, such as 0.0.0.0 or ::.
+
+```csharp
+public bool IsBoundBeyondLoopback { get; }
+```
+
+#### Property Value
+
+[Boolean](https://learn.microsoft.com/dotnet/api/system.boolean)<br>
+
 ### <a id="properties-listenaddress"/>**ListenAddress**
 
 ```csharp
@@ -210,6 +222,19 @@ public VestigoOptions()
 ```
 
 ## Methods
+
+### <a id="methods-getexposurewarning"/>**GetExposureWarning()**
+
+Returns a startup warning when the server is reachable from the network without any API token, otherwise null.
+ The message never contains token values.
+
+```csharp
+public string GetExposureWarning()
+```
+
+#### Returns
+
+[String](https://learn.microsoft.com/dotnet/api/system.string)
 
 ### <a id="methods-validate"/>**Validate()**
 

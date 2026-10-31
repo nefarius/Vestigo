@@ -21,11 +21,12 @@ Reading an existing ETL file does not by itself require elevation. Creating a re
 2. Edit `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`.
 3. Point an MCP client at `http://127.0.0.1:5098/mcp`.
 
-The server listens on loopback only. `/health` is anonymous. `/mcp` is anonymous until `ApiTokens` contains one or more bearer tokens.
+The server listens on loopback by default and can be bound to any IP address with `ListenAddress`; configure `ApiTokens` before exposing it (a startup warning is logged otherwise). `/health` is anonymous. `/mcp` is anonymous until `ApiTokens` contains one or more bearer tokens.
 
 ## Projects
 
 - [`Vestigo.Server`](server) — ASP.NET Core host, MCP tools, and capture manager.
+- [`Vestigo.Installer.Actions`](installer/Vestigo.Installer.Actions) — net48 MSI custom actions and the pure listen-settings logic shared with the tests.
 - [`Vestigo.Installer`](installer) — WixSharp project that builds the per-machine x64 MSI and Windows service.
 - [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) — path, authentication, capture, and package-boundary tests.
 
@@ -46,15 +47,16 @@ Windows publish output is framework-dependent, ReadyToRun, and `win-x64`:
 .\build.ps1 PublishLocal
 ```
 
-On Windows, with WiX 5.0.2 and `WixToolset.UI.wixext/5.0.2`:
+On Windows, with WiX 5.0.2, `WixToolset.UI.wixext/5.0.2`, and `WixToolset.Firewall.wixext/5.0.2`:
 
 ```powershell
 dotnet tool install --global wix --version 5.0.2
 wix extension add -g WixToolset.UI.wixext/5.0.2
+wix extension add -g WixToolset.Firewall.wixext/5.0.2
 .\build.ps1 BuildInstaller
 ```
 
-The MSI is `publish-x64\installer\Vestigo.msi`. `BuildInstaller` downloads the pinned signed [Vicius](https://github.com/nefarius/vicius) 1.20.0 x64 updater and the pinned signed [nefcon](https://github.com/nefarius/nefcon) 1.21.0 CLI (installed under `tools\`) and packages them with the server. A local build is unsigned. Tagging `v*` signs `Vestigo.exe`, `Vestigo.dll`, and the MSI through SignRelay, then publishes `updates.json` and `updates.json.minisig` beside the MSI on Buildbot. If `LICENSE` changes, update `installer\License.rtf` as well. Third-party terms for the updater and nefcon are in [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt).
+The MSI is `publish-x64\installer\Vestigo.msi`. Its listen/security page offers four modes (localhost or any address, each with or without an API token; any address with a token is the default) and writes them to the ProgramData `appsettings.json`; see [docs/windows-service.md](docs/windows-service.md) for the silent-install properties. `BuildInstaller` downloads the pinned signed [Vicius](https://github.com/nefarius/vicius) 1.20.0 x64 updater and the pinned signed [nefcon](https://github.com/nefarius/nefcon) 1.21.0 CLI (installed under `tools\`) and packages them with the server. A local build is unsigned. Tagging `v*` signs `Vestigo.exe`, `Vestigo.dll`, and the MSI through SignRelay, then publishes `updates.json` and `updates.json.minisig` beside the MSI on Buildbot. If `LICENSE` changes, update `installer\License.rtf` as well. Third-party terms for the updater and nefcon are in [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt).
 
 ## Limitations
 

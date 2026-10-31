@@ -8,9 +8,9 @@ Property defaults are generated in [generated/configuration.md](generated/config
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `ListenAddress` | `127.0.0.1` | Loopback address, including `::1`. Other addresses and `Kestrel:Endpoints` are rejected at startup. |
+| `ListenAddress` | `127.0.0.1` | IP address to bind: loopback (`127.0.0.1`, `::1`) or any other address such as `0.0.0.0` or `::` to accept network clients. Host names are rejected, as is `Kestrel:Endpoints`. Binding beyond loopback without `ApiTokens` logs a startup warning. |
 | `ListenPort` | `5098` | HTTP port. Changing it requires a service restart. |
-| `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`. |
+| `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`; strongly recommended whenever `ListenAddress` is not loopback. |
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |

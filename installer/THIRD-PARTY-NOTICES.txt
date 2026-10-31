@@ -139,3 +139,14 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+----------------------------------------------------------------------
+
+WiX Toolset (Data Transfer/Deployment Tools custom action host)
+
+The Vestigo MSI embeds the unmodified WiX Toolset DTF custom action host
+(SfxCA.dll stub, WixToolset.Dtf.WindowsInstaller.dll) and uses the WiX
+Firewall extension (WixToolset.Firewall.wixext 5.0.2) to configure the
+Windows Firewall. WiX Toolset is licensed under the Microsoft Reciprocal
+License (MS-RL); see https://github.com/wixtoolset/wix/blob/main/LICENSE.TXT
+for the full text. The source is available at https://github.com/wixtoolset/wix.

@@ -1,6 +1,6 @@
 # Security
 
-Vestigo binds to a loopback address and runs as a Windows service so realtime ETW session creation can be elevated. That privilege is local administrator or `SeSystemProfilePrivilege`.
+Vestigo binds to one IP address (loopback `127.0.0.1` by default) and runs as a Windows service so realtime ETW session creation can be elevated. That privilege is local administrator or `SeSystemProfilePrivilege`.
 
 When `ApiTokens` is empty, `/mcp` accepts anonymous clients. That is the default for a fresh localhost install. Add one or more tokens to require `Authorization: Bearer <token>`. Comparison uses SHA-256 digests and a fixed-time check. Tokens are not logged and are not copied into claims.
 
@@ -8,7 +8,18 @@ When `ApiTokens` is empty, `/mcp` accepts anonymous clients. That is the default
 
 Every client path is canonicalized, including existing directory links, and must stay inside the resolved input or output root. A root of `D:\traces` does not allow `D:\traces-extra` or a link that resolves outside that root. The accepted path is the resolved location, so a later open does not follow a link that was swapped after the check. Unsupported extensions are rejected. Existing outputs are kept unless `overwrite` is true. Input size, event count, output size, and capture lifetime are capped.
 
-`Kestrel:Endpoints` is rejected at startup. The process binds only `Vestigo:ListenAddress` and `Vestigo:ListenPort`. IPv6 loopback is formatted with brackets.
+`Kestrel:Endpoints` is rejected at startup. The process binds only `Vestigo:ListenAddress` and `Vestigo:ListenPort`. IPv6 addresses are formatted with brackets.
+
+## Network exposure
+
+`ListenAddress` accepts any IP address, including `0.0.0.0` and `::`. Vestigo does not require a token, because a localhost-only install without one is a supported setup. The risk grows when the address is not loopback: anyone who can reach the port can start captures and read files inside the allowed roots. For that reason:
+
+- Configure `ApiTokens` (strongly recommended) whenever `ListenAddress` is not loopback. Use long random values, for example 32 random bytes encoded as base64url.
+- At startup Vestigo logs a prominent `SECURITY WARNING` when the address is non-loopback and `ApiTokens` is empty. The warning never contains token values.
+- Traffic is plain HTTP. Tokens and traces cross the network unencrypted, so use a trusted network or a TLS-terminating proxy.
+- Open the Windows firewall only for the chosen port and, where possible, restrict the rule's remote addresses.
+
+The MSI installer lets you pick one of four modes: localhost without a token, localhost with a token, any address without a token (the dialog shows a warning), or any address with a token (the default). The choice is written to `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`, readable only by SYSTEM and Administrators, so the token is stored there in clear text. Modes that bind any address add an inbound TCP firewall rule for the port; uninstalling removes it. See [windows-service.md](windows-service.md) for the silent-install properties.
 
 `set_environment_variable` with machine scope is a machine-wide configuration change that affects every process started afterwards, so treat access to `/mcp` as administrative when the module is enabled; disable it with `Vestigo:Modules:Environment:Enabled=false`. `Vestigo:Environment:ProtectedNames` (default `COMSPEC`, `SystemRoot`, `windir`) lists names that cannot be set or unset in any scope. Variable values are never written to the Vestigo log, and `set_environment_variable` does not echo the value. User scope needs the SYSTEM account (`SeTcbPrivilege`) to obtain the console user token and fails with `user_not_available` when nobody is logged on. Process scope changes only the Vestigo service process and its children.
 

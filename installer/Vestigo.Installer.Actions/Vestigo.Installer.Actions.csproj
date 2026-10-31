@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Managed MSI custom actions. They run inside msiexec through the DTF SfxCA stub, which hosts .NET Framework 4.x. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>Vestigo.Installer.Actions</RootNamespace>
+    <AssemblyName>Vestigo.Installer.Actions</AssemblyName>
+    <Platforms>AnyCPU</Platforms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Dtf.WindowsInstaller" />
+    <PackageReference Include="WixToolset.Dtf.CustomAction" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Packaged into Vestigo.Installer.Actions.CA.dll by MakeSfxCA. -->
+    <Content Include="CustomAction.config" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Expose the packaged CA assembly next to the regular build output so the installer project can embed it. -->
+  <Target Name="CopyCustomActionPackage" AfterTargets="Build" DependsOnTargets="PackCustomAction" Condition="'$(OS)' == 'Windows_NT'">
+    <Copy SourceFiles="$(IntermediateOutputPath)$(TargetCAFileName)" DestinationFolder="$(OutDir)" />
+  </Target>
+
+</Project>

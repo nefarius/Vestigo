@@ -89,6 +89,10 @@ builder.Services.AddMcpServer()
 
 WebApplication app = builder.Build();
 Log.Information("Vestigo modules enabled: {Modules}", string.Join(", ", modules.Select(module => module.Name)));
+if (vestigo.GetExposureWarning() is { } exposureWarning)
+{
+    app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
+}
 foreach (VestigoModule module in modules)
 {
     module.MapEndpoints(app, vestigo);
