@@ -120,6 +120,23 @@ public class PlatformTests : IDisposable
     }
 
     [Fact]
+    public void JobManager_Startup_DeletesOnlyStaleOrphanLogs()
+    {
+        string dir = Path.Combine(_root, "jobs-stale");
+        Directory.CreateDirectory(dir);
+        string stale = Path.Combine(dir, "old.log");
+        string fresh = Path.Combine(dir, "new.log");
+        File.WriteAllText(stale, "x");
+        File.WriteAllText(fresh, "x");
+        File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddHours(-2));
+
+        _ = new JobManager(new VestigoOptions { JobRetention = TimeSpan.FromHours(1) }, dir);
+
+        Assert.False(File.Exists(stale));
+        Assert.True(File.Exists(fresh));
+    }
+
+    [Fact]
     public async Task JobManager_PurgesOldJobs()
     {
         JobManager jobs = new(new VestigoOptions { JobRetention = TimeSpan.FromMinutes(1) }, Path.Combine(_root, "jobs"));

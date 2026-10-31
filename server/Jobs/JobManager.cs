@@ -138,6 +138,27 @@ public sealed class JobManager : BackgroundService
         _directory = directory;
         _logger = logger;
         Directory.CreateDirectory(_directory);
+        DeleteStaleSpoolFiles();
+    }
+
+    /// <summary>Removes spool logs left by earlier process runs that are older than the retention window.</summary>
+    private void DeleteStaleSpoolFiles()
+    {
+        DateTime cutoff = DateTime.UtcNow - _options.JobRetention;
+        foreach (string file in Directory.EnumerateFiles(_directory, "*.log"))
+        {
+            try
+            {
+                if (File.GetLastWriteTimeUtc(file) < cutoff)
+                {
+                    File.Delete(file);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger?.LogWarning(ex, "Could not delete stale job log {File}", file);
+            }
+        }
     }
 
     public OperationResult<JobInfo> Start(
