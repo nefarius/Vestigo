@@ -58,10 +58,10 @@ The same deferred action that writes the listen settings also writes `Vestigo:Mo
 
 ```powershell
 msiexec /i Vestigo.msi /qn ADDLOCAL=Server,Jobs,Processes,Software,SoftwareUninstall VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=none
-msiexec /i Vestigo.msi /qn ADDLOCAL=ALL REMOVE=Devices
+msiexec /i Vestigo.msi /qn ADDLOCAL=ALL REMOVE=Devices,Processes,RemoteDebugger,SoftwareUninstall
 ```
 
-With `ADDLOCAL` only the listed features (and their required parents) are installed, so list every module you want.
+With `ADDLOCAL` only the listed features (and their required parents) are installed, so list every module you want. `ADDLOCAL=ALL` selects every feature, including the default-off ones, so the second example removes them again.
 
 Listen address and port are read at process start. Restart the service after changing them.
 

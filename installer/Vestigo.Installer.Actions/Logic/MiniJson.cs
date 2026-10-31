@@ -28,6 +28,37 @@ namespace Vestigo.Installer.Actions.Logic
             return false;
         }
 
+        /// <summary>Case-insensitive lookup, matching ASP.NET Core configuration key semantics.</summary>
+        public bool TryGetIgnoreCase(string name, out object? value)
+        {
+            foreach (KeyValuePair<string, object?> member in _members)
+            {
+                if (string.Equals(member.Key, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = member.Value;
+                    return true;
+                }
+            }
+
+            value = null;
+            return false;
+        }
+
+        /// <summary>Replaces the value of a case-insensitively matching member, keeping its key spelling, or appends it.</summary>
+        public void SetIgnoreCase(string name, object? value)
+        {
+            for (int i = 0; i < _members.Count; i++)
+            {
+                if (string.Equals(_members[i].Key, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _members[i] = new KeyValuePair<string, object?>(_members[i].Key, value);
+                    return;
+                }
+            }
+
+            _members.Add(new KeyValuePair<string, object?>(name, value));
+        }
+
         public void Set(string name, object? value)
         {
             for (int i = 0; i < _members.Count; i++)

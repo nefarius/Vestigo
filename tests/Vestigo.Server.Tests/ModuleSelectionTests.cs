@@ -74,6 +74,26 @@ public class ModuleSelectionTests
     }
 
     [Fact]
+    public void Merge_MatchesKeysCaseInsensitively_WithoutDuplicates()
+    {
+        const string existing = """
+            { "Vestigo": { "modules": { "processes": { "enabled": false } }, "software": { "allowuninstall": false } } }
+            """;
+
+        string merged = ListenSettings.Merge(
+            existing,
+            Open(),
+            new Dictionary<string, bool> { ["Processes"] = true, ["SoftwareUninstall"] = true });
+
+        Assert.Contains("\"enabled\": true", merged);
+        Assert.Contains("\"allowuninstall\": true", merged);
+        Assert.DoesNotContain("\"Enabled\"", merged);
+        Assert.DoesNotContain("\"Modules\"", merged);
+        Assert.DoesNotContain("\"AllowUninstall\"", merged);
+        Assert.True(ModuleSelection.ReadExisting(merged)["Processes"]);
+    }
+
+    [Fact]
     public void Merge_WithoutModules_LeavesModulesAlone()
     {
         string merged = ListenSettings.Merge("""{ "Vestigo": { "Modules": { "Devices": { "Enabled": true } } } }""", Open());

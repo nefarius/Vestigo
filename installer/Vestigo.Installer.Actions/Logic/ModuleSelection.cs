@@ -114,21 +114,21 @@ namespace Vestigo.Installer.Actions.Logic
                 return result;
             }
 
-            if (vestigo.TryGet("Modules", out object? modules) && modules is JsonObject moduleObject)
+            if (vestigo.TryGetIgnoreCase("Modules", out object? modules) && modules is JsonObject moduleObject)
             {
                 foreach (KeyValuePair<string, object?> member in moduleObject.Members)
                 {
                     ModuleDefinition? module = Find(member.Key);
                     if (module != null && module.Name != SoftwareUninstall && member.Value is JsonObject settings &&
-                        settings.TryGet("Enabled", out object? enabled) && enabled is bool flag)
+                        settings.TryGetIgnoreCase("Enabled", out object? enabled) && enabled is bool flag)
                     {
                         result[module.Name] = flag;
                     }
                 }
             }
 
-            if (vestigo.TryGet("Software", out object? software) && software is JsonObject softwareObject &&
-                softwareObject.TryGet("AllowUninstall", out object? allow) && allow is bool allowFlag)
+            if (vestigo.TryGetIgnoreCase("Software", out object? software) && software is JsonObject softwareObject &&
+                softwareObject.TryGetIgnoreCase("AllowUninstall", out object? allow) && allow is bool allowFlag)
             {
                 result[SoftwareUninstall] = allowFlag;
             }
@@ -198,14 +198,14 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             JsonObject modules;
-            if (vestigo.TryGet("Modules", out object? existing) && existing is JsonObject existingModules)
+            if (vestigo.TryGetIgnoreCase("Modules", out object? existing) && existing is JsonObject existingModules)
             {
                 modules = existingModules;
             }
             else
             {
                 modules = new JsonObject();
-                vestigo.Set("Modules", modules);
+                vestigo.SetIgnoreCase("Modules", modules);
             }
 
             foreach (ModuleDefinition module in All)
@@ -234,23 +234,23 @@ namespace Vestigo.Installer.Actions.Logic
                     modules.Set(key, settings);
                 }
 
-                settings.Set("Enabled", enabled);
+                settings.SetIgnoreCase("Enabled", enabled);
             }
 
             if (states.TryGetValue(SoftwareUninstall, out bool allow))
             {
                 JsonObject software;
-                if (vestigo.TryGet("Software", out object? existingSoftware) && existingSoftware is JsonObject existingSoftwareObject)
+                if (vestigo.TryGetIgnoreCase("Software", out object? existingSoftware) && existingSoftware is JsonObject existingSoftwareObject)
                 {
                     software = existingSoftwareObject;
                 }
                 else
                 {
                     software = new JsonObject();
-                    vestigo.Set("Software", software);
+                    vestigo.SetIgnoreCase("Software", software);
                 }
 
-                software.Set("AllowUninstall", allow);
+                software.SetIgnoreCase("AllowUninstall", allow);
             }
         }
     }
