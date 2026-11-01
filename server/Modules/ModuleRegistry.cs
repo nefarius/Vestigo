@@ -21,7 +21,8 @@ public static class ModuleRegistry
         new TraceModule(),
         new EnvironmentModule(),
         new LogsModule(),
-        new EventLogModule()
+        new EventLogModule(),
+        new DesktopModule()
     ];
 
     public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options) =>
@@ -55,9 +56,10 @@ public static class ModuleRegistry
     }
 
     /// <summary>
-    ///     Returns a startup warning naming administrator-equivalent capabilities that are enabled while no API token
-    ///     is configured, otherwise null. This is a warning, never a failure: an operator may deliberately run an open
-    ///     server on an isolated network. The message never contains token values.
+    ///     Returns a startup warning naming administrator-equivalent capabilities, and separately a Desktop
+    ///     enumerator, that are enabled while no API token is configured, otherwise null. This is a warning,
+    ///     never a failure: an operator may deliberately run an open server on an isolated network. The message
+    ///     never contains token values.
     /// </summary>
     public static string? GetPrivilegedModuleWarning(VestigoOptions options)
     {
@@ -88,7 +90,8 @@ public static class ModuleRegistry
             capabilities.Add("Software uninstall");
         }
 
-        if (capabilities.Count == 0)
+        bool desktop = enabled.Any(module => module.Name == "Desktop");
+        if (capabilities.Count == 0 && !desktop)
         {
             return null;
         }
@@ -96,8 +99,22 @@ public static class ModuleRegistry
         string reach = options.IsBoundBeyondLoopback
             ? $"The server listens on {options.ListenAddress}:{options.ListenPort}, so anyone who can reach this port on the network"
             : "Any local client";
+        string desktopClause = desktop
+            ? $"{reach} can list windows, titles, and displays on the console user's desktop. "
+            : "";
+        if (capabilities.Count == 0)
+        {
+            return $"SECURITY WARNING: Vestigo has no Vestigo:ApiTokens and the Desktop module is enabled. " +
+                   desktopClause +
+                   "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
+        }
+
+        string desktopSuffix = desktop
+            ? "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop. "
+            : "";
         return $"SECURITY WARNING: Vestigo has no Vestigo:ApiTokens and these administrator-equivalent capabilities are enabled: {string.Join(", ", capabilities)}. " +
                $"{reach} can run programs, control services or drivers, or uninstall software as the service account. " +
+               desktopSuffix +
                "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
 }

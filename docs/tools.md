@@ -112,6 +112,18 @@ The `Processes` module is disabled by default and requires the `Jobs` module. Th
 
 `kill_process` terminates by `pid` or exact `processName` (every match). `entireTree` also kills descendants. It refuses its own pid, pid 0 and pid 4.
 
+## Desktop
+
+The `Desktop` module is disabled by default. It lists Win32 windows and the GDI/physical displays they are rendered on. Window titles from the console user's desktop are information disclosure; read [security.md](security.md#desktop) first. Enabling it without `ApiTokens` is allowed and logs a startup `SECURITY WARNING`.
+
+`list_windows` returns each matching window's handle (hex), title, class, owning process (pid, name, path when `PROCESS_QUERY_LIMITED_INFORMATION` is allowed), parent (null when the parent is the desktop), owner, root owner, visibility, minimized/maximized/cloaked, `GetWindowRect` bounds, DWM extended-frame bounds, client size, window DPI, nearest GDI display (`\\.\DISPLAY1`), and every display its bounds intersect. Coordinates are physical pixels: the enumerator switches the thread to per-monitor DPI awareness for the call.
+
+Filters combine: `pid` or `processName`, narrowed by `titleRegex` and `className`. `includeHidden` adds invisible windows; cloaked windows (for example an app on another virtual desktop) still appear when they are visible to `IsWindowVisible`. `includeChildren` also walks `EnumChildWindows`; child-window titles are omitted so control text is not returned or matched. `limit` is 1 to 5000 (default 500); `truncated` is true when the cap was hit. A `titleRegex` that exceeds its one-second match limit fails with `invalid_request`.
+
+Windows belong to a desktop, so the default `interactive` context starts `Vestigo.exe --session-helper list-windows` in the console user's session; it prints JSON and exits. `context: service` only sees the service's own desktop (session 0 when Vestigo runs as a service). Interactive enumeration needs a console user; it fails with `no_interactive_session` otherwise. Secure and locked desktops are not visible. `ProcessPath` may be null for protected processes. Titles are read with `SendMessageTimeout` so a hung window cannot stall the listing (that title is then empty).
+
+`list_displays` returns the GDI topology (`\\.\DISPLAYn`, bounds, work area, DPI, primary) plus the physical targets `QueryDisplayConfig` reports for each source, including cloned outputs (`friendlyName`, `devicePath`, EDID manufacturer/product, output technology, connector instance). When that API is unavailable (session 0, some RDP sessions) the tool falls back to `EnumDisplayDevices` and may return empty monitor details.
+
 ## Remote debugger
 
 The `RemoteDebugger` module is disabled by default and requires the `Jobs` and `Processes` modules. Enabling those without `ApiTokens` logs a startup `SECURITY WARNING`. It manages the Visual Studio Remote Debugging Tools (`msvsmon.exe`) for Visual Studio 2022 (17) and 2026 (18). A running monitor lets a remote debugger run code on this machine; read [security.md](security.md#remote-debugger) first.

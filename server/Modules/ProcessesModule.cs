@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 using Vestigo.Configuration;
 using Vestigo.Processes;
 
@@ -19,8 +21,9 @@ public sealed class ProcessesModule : VestigoModule
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
-        // JobManager comes from the Jobs module (declared in Dependencies).
-        services.AddSingleton<IProcessLauncher, ProcessLauncher>();
+        // JobManager comes from the Jobs module (declared in Dependencies). Desktop also registers the launcher.
+        services.TryAddSingleton<IProcessLauncher, ProcessLauncher>();
+        services.TryAddSingleton<SessionHelperClient>();
         services.AddSingleton<ExecutableResolver>();
         services.AddSingleton<AppCloser>();
     }
