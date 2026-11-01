@@ -70,6 +70,8 @@ if (vestigo.AuthenticationEnabled)
 
 builder.Services.AddHealthChecks().AddCheck<VestigoHealthCheck>("vestigo");
 builder.Services.AddSingleton<PathPolicy>();
+builder.Services.AddSingleton<IVolumeEnumerator, DriveInfoVolumeEnumerator>();
+builder.Services.AddSingleton<VolumeRootSource>();
 builder.Services.AddSingleton<RootPolicy>();
 builder.Services.AddDevices();
 
@@ -92,9 +94,23 @@ foreach (string repair in stateRepairs)
     app.Logger.LogWarning("{StateDirectoryRepair}", repair);
 }
 
+IReadOnlyList<RootDefinition> volumeRoots = app.Services.GetRequiredService<VolumeRootSource>().Current;
+if (volumeRoots.Count > 0)
+{
+    app.Logger.LogInformation(
+        "Vestigo volume roots ({Mode}): {VolumeRoots}",
+        vestigo.VolumeRoots,
+        string.Join(", ", volumeRoots.Select(root => $"{root.Name}={root.Path}")));
+}
+
 if (vestigo.GetExposureWarning() is { } exposureWarning)
 {
     app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
+}
+
+if (vestigo.GetVolumeRootWarning() is { } volumeRootWarning)
+{
+    app.Logger.LogWarning("{VolumeRootWarning}", volumeRootWarning);
 }
 if (ModuleRegistry.GetPrivilegedModuleWarning(vestigo) is { } privilegedWarning)
 {

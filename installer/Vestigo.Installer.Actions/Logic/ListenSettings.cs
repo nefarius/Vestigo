@@ -235,11 +235,16 @@ namespace Vestigo.Installer.Actions.Logic
         }
 
         /// <summary>
-        ///     Writes only <c>Vestigo:ListenAddress</c>, <c>ListenPort</c>, and <c>ApiTokens</c> into the settings JSON and keeps
+        ///     Writes <c>Vestigo:ListenAddress</c>, <c>ListenPort</c>, and <c>ApiTokens</c> into the settings JSON and keeps
         ///     everything else. Existing tokens are kept untouched when the chosen token is already among them.
+        ///     Optional <paramref name="modules" /> and <paramref name="roots" /> write those installer-owned keys too.
         /// </summary>
         /// <param name="existingJson">Current file contents, or null/blank for a new file. Throws <see cref="FormatException" /> when unparseable.</param>
-        public static string Merge(string? existingJson, ResolvedSettings settings, IDictionary<string, bool>? modules = null)
+        public static string Merge(
+            string? existingJson,
+            ResolvedSettings settings,
+            IDictionary<string, bool>? modules = null,
+            ResolvedRootSettings? roots = null)
         {
             JsonObject root;
             if (string.IsNullOrWhiteSpace(existingJson))
@@ -284,6 +289,11 @@ namespace Vestigo.Installer.Actions.Logic
             if (modules != null)
             {
                 ModuleSelection.Apply(vestigo, modules);
+            }
+
+            if (roots != null)
+            {
+                RootSettings.Apply(vestigo, roots);
             }
 
             return MiniJson.Write(root);

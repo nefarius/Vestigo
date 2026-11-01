@@ -367,6 +367,23 @@ public class FileToolTests : IDisposable
     }
 
     [Fact]
+    public void IsRoot_TreatsDriveVolumeRootAsRoot()
+    {
+        VestigoOptions options = new()
+        {
+            VolumeRoots = VolumeRootMode.SystemDrive,
+            VolumeRootAccess = RootAccess.Read
+        };
+        FakeVolumeEnumerator enumerator = new() { SystemDrive = @"C:\" };
+        RootPolicy policy = new(options, new VolumeRootSource(options, enumerator));
+
+        Assert.True(FileAccessGuard.IsRoot(policy, @"C:\"));
+        Assert.False(FileAccessGuard.IsRoot(policy, @"C:\Windows"));
+        Assert.True(policy.Resolve(@"C:\Windows\explorer.exe", RootAccess.Read).Success);
+        Assert.Equal("access_denied", policy.Resolve(@"C:\Windows\explorer.exe", RootAccess.Write).ErrorCode);
+    }
+
+    [Fact]
     public void Tools_RejectAlternateDataStreams()
     {
         Assert.Equal("invalid_path", Tools().MakeDirectory("work:a.txt:stream").ErrorCode);

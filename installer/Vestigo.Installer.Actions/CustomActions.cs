@@ -16,6 +16,7 @@ namespace Vestigo.Installer.Actions
     /// <summary>
     ///     MSI custom actions for the access and authentication pages. Token values are never written to the MSI log.
     ///     Properties: VESTIGO_LISTEN_MODE, VESTIGO_AUTH_MODE, VESTIGO_PORT, VESTIGO_API_TOKEN (public, hidden token),
+    ///     VESTIGO_ROOTS_MODE, VESTIGO_ROOTS_ACCESS,
     ///     VESTIGO_INPUT_ERROR (dialog validation text),
     ///     VESTIGO_TOKEN_SUGGESTED (auto-generated token the user may not have edited).
     /// </summary>
@@ -25,6 +26,10 @@ namespace Vestigo.Installer.Actions
         private const string AuthModeProperty = "VESTIGO_AUTH_MODE";
         private const string PortProperty = "VESTIGO_PORT";
         private const string TokenProperty = "VESTIGO_API_TOKEN";
+        private const string RootsModeProperty = "VESTIGO_ROOTS_MODE";
+        private const string RootsAccessProperty = "VESTIGO_ROOTS_ACCESS";
+        private const string RootsAccessPrefillProperty = "VESTIGO_ROOTS_ACCESS_PREFILL";
+        private const string RootsAccessExplicitProperty = "VESTIGO_ROOTS_ACCESS_EXPLICIT";
         private const string ErrorProperty = "VESTIGO_INPUT_ERROR";
         private const string SuggestedProperty = "VESTIGO_TOKEN_SUGGESTED";
         private const string WriteDataProperty = "VestigoWriteSettings";
@@ -56,6 +61,16 @@ namespace Vestigo.Installer.Actions
                     IsUpgrade(session));
 
                 Publish(session, resolved);
+                bool accessExplicit = AccessIsExplicit(session);
+                PublishRoots(
+                    session,
+                    RootSettings.Resolve(
+                        session[RootsModeProperty],
+                        session[RootsAccessProperty],
+                        RootSettings.ReadExisting(TryReadSettingsFile()),
+                        IsUpgrade(session),
+                        accessExplicit),
+                    accessExplicit);
 
                 // Carry existing module choices into the feature tree (Level conditions read these properties).
                 foreach (KeyValuePair<string, bool> state in ModuleSelection.ReadExisting(TryReadSettingsFile()))
@@ -72,7 +87,8 @@ namespace Vestigo.Installer.Actions
                     session[SuggestedProperty] = resolved.Token;
                 }
 
-                session.Log("Vestigo settings: listen=" + resolved.ListenMode + ", auth=" + resolved.AuthMode + ", port=" + resolved.Port);
+                session.Log("Vestigo settings: listen=" + resolved.ListenMode + ", auth=" + resolved.AuthMode + ", port=" + resolved.Port +
+                            ", roots=" + session[RootsModeProperty] + ", access=" + session[RootsAccessProperty]);
                 return ActionResult.Success;
             }
             catch (ArgumentException ex)
@@ -127,6 +143,16 @@ namespace Vestigo.Installer.Actions
                     suggestion,
                     IsUpgrade(session));
                 Publish(session, resolved);
+                bool accessExplicit = AccessIsExplicit(session);
+                PublishRoots(
+                    session,
+                    RootSettings.Resolve(
+                        session[RootsModeProperty],
+                        session[RootsAccessProperty],
+                        RootSettings.ReadExisting(TryReadSettingsFile()),
+                        IsUpgrade(session),
+                        accessExplicit),
+                    accessExplicit);
             }
             catch (ArgumentException ex)
             {
@@ -153,6 +179,9 @@ namespace Vestigo.Installer.Actions
                 bool suggestion = !string.IsNullOrWhiteSpace(session[SuggestedProperty]) &&
                                   string.Equals(session[TokenProperty], session[SuggestedProperty], StringComparison.Ordinal);
                 data["TokenIsSuggestion"] = suggestion ? "1" : "0";
+                data["RootsMode"] = session[RootsModeProperty];
+                data["RootsAccess"] = session[RootsAccessProperty];
+                data["RootsAccessExplicit"] = AccessIsExplicit(session) ? "1" : "0";
                 data["Modules"] = ModuleSelection.Serialize(ReadFeatureStates(session));
                 session[WriteDataProperty] = data.ToString();
                 return ActionResult.Success;
@@ -165,9 +194,9 @@ namespace Vestigo.Installer.Actions
         }
 
         /// <summary>
-        ///     Deferred, elevated, before StartServices. Merges only Vestigo:ListenAddress, ListenPort, and ApiTokens into
-        ///     the ProgramData appsettings.json, keeping every other key, as UTF-8 without BOM readable only by SYSTEM
-        ///     and Administrators.
+        ///     Deferred, elevated, before StartServices. Merges Vestigo:ListenAddress, ListenPort, ApiTokens,
+        ///     VolumeRoots, VolumeRootAccess, Modules, and Software:AllowUninstall into the ProgramData appsettings.json,
+        ///     keeping every other key, as UTF-8 without BOM readable only by SYSTEM and Administrators.
         /// </summary>
         [CustomAction]
         public static ActionResult VestigoWriteSettings(Session session)
@@ -188,18 +217,23 @@ namespace Vestigo.Installer.Actions
                     existing,
                     data["TokenIsSuggestion"] == "1");
                 IDictionary<string, bool> modules = ModuleSelection.Parse(data["Modules"]);
+                ResolvedRootSettings roots = RootSettings.Resolve(
+                    data["RootsMode"],
+                    data["RootsAccess"],
+                    RootSettings.ReadExisting(current),
+                    accessIsExplicit: data["RootsAccessExplicit"] == "1");
 
                 string merged;
                 try
                 {
-                    merged = ListenSettings.Merge(current, resolved, modules);
+                    merged = ListenSettings.Merge(current, resolved, modules, roots);
                 }
                 catch (FormatException ex)
                 {
                     string backup = path + ".bak-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
                     session.Log("Existing settings file is not valid JSON (" + ex.Message + "). Keeping it as " + backup + ".");
                     WriteSecureFile(backup, File.ReadAllBytes(path));
-                    merged = ListenSettings.Merge(null, resolved, modules);
+                    merged = ListenSettings.Merge(null, resolved, modules, roots);
                 }
 
                 string temp = path + ".tmp";
@@ -211,7 +245,8 @@ namespace Vestigo.Installer.Actions
 
                 File.Move(temp, path);
                 SecureFile(path);
-                session.Log("Wrote Vestigo settings to " + path + " (listen=" + resolved.ListenMode + ", auth=" + resolved.AuthMode + ", port=" + resolved.Port + ").");
+                session.Log("Wrote Vestigo settings to " + path + " (listen=" + resolved.ListenMode + ", auth=" + resolved.AuthMode +
+                            ", port=" + resolved.Port + ", roots=" + roots.Mode + ", access=" + roots.Access + ").");
                 return ActionResult.Success;
             }
             catch (Exception ex)
@@ -262,6 +297,31 @@ namespace Vestigo.Installer.Actions
             session[AuthModeProperty] = resolved.AuthMode;
             session[PortProperty] = resolved.Port.ToString();
             session[TokenProperty] = resolved.Token;
+        }
+
+        private static void PublishRoots(Session session, ResolvedRootSettings roots, bool accessExplicit)
+        {
+            if (string.IsNullOrWhiteSpace(session[RootsAccessPrefillProperty]))
+            {
+                session[RootsAccessPrefillProperty] = roots.Access;
+            }
+
+            session[RootsModeProperty] = roots.Mode;
+            session[RootsAccessProperty] = roots.Access;
+            session[RootsAccessExplicitProperty] = accessExplicit ? "1" : "0";
+        }
+
+        private static bool AccessIsExplicit(Session session)
+        {
+            if (session[RootsAccessExplicitProperty] == "1")
+            {
+                return true;
+            }
+
+            string current = session[RootsAccessProperty];
+            string prefill = session[RootsAccessPrefillProperty];
+            return !string.IsNullOrWhiteSpace(prefill) &&
+                   !string.Equals(current, prefill, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string SettingsFilePath()

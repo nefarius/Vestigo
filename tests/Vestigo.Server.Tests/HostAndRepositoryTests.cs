@@ -138,7 +138,8 @@ public class RepositoryBoundaryTests
         foreach (string name in new[]
                  {
                      "ListenAddress", "ListenPort", "ApiTokens", "AllowedInputRoots", "AllowedOutputRoots",
-                     "Roots", "Modules", "SymbolServer", "SymbolCache", "MaxInputBytes", "MaxEvents",
+                     "Roots", "VolumeRoots", "VolumeRootAccess", "Modules", "SymbolServer", "SymbolCache",
+                     "MaxInputBytes", "MaxEvents",
                      "MaxOutputBytes", "MaxCaptureDuration", "SpoolRetention", "MaxConcurrentCaptures",
                      "MaxReadBatch", "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds",
                      "ClockResolution", "Software:AllowUninstall", "Software:ProtectedNames",

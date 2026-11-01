@@ -53,4 +53,6 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `SymbolCache` | `null` |
 | `SymbolServer` | `null` |
 | `System:AllowBootConfigurationChanges` | `false` |
+| `VolumeRootAccess` | `Read, Write, Execute` |
+| `VolumeRoots` | `None` |
 
