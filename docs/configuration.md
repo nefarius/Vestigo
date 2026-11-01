@@ -36,7 +36,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `EventLog:MaxEvents` | 500 | Maximum events returned by one `query_event_log` call. |
 | `EventLog:MaxScannedEvents` | 20000 | Maximum events examined per query, which bounds message text filters. |
 | `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. |
-| `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. |
+| `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. A cache outside that tree is not verified: allow write access for the trusted identity that runs Vestigo (the MSI service account, or the user running `dotnet run`), and do not share it between a privileged service and an untrusted user. |
 | `MaxInputBytes` | 4294967296 | Maximum size of one input file. |
 | `MaxEvents` | 1000000 | Maximum decoded events per conversion or capture. |
 | `MaxOutputBytes` | 536870912 | Maximum bytes written per conversion or capture. |

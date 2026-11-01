@@ -215,6 +215,7 @@ public class RepositoryBoundaryTests
     private static HashSet<string> HeadingSlugs(string markdown)
     {
         HashSet<string> slugs = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, int> seen = new(StringComparer.OrdinalIgnoreCase);
         foreach (string line in markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
         {
             if (!line.StartsWith('#'))
@@ -225,13 +226,35 @@ public class RepositoryBoundaryTests
             string heading = line.TrimStart('#').Trim().Replace("`", "", StringComparison.Ordinal).Replace("*", "", StringComparison.Ordinal);
             string slug = System.Text.RegularExpressions.Regex.Replace(heading.ToLowerInvariant(), @"[^\p{L}\p{N}\s-]", "");
             slug = System.Text.RegularExpressions.Regex.Replace(slug, @"\s+", "-");
-            if (slug.Length > 0)
+            if (slug.Length == 0)
+            {
+                continue;
+            }
+
+            if (seen.TryGetValue(slug, out int count))
+            {
+                slugs.Add($"{slug}-{count}");
+                seen[slug] = count + 1;
+            }
+            else
             {
                 slugs.Add(slug);
+                seen[slug] = 1;
             }
         }
 
         return slugs;
+    }
+
+    [Fact]
+    public void HeadingSlugs_SuffixesRepeatedHeadings()
+    {
+        HashSet<string> slugs = HeadingSlugs("## Example\n\n## Example\n\n## Other\n");
+
+        Assert.Contains("example", slugs);
+        Assert.Contains("example-1", slugs);
+        Assert.Contains("other", slugs);
+        Assert.DoesNotContain("example-2", slugs);
     }
 
     [Fact]
