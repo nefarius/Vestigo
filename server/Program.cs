@@ -128,6 +128,7 @@ if (vestigo.AuthenticationEnabled)
 }
 
 app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
+app.MapLandingPage();
 IEndpointConventionBuilder mcp = app.MapMcp("/mcp");
 if (vestigo.AuthenticationEnabled)
 {
