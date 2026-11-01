@@ -48,6 +48,8 @@ public class HostTests : IDisposable
         Assert.Equal("text/html", root.Content.Headers.ContentType?.MediaType);
         string body = await root.Content.ReadAsStringAsync();
         Assert.Contains("/mcp", body, StringComparison.Ordinal);
+        Assert.Contains("location.pathname", body, StringComparison.Ordinal);
+        Assert.Contains("TLS-terminating proxy", body, StringComparison.Ordinal);
         Assert.Contains("https://github.com/nefarius/Vestigo", body, StringComparison.Ordinal);
     }
 

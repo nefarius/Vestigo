@@ -85,6 +85,7 @@
     }
   }
 }</code></pre>
+    <p>Bearer tokens sent over plain HTTP are visible on the network. If you connect remotely, use a trusted network or a TLS-terminating proxy.</p>
 
     <h2>Authentication</h2>
     <p>When <code>ApiTokens</code> is configured, send <code>Authorization: Bearer &lt;token&gt;</code>. After an MSI install the token is in <code>%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json</code>. <code>/health</code> is available for probes and stays anonymous.</p>
@@ -93,7 +94,8 @@
     <p>Documentation, releases, and issues: <a href="https://github.com/nefarius/Vestigo">https://github.com/nefarius/Vestigo</a></p>
   </main>
   <script>
-    document.getElementById("mcp-url").textContent = location.origin + "/mcp";
+    document.getElementById("mcp-url").textContent =
+      location.origin + location.pathname.replace(/\/$/, "") + "/mcp";
   </script>
 </body>
 </html>
