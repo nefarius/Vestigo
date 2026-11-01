@@ -16,7 +16,7 @@ File, log, and device paths use named `Vestigo:Roots` with the same link-followi
 
 ## Network exposure
 
-`ListenAddress` accepts any IP address, including `0.0.0.0` and `::`. Vestigo does not require a token, because a localhost-only install without one is a supported setup. The risk grows when the address is not loopback: anyone who can reach the port can use every enabled module, including captures, files, services, environment changes, and any opt-in administrator-equivalent tools. For that reason:
+`ListenAddress` accepts any IP address, including `0.0.0.0` and `::`. Vestigo does not require a token, because a localhost-only install without one is a supported setup. The risk grows when the address is not loopback and `ApiTokens` is empty: anyone who can reach the port can use every enabled module, including captures, files, services, environment changes, and any opt-in administrator-equivalent tools. For that reason:
 
 - Configure `ApiTokens` (strongly recommended) whenever `ListenAddress` is not loopback. Use long random values, for example 32 random bytes encoded as base64url.
 - At startup Vestigo logs a prominent `SECURITY WARNING` when the address is non-loopback and `ApiTokens` is empty. The warning never contains token values.
