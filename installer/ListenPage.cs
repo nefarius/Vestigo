@@ -275,7 +275,7 @@ static class ListenPage
             new XAttribute("Title", "Vestigo settings"),
             Control("Message", "Text", 48, 15, 195, 40, "[VESTIGO_INPUT_ERROR]", ("NoPrefix", "yes")),
             Control("Ok", "PushButton", 102, 62, 56, 17, "!(loc.WixUIOK)", ("Default", "yes"), ("Cancel", "yes")));
-        errorDialog.Elements(Wix + "Control").First().Add(Publish("EndDialog", "Return", 1, null));
+        errorDialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Ok").Add(Publish("EndDialog", "Return", 1, null));
 
         // License continues to access; access continues to authentication; Back from the feature tree returns there.
         // Order 10 overrides the stock WixUI publish events for the same controls.
