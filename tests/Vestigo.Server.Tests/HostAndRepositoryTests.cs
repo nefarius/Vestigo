@@ -37,6 +37,23 @@ public class HostTests : IDisposable
     }
 
     [Fact]
+    public async Task Root_ServesAnonymousLandingPageWhenTokensAreConfigured()
+    {
+        await using VestigoApplication application = CreateApplication(["secret-token"]);
+        using HttpClient client = application.CreateClient();
+
+        HttpResponseMessage root = await client.GetAsync("/");
+
+        Assert.Equal(HttpStatusCode.OK, root.StatusCode);
+        Assert.Equal("text/html", root.Content.Headers.ContentType?.MediaType);
+        string body = await root.Content.ReadAsStringAsync();
+        Assert.Contains("/mcp", body, StringComparison.Ordinal);
+        Assert.Contains("location.pathname", body, StringComparison.Ordinal);
+        Assert.Contains("TLS-terminating proxy", body, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/nefarius/Vestigo", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Mcp_AllowsAnonymousPostWhenNoTokensAreConfigured()
     {
         await using VestigoApplication application = CreateApplication([]);

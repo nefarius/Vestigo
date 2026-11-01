@@ -7,6 +7,7 @@ flowchart LR
     client[MCP client] --> mcp["/mcp"]
     client --> filesHttp["/files"]
     client --> health["/health"]
+    client --> root["/"]
     mcp --> auth[API token when configured]
     filesHttp --> auth
     auth --> modules[Enabled modules]

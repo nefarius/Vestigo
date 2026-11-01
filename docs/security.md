@@ -4,7 +4,7 @@ Vestigo binds to one IP address (loopback `127.0.0.1` by default) and runs as a 
 
 When `ApiTokens` is empty, `/mcp` accepts anonymous clients. That is the `dotnet run` default and the MSI localhost-no-token mode. A fresh MSI install defaults to any address with a generated token. Add one or more tokens to require `Authorization: Bearer <token>`. Comparison uses SHA-256 digests and a fixed-time check. Tokens are not logged and are not copied into claims.
 
-`/health` stays anonymous so a local supervisor can probe the process without a token. A missing or invalid token receives HTTP 401 and `WWW-Authenticate: Bearer`.
+`/` is an anonymous static page that explains how to connect an MCP client. It does not report the version, enabled modules, roots, or whether tokens are configured. `/health` stays anonymous so a local supervisor can probe the process without a token. A missing or invalid token receives HTTP 401 and `WWW-Authenticate: Bearer`.
 
 Trace ETL, PDB, TMF, and conversion-output paths are canonicalized, including existing directory links, and must stay inside `AllowedInputRoots` or `AllowedOutputRoots`. A root of `D:\traces` does not allow `D:\traces-extra` or a link that resolves outside that root. The accepted path is the resolved location, so a later open uses that path instead of reopening the original link. Validation and later opens are not atomic if a path component changes. Unsupported extensions are rejected. Existing outputs are kept unless `overwrite` is true. Input size, event count, output size, and capture lifetime are capped.
 
