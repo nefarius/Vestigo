@@ -112,18 +112,35 @@ public class UpdateFeedTests
         Assert.Equal(UpdateFeed.PublisherSubject, shared.GetProperty("signatureConfig").GetProperty("subjectName").GetString());
         UpdateFeed.RequireBuildbotResources(configuration.RootElement);
 
-        string installer = File.ReadAllText(Path.Combine(root, "installer", "Program.cs"));
+        string installer = File.ReadAllText(Path.Combine(root, "installer", "Program.cs")).Replace("\r\n", "\n");
+        Assert.Contains("internal const string UpdaterFeature = \"Updater\"", installer, StringComparison.Ordinal);
+        Assert.Contains("feature.Add(updaterFeature)", installer, StringComparison.Ordinal);
+        Assert.Contains("new WixSharp.File(updaterFeature, options.UpdaterExe)", installer, StringComparison.Ordinal);
+        Assert.Contains("new WixSharp.File(updaterFeature, updaterConfigurationPath)", installer, StringComparison.Ordinal);
+        Assert.Contains("new RegKey(\n                    updaterFeature,", installer, StringComparison.Ordinal);
         Assert.Contains("UpdaterRegistry.Read", installer, StringComparison.Ordinal);
         Assert.Contains("version.ToString()", installer, StringComparison.Ordinal);
         Assert.Contains("Win64 = true", installer, StringComparison.Ordinal);
         Assert.Contains(UpdateFeed.UpdaterExecutable, installer, StringComparison.Ordinal);
         Assert.Contains("--install --silent --override-success-code 0", installer, StringComparison.Ordinal);
         Assert.Contains("--uninstall --silent --override-success-code 0", installer, StringComparison.Ordinal);
-        Assert.Contains("NOT UPGRADINGPRODUCTCODE", installer, StringComparison.Ordinal);
+        Assert.Contains("NOT (REMOVE~=\\\"ALL\\\") AND &Updater=3", installer, StringComparison.Ordinal);
+        Assert.Contains("!Updater=3 AND &Updater=2", installer, StringComparison.Ordinal);
+        Assert.Contains("WIX_UPGRADE_DETECTED AND &Updater=2", installer, StringComparison.Ordinal);
+        Assert.Contains("DeregisterLegacyVestigoUpdater", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOT REMOVE AND &Updater=3", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOT UPGRADINGPRODUCTCODE", installer, StringComparison.Ordinal);
         Assert.Contains("Return.ignore", installer, StringComparison.Ordinal);
         Assert.Contains("Impersonate = true", installer, StringComparison.Ordinal);
         Assert.Contains("Step.InstallFinalize", installer, StringComparison.Ordinal);
         Assert.Contains("Step.RemoveFiles", installer, StringComparison.Ordinal);
+        Assert.Contains("Step.RemoveExistingProducts", installer, StringComparison.Ordinal);
+
+        string listenPage = File.ReadAllText(Path.Combine(root, "installer", "ListenPage.cs"));
+        Assert.Contains("Program.UpdaterFeature", listenPage, StringComparison.Ordinal);
+        Assert.Contains("\"Automatic updates\"", listenPage, StringComparison.Ordinal);
+        Assert.Contains("updater.SetAttributeValue(\"Level\", \"1\")", listenPage, StringComparison.Ordinal);
+        Assert.Contains("updater.SetAttributeValue(\"Display\", \"collapse\")", listenPage, StringComparison.Ordinal);
         Assert.Contains("THIRD-PARTY-NOTICES.txt", installer, StringComparison.Ordinal);
         Assert.Contains("OutFileName = \"Vestigo-v\" + version", installer, StringComparison.Ordinal);
         Assert.Contains(UpdateFeed.CurrentPackagePointerFileName, installer, StringComparison.Ordinal);

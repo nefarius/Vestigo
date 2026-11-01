@@ -41,19 +41,22 @@ Keep `installer/License.rtf` aligned with `LICENSE`.
 
 `docs/generated/configuration.md` and `docs/generated/mcp-tools.md` are produced from `ConfigurationCatalog` and `McpToolCatalog`. After changing options or MCP tool attributes, regenerate them by running the test suite with `VESTIGO_REGENERATE_DOCS=1`, then run the suite again without that variable so the checked-in files match.
 
-`BuildInstaller` downloads the pinned Vicius 1.20.0 x64 archive, checks its SHA-256, and requires the extracted executable to have a valid Authenticode signature for `Nefarius Software Solutions e.U.` before the MSI packages it as `Nefarius_Vestigo_Updater.exe`. The MSI also installs `Nefarius_Vestigo_Updater.json` and `THIRD-PARTY-NOTICES.txt`.
+`BuildInstaller` downloads the pinned Vicius 1.20.0 x64 archive, checks its SHA-256, and requires the extracted executable to have a valid Authenticode signature for `Nefarius Software Solutions e.U.` before the MSI packages it as `Nefarius_Vestigo_Updater.exe`. The default-selected `Updater` feature installs that executable and `Nefarius_Vestigo_Updater.json`; `THIRD-PARTY-NOTICES.txt` always installs with the server. Deselecting the feature, or `REMOVE=Updater`, omits the updater payload and registration.
 
-The manifest's release version is the MSI `ProductVersion`. The same version is written to `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version`. Vicius compares that registry value with the signed release version.
+The manifest's release version is the MSI `ProductVersion`. When the updater feature is installed, the same version is written to `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version`. Vicius compares that registry value with the signed release version.
 
 ## Update smoke test
 
 On a Windows machine with the x64 .NET 10 ASP.NET Core runtime:
 
-- Install an older signed Vestigo MSI, then confirm `Nefarius_Vestigo_Updater.exe --install --silent --override-success-code 0` exits 0 and creates the current user's logon autostart entry and daily scheduled task.
+- Install an older signed Vestigo MSI with the updater selected (the default), then confirm `Nefarius_Vestigo_Updater.exe --install --silent --override-success-code 0` exits 0 and creates the current user's logon autostart entry and daily scheduled task.
 - Launch the updater and confirm it offers the newer Buildbot release, shows the MSI summary, and requests elevation.
 - Accept the update. Confirm the service stops and starts, the product version and registry value advance, and an in-flight capture has ended.
 - Cancel the MSI once and confirm Vestigo remains on the previous version.
 - Repeat an update that returns MSI exit code 3010 and confirm the updater treats it as success and asks for a restart.
+- Install with the updater deselected (or `REMOVE=Updater`) and confirm the updater files, version registry value, autostart entry, and scheduled task are absent while the service still starts.
+- Use Modify to add the updater and confirm the files appear and the current user is registered; then deselect it and confirm deregistration runs and the files are removed.
+- Major-upgrade once with the updater still selected and once with it deselected. Confirm a selected upgrade re-registers the current user, and a deselected upgrade leaves no autostart entry or scheduled task.
 - Uninstall Vestigo and confirm the autostart entry and scheduled task are gone.
 
 ## nefcon pin

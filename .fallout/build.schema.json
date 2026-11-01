@@ -27,6 +27,7 @@
         "BuildInstaller",
         "Clean",
         "Compile",
+        "PrepareDebugView",
         "PrepareNefcon",
         "PrepareUpdater",
         "PublishLocal",
