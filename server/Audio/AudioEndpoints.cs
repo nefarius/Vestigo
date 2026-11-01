@@ -72,12 +72,14 @@ public static class AudioEndpoints
                 }
 
                 IPolicyConfig policy = (IPolicyConfig)new PolicyConfigClient();
-                foreach (Role nativeRole in appliedRoles.Select(MapRole))
+                foreach (string appliedRole in appliedRoles)
                 {
-                    int hr = policy.SetDefaultEndpoint(device.ID, nativeRole);
+                    int hr = policy.SetDefaultEndpoint(device.ID, MapRole(appliedRole));
                     if (hr < 0)
                     {
-                        Marshal.ThrowExceptionForHR(hr);
+                        return OperationResult<SetDefaultAudioResult>.Fail(
+                            "set_default_failed",
+                            $"IPolicyConfig.SetDefaultEndpoint failed for role '{appliedRole}' with HRESULT 0x{unchecked((uint)hr):X8}. Roles applied earlier in this call remain changed.");
                     }
                 }
 
