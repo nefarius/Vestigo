@@ -30,9 +30,15 @@ jobs:
           tar -xzf "$tmp/gitleaks.tgz" -C "$tmp" gitleaks
           sudo install -m 0755 "$tmp/gitleaks" /usr/local/bin/gitleaks
           gitleaks detect --source . --verbose --redact --exit-code 1
+          gitleaks dir . --verbose --redact --exit-code 1
 
       - name: Semgrep
-        run: docker run --rm -v "$PWD:/src" semgrep/semgrep:1.183.0 semgrep scan --config p/csharp --error --metrics=off /src
+        run: docker run --rm -v "$PWD:/src" semgrep/semgrep@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0 semgrep scan --config p/csharp --error --metrics=off /src
+
+  osv-restore:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v6
@@ -40,24 +46,55 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore NuGet lock files
+        shell: pwsh
         run: |
-          set -euo pipefail
-          for project in \
-            server/Vestigo.Server.csproj \
-            tests/Vestigo.Server.Tests/Vestigo.Server.Tests.csproj \
-            installer/Vestigo.Installer.csproj \
-            build/_build.csproj
-          do
-            dotnet restore "$project" --no-dependencies -p:RestorePackagesWithLockFile=true
-          done
+          $ErrorActionPreference = 'Stop'
+          $projects = @(
+            'server/Vestigo.Server.csproj'
+            'tests/Vestigo.Server.Tests/Vestigo.Server.Tests.csproj'
+            'installer/Vestigo.Installer.csproj'
+            'installer/Vestigo.Installer.Actions/Vestigo.Installer.Actions.csproj'
+            'build/_build.csproj'
+          )
+          foreach ($project in $projects) {
+            dotnet restore $project --no-dependencies -p:RestorePackagesWithLockFile=true
+            if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed for $project" }
+          }
+
+      - name: Upload lock files
+        uses: actions/upload-artifact@v7
+        with:
+          name: osv-lockfiles
+          path: |
+            build/packages.lock.json
+            installer/packages.lock.json
+            installer/Vestigo.Installer.Actions/packages.lock.json
+            server/packages.lock.json
+            tests/Vestigo.Server.Tests/packages.lock.json
+          if-no-files-found: error
+          retention-days: 1
+
+  osv:
+    needs: osv-restore
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download lock files
+        uses: actions/download-artifact@v8
+        with:
+          name: osv-lockfiles
+          path: .
 
       - name: OSV Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@v2.7.0
-        with:
-          scan-args: |-
-            --lockfile=build/packages.lock.json
-            --lockfile=installer/packages.lock.json
-            --lockfile=server/packages.lock.json
+        # Image published for osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 (v2.7.0).
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src \
+            ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6 \
+            --lockfile=build/packages.lock.json \
+            --lockfile=installer/packages.lock.json \
+            --lockfile=installer/Vestigo.Installer.Actions/packages.lock.json \
+            --lockfile=server/packages.lock.json \
             --lockfile=tests/Vestigo.Server.Tests/packages.lock.json
 
   build:
@@ -89,7 +126,7 @@ jobs:
           retention-days: 3
 
   build-installer:
-    needs: [build, security]
+    needs: [build, security, osv]
     runs-on: windows-latest
     permissions:
       contents: read

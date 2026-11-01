@@ -155,10 +155,14 @@ public class UpdateFeedTests
         Assert.Contains("Boost Software License", notices, StringComparison.Ordinal);
 
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build.yml"));
-        Assert.Contains("needs: [build, security]", workflow, StringComparison.Ordinal);
+        Assert.Contains("needs: [build, security, osv]", workflow, StringComparison.Ordinal);
         Assert.Contains("gitleaks detect", workflow, StringComparison.Ordinal);
+        Assert.Contains("gitleaks dir .", workflow, StringComparison.Ordinal);
         Assert.Contains("semgrep scan --config p/csharp", workflow, StringComparison.Ordinal);
-        Assert.Contains("google/osv-scanner-action/osv-scanner-action@v2.7.0", workflow, StringComparison.Ordinal);
+        Assert.Contains("semgrep/semgrep@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0", workflow, StringComparison.Ordinal);
+        Assert.Contains("Vestigo.Installer.Actions/Vestigo.Installer.Actions.csproj", workflow, StringComparison.Ordinal);
+        Assert.Contains("installer/Vestigo.Installer.Actions/packages.lock.json", workflow, StringComparison.Ordinal);
+        Assert.Contains("ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6", workflow, StringComparison.Ordinal);
         int verified = workflow.IndexOf("Verify signed MSI", StringComparison.Ordinal);
         int signed = workflow.IndexOf("Sign update manifest", StringComparison.Ordinal);
         int uploaded = workflow.IndexOf("Upload MSI artifact", StringComparison.Ordinal);
