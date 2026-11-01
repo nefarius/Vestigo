@@ -221,6 +221,36 @@ public class AudioTests
     }
 
     [Fact]
+    public async Task SessionHelperClient_PassesServiceSettingsDirectory()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vestigo-audio-helper-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string? previous = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
+        try
+        {
+            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", directory);
+            CapturingLauncher launcher = new();
+            AudioInventory inventory = new(launcher, new SessionHelperClient(launcher));
+
+            await inventory.ListAsync(AudioSelector.Defaults, LaunchContext.Interactive, CancellationToken.None);
+
+            Assert.NotNull(launcher.Last);
+            Assert.Equal(VestigoPaths.SettingsDirectory, launcher.Last.Environment["VESTIGO_SETTINGS_DIR"]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", previous);
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    [Fact]
     public void List_ServiceContext_SucceedsOnWindows()
     {
         if (!OperatingSystem.IsWindows())
@@ -243,6 +273,21 @@ public class AudioTests
 
     private static AudioTools CreateTools(IProcessLauncher launcher, VestigoOptions options) =>
         new(new AudioInventory(launcher, new SessionHelperClient(launcher)), options);
+
+    private sealed class CapturingLauncher : IProcessLauncher
+    {
+        public LaunchRequest? Last { get; private set; }
+
+        public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) =>
+            OperationResult<bool>.Ok(true);
+
+        public Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
+        {
+            Last = request;
+            File.WriteAllText(output.OutputPath, """{"error":"stop"}""");
+            return Task.FromResult(2);
+        }
+    }
 
     private sealed class UnavailableLauncher : IProcessLauncher
     {

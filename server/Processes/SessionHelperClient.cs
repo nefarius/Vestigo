@@ -45,7 +45,10 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
                 executable,
                 arguments,
                 Path.GetDirectoryName(executable),
-                new Dictionary<string, string>(),
+                new Dictionary<string, string>
+                {
+                    ["VESTIGO_SETTINGS_DIR"] = VestigoPaths.SettingsDirectory
+                },
                 LaunchContext.Interactive,
                 elevated);
 
