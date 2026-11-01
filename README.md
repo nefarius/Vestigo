@@ -23,7 +23,7 @@ Source / `dotnet run`:
 - The .NET 10 SDK
 - MCP client support for Streamable HTTP
 
-Reading an existing ETL file does not by itself require elevation. Creating a realtime session, controlling services, installing drivers, launching processes, and silent uninstall generally do. Interactive-session tools (`close_app`, the Desktop and Audio tools, and `run_process` with `context: interactive`) need the service to run as SYSTEM with a user logged on at the console.
+Reading an existing ETL file does not by itself require elevation. Creating a realtime session, controlling services, installing drivers, launching processes, and silent uninstall generally do. `close_app` (default), `take_screenshot`, Desktop and Audio calls with `context: interactive`, and `run_process` with `context: interactive` need the service to run as SYSTEM with a user logged on at the console. Desktop and Audio calls and `close_app` with `context: service` run in the service session and do not need a console user.
 
 ## Quick start
 
