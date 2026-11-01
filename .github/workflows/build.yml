@@ -163,7 +163,7 @@ jobs:
           }
           $file = Join-Path 'publish-x64\installer' $name
           if (-not (Test-Path -LiteralPath $file)) { throw "File not found: $file" }
-          $relative = ($file.Substring((Get-Location).Path.Length + 1) -replace '\\', '/')
+          $relative = $file -replace '\\', '/'
           "path=$file" >> $env:GITHUB_OUTPUT
           "relative=$relative" >> $env:GITHUB_OUTPUT
           "name=$name" >> $env:GITHUB_OUTPUT
