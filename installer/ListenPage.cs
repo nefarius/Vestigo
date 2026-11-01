@@ -53,8 +53,8 @@ static class ListenPage
         // Public, secure properties so silent installs (and the UI-to-server hand-off) can carry the choices.
         // Hidden keeps the token out of the MSI log by adding it to MsiHiddenProperties.
         package.Add(
-            SecureProperty("VESTIGO_LISTEN_MODE", ListenSettings.ListenAny),
-            SecureProperty("VESTIGO_AUTH_MODE", ListenSettings.AuthToken),
+            SecureProperty("VESTIGO_LISTEN_MODE", null),
+            SecureProperty("VESTIGO_AUTH_MODE", null),
             SecureProperty("VESTIGO_PORT", null));
         foreach (string name in ModuleSelection.All.Select(m => m.PropertyName))
         {
