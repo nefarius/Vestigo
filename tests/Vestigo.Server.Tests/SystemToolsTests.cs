@@ -25,7 +25,7 @@ public class SystemToolsTests
         public string ProcessorBits { get; set; } = "64";
         public bool IsArm64 { get; set; }
         public bool IsRunningInUefiMode { get; set; } = true;
-        public bool IsSecureBootEnabled { get; set; }
+        public bool? IsSecureBootEnabled { get; set; } = false;
         public bool TestSigningConfigured { get; set; }
         public bool TestSigningActive { get; set; }
         public bool WhqlDeveloperTestMode { get; set; }
@@ -36,7 +36,7 @@ public class SystemToolsTests
         public int SetTestSigningCalls { get; private set; }
         public int SetWhqlCalls { get; private set; }
 
-        bool ISystemPlatform.IsSecureBootEnabled
+        bool? ISystemPlatform.IsSecureBootEnabled
         {
             get
             {
@@ -125,6 +125,19 @@ public class SystemToolsTests
     }
 
     [Fact]
+    public void SetTestSigning_RefusesWhenSecureBootIsNull()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.IsSecureBootEnabled = null;
+
+        OperationResult<BootConfigurationChange> result = service.SetTestSigning(true);
+
+        Assert.False(result.Success);
+        Assert.Equal("secure_boot_enabled", result.ErrorCode);
+        Assert.Equal(0, platform.SetTestSigningCalls);
+    }
+
+    [Fact]
     public void SetTestSigning_RefusesWhenSecureBootIsUnknown()
     {
         (SystemService service, FakePlatform platform) = Create();
@@ -202,6 +215,17 @@ public class SystemToolsTests
     }
 
     [Fact]
+    public void GetBootSecurity_PreservesUnknownSecureBoot()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.IsSecureBootEnabled = null;
+
+        BootSecurityResult value = service.GetBootSecurity().Value!;
+
+        Assert.Null(value.SecureBoot);
+    }
+
+    [Fact]
     public void SetTestSigning_ReportsRebootRequiredWhenActiveStateDiffers()
     {
         (SystemService service, FakePlatform platform) = Create();
@@ -245,4 +269,20 @@ public class SystemToolsTests
         ModuleRegistry.ValidateConfiguration(tokens);
         Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
     }
+
+    [Fact]
+    public void ReadSecureBoot_MissingValueIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadSecureBoot(null, uefi: true));
+
+    [Fact]
+    public void ReadSecureBoot_LegacyFirmwareIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadSecureBoot(0, uefi: false));
+
+    [Fact]
+    public void ReadSecureBoot_ZeroOnUefiIsDisabled() =>
+        Assert.False(WindowsVersionPlatform.ReadSecureBoot(0, uefi: true));
+
+    [Fact]
+    public void ReadSecureBoot_PositiveOnUefiIsEnabled() =>
+        Assert.True(WindowsVersionPlatform.ReadSecureBoot(1, uefi: true));
 }

@@ -65,7 +65,7 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
     public OperationResult<BootSecurityResult> GetBootSecurity()
     {
         bool? uefi = ProbeValue(static p => p.IsRunningInUefiMode, platform);
-        bool? secureBoot = ProbeValue(static p => p.IsSecureBootEnabled, platform);
+        bool? secureBoot = ProbeOptional(static p => p.IsSecureBootEnabled, platform);
         bool? configured = ProbeValue(static p => p.TestSigningConfigured, platform);
         bool? active = ProbeValue(static p => p.TestSigningActive, platform);
         bool? whql = ProbeValue(static p => p.WhqlDeveloperTestMode, platform);
@@ -102,7 +102,7 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
 
         if (enabled)
         {
-            bool? secureBoot = ProbeValue(static p => p.IsSecureBootEnabled, platform);
+            bool? secureBoot = ProbeOptional(static p => p.IsSecureBootEnabled, platform);
             if (secureBoot != false)
             {
                 return OperationResult<BootConfigurationChange>.Fail(
@@ -179,6 +179,18 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
         OperationResult<BootConfigurationChange>.Fail(
             "boot_changes_disabled",
             "Changing boot configuration is disabled. Set Vestigo:System:AllowBootConfigurationChanges to true.");
+
+    private static bool? ProbeOptional(Func<ISystemPlatform, bool?> read, ISystemPlatform platform)
+    {
+        try
+        {
+            return read(platform);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
     private static T? ProbeValue<T>(Func<ISystemPlatform, T> read, ISystemPlatform platform) where T : struct
     {

@@ -1,3 +1,7 @@
+using System.Globalization;
+
+using Microsoft.Win32;
+
 using Nefarius.Utilities.WindowsVersion.Exceptions;
 using Nefarius.Utilities.WindowsVersion.Util;
 
@@ -40,7 +44,31 @@ public sealed class WindowsVersionPlatform : ISystemPlatform
 
     public bool IsRunningInUefiMode => UefiHelper.IsRunningInUefiMode;
 
-    public bool IsSecureBootEnabled => UefiHelper.IsSecureBootEnabled;
+    public bool? IsSecureBootEnabled
+    {
+        get
+        {
+            object? value = Registry.GetValue(
+                @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecureBoot\State",
+                "UEFISecureBootEnabled",
+                null);
+            return ReadSecureBoot(value, UefiHelper.IsRunningInUefiMode);
+        }
+    }
+
+    /// <summary>
+    ///     Secure Boot is unknown on legacy firmware or when the firmware state value is missing.
+    ///     The library's <c>UefiHelper.IsSecureBootEnabled</c> treats a missing value as <c>false</c>.
+    /// </summary>
+    internal static bool? ReadSecureBoot(object? registryValue, bool uefi)
+    {
+        if (!uefi || registryValue is null)
+        {
+            return null;
+        }
+
+        return Convert.ToInt32(registryValue, CultureInfo.InvariantCulture) > 0;
+    }
 
     public bool TestSigningConfigured => BcdHelper.AllowPrereleaseSignatures;
 

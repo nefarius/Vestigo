@@ -39,7 +39,7 @@ public interface ISystemPlatform
 
     bool IsRunningInUefiMode { get; }
 
-    bool IsSecureBootEnabled { get; }
+    bool? IsSecureBootEnabled { get; }
 
     bool TestSigningConfigured { get; }
 
