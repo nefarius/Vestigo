@@ -350,6 +350,7 @@ public static class ScreenCapture
                 int stride = checked(target.Bounds.Width * 4);
                 byte[] pixels = new byte[checked(stride * target.Bounds.Height)];
                 new ReadOnlySpan<byte>(bits, pixels.Length).CopyTo(pixels);
+                ForceOpaqueAlpha(pixels);
                 return OperationResult<byte[]>.Ok(pixels);
             }
         }
@@ -440,6 +441,14 @@ public static class ScreenCapture
 
             Win32PInvoke.DeleteObject(bitmap);
             Win32PInvoke.DeleteDC(full);
+        }
+    }
+
+    private static void ForceOpaqueAlpha(Span<byte> bgra)
+    {
+        for (int index = 3; index < bgra.Length; index += 4)
+        {
+            bgra[index] = 255;
         }
     }
 
