@@ -231,16 +231,15 @@ public class RepositoryBoundaryTests
                 continue;
             }
 
-            if (seen.TryGetValue(slug, out int count))
+            int suffix = seen.GetValueOrDefault(slug);
+            string candidate = suffix == 0 ? slug : $"{slug}-{suffix}";
+            while (!slugs.Add(candidate))
             {
-                slugs.Add($"{slug}-{count}");
-                seen[slug] = count + 1;
+                suffix++;
+                candidate = $"{slug}-{suffix}";
             }
-            else
-            {
-                slugs.Add(slug);
-                seen[slug] = 1;
-            }
+
+            seen[slug] = suffix == 0 ? 1 : suffix + 1;
         }
 
         return slugs;
@@ -249,10 +248,11 @@ public class RepositoryBoundaryTests
     [Fact]
     public void HeadingSlugs_SuffixesRepeatedHeadings()
     {
-        HashSet<string> slugs = HeadingSlugs("## Example\n\n## Example\n\n## Other\n");
+        HashSet<string> slugs = HeadingSlugs("## Example\n\n## Example\n\n## Example 1\n\n## Other\n");
 
         Assert.Contains("example", slugs);
         Assert.Contains("example-1", slugs);
+        Assert.Contains("example-1-1", slugs);
         Assert.Contains("other", slugs);
         Assert.DoesNotContain("example-2", slugs);
     }
