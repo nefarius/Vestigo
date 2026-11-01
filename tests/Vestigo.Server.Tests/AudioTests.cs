@@ -53,6 +53,60 @@ public class AudioTests
         Assert.False(SessionHelper.TryParseSetDefaultAudio([SessionHelper.Flag, SessionHelper.SetDefaultAudioCommand, "--id", "x", "--role", "output"], out _, out _, out _));
     }
 
+    [Fact]
+    public void SessionHelper_SetDefaultAudio_RejectsWhenAllowSetDefaultIsFalse()
+    {
+        TextWriter previous = Console.Out;
+        StringWriter output = new();
+        Console.SetOut(output);
+        try
+        {
+            int code = SessionHelper.Run(
+                [SessionHelper.Flag, SessionHelper.SetDefaultAudioCommand, "--id", "x", "--role", "all"],
+                allowSetDefault: false);
+            Assert.Equal(2, code);
+        }
+        finally
+        {
+            Console.SetOut(previous);
+        }
+
+        Assert.Contains("Vestigo:Audio:AllowSetDefault", output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("not_found", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AudioAllowSetDefault_ReadsJsonSettingsNotArguments()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vestigo-audio-allow-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string? previous = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(directory, "appsettings.json"),
+                """{ "Vestigo": { "Audio": { "AllowSetDefault": true } } }""");
+            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", directory);
+            Assert.True(AudioAllowSetDefault.Load());
+
+            File.WriteAllText(
+                Path.Combine(directory, "appsettings.json"),
+                """{ "Vestigo": { "Audio": { "AllowSetDefault": false } } }""");
+            Assert.False(AudioAllowSetDefault.Load());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", previous);
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
     [Theory]
     [InlineData(null, AudioSelector.RoleDefault, new[] { "console", "multimedia" })]
     [InlineData("default", AudioSelector.RoleDefault, new[] { "console", "multimedia" })]
