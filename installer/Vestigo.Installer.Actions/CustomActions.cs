@@ -61,13 +61,12 @@ namespace Vestigo.Installer.Actions
                     IsUpgrade(session));
 
                 Publish(session, resolved);
-                string requestedAccess = session[RootsAccessProperty];
-                bool accessExplicit = !string.IsNullOrWhiteSpace(requestedAccess);
+                bool accessExplicit = AccessIsExplicit(session);
                 PublishRoots(
                     session,
                     RootSettings.Resolve(
                         session[RootsModeProperty],
-                        requestedAccess,
+                        session[RootsAccessProperty],
                         RootSettings.ReadExisting(TryReadSettingsFile()),
                         IsUpgrade(session),
                         accessExplicit),
