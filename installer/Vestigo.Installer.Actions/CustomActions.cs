@@ -311,8 +311,8 @@ namespace Vestigo.Installer.Actions
 
         /// <summary>
         ///     Creates (or re-secures on upgrade) the ProgramData state tree with a protected SYSTEM + Administrators
-        ///     DACL and fails the install when a component is a reparse point. A company folder owned by an untrusted
-        ///     principal is taken over; other Nefarius products' subfolders are left alone.
+        ///     DACL and fails the install when a component is a reparse point. The company folder's ACL is always
+        ///     reset; an untrusted owner is logged and replaced. Other Nefarius products' subfolders are left alone.
         /// </summary>
         private static void SecureStateDirectories(Session session)
         {
@@ -341,14 +341,17 @@ namespace Vestigo.Installer.Actions
 
             if (!Directory.Exists(company))
             {
-                DirectorySecurity created = CompanyFolderSecurity(system, administrators);
-                new DirectoryInfo(company).Create(created);
+                new DirectoryInfo(company).Create(CompanyFolderSecurity(system, administrators));
             }
-            else if (!IsTrustedOwner(new DirectoryInfo(company).GetAccessControl(), system, administrators))
+            else
             {
-                session.Log("Taking ownership of '" + company + "' (untrusted owner).");
-                DirectorySecurity takeover = CompanyFolderSecurity(system, administrators);
-                new DirectoryInfo(company).SetAccessControl(takeover);
+                DirectoryInfo companyInfo = new DirectoryInfo(company);
+                if (!IsTrustedOwner(companyInfo.GetAccessControl(), system, administrators))
+                {
+                    session.Log("Taking ownership of '" + company + "' (untrusted owner).");
+                }
+
+                companyInfo.SetAccessControl(CompanyFolderSecurity(system, administrators));
             }
 
             foreach (string directory in managed)

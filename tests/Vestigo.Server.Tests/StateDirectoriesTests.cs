@@ -61,11 +61,25 @@ public sealed class StateDirectoriesTests : IDisposable
             PropagationFlags.None,
             AccessControlType.Allow));
         spool.SetAccessControl(security);
+        string child = Path.Combine(spool.FullName, "child.txt");
+        File.WriteAllText(child, "x");
+        FileInfo childInfo = new(child);
+        FileSecurity childSecurity = childInfo.GetAccessControl();
+        childSecurity.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+            FileSystemRights.Modify,
+            AccessControlType.Allow));
+        childInfo.SetAccessControl(childSecurity);
 
         IReadOnlyList<string> repairs = StateDirectories.EnsureSecure();
 
+        string me = WindowsIdentity.GetCurrent().User!.Value;
         Assert.Single(repairs);
-        Assert.Null(AclTrust.FindUntrustedWriter(spool.GetAccessControl(), FileSystemRights.WriteData, WindowsIdentity.GetCurrent().User!.Value));
+        Assert.Null(AclTrust.FindUntrustedWriter(spool.GetAccessControl(), FileSystemRights.WriteData, me));
+        Assert.Null(AclTrust.FindUntrustedWriter(childInfo.GetAccessControl(), FileSystemRights.WriteData, me));
+        Assert.Contains(
+            childInfo.GetAccessControl().GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>(),
+            rule => ((SecurityIdentifier)rule.IdentityReference).Value is "S-1-5-18" or "S-1-5-32-544");
         Assert.Empty(StateDirectories.EnsureSecure());
     }
 
