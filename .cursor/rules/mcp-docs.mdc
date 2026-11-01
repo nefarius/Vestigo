@@ -1,0 +1,31 @@
+---
+description: Keep every docs surface current when adding MCP tools or modules
+alwaysApply: true
+---
+
+# MCP tool and module documentation
+
+A new MCP tool, tool category, or `VestigoModule` is not done until the user-facing docs match the code. Regenerating the catalogs is not enough.
+
+## New tool in an existing module
+
+- `docs/tools.md`: add or extend the narrative section.
+- Regenerate `docs/generated/mcp-tools.md` by running tests with `VESTIGO_REGENERATE_DOCS=1`, then run the suite again without that variable.
+- `README.md`: intro, Limitations, or credits when the tool is a new capability, constraint, or dependency.
+- `docs/security.md` when the tool discloses data, mutates the machine, or adds a gate.
+- `docs/troubleshooting.md` when it adds stable error codes.
+- `docs/configuration.md` and regenerate `docs/generated/configuration.md` when it adds settings.
+
+## New module or category
+
+Do the tool list above, then:
+
+- `docs/architecture.md` Modules section and any session-helper or infrastructure notes.
+- `docs/configuration.md` `Modules` row, default-off list, and installer-owned keys.
+- `docs/windows-service.md` feature tree, defaults, and silent-install examples.
+- `docs/security.md`: a dedicated section when the module is opt-in or gated.
+- `README.md` intro, Security opt-in and gates bullet, and Limitations.
+- `server/Hosting/LandingPage.html` capability sentence.
+- Installer module metadata (`ModuleSelection` / feature parent) so MSI pages stay aligned.
+
+Do not treat the generated tool catalog as a substitute for the narrative docs. Update `server/README.md` only when `/`, `/mcp`, `/files`, or `/health` changes.

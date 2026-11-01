@@ -8,6 +8,6 @@ alwaysApply: true
 - Consume released NuGet packages. Do not copy implementations from sibling repositories or add project references outside this repo. When a reusable API is missing, change and release the owning package first.
 - Realtime ETW capture is a privileged, bounded job. Cancel it, dispose the session, and clean only `Vestigo-` prefixed orphan sessions owned by this service.
 - API tokens are strongly recommended, and a startup warning is required, whenever the server is bound beyond loopback without tokens. Never log API tokens. Confine client paths to configured roots. Keep source and configuration files UTF-8 without BOM.
-- Update tests and the generated or user-facing docs when MCP tools, configuration, security, installer behavior, or known limitations change.
+- Update tests and the generated or user-facing docs when MCP tools, configuration, security, installer behavior, or known limitations change. A new MCP tool or module must update every location in the MCP documentation rule.
 - CI builds and stages the publish payload once in the `build` job and uploads it; `build-installer` consumes that artifact with `BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView`. Never let the installer job rebuild the server (signing applies to the artifact's binaries).
 - A future UI must use MudBlazor.
