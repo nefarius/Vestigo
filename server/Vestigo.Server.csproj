@@ -35,4 +35,11 @@
     <InternalsVisibleTo Include="Vestigo.Server.Tests" />
   </ItemGroup>
 
+  <!-- MinVer defaults AssemblyVersion to {major}.0.0.0. Stamp the full release so MCP clients see 2.1.0.0, not 2.0.0.0. -->
+  <Target Name="StampFullAssemblyVersion" AfterTargets="MinVer" Condition="'$(MinVerMajor)' != '' AND '$(MinVerMinor)' != '' AND '$(MinVerPatch)' != ''">
+    <PropertyGroup>
+      <AssemblyVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).0</AssemblyVersion>
+    </PropertyGroup>
+  </Target>
+
 </Project>
