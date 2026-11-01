@@ -23,7 +23,7 @@ A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
 3. Builds `publish-x64\installer\Vestigo-v<product-version>.msi` from those signed binaries.
 4. Signs and verifies the MSI.
 5. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key.
-6. Verifies the sidecar against the public key embedded in Vicius 1.20.0.
+6. Verifies the sidecar against the public key embedded in Vicius 1.20.1.
 7. Uploads `Vestigo-v<product-version>.msi`, `updates.json`, and `updates.json.minisig` as one artifact and posts the Buildbot webhook.
 8. Publishes a GitHub Release for the tag, with generated notes and those three files attached. Installed clients do not download the GitHub copies.
 
@@ -41,7 +41,7 @@ Keep `installer/License.rtf` aligned with `LICENSE`.
 
 `docs/generated/configuration.md` and `docs/generated/mcp-tools.md` are produced from `ConfigurationCatalog` and `McpToolCatalog`. After changing options or MCP tool attributes, regenerate them by running the test suite with `VESTIGO_REGENERATE_DOCS=1`, then run the suite again without that variable so the checked-in files match.
 
-`BuildInstaller` downloads the pinned Vicius 1.20.0 x64 archive, checks its SHA-256, and requires the extracted executable to have a valid Authenticode signature for `Nefarius Software Solutions e.U.` before the MSI packages it as `Nefarius_Vestigo_Updater.exe`. The default-selected `Updater` feature installs that executable and `Nefarius_Vestigo_Updater.json`; `THIRD-PARTY-NOTICES.txt` always installs with the server. Deselecting the feature, or `REMOVE=Updater`, omits the updater payload and registration.
+`BuildInstaller` downloads the pinned Vicius 1.20.1 x64 archive, checks its SHA-256, and requires the extracted executable to have a valid Authenticode signature for `Nefarius Software Solutions e.U.` before the MSI packages it as `Nefarius_Vestigo_Updater.exe`. The default-selected `Updater` feature installs that executable and `Nefarius_Vestigo_Updater.json`; `THIRD-PARTY-NOTICES.txt` always installs with the server. Deselecting the feature, or `REMOVE=Updater`, omits the updater payload and registration.
 
 The manifest's release version is the MSI `ProductVersion`. When the updater feature is installed, the same version is written to `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version`. Vicius compares that registry value with the signed release version.
 
