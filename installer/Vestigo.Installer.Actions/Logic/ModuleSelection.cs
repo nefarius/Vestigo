@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, Audio, DebugOutput and gated extras are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, Audio, DebugOutput, and gated extras are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -34,8 +34,29 @@ namespace Vestigo.Installer.Actions.Logic
     }
 
     /// <summary>
+    ///     A pseudo-module that maps to a boolean option under <c>Vestigo:&lt;Section&gt;:&lt;Key&gt;</c> instead of
+    ///     <c>Vestigo:Modules:&lt;Name&gt;:Enabled</c>.
+    /// </summary>
+    public sealed class OptionToggle
+    {
+        public OptionToggle(string name, string section, string key)
+        {
+            Name = name;
+            Section = section;
+            Key = key;
+        }
+
+        public string Name { get; }
+
+        public string Section { get; }
+
+        public string Key { get; }
+    }
+
+    /// <summary>
     ///     Pure logic for the module feature tree: the module list, reading choices from the existing settings, the
-    ///     deferred-action data format, and the merge into <c>Vestigo:Modules</c> and <c>Vestigo:Software:AllowUninstall</c>.
+    ///     deferred-action data format, and the merge into <c>Vestigo:Modules</c> and option toggles such as
+    ///     <c>Vestigo:Software:AllowUninstall</c>.
     /// </summary>
     public static class ModuleSelection
     {
@@ -48,31 +69,22 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Audio:AllowSetDefault</c>.</summary>
         public const string AudioSetDefault = "AudioSetDefault";
 
-        /// <summary>Installer-only features that map to a boolean under <c>Vestigo:&lt;Section&gt;:&lt;Key&gt;</c>.</summary>
-        public static readonly IReadOnlyList<PseudoFeatureBinding> PseudoFeatures = new List<PseudoFeatureBinding>
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowBootConfigurationChanges</c>.</summary>
+        public const string BootConfigurationChanges = "BootConfigurationChanges";
+
+        public static readonly IReadOnlyList<OptionToggle> OptionToggles = new List<OptionToggle>
         {
-            new PseudoFeatureBinding(SoftwareUninstall, "Software", "AllowUninstall"),
-            new PseudoFeatureBinding(AudioSetDefault, "Audio", "AllowSetDefault")
+            new OptionToggle(SoftwareUninstall, "Software", "AllowUninstall"),
+            new OptionToggle(AudioSetDefault, "Audio", "AllowSetDefault"),
+            new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges")
         };
-
-        public static bool IsPseudoFeature(string name)
-        {
-            foreach (PseudoFeatureBinding binding in PseudoFeatures)
-            {
-                if (string.Equals(binding.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
 
         public static readonly IReadOnlyList<ModuleDefinition> All = new List<ModuleDefinition>
         {
             new ModuleDefinition("Trace", "Trace", "Offline ETL/WPP conversion and managed realtime capture.", true, null),
             new ModuleDefinition("Files", "Files", "Root-confined file tools plus authenticated PUT/GET transfer endpoints.", true, null),
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
+            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail and incremental reads of text log files.", true, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
             new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop.", false, null),
@@ -85,8 +97,27 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
-            new ModuleDefinition(SoftwareUninstall, "Silent uninstall", "Allow silent uninstalls of installed software as the service account (Vestigo:Software:AllowUninstall). Administrator-equivalent.", false, "Software")
+            new ModuleDefinition(SoftwareUninstall, "Silent uninstall", "Allow silent uninstalls of installed software as the service account (Vestigo:Software:AllowUninstall). Administrator-equivalent.", false, "Software"),
+            new ModuleDefinition(BootConfigurationChanges, "Boot configuration", "Allow changing BCD test-signing and WHQL developer test mode (Vestigo:System:AllowBootConfigurationChanges). Administrator-equivalent. Takes effect after reboot.", false, "System")
         };
+
+        public static bool IsOptionToggle(string name)
+        {
+            return FindOptionToggle(name) != null;
+        }
+
+        public static OptionToggle? FindOptionToggle(string name)
+        {
+            foreach (OptionToggle toggle in OptionToggles)
+            {
+                if (string.Equals(toggle.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return toggle;
+                }
+            }
+
+            return null;
+        }
 
         public static ModuleDefinition? Find(string name)
         {
@@ -146,7 +177,7 @@ namespace Vestigo.Installer.Actions.Logic
                 foreach (KeyValuePair<string, object?> member in moduleObject.Members)
                 {
                     ModuleDefinition? module = Find(member.Key);
-                    if (module != null && !IsPseudoFeature(module.Name) && member.Value is JsonObject settings &&
+                    if (module != null && !IsOptionToggle(module.Name) && member.Value is JsonObject settings &&
                         settings.TryGetIgnoreCase("Enabled", out object? enabled) && enabled is bool flag)
                     {
                         result[module.Name] = flag;
@@ -154,12 +185,13 @@ namespace Vestigo.Installer.Actions.Logic
                 }
             }
 
-            foreach (PseudoFeatureBinding binding in PseudoFeatures)
+            foreach (OptionToggle toggle in OptionToggles)
             {
-                if (vestigo.TryGetIgnoreCase(binding.Section, out object? optionsSection) && optionsSection is JsonObject sectionObject &&
-                    sectionObject.TryGetIgnoreCase(binding.Key, out object? flag) && flag is bool value)
+                if (vestigo.TryGetIgnoreCase(toggle.Section, out object? sectionValue) &&
+                    sectionValue is JsonObject sectionObject &&
+                    sectionObject.TryGetIgnoreCase(toggle.Key, out object? allow) && allow is bool allowFlag)
                 {
-                    result[binding.Name] = value;
+                    result[toggle.Name] = allowFlag;
                 }
             }
 
@@ -217,8 +249,9 @@ namespace Vestigo.Installer.Actions.Logic
         }
 
         /// <summary>
-        ///     Writes <c>Vestigo:Modules:&lt;Name&gt;:Enabled</c> and <c>Vestigo:Software:AllowUninstall</c> for the given states,
-        ///     keeping every other member (including other keys inside the touched objects).
+        ///     Writes <c>Vestigo:Modules:&lt;Name&gt;:Enabled</c> and each option toggle (for example
+        ///     <c>Vestigo:Software:AllowUninstall</c>) for the given states, keeping every other member
+        ///     (including other keys inside the touched objects).
         /// </summary>
         public static void Apply(JsonObject vestigo, IDictionary<string, bool> states)
         {
@@ -240,7 +273,7 @@ namespace Vestigo.Installer.Actions.Logic
 
             foreach (ModuleDefinition module in All)
             {
-                if (IsPseudoFeature(module.Name) || !states.TryGetValue(module.Name, out bool enabled))
+                if (IsOptionToggle(module.Name) || !states.TryGetValue(module.Name, out bool enabled))
                 {
                     continue;
                 }
@@ -267,43 +300,27 @@ namespace Vestigo.Installer.Actions.Logic
                 settings.SetIgnoreCase("Enabled", enabled);
             }
 
-            foreach (PseudoFeatureBinding binding in PseudoFeatures)
+            foreach (OptionToggle toggle in OptionToggles)
             {
-                if (!states.TryGetValue(binding.Name, out bool allow))
+                if (!states.TryGetValue(toggle.Name, out bool allow))
                 {
                     continue;
                 }
 
                 JsonObject section;
-                if (vestigo.TryGetIgnoreCase(binding.Section, out object? existingSection) && existingSection is JsonObject existingSectionObject)
+                if (vestigo.TryGetIgnoreCase(toggle.Section, out object? existingSection) &&
+                    existingSection is JsonObject existingSectionObject)
                 {
                     section = existingSectionObject;
                 }
                 else
                 {
                     section = new JsonObject();
-                    vestigo.SetIgnoreCase(binding.Section, section);
+                    vestigo.SetIgnoreCase(toggle.Section, section);
                 }
 
-                section.SetIgnoreCase(binding.Key, allow);
+                section.SetIgnoreCase(toggle.Key, allow);
             }
         }
-    }
-
-    /// <summary>Installer-only feature that writes a boolean under a Vestigo options section rather than Modules.</summary>
-    public sealed class PseudoFeatureBinding
-    {
-        public PseudoFeatureBinding(string name, string section, string key)
-        {
-            Name = name;
-            Section = section;
-            Key = key;
-        }
-
-        public string Name { get; }
-
-        public string Section { get; }
-
-        public string Key { get; }
     }
 }

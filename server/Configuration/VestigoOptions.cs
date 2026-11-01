@@ -6,6 +6,7 @@ using Vestigo.DebugOutput;
 using Vestigo.Devices;
 using Vestigo.Services;
 using Vestigo.Software;
+using Vestigo.SystemInfo;
 
 namespace Vestigo.Configuration;
 
@@ -41,6 +42,8 @@ public sealed class VestigoOptions
     public ServicesOptions Services { get; set; } = new();
 
     public SoftwareOptions Software { get; set; } = new();
+
+    public SystemOptions System { get; set; } = new();
 
     public int MaxConcurrentJobs { get; set; } = 8;
 
@@ -149,11 +152,12 @@ public sealed class VestigoOptions
         Devices.Validate();
         Services.Validate();
         Software.Validate();
+        System.Validate();
 
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
         foreach (RootDefinition root in Roots)
         {
-            if (string.IsNullOrWhiteSpace(root.Name) || !System.Text.RegularExpressions.Regex.IsMatch(root.Name, "^[A-Za-z][A-Za-z0-9_-]+$"))
+            if (string.IsNullOrWhiteSpace(root.Name) || !global::System.Text.RegularExpressions.Regex.IsMatch(root.Name, "^[A-Za-z][A-Za-z0-9_-]+$"))
             {
                 throw new InvalidOperationException(
                     $"Vestigo:Roots name '{root.Name}' must be at least two characters of letters, digits, '_' or '-' and start with a letter.");
@@ -164,7 +168,7 @@ public sealed class VestigoOptions
                 throw new InvalidOperationException($"Vestigo:Roots contains duplicate name '{root.Name}'.");
             }
 
-            if (string.IsNullOrWhiteSpace(root.Path) || !System.IO.Path.IsPathFullyQualified(root.Path))
+            if (string.IsNullOrWhiteSpace(root.Path) || !global::System.IO.Path.IsPathFullyQualified(root.Path))
             {
                 throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs an absolute Path.");
             }

@@ -20,6 +20,7 @@ public static class ModuleRegistry
         new RemoteDebuggerModule(),
         new TraceModule(),
         new EnvironmentModule(),
+        new SystemModule(),
         new LogsModule(),
         new EventLogModule(),
         new DesktopModule(),
@@ -91,6 +92,11 @@ public static class ModuleRegistry
         if (options.Software.AllowUninstall && enabled.Any(module => module.Name == "Software"))
         {
             capabilities.Add("Software uninstall");
+        }
+
+        if (options.System.AllowBootConfigurationChanges && enabled.Any(module => module.Name == "System"))
+        {
+            capabilities.Add("Boot configuration changes");
         }
 
         bool debugOutput = enabled.Any(module => module.Name == "DebugOutput");

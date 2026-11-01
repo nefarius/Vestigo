@@ -29,6 +29,7 @@
     <PackageReference Include="NAudio.Wasapi" />
     <PackageReference Include="Nefarius.Utilities.DeviceManagement" />
     <PackageReference Include="Nefarius.Utilities.ETW" />
+    <PackageReference Include="Nefarius.Utilities.WindowsVersion" />
     <PackageReference Include="Serilog.AspNetCore" />
   </ItemGroup>
 
