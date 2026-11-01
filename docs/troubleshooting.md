@@ -17,7 +17,7 @@ The exception names the setting. Common causes:
 
 `Refusing to use the Vestigo state directory: ...` means the state tree under `%ProgramData%\Nefarius Software Solutions\Vestigo` failed verification: a path component is a link or junction, a directory has an untrusted owner, or a parent can be modified by non-administrators. Remove the link, or take ownership as Administrators and fix the permissions, or reinstall the MSI (it re-applies the protected ACL), then restart the service.
 
-A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiTokens` means anyone who can reach the port on the network can use `/mcp`. A privileged-module warning can also appear on loopback: without `ApiTokens`, any local client can use enabled `Processes`, `Devices`, or `RemoteDebugger`. `Services` is included only when the server binds beyond loopback, `Software:AllowUninstall` only when the Software module is also enabled, and `DebugOutput` is named separately when that module is enabled (it can read `OutputDebugString` from every session).
+A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiTokens` means anyone who can reach the port on the network can use `/mcp`. A privileged-module warning can also appear on loopback: without `ApiTokens`, any local client can use enabled `Processes`, `Devices`, or `RemoteDebugger`. `Services` is included only when the server binds beyond loopback, `Software:AllowUninstall` only when the Software module is also enabled, `Desktop` when that module is enabled (window titles from the console user's desktop), and `DebugOutput` when that module is enabled (it can read `OutputDebugString` from every session).
 
 ## The server is not reachable from another machine
 

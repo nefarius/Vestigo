@@ -22,6 +22,7 @@ public static class ModuleRegistry
         new EnvironmentModule(),
         new LogsModule(),
         new EventLogModule(),
+        new DesktopModule(),
         new DebugOutputModule()
     ];
 
@@ -56,8 +57,9 @@ public static class ModuleRegistry
     }
 
     /// <summary>
-    ///     Returns a startup warning naming administrator-equivalent capabilities, and separately a machine-wide
-    ///     DebugOutput reader, that are enabled while no API token is configured, otherwise null. This is a warning,
+    ///     Returns a startup warning naming administrator-equivalent capabilities, and separately a Desktop
+    ///     enumerator or machine-wide DebugOutput reader, that are enabled while no API token is configured,
+    ///     otherwise null. This is a warning,
     ///     never a failure: an operator may deliberately run an open server on an isolated network. The message
     ///     never contains token values.
     /// </summary>
@@ -91,7 +93,8 @@ public static class ModuleRegistry
         }
 
         bool debugOutput = enabled.Any(module => module.Name == "DebugOutput");
-        if (capabilities.Count == 0 && !debugOutput)
+        bool desktop = enabled.Any(module => module.Name == "Desktop");
+        if (capabilities.Count == 0 && !debugOutput && !desktop)
         {
             return null;
         }
@@ -99,22 +102,44 @@ public static class ModuleRegistry
         string reach = options.IsBoundBeyondLoopback
             ? $"The server listens on {options.ListenAddress}:{options.ListenPort}, so anyone who can reach this port on the network"
             : "Any local client";
-        string debugClause = debugOutput
-            ? $"{reach} can read OutputDebugString messages from every session. "
-            : "";
         if (capabilities.Count == 0)
         {
-            return $"SECURITY WARNING: Vestigo has no Vestigo:ApiTokens and the DebugOutput module is enabled. " +
-                   debugClause +
+            List<string> names = [];
+            List<string> clauses = [];
+            if (desktop)
+            {
+                names.Add("Desktop");
+                clauses.Add($"{reach} can list windows, titles, and displays on the console user's desktop.");
+            }
+
+            if (debugOutput)
+            {
+                names.Add("DebugOutput");
+                clauses.Add($"{reach} can read OutputDebugString messages from every session.");
+            }
+
+            string named = names.Count == 1
+                ? $"the {names[0]} module is enabled"
+                : $"the {string.Join(" and ", names)} modules are enabled";
+            return $"SECURITY WARNING: Vestigo has no Vestigo:ApiTokens and {named}. " +
+                   string.Join(" ", clauses) + " " +
                    "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
         }
 
-        string debugSuffix = debugOutput
-            ? "The DebugOutput module is also enabled, so the same clients can read OutputDebugString messages from every session. "
-            : "";
+        string extras = "";
+        if (desktop)
+        {
+            extras += "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop. ";
+        }
+
+        if (debugOutput)
+        {
+            extras += "The DebugOutput module is also enabled, so the same clients can read OutputDebugString messages from every session. ";
+        }
+
         return $"SECURITY WARNING: Vestigo has no Vestigo:ApiTokens and these administrator-equivalent capabilities are enabled: {string.Join(", ", capabilities)}. " +
                $"{reach} can run programs, control services or drivers, or uninstall software as the service account. " +
-               debugSuffix +
+               extras +
                "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
 }

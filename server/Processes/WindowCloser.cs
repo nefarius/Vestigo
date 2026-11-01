@@ -132,11 +132,11 @@ public static class WindowCloser
 
             if (!Names.TryGetValue((int)pid, out string? name))
             {
-                name = ProcessName((int)pid);
+                name = WindowInspection.ProcessName((int)pid);
                 Names[(int)pid] = name;
             }
 
-            if (selector.Matches((int)pid, name, WindowTitle(window), titleRegex)
+            if (selector.Matches((int)pid, name, WindowInspection.Title(window), titleRegex)
                 && PInvoke.PostMessage(window, PInvoke.WM_CLOSE, default, default))
             {
                 Posted[(int)pid] = Posted.GetValueOrDefault((int)pid) + 1;
@@ -157,33 +157,5 @@ public static class WindowCloser
         }
 
         return true;
-    }
-    private static string ProcessName(int pid)
-    {
-        try
-        {
-            using Process process = Process.GetProcessById(pid);
-            return process.ProcessName;
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        {
-            return string.Empty;
-        }
-    }
-
-    private static unsafe string WindowTitle(HWND window)
-    {
-        int length = PInvoke.GetWindowTextLength(window);
-        if (length <= 0)
-        {
-            return string.Empty;
-        }
-
-        char[] buffer = new char[length + 1];
-        fixed (char* pointer = buffer)
-        {
-            int copied = PInvoke.GetWindowText(window, new PWSTR(pointer), buffer.Length);
-            return new string(buffer, 0, Math.Max(copied, 0));
-        }
     }
 }
