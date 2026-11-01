@@ -248,7 +248,7 @@ public class RemoteDebuggerTests : IDisposable
         FakeProbe probe = new();
         JobManager jobs = new(options, Path.Combine(_root, "jobs"));
         RemoteDebuggerService service = new(
-            options, jobs, launcher, new AppCloser(launcher), new MsvsmonLocator(probe, [Pf], []), new FakeVerifier(), new FakeHttpFactory());
+            options, jobs, launcher, new AppCloser(new SessionHelperClient(launcher)), new MsvsmonLocator(probe, [Pf], []), new FakeVerifier(), new FakeHttpFactory());
         return (new RemoteDebuggerTools(service), launcher, probe);
     }
 

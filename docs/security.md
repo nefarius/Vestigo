@@ -49,7 +49,13 @@ nefcon (the device and driver CLI used by `Vestigo.Devices`) is bundled, not dow
 
 Controls that do apply: programs must be files inside a root that has the `Execute` flag, using the same link-following canonicalization as other paths; working directories need `Read`; bare names are limited to executables found on the absolute entries of the service `PATH` (never the current directory) and can be turned off with `AllowPathLookup = false`; scripts must live under an `Execute` root. Environment overrides and arguments are bounded and checked for NUL characters. `kill_process` refuses the Vestigo process, pid 0 and pid 4. `close_app` only posts `WM_CLOSE` and never kills.
 
-The interactive context needs the service to run as SYSTEM (for `WTSQueryUserToken`). The process runs as the logged-on user on the visible desktop, and `elevated` uses that user's own linked administrator token; it never grants rights the user does not have. Job output files hold the process output and are readable through `read_job_output` until `JobRetention` expires, so do not run commands that print secrets. The session helper only accepts `close-window` arguments and does no network or file access.
+The interactive context needs the service to run as SYSTEM (for `WTSQueryUserToken`). The process runs as the logged-on user on the visible desktop, and `elevated` uses that user's own linked administrator token; it never grants rights the user does not have. Job output files hold the process output and are readable through `read_job_output` until `JobRetention` expires, so do not run commands that print secrets. The session helper only accepts `close-window`, `list-windows`, and `list-displays` arguments and does no network or file access.
+
+## Desktop
+
+`list_windows` and `list_displays` are read-only but they expose window titles, process names, and the display layout of the console user's desktop. That is information disclosure by design. The module is off by default. Enabling it with `Vestigo:Modules:Desktop:Enabled = true` does not require other modules. Without an `ApiTokens` entry it still starts and logs a `SECURITY WARNING`; use that only on a network you trust.
+
+The interactive context needs the service to run as SYSTEM (for `WTSQueryUserToken`) and a logged-on console user. The helper enumerates that session's desktop and writes JSON to a spool file under ProgramData; it does no network or file access beyond that. `context: service` only sees session 0. Secure and locked desktops are not enumerated. `elevated` uses the user's linked administrator token and is not required to read ordinary windows; `ProcessPath` may still be null for protected processes.
 
 ## Software
 

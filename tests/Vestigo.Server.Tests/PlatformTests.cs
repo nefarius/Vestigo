@@ -261,4 +261,17 @@ public class PlatformTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => ModuleRegistry.ValidateConfiguration(noProcesses));
         ModuleRegistry.ValidateConfiguration(valid);
     }
+
+    [Fact]
+    public void DesktopModule_IsOptInAndHasNoDependencies()
+    {
+        ModuleSettings on = new() { Enabled = true };
+        VestigoOptions defaults = new();
+        VestigoOptions enabled = new() { Modules = { ["Desktop"] = on } };
+
+        Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "Desktop");
+        ModuleRegistry.ValidateConfiguration(defaults);
+        ModuleRegistry.ValidateConfiguration(enabled);
+        Assert.Contains("Desktop", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+    }
 }

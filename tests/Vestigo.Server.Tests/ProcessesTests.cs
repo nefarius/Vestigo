@@ -27,7 +27,7 @@ public class ProcessesTests : IDisposable
         RootPolicy roots = new(options);
         JobManager jobs = new(options, Path.Combine(_root, "jobs"));
         launcher ??= new ProcessLauncher();
-        return (new ProcessTools(roots, new ExecutableResolver(roots, options), jobs, launcher, new AppCloser(launcher)), jobs);
+        return (new ProcessTools(roots, new ExecutableResolver(roots, options), jobs, launcher, new AppCloser(new SessionHelperClient(launcher))), jobs);
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

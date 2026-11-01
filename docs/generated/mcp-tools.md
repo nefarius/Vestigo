@@ -325,6 +325,14 @@ Lists the entries of a directory inside a root with Read access.
 | `path` | `string` | yes |  | Directory as root:relative\path or an absolute path inside a root. |
 | `maxEntries` | `int` | no | `500` | Maximum entries to return, 1 to 5000. |
 
+## `list_displays`
+
+Lists GDI displays (\\.\DISPLAYn) with bounds, work area, DPI, and the physical monitors currently driven by each source, including cloned outputs. context 'interactive' (default) uses the console user's session.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+
 ## `list_driver_store`
 
 Lists driver packages staged in the driver store: published name (oemNN.inf), original INF, provider, class, version, date, architecture, and bound device instance IDs. Third-party packages only unless includeInbox is true.
@@ -408,6 +416,22 @@ Lists Win32 services and kernel/file-system drivers with state, start type, imag
 | `nameContains` | `string` | no | `null` | Case-insensitive substring of the service name or display name. |
 | `state` | `string` | no | `null` | Only services in this state: stopped, running, paused, start_pending, stop_pending, continue_pending or pause_pending. |
 | `limit` | `int` | no | `200` | Maximum entries to return, 1 to 1000. |
+
+## `list_windows`
+
+Lists Win32 windows on the chosen desktop with owning process, parent and owner, physical-pixel bounds, and the GDI display they are rendered on. Filters combine: pid or processName, narrowed by titleRegex and className. context 'interactive' (default) enumerates the console user's desktop through the session helper.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `pid` | `int?` | no | `null` | Process id. |
+| `processName` | `string` | no | `null` | Process name, with or without .exe. |
+| `titleRegex` | `string` | no | `null` | .NET regular expression matched against window titles (case-insensitive). |
+| `className` | `string` | no | `null` | Window class name (case-insensitive). |
+| `includeHidden` | `bool` | no | `false` | Include hidden windows. Cloaked (virtual-desktop) windows are still listed when visible. |
+| `includeChildren` | `bool` | no | `false` | Also enumerate child windows of each top-level window. |
+| `limit` | `int` | no | `500` | Maximum windows to return, 1 to 5000. |
+| `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+| `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when enumerating as the console user. |
 
 ## `make_directory`
 

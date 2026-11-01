@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger and software uninstall are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop and software uninstall are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -52,6 +52,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail and incremental reads of text log files.", true, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
+            new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop.", false, null),
             new ModuleDefinition("Services", "Services", "List, start, stop, and configure Windows services and kernel drivers.", true, null),
             new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, and device state via nefcon. Runs code with kernel privilege.", false, null),
             new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes and Software.", true, null),

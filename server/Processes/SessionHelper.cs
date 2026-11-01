@@ -1,17 +1,24 @@
+using System.Globalization;
 using System.Text.Json;
+
+using Vestigo.Desktop;
 
 namespace Vestigo.Processes;
 
 /// <summary>
-///     Handles <c>Vestigo.exe --session-helper close-window ...</c>. Program.cs calls this before the web host
-///     starts. The helper runs inside the console user's session so it can see that desktop's windows, prints one
-///     JSON document to stdout, and exits.
+///     Handles <c>Vestigo.exe --session-helper ...</c>. Program.cs calls this before the web host starts. The helper
+///     runs inside the console user's session so it can see that desktop's windows, prints one JSON document to
+///     stdout, and exits.
 /// </summary>
 public static class SessionHelper
 {
     public const string Flag = "--session-helper";
 
     public const string CloseWindowCommand = "close-window";
+
+    public const string ListWindowsCommand = "list-windows";
+
+    public const string ListDisplaysCommand = "list-displays";
 
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -21,11 +28,11 @@ public static class SessionHelper
     /// <summary>Builds helper arguments (after the executable) for a close request.</summary>
     public static List<string> BuildCloseArguments(CloseSelector selector, int graceSeconds, int callerPid)
     {
-        List<string> arguments = [Flag, CloseWindowCommand, "--timeout", graceSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture), "--exclude-pid", callerPid.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+        List<string> arguments = [Flag, CloseWindowCommand, "--timeout", graceSeconds.ToString(CultureInfo.InvariantCulture), "--exclude-pid", callerPid.ToString(CultureInfo.InvariantCulture)];
         foreach (int pid in selector.Pids)
         {
             arguments.Add("--pid");
-            arguments.Add(pid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            arguments.Add(pid.ToString(CultureInfo.InvariantCulture));
         }
 
         foreach (string name in selector.ProcessNames)
@@ -106,13 +113,150 @@ public static class SessionHelper
         return true;
     }
 
+    /// <summary>Builds helper arguments (after the executable) for a window listing.</summary>
+    public static List<string> BuildListWindowsArguments(WindowSelector selector)
+    {
+        List<string> arguments =
+        [
+            Flag,
+            ListWindowsCommand,
+            "--include-hidden",
+            selector.IncludeHidden ? "true" : "false",
+            "--include-children",
+            selector.IncludeChildren ? "true" : "false",
+            "--limit",
+            selector.Limit.ToString(CultureInfo.InvariantCulture)
+        ];
+        foreach (int pid in selector.Pids)
+        {
+            arguments.Add("--pid");
+            arguments.Add(pid.ToString(CultureInfo.InvariantCulture));
+        }
+
+        foreach (string name in selector.ProcessNames)
+        {
+            arguments.Add("--name");
+            arguments.Add(name);
+        }
+
+        if (!string.IsNullOrEmpty(selector.TitlePattern))
+        {
+            arguments.Add("--title");
+            arguments.Add(selector.TitlePattern);
+        }
+
+        if (!string.IsNullOrEmpty(selector.ClassName))
+        {
+            arguments.Add("--class");
+            arguments.Add(selector.ClassName);
+        }
+
+        return arguments;
+    }
+
+    /// <summary>Parses helper arguments (starting at the flag) into a window listing selector.</summary>
+    public static bool TryParseListWindows(string[] args, out WindowSelector selector, out string? error)
+    {
+        selector = WindowSelector.All;
+        error = null;
+        if (args.Length < 2 || args[0] != Flag || args[1] != ListWindowsCommand)
+        {
+            error = $"Usage: {Flag} {ListWindowsCommand} [--pid N] [--name NAME] [--title REGEX] [--class CLASS] [--include-hidden true|false] [--include-children true|false] [--limit N]";
+            return false;
+        }
+
+        List<int> pids = [];
+        List<string> names = [];
+        string? title = null;
+        string? className = null;
+        bool includeHidden = false;
+        bool includeChildren = false;
+        int limit = WindowSelector.DefaultLimit;
+        for (int index = 2; index < args.Length; index += 2)
+        {
+            if (index + 1 >= args.Length)
+            {
+                error = $"Option '{args[index]}' needs a value.";
+                return false;
+            }
+
+            string value = args[index + 1];
+            switch (args[index])
+            {
+                case "--pid" when int.TryParse(value, out int pid) && pid > 0:
+                    pids.Add(pid);
+                    break;
+                case "--name" when value.Length > 0:
+                    names.Add(value);
+                    break;
+                case "--title" when value.Length > 0:
+                    title = value;
+                    break;
+                case "--class" when value.Length > 0:
+                    className = value;
+                    break;
+                case "--include-hidden" when TryParseFlag(value, out includeHidden):
+                    break;
+                case "--include-children" when TryParseFlag(value, out includeChildren):
+                    break;
+                case "--limit" when int.TryParse(value, out int parsed) && parsed is >= 1 and <= WindowSelector.MaxLimit:
+                    limit = parsed;
+                    break;
+                default:
+                    error = $"Invalid option or value: {args[index]} {value}";
+                    return false;
+            }
+        }
+
+        selector = new WindowSelector(pids, names, title, className, includeHidden, includeChildren, limit);
+        return true;
+    }
+
+    /// <summary>Builds helper arguments (after the executable) for a display listing.</summary>
+    public static List<string> BuildListDisplaysArguments() => [Flag, ListDisplaysCommand];
+
+    /// <summary>Parses helper arguments (starting at the flag) for a display listing.</summary>
+    public static bool TryParseListDisplays(string[] args, out string? error)
+    {
+        error = null;
+        if (args.Length < 2 || args[0] != Flag || args[1] != ListDisplaysCommand)
+        {
+            error = $"Usage: {Flag} {ListDisplaysCommand}";
+            return false;
+        }
+
+        if (args.Length > 2)
+        {
+            error = $"Invalid option or value: {args[2]}";
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>Runs the helper command and returns the process exit code.</summary>
     public static int Run(string[] args)
     {
+        if (args.Length < 2 || args[0] != Flag)
+        {
+            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}> ..." }, Json));
+            return 2;
+        }
+
+        return args[1] switch
+        {
+            CloseWindowCommand => RunClose(args),
+            ListWindowsCommand => RunListWindows(args),
+            ListDisplaysCommand => RunListDisplays(args),
+            _ => Reject($"Unknown session-helper command '{args[1]}'.")
+        };
+    }
+
+    private static int RunClose(string[] args)
+    {
         if (!TryParseClose(args, out CloseSelector selector, out int grace, out int excludePid, out string? error))
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error }, Json));
-            return 2;
+            return Reject(error!);
         }
 
         try
@@ -123,8 +267,62 @@ public static class SessionHelper
         }
         catch (System.Text.RegularExpressions.RegexParseException ex)
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = "Invalid title pattern: " + ex.Message }, Json));
-            return 2;
+            return Reject("Invalid title pattern: " + ex.Message);
         }
+    }
+
+    private static int RunListWindows(string[] args)
+    {
+        if (!TryParseListWindows(args, out WindowSelector selector, out string? error))
+        {
+            return Reject(error!);
+        }
+
+        try
+        {
+            WindowListResult result = WindowEnumerator.List(selector);
+            Console.Out.WriteLine(JsonSerializer.Serialize(result, Json));
+            return 0;
+        }
+        catch (System.Text.RegularExpressions.RegexParseException ex)
+        {
+            return Reject("Invalid title pattern: " + ex.Message);
+        }
+    }
+
+    private static int RunListDisplays(string[] args)
+    {
+        if (!TryParseListDisplays(args, out string? error))
+        {
+            return Reject(error!);
+        }
+
+        DisplayListResult result = DisplayTopology.List();
+        Console.Out.WriteLine(JsonSerializer.Serialize(result, Json));
+        return 0;
+    }
+
+    private static int Reject(string error)
+    {
+        Console.Out.WriteLine(JsonSerializer.Serialize(new { error }, Json));
+        return 2;
+    }
+
+    private static bool TryParseFlag(string value, out bool flag)
+    {
+        if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1")
+        {
+            flag = true;
+            return true;
+        }
+
+        if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) || value == "0")
+        {
+            flag = false;
+            return true;
+        }
+
+        flag = false;
+        return false;
     }
 }
