@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
+using System.Text.Json;
 using System.Threading.Channels;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -157,6 +158,7 @@ public class DebugOutputManagerTests : IDisposable
     {
         FakeDebugViewProcess process = new()
         {
+            ExitCode = 1,
             Lines =
             [
                 new DebugViewLine("Unexpected error occurred: CreateDBWinBufferMapping failed", true)
@@ -236,6 +238,62 @@ public class DebugOutputManagerTests : IDisposable
         Assert.Equal("Stopped", stopped.Value!.State);
         Assert.Equal("stopped", stopped.Value.StopReason);
         Assert.False(File.Exists(VestigoPaths.OwnedDebugViewPath));
+    }
+
+    [Fact]
+    public async Task Stop_DoesNotClearANewerOwnershipRecord()
+    {
+        FakeDebugViewProcess process = new() { WaitUntilCancelled = true };
+        DebugOutputManager manager = CreateManager(process, out _, out _);
+        OperationResult<DebugCaptureStatus> started = await manager.StartCaptureAsync(EmptyRequest(), CancellationToken.None);
+        await WaitForProcessIdAsync(manager, started.Value!.Id);
+
+        string replacement = JsonSerializer.Serialize(
+            new
+            {
+                ProcessId = 9999,
+                StartedAt = DateTimeOffset.UtcNow,
+                ImagePath = "other.exe",
+                Token = "newer-token"
+            },
+            DebugOutputManager.JsonOptions);
+        File.WriteAllText(VestigoPaths.OwnedDebugViewPath, replacement);
+
+        await manager.StopAsync(started.Value.Id);
+
+        Assert.True(File.Exists(VestigoPaths.OwnedDebugViewPath));
+        Assert.Contains("newer-token", File.ReadAllText(VestigoPaths.OwnedDebugViewPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Start_DoesNotClearAnOwnershipRecordWhenTheProcessNeverStarts()
+    {
+        File.WriteAllText(
+            VestigoPaths.OwnedDebugViewPath,
+            """{"processId":1,"startedAt":"2026-01-01T00:00:00Z","imagePath":"kept.exe","token":"keep"}""");
+        FakeDebugViewProcess process = new()
+        {
+            FailBeforeStart = new InvalidOperationException("launch failed")
+        };
+        DebugOutputManager manager = CreateManager(process, out _, out _);
+
+        await manager.StartCaptureAsync(EmptyRequest(), CancellationToken.None);
+
+        Assert.True(File.Exists(VestigoPaths.OwnedDebugViewPath));
+        Assert.Contains("keep", File.ReadAllText(VestigoPaths.OwnedDebugViewPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReadLoop_FailsOnAnUnrecognizedNonzeroExit()
+    {
+        FakeDebugViewProcess process = new() { ExitCode = 7 };
+        DebugOutputManager manager = CreateManager(process, out _, out _);
+        OperationResult<DebugCaptureStatus> started = await manager.StartCaptureAsync(EmptyRequest(), CancellationToken.None);
+        DebugCaptureStatus completed = await WaitForTerminalAsync(manager, started.Value!.Id);
+
+        Assert.Equal("Failed", completed.State);
+        Assert.Equal("failed", completed.StopReason);
+        Assert.Contains("7", completed.Error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -372,10 +430,13 @@ public class DebugOutputManagerTests : IDisposable
 
         public Exception? FailBeforeStart { get; set; }
 
+        public int ExitCode { get; set; }
+
         public async IAsyncEnumerable<DebugViewLine> RunAsync(
             string executable,
             IReadOnlyList<string> arguments,
             Action<int>? onStarted,
+            Action<int>? onExited,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
             if (FailBeforeStart is not null)
@@ -404,6 +465,8 @@ public class DebugOutputManagerTests : IDisposable
             {
                 await Task.Delay(Timeout.Infinite, cancellationToken);
             }
+
+            onExited?.Invoke(ExitCode);
         }
     }
 }
@@ -445,7 +508,12 @@ public class DebugOutputElevatedTests
                 CancellationToken.None);
             if (!started.Success)
             {
-                Assert.Skip($"Could not start DebugViewConsole: {started.ErrorCode} {started.Error}");
+                if (started.ErrorCode is "executable_missing" or "hash_mismatch")
+                {
+                    Assert.Skip($"Could not start DebugViewConsole: {started.ErrorCode} {started.Error}");
+                }
+
+                Assert.Fail($"Could not start DebugViewConsole: {started.ErrorCode} {started.Error}");
             }
 
             await Task.Delay(500);

@@ -328,6 +328,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
             job.Cancellation.Token,
             durationSource.Token);
         string? dbwinError = null;
+        int? exitCode = null;
         try
         {
             job.Spool.OpenWrite();
@@ -337,9 +338,15 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
                                pid =>
                                {
                                    job.ProcessId = pid;
-                                   SaveOwnedProcess(new OwnedDebugViewProcess(pid, job.StartedAt, executable));
+                                   job.OwnershipToken = Guid.NewGuid().ToString("N");
+                                   SaveOwnedProcess(new OwnedDebugViewProcess(
+                                       pid,
+                                       job.StartedAt,
+                                       executable,
+                                       job.OwnershipToken));
                                    job.Started.TrySetResult();
                                },
+                               code => exitCode = code,
                                linked.Token))
             {
                 if (line.IsError)
@@ -393,6 +400,16 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
                 job.StopReason = "dbwin_in_use";
                 job.ErrorCode = "dbwin_in_use";
             }
+            else if (exitCode is int code &&
+                     code != 0 &&
+                     !linked.IsCancellationRequested &&
+                     job.StopReason is null)
+            {
+                job.TrySetState("Failed");
+                job.Error = $"DebugViewConsole exited with code {code}.";
+                job.StopReason = "failed";
+                job.ErrorCode = "capture_failed";
+            }
             else
             {
                 job.StopReason ??= linked.IsCancellationRequested && !job.Cancellation.IsCancellationRequested
@@ -426,7 +443,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
 
             job.StoppedAt = DateTimeOffset.UtcNow;
             await job.Spool.DisposeAsync().ConfigureAwait(false);
-            ClearOwnedProcess();
+            ClearOwnedProcessIfCurrent(job.ProcessId, job.OwnershipToken);
             job.Spool.Notify();
         }
     }
@@ -634,7 +651,30 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
         }
     }
 
-    private static OwnedDebugViewProcess? LoadOwnedProcess()
+    private void ClearOwnedProcessIfCurrent(int? processId, string? token)
+    {
+        if (processId is not int pid || string.IsNullOrEmpty(token))
+        {
+            return;
+        }
+
+        lock (_ownedFileLock)
+        {
+            OwnedDebugViewProcess? owned = LoadOwnedProcessCore();
+            if (owned is null ||
+                owned.ProcessId != pid ||
+                !string.Equals(owned.Token, token, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            TryDelete(VestigoPaths.OwnedDebugViewPath);
+        }
+    }
+
+    private static OwnedDebugViewProcess? LoadOwnedProcess() => LoadOwnedProcessCore();
+
+    private static OwnedDebugViewProcess? LoadOwnedProcessCore()
     {
         if (!File.Exists(VestigoPaths.OwnedDebugViewPath))
         {
@@ -698,7 +738,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
         }
     }
 
-    private sealed record OwnedDebugViewProcess(int ProcessId, DateTimeOffset StartedAt, string ImagePath);
+    private sealed record OwnedDebugViewProcess(int ProcessId, DateTimeOffset StartedAt, string ImagePath, string Token);
 
     private sealed class DebugCaptureJob(string id, string spoolPath)
     {
@@ -719,6 +759,8 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
         public string? ErrorCode { get; set; }
 
         public int? ProcessId { get; set; }
+
+        public string? OwnershipToken { get; set; }
 
         public Task? Reader { get; set; }
 

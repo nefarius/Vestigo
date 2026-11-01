@@ -623,7 +623,7 @@ Starts a managed realtime WPP capture. Events are spooled locally; use read_capt
 
 ## `start_debug_capture`
 
-Starts the single DebugViewConsole capture of OutputDebugString messages. Events are spooled locally; use read_debug_output (with waitSeconds to follow live) to read them. A second start fails with capture_busy until the running capture is stopped.
+Starts the single DebugViewConsole capture of OutputDebugString messages. Events are spooled locally; use read_debug_output (with waitSeconds to follow live) to read them. A successful launch returns Running or Failed and does not guarantee the capture is ready; another DebugView instance can still fail the capture with dbwin_in_use after launch. A second start fails with capture_busy until the running capture is stopped.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

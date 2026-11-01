@@ -34,7 +34,7 @@ Capture duration cannot exceed `MaxCaptureDuration`. The spool is removed after 
 
 The `DebugOutput` module is disabled by default. It runs the bundled DebugViewConsole (DebugView++ 1.30.0.0) and forwards Win32 `OutputDebugString` messages to the calling agent. Only one capture runs at a time; a second `start_debug_capture` fails with `capture_busy`. Read [security.md](security.md#debug-output) first.
 
-`start_debug_capture` starts DebugViewConsole with capture-time substring filters (`includeMessages`, `excludeMessages`, `includeProcesses`, `excludeProcesses`) and an optional `duration` capped by `Vestigo:DebugOutput:MaxDuration`. The call returns when the process has been launched, not when capture ends.
+`start_debug_capture` starts DebugViewConsole with capture-time substring filters (`includeMessages`, `excludeMessages`, `includeProcesses`, `excludeProcesses`) and an optional `duration` capped by `Vestigo:DebugOutput:MaxDuration`. The call returns when the process has been launched, not when capture ends. A successful launch may already be `Running` or `Failed`; that status does not guarantee the capture is ready. If another DebugView instance owns `DBWIN_BUFFER`, the capture ultimately records `Failed` with `dbwin_in_use`.
 
 `list_debug_captures` and `get_debug_capture` report state, message count, bytes, the child PID, and the stop reason.
 
@@ -42,7 +42,7 @@ The `DebugOutput` module is disabled by default. It runs the bundled DebugViewCo
 
 `stop_debug_capture` sends Ctrl+C to DebugViewConsole and then kills the process tree.
 
-Windows allows only one `DBWIN_BUFFER` reader per session. Another DebugView or DebugView++ instance fails the start with `dbwin_in_use`. Processes that have a debugger attached send their output to the debugger instead of this capture. Kernel `DbgPrint` is not captured.
+Windows allows only one `DBWIN_BUFFER` reader per session. Another DebugView or DebugView++ instance causes the capture to fail with `dbwin_in_use` after launch. Processes that have a debugger attached send their output to the debugger instead of this capture. Kernel `DbgPrint` is not captured.
 
 ## Services
 

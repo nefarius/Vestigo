@@ -15,6 +15,7 @@ internal sealed class DebugViewProcess : IDebugViewProcess
         string executable,
         IReadOnlyList<string> arguments,
         Action<int>? onStarted,
+        Action<int>? onExited,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         Command command = Cli.Wrap(executable)
@@ -48,6 +49,9 @@ internal sealed class DebugViewProcess : IDebugViewProcess
                     break;
                 case StandardErrorCommandEvent stderr:
                     yield return new DebugViewLine(stderr.Text, true);
+                    break;
+                case ExitedCommandEvent exited:
+                    onExited?.Invoke(exited.ExitCode);
                     break;
             }
         }

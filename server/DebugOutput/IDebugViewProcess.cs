@@ -11,11 +11,13 @@ public interface IDebugViewProcess
     /// <summary>
     ///     Runs <paramref name="executable" /> with a discrete argument list (no shell) until cancelled or the
     ///     process exits. <paramref name="onStarted" /> receives the PID as soon as the process is created.
-    ///     Cancellation asks for a graceful Ctrl+C stop, then kills the process tree.
+    ///     <paramref name="onExited" /> receives the process exit code. Cancellation asks for a graceful
+    ///     Ctrl+C stop, then kills the process tree.
     /// </summary>
     IAsyncEnumerable<DebugViewLine> RunAsync(
         string executable,
         IReadOnlyList<string> arguments,
         Action<int>? onStarted,
+        Action<int>? onExited,
         CancellationToken cancellationToken);
 }
