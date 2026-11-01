@@ -1,6 +1,6 @@
 # Release
 
-Version numbers come from MinVer and `v*` tags. The MSI product version is read from the published `Vestigo.exe`. The installer writes `Vestigo-v<product-version>.msi`.
+Version numbers come from MinVer and `v*` tags. MinVer's default CLR `AssemblyVersion` is `{major}.0.0.0`; Vestigo overrides that after MinVer to `{major}.{minor}.{patch}.0` so a `v2.1.0` build advertises `2.1.0.0` to MCP clients. `FileVersion` remains `{major}.{minor}.{patch}.0`, and `InformationalVersion`/`Version` remain the MinVer SemVer. The MSI product version is read from the published `Vestigo.exe`. The installer writes `Vestigo-v<product-version>.msi`.
 
 ## CI pipeline
 
