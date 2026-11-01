@@ -143,9 +143,10 @@ static class ListenPage
     }
 
     /// <summary>
-    ///     Titles, descriptions, install levels, and the existing-settings conditions of the module features. Default-off
-    ///     modules sit at level 1000 (unchecked but selectable). VESTIGO_MOD_* ("1" or "0", set from the existing
-    ///     settings or on the command line) override the default level.
+    ///     Titles, descriptions, install levels, and the existing-settings conditions of the optional updater and
+    ///     module features. The updater is level 1 (selected). Default-off modules sit at level 1000 (unchecked but
+    ///     selectable). VESTIGO_MOD_* ("1" or "0", set from the existing settings or on the command line) override the
+    ///     default module level.
     /// </summary>
     static void ConfigureFeatures(XElement package)
     {
@@ -154,6 +155,20 @@ static class ListenPage
         server.SetAttributeValue("Title", "Vestigo MCP Server");
         server.SetAttributeValue("AllowAbsent", "no");
         server.SetAttributeValue("Display", "expand");
+
+        XElement? updater = server.Descendants(Wix + "Feature")
+            .FirstOrDefault(f => (string?)f.Attribute("Id") == Program.UpdaterFeature);
+        if (updater is null)
+        {
+            throw new InvalidOperationException($"The generated WiX source has no feature '{Program.UpdaterFeature}'.");
+        }
+
+        updater.SetAttributeValue("Title", "Automatic updates");
+        updater.SetAttributeValue(
+            "Description",
+            "Installs the Vestigo updater and registers it for the installing user. Uncheck to skip automatic updates.");
+        updater.SetAttributeValue("Level", "1");
+        updater.SetAttributeValue("Display", "collapse");
 
         foreach (ModuleDefinition module in ModuleSelection.All)
         {
