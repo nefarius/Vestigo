@@ -5,6 +5,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Proven installer set: WiX CLI 5.0.2, these DTF packages at 5.0.2, and WixSharp_wix4 2.14.2.
+      # Later WiX majors are not drop-in compatible with that set, so Dependabot must not bump them.
+      - dependency-name: "WixToolset.Dtf.CustomAction"
+      - dependency-name: "WixToolset.Dtf.WindowsInstaller"
+      - dependency-name: "WixSharp_wix4"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
