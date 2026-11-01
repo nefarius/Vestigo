@@ -26,6 +26,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="NAudio.Wasapi" />
     <PackageReference Include="Nefarius.Utilities.DeviceManagement" />
     <PackageReference Include="Nefarius.Utilities.ETW" />
     <PackageReference Include="Nefarius.Utilities.WindowsVersion" />

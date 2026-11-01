@@ -26,6 +26,8 @@ public class ModuleSelectionTests
         }
 
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SoftwareUninstall]);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.AudioSetDefault]);
+        Assert.Equal("Audio", ModuleSelection.Find(ModuleSelection.AudioSetDefault)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.BootConfigurationChanges]);
         Assert.Equal("System", ModuleSelection.Find(ModuleSelection.BootConfigurationChanges)?.Parent);
     }
@@ -61,6 +63,8 @@ public class ModuleSelectionTests
             ["Processes"] = true,
             ["Logs"] = true,
             ["SoftwareUninstall"] = true,
+            ["Audio"] = true,
+            ["AudioSetDefault"] = true,
             ["BootConfigurationChanges"] = true
         };
 
@@ -70,11 +74,15 @@ public class ModuleSelectionTests
         Assert.True(read["Processes"]);
         Assert.True(read["Logs"]);
         Assert.True(read["SoftwareUninstall"]);
+        Assert.True(read["Audio"]);
+        Assert.True(read["AudioSetDefault"]);
         Assert.True(read["BootConfigurationChanges"]);
         Assert.Contains("\"SymbolServer\"", merged);
         Assert.Contains("\"Extra\": 1", merged);
         Assert.Contains("\"Serilog\"", merged);
         Assert.Contains("\"ApiTokens\": []", merged);
+        Assert.Contains("\"AllowSetDefault\": true", merged);
+        Assert.Contains("\"AllowBootConfigurationChanges\": true", merged);
     }
 
     [Fact]
@@ -120,11 +128,12 @@ public class ModuleSelectionTests
         Assert.Empty(ModuleSelection.ReadExisting("""{ "Vestigo": { "ListenPort": 1 } }"""));
 
         IDictionary<string, bool> read = ModuleSelection.ReadExisting(
-            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "System": { "AllowBootConfigurationChanges": true } } }""");
+            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "Audio": { "AllowSetDefault": true }, "System": { "AllowBootConfigurationChanges": true } } }""");
 
-        Assert.Equal(3, read.Count);
+        Assert.Equal(4, read.Count);
         Assert.True(read["Devices"]);
         Assert.False(read["SoftwareUninstall"]);
+        Assert.True(read["AudioSetDefault"]);
         Assert.True(read["BootConfigurationChanges"]);
     }
 
