@@ -182,23 +182,30 @@ static class Program
                 "Vestigo requires the x64 .NET 10 ASP.NET Core runtime. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 and then run this installer again.");
             WixExtension.UI.PreferredVersion = "5.0.2";
             // Registration is per installing user and must not fail the service install.
-            // &Updater=3 is the local install action; !Updater=3 AND &Updater=2 is the
-            // installed-to-absent transition (Modify, uninstall, and major upgrade).
-            // Major upgrades deregister the old product so an opt-out does not leave
-            // the previous scheduled task behind; the replacement registers again
-            // after InstallFinalize only when the feature stays selected.
+            // &Updater=3 is the local install action. NOT (REMOVE~="ALL") still allows
+            // registration when REMOVE lists unrelated features.
+            // !Updater=3 AND &Updater=2 is this product's installed-to-absent transition
+            // (Modify or uninstall). MajorUpgrade.Default removes the old product after
+            // InstallInitialize, so a legacy scheduled task is cleared before
+            // RemoveExistingProducts when the upgrade leaves Updater absent.
             project.AddAction(UpdaterAction(
                 "RegisterVestigoUpdater",
                 "--install --silent --override-success-code 0",
                 When.After,
                 Step.InstallFinalize,
-                new Condition("NOT REMOVE AND &Updater=3")));
+                new Condition("NOT (REMOVE~=\"ALL\") AND &Updater=3")));
             project.AddAction(UpdaterAction(
                 "DeregisterVestigoUpdater",
                 "--uninstall --silent --override-success-code 0",
                 When.Before,
                 Step.RemoveFiles,
                 new Condition("!Updater=3 AND &Updater=2")));
+            project.AddAction(UpdaterAction(
+                "DeregisterLegacyVestigoUpdater",
+                "--uninstall --silent --override-success-code 0",
+                When.Before,
+                Step.RemoveExistingProducts,
+                new Condition("WIX_UPGRADE_DETECTED AND &Updater=2")));
 
             string actionsPackagePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ActionsPackageName));
             if (!System.IO.File.Exists(actionsPackagePath))

@@ -124,13 +124,17 @@ public class UpdateFeedTests
         Assert.Contains(UpdateFeed.UpdaterExecutable, installer, StringComparison.Ordinal);
         Assert.Contains("--install --silent --override-success-code 0", installer, StringComparison.Ordinal);
         Assert.Contains("--uninstall --silent --override-success-code 0", installer, StringComparison.Ordinal);
-        Assert.Contains("NOT REMOVE AND &Updater=3", installer, StringComparison.Ordinal);
+        Assert.Contains("NOT (REMOVE~=\\\"ALL\\\") AND &Updater=3", installer, StringComparison.Ordinal);
         Assert.Contains("!Updater=3 AND &Updater=2", installer, StringComparison.Ordinal);
+        Assert.Contains("WIX_UPGRADE_DETECTED AND &Updater=2", installer, StringComparison.Ordinal);
+        Assert.Contains("DeregisterLegacyVestigoUpdater", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOT REMOVE AND &Updater=3", installer, StringComparison.Ordinal);
         Assert.DoesNotContain("NOT UPGRADINGPRODUCTCODE", installer, StringComparison.Ordinal);
         Assert.Contains("Return.ignore", installer, StringComparison.Ordinal);
         Assert.Contains("Impersonate = true", installer, StringComparison.Ordinal);
         Assert.Contains("Step.InstallFinalize", installer, StringComparison.Ordinal);
         Assert.Contains("Step.RemoveFiles", installer, StringComparison.Ordinal);
+        Assert.Contains("Step.RemoveExistingProducts", installer, StringComparison.Ordinal);
 
         string listenPage = File.ReadAllText(Path.Combine(root, "installer", "ListenPage.cs"));
         Assert.Contains("Program.UpdaterFeature", listenPage, StringComparison.Ordinal);
