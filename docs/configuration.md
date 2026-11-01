@@ -14,7 +14,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. These are separate from the trace-only `AllowedInputRoots` / `AllowedOutputRoots`. |
-| `Modules` | all enabled except `Processes`, `Devices`, `RemoteDebugger`, `Desktop` and `DebugOutput` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `Logs`, `EventLog`, `Desktop`, `Services`, `Software`, `Processes`, `Devices`, `RemoteDebugger`, `DebugOutput`) on or off. Unknown names fail startup. `Processes`, `Devices`, `RemoteDebugger`, `Desktop` and `DebugOutput` are disabled by default. A module whose dependency is disabled fails startup: `Processes` and `Software` need `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes`, `Devices`, `RemoteDebugger` or `Software:AllowUninstall` without any `ApiTokens` is allowed but logs a startup `SECURITY WARNING` naming them (`Services` is named too when the server is bound beyond loopback). Enabling `Desktop` without tokens logs the same warning for window titles. Enabling `DebugOutput` without tokens logs the same warning for its machine-wide `OutputDebugString` reader, separately from those administrator-equivalent actions. The MSI writes this section from its feature tree; see [windows-service.md](windows-service.md#modules). |
+| `Modules` | all enabled except `Processes`, `Devices`, `RemoteDebugger`, `Desktop` and `DebugOutput` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `System`, `Logs`, `EventLog`, `Desktop`, `Services`, `Software`, `Processes`, `Devices`, `RemoteDebugger`, `DebugOutput`) on or off. Unknown names fail startup. `Processes`, `Devices`, `RemoteDebugger`, `Desktop` and `DebugOutput` are disabled by default. A module whose dependency is disabled fails startup: `Processes` and `Software` need `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes`, `Devices`, `RemoteDebugger`, `Software:AllowUninstall`, or `System:AllowBootConfigurationChanges` without any `ApiTokens` is allowed but logs a startup `SECURITY WARNING` naming them (`Services` is named too when the server is bound beyond loopback). Enabling `Desktop` without tokens logs the same warning for window titles. Enabling `DebugOutput` without tokens logs the same warning for its machine-wide `OutputDebugString` reader, separately from those administrator-equivalent actions. The MSI writes this section from its feature tree; see [windows-service.md](windows-service.md#modules). |
 | `Devices:NefconPath` | `null` | Absolute path of `nefconc.exe`. Empty uses `tools\nefconc.exe` next to `Vestigo.exe`. |
 | `Devices:NefconTimeout` | `00:02:00` | Upper bound for one nefcon run. |
 | `DebugOutput:ExecutablePath` | `null` | Absolute path of `DebugViewConsole.exe`. Empty uses `tools\DebugViewConsole.exe` next to `Vestigo.exe`. |
@@ -26,6 +26,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `DebugOutput:MaxPatternLength` | `256` | Maximum characters in one capture-time filter pattern. |
 | `Services:ProtectedNames` | `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs` | Service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
 | `Software:AllowUninstall` | `false` | Enables `uninstall_software`. Listing remains available when the Software module is enabled. |
+| `System:AllowBootConfigurationChanges` | `false` | Enables `set_test_signing` and `set_whql_developer_test_mode`. Reads remain available when the System module is enabled. Changes take effect after a reboot. |
 | `Software:ProtectedNames` | `Vestigo` | Display-name substrings that uninstall refuses. Configured names are added to the defaults. |
 | `Software:MaxUninstallDuration` | `00:30:00` | Upper bound for one uninstall; the process tree is killed afterwards. |
 | `Processes:AllowPathLookup` | `true` | Lets `run_process` resolve bare names such as `cmd.exe` from the service `PATH`. When `false`, only files under roots with `Execute` access can be started. |
@@ -61,7 +62,7 @@ Serilog writes console output and daily files under the settings `logs` director
 
 `AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, and conversion-output paths used by the Trace tools. Named `Roots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, and the `/files` endpoints.
 
-The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `Modules:*:Enabled`, and `Software:AllowUninstall` in the machine settings file. Other keys you add are kept across repair and upgrade.
+The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `Modules:*:Enabled`, `Software:AllowUninstall`, and `System:AllowBootConfigurationChanges` in the machine settings file. Other keys you add are kept across repair and upgrade.
 
 ## Examples
 
@@ -101,6 +102,9 @@ Authenticated remote access with opt-in modules. Retrieve a generated MSI token 
     },
     "Software": {
       "AllowUninstall": false
+    },
+    "System": {
+      "AllowBootConfigurationChanges": false
     }
   }
 }
