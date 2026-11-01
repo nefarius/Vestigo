@@ -6,9 +6,9 @@ When `ApiTokens` is empty, `/mcp` accepts anonymous clients. That is the `dotnet
 
 `/health` stays anonymous so a local supervisor can probe the process without a token. A missing or invalid token receives HTTP 401 and `WWW-Authenticate: Bearer`.
 
-Trace ETL, PDB, TMF, and conversion-output paths are canonicalized, including existing directory links, and must stay inside `AllowedInputRoots` or `AllowedOutputRoots`. A root of `D:\traces` does not allow `D:\traces-extra` or a link that resolves outside that root. The accepted path is the resolved location, so a later open does not follow a link that was swapped after the check. Unsupported extensions are rejected. Existing outputs are kept unless `overwrite` is true. Input size, event count, output size, and capture lifetime are capped.
+Trace ETL, PDB, TMF, and conversion-output paths are canonicalized, including existing directory links, and must stay inside `AllowedInputRoots` or `AllowedOutputRoots`. A root of `D:\traces` does not allow `D:\traces-extra` or a link that resolves outside that root. The accepted path is the resolved location, so a later open uses that path instead of reopening the original link. Validation and later opens are not atomic if a path component changes. Unsupported extensions are rejected. Existing outputs are kept unless `overwrite` is true. Input size, event count, output size, and capture lifetime are capped.
 
-File, log, process, and device paths use named `Vestigo:Roots` with the same link-following canonicalization and `Read`, `Write`, or `Execute` flags. Those roots are independent of the trace input and output lists.
+File, log, and device paths use named `Vestigo:Roots` with the same link-following canonicalization and `Read`, `Write`, or `Execute` flags. Explicit process paths need a root with `Execute` access. A bare process name may be resolved from the service `PATH` without named-root or `PathPolicy` checks when `Processes:AllowPathLookup` is enabled. Those roots are independent of the trace input and output lists.
 
 `attach_etw_session` exposes another session's machine-wide trace data to API clients, so it is disabled until `Vestigo:AttachableSessions` lists the sessions that may be read. Attaching is read-only and Vestigo-owned sessions cannot be attached.
 
