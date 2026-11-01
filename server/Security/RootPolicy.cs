@@ -7,10 +7,33 @@ namespace Vestigo.Security;
 /// <summary>
 ///     Resolves client paths against configured named roots and their access flags.
 ///     Accepts <c>root:relative\path</c> or an absolute path that lies inside a root with the required access.
+///     Volume roots from <see cref="VolumeRootSource" /> are merged with custom <see cref="VestigoOptions.Roots" />.
 /// </summary>
-public sealed partial class RootPolicy(VestigoOptions options)
+public sealed partial class RootPolicy(VestigoOptions options, VolumeRootSource? volumes = null)
 {
-    public IReadOnlyList<RootDefinition> Roots => options.Roots;
+    private readonly VolumeRootSource _volumes = volumes ?? new VolumeRootSource(options);
+
+    public IReadOnlyList<RootDefinition> Roots
+    {
+        get
+        {
+            IReadOnlyList<RootDefinition> generated = _volumes.Current;
+            if (generated.Count == 0)
+            {
+                return options.Roots;
+            }
+
+            if (options.Roots.Count == 0)
+            {
+                return generated;
+            }
+
+            List<RootDefinition> merged = new(options.Roots.Count + generated.Count);
+            merged.AddRange(options.Roots);
+            merged.AddRange(generated);
+            return merged;
+        }
+    }
 
     /// <summary>Resolves a path that must be reachable with <paramref name="needed" /> access.</summary>
     public PathCheck Resolve(string requestedPath, RootAccess needed)
@@ -20,16 +43,19 @@ public sealed partial class RootPolicy(VestigoOptions options)
             return PathCheck.Fail("invalid_path", "Path is required.");
         }
 
-        if (options.Roots.Count == 0)
+        IReadOnlyList<RootDefinition> roots = Roots;
+        if (roots.Count == 0)
         {
-            return PathCheck.Fail("roots_not_configured", "No roots are configured. Add entries to Vestigo:Roots.");
+            return PathCheck.Fail(
+                "roots_not_configured",
+                "No roots are configured. Add entries to Vestigo:Roots or set Vestigo:VolumeRoots.");
         }
 
         Match named = NamedRoot().Match(requestedPath);
         if (named.Success)
         {
             string name = named.Groups["name"].Value;
-            RootDefinition? root = options.Roots.FirstOrDefault(
+            RootDefinition? root = roots.FirstOrDefault(
                 candidate => string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
             if (root is null)
             {
@@ -45,7 +71,7 @@ public sealed partial class RootPolicy(VestigoOptions options)
             string combined;
             try
             {
-                combined = System.IO.Path.Combine(root.Path, relative);
+                combined = Path.Combine(root.Path, relative);
             }
             catch (ArgumentException)
             {
@@ -55,7 +81,7 @@ public sealed partial class RootPolicy(VestigoOptions options)
             return PathPolicy.Locate(combined, [root.Path], "root");
         }
 
-        List<string> eligible = options.Roots
+        List<string> eligible = roots
             .Where(root => root.Access.HasFlag(needed))
             .Select(root => root.Path)
             .ToList();

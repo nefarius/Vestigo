@@ -11,13 +11,14 @@ The exception names the setting. Common causes:
 - `ListenAddress` is not an IP address, `Kestrel:Endpoints` is set, or `ListenPort` is outside 1-65535.
 - A token, attachable-session, root name, or protected-name entry is blank.
 - A size, count, or duration limit is not positive, or `MaxReadWait` is outside 0-2 minutes.
-- A named root is missing an absolute path, has a duplicate name, or has no access flags.
+- A named root is missing an absolute path, has a duplicate name, has no access flags, or uses a generated volume-root name (`drive-c`, …) while `VolumeRoots` is not `None`.
+- `VolumeRoots` is set and `VolumeRootAccess` has no flags.
 - `Vestigo:Modules:<Name>` names an unknown module, or an enabled module depends on a disabled one (`Processes` and `Software` need `Jobs`; `RemoteDebugger` needs `Jobs` and `Processes`).
 - `Devices:NefconPath`, `RemoteDebugger:ExtraSearchPaths`, or another module-specific setting failed validation.
 
 `Refusing to use the Vestigo state directory: ...` means the state tree under `%ProgramData%\Nefarius Software Solutions\Vestigo` failed verification: a path component is a link or junction, a directory has an untrusted owner, or a parent can be modified by non-administrators. Remove the link, or take ownership as Administrators and fix the permissions, or reinstall the MSI (it re-applies the protected ACL), then restart the service.
 
-A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiTokens` means anyone who can reach the port on the network can use `/mcp`. A privileged-module warning can also appear on loopback: without `ApiTokens`, any local client can use enabled `Processes`, `Devices`, or `RemoteDebugger`. `Services` is included only when the server binds beyond loopback, `Software:AllowUninstall` only when the Software module is also enabled, `System:AllowBootConfigurationChanges` only when the System module is also enabled, `Desktop` when that module is enabled (window titles from the console user's desktop), `Audio` when that module is enabled (audio devices and the processes using them; changing defaults only when `Audio:AllowSetDefault` is also on), and `DebugOutput` when that module is enabled (it can read `OutputDebugString` from every session).
+A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiTokens` means anyone who can reach the port on the network can use `/mcp`. A volume-root warning means `VolumeRoots` granted Write or Execute on whole volumes. A privileged-module warning can also appear on loopback: without `ApiTokens`, any local client can use enabled `Processes`, `Devices`, or `RemoteDebugger`. `Services` is included only when the server binds beyond loopback, `Software:AllowUninstall` only when the Software module is also enabled, `System:AllowBootConfigurationChanges` only when the System module is also enabled, `Desktop` when that module is enabled (window titles from the console user's desktop), `Audio` when that module is enabled (audio devices and the processes using them; changing defaults only when `Audio:AllowSetDefault` is also on), and `DebugOutput` when that module is enabled (it can read `OutputDebugString` from every session).
 
 ## The server is not reachable from another machine
 
@@ -27,7 +28,7 @@ A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiT
 
 Trace tools use `AllowedInputRoots` and `AllowedOutputRoots`. `outside_root` means the canonical path is outside those lists. `roots_not_configured` means the list needed for that operation is empty. `unsupported_extension` means the file is not `.etl`, `.pdb`, `.tmf`, `.json`, or `.ndjson` for the operation that received it. `already_exists` means the output is present and `overwrite` is false.
 
-File, log, process, and device tools use named `Vestigo:Roots`. `unknown_root` means the `name:` prefix is not configured. `access_denied` means that root lacks the `Read`, `Write`, or `Execute` flag the operation needs, or Windows denied the file. `roots_not_configured` means `Vestigo:Roots` is empty.
+File, log, process, and device tools use named `Vestigo:Roots` plus any `VolumeRoots`. `unknown_root` means the `name:` prefix is not configured. `access_denied` means that root lacks the `Read`, `Write`, or `Execute` flag the operation needs, or Windows denied the file. `roots_not_configured` means both `Vestigo:Roots` and `VolumeRoots` produced no roots. Per-user mapped network drives are not visible to the LocalSystem service.
 
 ## Realtime capture fails
 

@@ -13,7 +13,9 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`; strongly recommended whenever `ListenAddress` is not loopback. |
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
-| `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. These are separate from the trace-only `AllowedInputRoots` / `AllowedOutputRoots`. |
+| `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. These are separate from the trace-only `AllowedInputRoots` / `AllowedOutputRoots`. Names such as `drive-c` are reserved only when `VolumeRoots` is not `None`; names like `drive-backups` stay available. |
+| `VolumeRoots` | `None` | Adds lettered drive volumes as named roots (`drive-c`, `drive-d`, …) that are merged with `Roots`. `None` uses only `Roots`. `SystemDrive` is the Windows directory's drive (`SpecialFolder.Windows`, then `%SystemDrive%`). `FixedVolumes` is every ready `DriveType.Fixed` volume (the MSI default on a fresh install). `AllVolumes` also includes ready removable, network, CD-ROM, and RAM volumes present at service start. `AllVolumesLive` is the same set, re-enumerated on demand with a two-second cache so volumes that appear or leave while the service is running are included. UNC paths are never added automatically. The service runs as LocalSystem, so per-user mapped network drives are not visible; only system-wide mounts appear. |
+| `VolumeRootAccess` | `Read, Write, Execute` | Access granted to every volume root produced by `VolumeRoots`. Must not be empty when `VolumeRoots` is not `None`. |
 | `Modules` | all enabled except `Processes`, `Devices`, `RemoteDebugger`, `Desktop`, `Audio` and `DebugOutput` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `System`, `Logs`, `EventLog`, `Desktop`, `Audio`, `Services`, `Software`, `Processes`, `Devices`, `RemoteDebugger`, `DebugOutput`) on or off. Unknown names fail startup. `Processes`, `Devices`, `RemoteDebugger`, `Desktop`, `Audio` and `DebugOutput` are disabled by default. A module whose dependency is disabled fails startup: `Processes` and `Software` need `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes`, `Devices`, `RemoteDebugger`, `Software:AllowUninstall`, or `System:AllowBootConfigurationChanges` without any `ApiTokens` is allowed but logs a startup `SECURITY WARNING` naming them (`Services` is named too when the server is bound beyond loopback). Enabling `Desktop` without tokens logs the same warning for window titles. Enabling `Audio` without tokens logs the same warning for audio devices and the processes using them (and for changing defaults when `Audio:AllowSetDefault` is also on). Enabling `DebugOutput` without tokens logs the same warning for its machine-wide `OutputDebugString` reader, separately from those administrator-equivalent actions. The MSI writes this section from its feature tree; see [windows-service.md](windows-service.md#modules). |
 | `Devices:NefconPath` | `null` | Absolute path of `nefconc.exe`. Empty uses `tools\nefconc.exe` next to `Vestigo.exe`. |
 | `Devices:NefconTimeout` | `00:02:00` | Upper bound for one nefcon run. |
@@ -62,9 +64,9 @@ Property defaults are generated in [generated/configuration.md](generated/config
 
 Serilog writes console output and daily files under the settings `logs` directory (`vestigo-.log`). The default level is Information. The host keeps 14 rolled files.
 
-`AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, and conversion-output paths used by the Trace tools. Named `Roots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, and the `/files` endpoints.
+`AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, and conversion-output paths used by the Trace tools. Named `Roots` and any `VolumeRoots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, and the `/files` endpoints.
 
-The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `Modules:*:Enabled`, `Software:AllowUninstall`, `Audio:AllowSetDefault`, and `System:AllowBootConfigurationChanges` in the machine settings file. Other keys you add are kept across repair and upgrade.
+The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `Audio:AllowSetDefault`, and `System:AllowBootConfigurationChanges` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
 
 ## Examples
 
@@ -78,6 +80,7 @@ Loopback development (`dotnet run` default shape), with a trace drop and a writa
     "ApiTokens": [],
     "AllowedInputRoots": [ "D:\\traces" ],
     "AllowedOutputRoots": [ "D:\\traces\\out" ],
+    "VolumeRoots": "None",
     "Roots": [
       { "Name": "drops", "Path": "D:\\drops", "Access": "Read, Write" }
     ]
