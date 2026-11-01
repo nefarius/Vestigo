@@ -645,7 +645,7 @@ Sets the start type: boot, system, auto, demand or disabled. boot and system are
 
 ## `set_test_signing`
 
-Sets BCDE_LIBRARY_TYPE_ALLOW_PRERELEASE_SIGNATURES on the default boot entry. Requires Vestigo:System:AllowBootConfigurationChanges. Refused with secure_boot_enabled when turning test signing on while Secure Boot is enabled. Does not reboot; the running kernel changes only after a restart. Never logs secrets.
+Sets BCDE_LIBRARY_TYPE_ALLOW_PRERELEASE_SIGNATURES on the default boot entry. Requires Vestigo:System:AllowBootConfigurationChanges. Refused with secure_boot_enabled when turning test signing on unless Secure Boot is known to be disabled. Does not reboot; the running kernel changes only after a restart. Never logs secrets.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

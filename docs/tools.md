@@ -76,7 +76,7 @@ The `System` module reports the host Windows version and boot-security posture t
 
 `get_boot_security` returns `uefi`, `secureBoot`, `testSigningConfigured` (BCD on the default boot entry), `testSigningActive` (the running kernel), `whqlDeveloperTestMode`, and `rebootPending` when the BCD value and the running state differ. `notes` explain Secure Boot blocking test signing, a pending reboot, and that BCD changes apply only to the default boot entry. WHQL developer test mode is not present on every Windows build; a missing value is null.
 
-`set_test_signing` and `set_whql_developer_test_mode` fail with `boot_changes_disabled` unless the option is enabled. Turning test signing on while Secure Boot is enabled fails with `secure_boot_enabled`. A BCD write failure is `bcd_write_failed`; a WHQL policy write failure is `ci_write_failed`; lack of elevation is `access_denied`. Vestigo never reboots the machine: BCD test-signing takes effect at the next boot, and WHQL developer test mode availability depends on the Windows build.
+`set_test_signing` and `set_whql_developer_test_mode` fail with `boot_changes_disabled` unless the option is enabled. Turning test signing on fails with `secure_boot_enabled` unless Secure Boot is known to be disabled. A BCD write failure is `bcd_write_failed`; a WHQL policy write failure is `ci_write_failed`; lack of elevation is `access_denied`. Vestigo never reboots the machine: BCD test-signing takes effect at the next boot, and WHQL developer test mode availability depends on the Windows build.
 
 ## Logs
 

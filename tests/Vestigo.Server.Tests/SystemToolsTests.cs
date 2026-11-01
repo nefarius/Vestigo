@@ -31,9 +31,23 @@ public class SystemToolsTests
         public bool WhqlDeveloperTestMode { get; set; }
 
         public Exception? WhqlReadError { get; set; }
+        public Exception? SecureBootReadError { get; set; }
         public Exception? SetTestSigningError { get; set; }
         public int SetTestSigningCalls { get; private set; }
         public int SetWhqlCalls { get; private set; }
+
+        bool ISystemPlatform.IsSecureBootEnabled
+        {
+            get
+            {
+                if (SecureBootReadError is not null)
+                {
+                    throw SecureBootReadError;
+                }
+
+                return IsSecureBootEnabled;
+            }
+        }
 
         bool ISystemPlatform.WhqlDeveloperTestMode
         {
@@ -108,6 +122,32 @@ public class SystemToolsTests
         Assert.False(result.Success);
         Assert.Equal("secure_boot_enabled", result.ErrorCode);
         Assert.Equal(0, platform.SetTestSigningCalls);
+    }
+
+    [Fact]
+    public void SetTestSigning_RefusesWhenSecureBootIsUnknown()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.SecureBootReadError = new InvalidOperationException("unavailable");
+
+        OperationResult<BootConfigurationChange> result = service.SetTestSigning(true);
+
+        Assert.False(result.Success);
+        Assert.Equal("secure_boot_enabled", result.ErrorCode);
+        Assert.Equal(0, platform.SetTestSigningCalls);
+    }
+
+    [Fact]
+    public void SetTestSigning_StillDisablesWhenSecureBootIsUnknown()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.TestSigningConfigured = true;
+        platform.SecureBootReadError = new InvalidOperationException("unavailable");
+
+        BootConfigurationChange change = service.SetTestSigning(false).Value!;
+
+        Assert.False(change.After);
+        Assert.Equal(1, platform.SetTestSigningCalls);
     }
 
     [Fact]

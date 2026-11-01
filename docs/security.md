@@ -67,7 +67,7 @@ Controls: uninstall strings are split into an executable and an argument list an
 
 `get_system_info` and `get_boot_security` are read-only. They disclose the host OS edition, build, UEFI versus legacy firmware, Secure Boot, test-signing (BCD and the running kernel), and WHQL developer test mode. The System module is on by default; disable it with `Vestigo:Modules:System:Enabled=false` if that inventory should not leave the machine.
 
-`set_test_signing` writes Boot Configuration Data on the default boot entry. `set_whql_developer_test_mode` writes the kernel code-integrity policy. Both stay off until `Vestigo:System:AllowBootConfigurationChanges` is `true`. Treat a token that can call them as administrator-equivalent: they change driver-signature enforcement and take effect after a reboot. Enabling the option without an entry in `ApiTokens` only logs a `SECURITY WARNING` that names "Boot configuration changes". Vestigo never reboots the machine. Turning test signing on is refused while Secure Boot is enabled.
+`set_test_signing` writes Boot Configuration Data on the default boot entry. `set_whql_developer_test_mode` writes the kernel code-integrity policy. Both stay off until `Vestigo:System:AllowBootConfigurationChanges` is `true`. Treat a token that can call them as administrator-equivalent: they change driver-signature enforcement and take effect after a reboot. Enabling the option without an entry in `ApiTokens` only logs a `SECURITY WARNING` that names "Boot configuration changes". Vestigo never reboots the machine. Turning test signing on is refused unless Secure Boot is known to be disabled.
 
 ## Remote debugger
 

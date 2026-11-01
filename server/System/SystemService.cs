@@ -100,11 +100,17 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
             return Disabled();
         }
 
-        if (enabled && ProbeValue(static p => p.IsSecureBootEnabled, platform) == true)
+        if (enabled)
         {
-            return OperationResult<BootConfigurationChange>.Fail(
-                "secure_boot_enabled",
-                "Secure Boot is enabled, so test signing cannot be turned on.");
+            bool? secureBoot = ProbeValue(static p => p.IsSecureBootEnabled, platform);
+            if (secureBoot != false)
+            {
+                return OperationResult<BootConfigurationChange>.Fail(
+                    "secure_boot_enabled",
+                    secureBoot == true
+                        ? "Secure Boot is enabled, so test signing cannot be turned on."
+                        : "Secure Boot state could not be determined, so test signing cannot be turned on.");
+            }
         }
 
         return Write(
