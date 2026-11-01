@@ -195,8 +195,9 @@ namespace Vestigo.Installer.Actions
 
         /// <summary>
         ///     Deferred, elevated, before StartServices. Merges Vestigo:ListenAddress, ListenPort, ApiTokens,
-        ///     VolumeRoots, VolumeRootAccess, Modules, and Software:AllowUninstall into the ProgramData appsettings.json,
-        ///     keeping every other key, as UTF-8 without BOM readable only by SYSTEM and Administrators.
+        ///     VolumeRoots, VolumeRootAccess, Modules, Software:AllowUninstall, Audio:AllowSetDefault,
+        ///     System:AllowBootConfigurationChanges, and Desktop:AllowScreenshots into the ProgramData
+        ///     appsettings.json, keeping every other key, as UTF-8 without BOM readable only by SYSTEM and Administrators.
         /// </summary>
         [CustomAction]
         public static ActionResult VestigoWriteSettings(Session session)
