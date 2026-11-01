@@ -15,7 +15,7 @@ public class ModuleSelectionTests
     {
         VestigoModuleNames();
 
-        foreach (ModuleDefinition definition in ModuleSelection.All.Where(m => m.Name != ModuleSelection.SoftwareUninstall))
+        foreach (ModuleDefinition definition in ModuleSelection.All.Where(m => !ModuleSelection.IsPseudoFeature(m.Name)))
         {
             VestigoModule module = Assert.Single(ModuleRegistry.All, m => m.Name == definition.Name);
             Assert.Equal(module.EnabledByDefault, definition.DefaultOn);
@@ -26,13 +26,15 @@ public class ModuleSelectionTests
         }
 
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SoftwareUninstall]);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.AudioSetDefault]);
+        Assert.Equal("Audio", ModuleSelection.Find(ModuleSelection.AudioSetDefault)?.Parent);
     }
 
     private static void VestigoModuleNames()
     {
         Assert.Equal(
             ModuleRegistry.All.Select(m => m.Name).OrderBy(n => n),
-            ModuleSelection.All.Where(m => m.Name != ModuleSelection.SoftwareUninstall).Select(m => m.Name).OrderBy(n => n));
+            ModuleSelection.All.Where(m => !ModuleSelection.IsPseudoFeature(m.Name)).Select(m => m.Name).OrderBy(n => n));
     }
 
     private static bool IsAncestor(string ancestor, string name)
@@ -58,7 +60,9 @@ public class ModuleSelectionTests
         {
             ["Processes"] = true,
             ["Logs"] = true,
-            ["SoftwareUninstall"] = true
+            ["SoftwareUninstall"] = true,
+            ["Audio"] = true,
+            ["AudioSetDefault"] = true
         };
 
         string merged = ListenSettings.Merge(existing, Open(), states);
@@ -67,10 +71,13 @@ public class ModuleSelectionTests
         Assert.True(read["Processes"]);
         Assert.True(read["Logs"]);
         Assert.True(read["SoftwareUninstall"]);
+        Assert.True(read["Audio"]);
+        Assert.True(read["AudioSetDefault"]);
         Assert.Contains("\"SymbolServer\"", merged);
         Assert.Contains("\"Extra\": 1", merged);
         Assert.Contains("\"Serilog\"", merged);
         Assert.Contains("\"ApiTokens\": []", merged);
+        Assert.Contains("\"AllowSetDefault\": true", merged);
     }
 
     [Fact]
@@ -109,11 +116,12 @@ public class ModuleSelectionTests
         Assert.Empty(ModuleSelection.ReadExisting("""{ "Vestigo": { "ListenPort": 1 } }"""));
 
         IDictionary<string, bool> read = ModuleSelection.ReadExisting(
-            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false } } }""");
+            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "Audio": { "AllowSetDefault": true } } }""");
 
-        Assert.Equal(2, read.Count);
+        Assert.Equal(3, read.Count);
         Assert.True(read["Devices"]);
         Assert.False(read["SoftwareUninstall"]);
+        Assert.True(read["AudioSetDefault"]);
     }
 
     [Fact]

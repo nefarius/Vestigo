@@ -146,7 +146,8 @@ public class RepositoryBoundaryTests
                      "Services:ProtectedNames", "Processes:AllowPathLookup", "Files:MaxUploadBytes",
                      "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256",
                      "DebugOutput:MaxDuration", "DebugOutput:MaxMessages", "DebugOutput:MaxOutputBytes",
-                     "DebugOutput:MaxFilterPatterns", "DebugOutput:MaxPatternLength"
+                     "DebugOutput:MaxFilterPatterns", "DebugOutput:MaxPatternLength",
+                     "Audio:AllowSetDefault", "Audio:MeterSampleMilliseconds"
                  })
         {
             Assert.Contains(name, generated, StringComparison.Ordinal);

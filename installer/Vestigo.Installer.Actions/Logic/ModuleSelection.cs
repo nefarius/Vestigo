@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DebugOutput and software uninstall are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, Audio, DebugOutput and gated extras are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -45,6 +45,29 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Software:AllowUninstall</c>.</summary>
         public const string SoftwareUninstall = "SoftwareUninstall";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Audio:AllowSetDefault</c>.</summary>
+        public const string AudioSetDefault = "AudioSetDefault";
+
+        /// <summary>Installer-only features that map to a boolean under <c>Vestigo:&lt;Section&gt;:&lt;Key&gt;</c>.</summary>
+        public static readonly IReadOnlyList<PseudoFeatureBinding> PseudoFeatures = new List<PseudoFeatureBinding>
+        {
+            new PseudoFeatureBinding(SoftwareUninstall, "Software", "AllowUninstall"),
+            new PseudoFeatureBinding(AudioSetDefault, "Audio", "AllowSetDefault")
+        };
+
+        public static bool IsPseudoFeature(string name)
+        {
+            foreach (PseudoFeatureBinding binding in PseudoFeatures)
+            {
+                if (string.Equals(binding.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static readonly IReadOnlyList<ModuleDefinition> All = new List<ModuleDefinition>
         {
             new ModuleDefinition("Trace", "Trace", "Offline ETL/WPP conversion and managed realtime capture.", true, null),
@@ -53,6 +76,8 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Logs", "Logs", "Tail and incremental reads of text log files.", true, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
             new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop.", false, null),
+            new ModuleDefinition("Audio", "Audio", "List audio playback and recording endpoints, volumes, sessions, and defaults. Optionally switch the default device.", false, null),
+            new ModuleDefinition(AudioSetDefault, "Set default audio device", "Allow changing the default, multimedia, and communications audio devices (Vestigo:Audio:AllowSetDefault).", false, "Audio"),
             new ModuleDefinition("DebugOutput", "Debug output", "Capture and filter Win32 OutputDebugString messages through DebugViewConsole. Reads debug output from every session.", false, null),
             new ModuleDefinition("Services", "Services", "List, start, stop, and configure Windows services and kernel drivers.", true, null),
             new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, and device state via nefcon. Runs code with kernel privilege.", false, null),
@@ -121,7 +146,7 @@ namespace Vestigo.Installer.Actions.Logic
                 foreach (KeyValuePair<string, object?> member in moduleObject.Members)
                 {
                     ModuleDefinition? module = Find(member.Key);
-                    if (module != null && module.Name != SoftwareUninstall && member.Value is JsonObject settings &&
+                    if (module != null && !IsPseudoFeature(module.Name) && member.Value is JsonObject settings &&
                         settings.TryGetIgnoreCase("Enabled", out object? enabled) && enabled is bool flag)
                     {
                         result[module.Name] = flag;
@@ -129,10 +154,13 @@ namespace Vestigo.Installer.Actions.Logic
                 }
             }
 
-            if (vestigo.TryGetIgnoreCase("Software", out object? software) && software is JsonObject softwareObject &&
-                softwareObject.TryGetIgnoreCase("AllowUninstall", out object? allow) && allow is bool allowFlag)
+            foreach (PseudoFeatureBinding binding in PseudoFeatures)
             {
-                result[SoftwareUninstall] = allowFlag;
+                if (vestigo.TryGetIgnoreCase(binding.Section, out object? optionsSection) && optionsSection is JsonObject sectionObject &&
+                    sectionObject.TryGetIgnoreCase(binding.Key, out object? flag) && flag is bool value)
+                {
+                    result[binding.Name] = value;
+                }
             }
 
             return result;
@@ -212,7 +240,7 @@ namespace Vestigo.Installer.Actions.Logic
 
             foreach (ModuleDefinition module in All)
             {
-                if (module.Name == SoftwareUninstall || !states.TryGetValue(module.Name, out bool enabled))
+                if (IsPseudoFeature(module.Name) || !states.TryGetValue(module.Name, out bool enabled))
                 {
                     continue;
                 }
@@ -239,21 +267,43 @@ namespace Vestigo.Installer.Actions.Logic
                 settings.SetIgnoreCase("Enabled", enabled);
             }
 
-            if (states.TryGetValue(SoftwareUninstall, out bool allow))
+            foreach (PseudoFeatureBinding binding in PseudoFeatures)
             {
-                JsonObject software;
-                if (vestigo.TryGetIgnoreCase("Software", out object? existingSoftware) && existingSoftware is JsonObject existingSoftwareObject)
+                if (!states.TryGetValue(binding.Name, out bool allow))
                 {
-                    software = existingSoftwareObject;
+                    continue;
+                }
+
+                JsonObject section;
+                if (vestigo.TryGetIgnoreCase(binding.Section, out object? existingSection) && existingSection is JsonObject existingSectionObject)
+                {
+                    section = existingSectionObject;
                 }
                 else
                 {
-                    software = new JsonObject();
-                    vestigo.SetIgnoreCase("Software", software);
+                    section = new JsonObject();
+                    vestigo.SetIgnoreCase(binding.Section, section);
                 }
 
-                software.SetIgnoreCase("AllowUninstall", allow);
+                section.SetIgnoreCase(binding.Key, allow);
             }
         }
+    }
+
+    /// <summary>Installer-only feature that writes a boolean under a Vestigo options section rather than Modules.</summary>
+    public sealed class PseudoFeatureBinding
+    {
+        public PseudoFeatureBinding(string name, string section, string key)
+        {
+            Name = name;
+            Section = section;
+            Key = key;
+        }
+
+        public string Name { get; }
+
+        public string Section { get; }
+
+        public string Key { get; }
     }
 }

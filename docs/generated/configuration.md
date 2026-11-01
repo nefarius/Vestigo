@@ -8,6 +8,8 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `AllowedOutputRoots` | `empty` |
 | `ApiTokens` | `empty` |
 | `AttachableSessions` | `empty` |
+| `Audio:AllowSetDefault` | `false` |
+| `Audio:MeterSampleMilliseconds` | `200` |
 | `BufferSizeKb` | `64` |
 | `ClockResolution` | `QueryPerformanceCounter` |
 | `DebugOutput:ExecutablePath` | `null` |

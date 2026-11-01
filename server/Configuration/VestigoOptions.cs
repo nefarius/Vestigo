@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
+using Vestigo.Audio;
 using Vestigo.DebugOutput;
 using Vestigo.Devices;
 using Vestigo.Services;
@@ -86,6 +87,8 @@ public sealed class VestigoOptions
     public EventLogOptions EventLog { get; set; } = new();
 
     public DebugOutputOptions DebugOutput { get; set; } = new();
+
+    public AudioOptions Audio { get; set; } = new();
 
     public bool AuthenticationEnabled => ApiTokens.Count > 0;
 
@@ -177,6 +180,7 @@ public sealed class VestigoOptions
         EventLog.Validate();
         RemoteDebugger.Validate();
         DebugOutput.Validate();
+        Audio.Validate();
 
         if (MaxReadWait < TimeSpan.Zero || MaxReadWait > TimeSpan.FromMinutes(2))
         {

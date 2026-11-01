@@ -138,6 +138,16 @@ Windows belong to a desktop, so the default `interactive` context starts `Vestig
 
 `list_displays` returns the GDI topology (`\\.\DISPLAYn`, bounds, work area, DPI, primary) plus the physical targets `QueryDisplayConfig` reports for each source, including cloned outputs (`friendlyName`, `devicePath`, EDID manufacturer/product, output technology, connector instance). When that API is unavailable (session 0, some RDP sessions) the tool falls back to `EnumDisplayDevices` and may return empty monitor details.
 
+## Audio
+
+The `Audio` module is disabled by default. It lists Core Audio playback (`render`) and recording (`capture`) endpoints and can switch the default device. Endpoint names and the processes using them are information disclosure; changing the default device is a separate gate. Read [security.md](security.md#audio) first. Enabling the module without `ApiTokens` is allowed and logs a startup `SECURITY WARNING`.
+
+`list_audio_endpoints` returns each matching endpoint's id, friendly name, device description, interface name, flow, state, form factor, the default roles it currently holds (`console`, `multimedia`, `communications`), master volume percent, mute, per-channel volumes, a short peak-meter sample (`PeakPercent`), whether playback or recording looks active, and the audio sessions on that endpoint (`processId`, `processName`, `displayName`, session state, `isSystemSounds`). `Active` is true when any session is in the Core Audio active state or the sampled peak is above zero. Volume, mute, peak, and sessions are omitted (null or empty) when the endpoint does not expose them.
+
+Filters: `flow` is `all` (default), `render`, or `capture`. `state` is `active` (default) or `all` (includes disabled, unplugged, and not-present). `id` returns one endpoint. `includeSessions` defaults to true. Peak sampling lasts `Vestigo:Audio:MeterSampleMilliseconds` (0 disables it). Audio sessions belong to a logon session, so the default `interactive` context starts `Vestigo.exe --session-helper list-audio` in the console user's session. `context: service` enumerates in-process and does not see user-session playback or recording.
+
+`set_default_audio_endpoint` sets the default for the endpoint's flow. `role` `default` is Windows' Default Device (console and multimedia). `communications` is the Default Communication Device. `all` sets both. It is refused with `set_default_disabled` unless `Vestigo:Audio:AllowSetDefault` is `true`. The endpoint must exist and be active (`not_found`, `not_active`). The result includes the applied roles and a refreshed listing of that flow so the new `defaultFor` flags can be confirmed. Switching uses the undocumented `IPolicyConfig` interface and can fail with `set_default_failed` if that contract is unavailable. Per-app device overrides from Settings are neither shown nor changed.
+
 ## Remote debugger
 
 The `RemoteDebugger` module is disabled by default and requires the `Jobs` and `Processes` modules. Enabling those without `ApiTokens` logs a startup `SECURITY WARNING`. It manages the Visual Studio Remote Debugging Tools (`msvsmon.exe`) for Visual Studio 2022 (17) and 2026 (18). A running monitor lets a remote debugger run code on this machine; read [security.md](security.md#remote-debugger) first.

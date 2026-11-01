@@ -318,6 +318,18 @@ Terminates a process by pid or exact name. entireTree also kills its descendants
 | `processName` | `string` | no | `null` | Exact process name, with or without .exe. Every match is killed. |
 | `entireTree` | `bool` | no | `false` | Also kill child processes. |
 
+## `list_audio_endpoints`
+
+Lists Windows audio playback (render) and recording (capture) endpoints with friendly name, state, form factor, default-role flags, volume, mute, a short peak-meter sample, and the processes currently playing or recording. context 'interactive' (default) reads the console user's session through the session helper.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `flow` | `string` | no | `all` | 'all' (default), 'render' (speakers) or 'capture' (microphones). |
+| `state` | `string` | no | `active` | 'active' (default) or 'all' (includes disabled, unplugged and not-present). |
+| `id` | `string` | no | `null` | Return only the endpoint with this id. |
+| `includeSessions` | `bool` | no | `true` | Include per-process audio sessions. Defaults to true. |
+| `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+
 ## `list_captures`
 
 Lists captures owned by this Vestigo process.
@@ -609,6 +621,16 @@ Lists distinct PDB identities referenced by one or more ETL files.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `etlPaths` | `string[]` | yes |  | ETL paths inside an allowed input root. |
+
+## `set_default_audio_endpoint`
+
+Sets the default audio playback or recording endpoint. role 'default' is Windows' Default Device (console and multimedia). 'communications' is the Default Communication Device. 'all' sets both. The flow follows from the endpoint id. Requires Vestigo:Audio:AllowSetDefault. The result lists endpoints of the same flow so the new defaults can be confirmed.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Endpoint id from list_audio_endpoints. |
+| `role` | `string` | no | `default` | 'default' (Default Device), 'communications' (Default Communication Device) or 'all'. |
+| `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 
 ## `set_environment_variable`
 

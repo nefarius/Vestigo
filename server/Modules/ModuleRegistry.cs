@@ -23,6 +23,7 @@ public static class ModuleRegistry
         new LogsModule(),
         new EventLogModule(),
         new DesktopModule(),
+        new AudioModule(),
         new DebugOutputModule()
     ];
 
@@ -58,8 +59,8 @@ public static class ModuleRegistry
 
     /// <summary>
     ///     Returns a startup warning naming administrator-equivalent capabilities, and separately a Desktop
-    ///     enumerator or machine-wide DebugOutput reader, that are enabled while no API token is configured,
-    ///     otherwise null. This is a warning,
+    ///     enumerator, Audio enumerator, or machine-wide DebugOutput reader, that are enabled while no API token
+    ///     is configured, otherwise null. This is a warning,
     ///     never a failure: an operator may deliberately run an open server on an isolated network. The message
     ///     never contains token values.
     /// </summary>
@@ -94,7 +95,9 @@ public static class ModuleRegistry
 
         bool debugOutput = enabled.Any(module => module.Name == "DebugOutput");
         bool desktop = enabled.Any(module => module.Name == "Desktop");
-        if (capabilities.Count == 0 && !debugOutput && !desktop)
+        bool audio = enabled.Any(module => module.Name == "Audio");
+        bool audioSetDefault = audio && options.Audio.AllowSetDefault;
+        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio)
         {
             return null;
         }
@@ -110,6 +113,15 @@ public static class ModuleRegistry
             {
                 names.Add("Desktop");
                 clauses.Add($"{reach} can list windows, titles, and displays on the console user's desktop.");
+            }
+
+            if (audio)
+            {
+                names.Add("Audio");
+                clauses.Add(
+                    audioSetDefault
+                        ? $"{reach} can list audio devices and the processes using them, and can change the default audio devices."
+                        : $"{reach} can list audio devices and the processes using them.");
             }
 
             if (debugOutput)
@@ -130,6 +142,13 @@ public static class ModuleRegistry
         if (desktop)
         {
             extras += "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop. ";
+        }
+
+        if (audio)
+        {
+            extras += audioSetDefault
+                ? "The Audio module is also enabled, so the same clients can list audio devices and the processes using them, and can change the default audio devices. "
+                : "The Audio module is also enabled, so the same clients can list audio devices and the processes using them. ";
         }
 
         if (debugOutput)
