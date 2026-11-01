@@ -160,14 +160,14 @@ public class UpdateFeedTests
         Assert.Equal("Vestigo-v1.2.3.4.msi", UpdateFeed.PackageFileName("1.2.3.4"));
         Assert.Equal("current-msi.txt", UpdateFeed.CurrentPackagePointerFileName);
         Assert.Equal("Vestigo-v*.msi", UpdateFeed.PackageFileNamePattern);
-        Assert.Equal("1.20.0", UpdateFeed.UpdaterVersion);
-        Assert.Equal("ca627af5f9f1c87f5a54d3be8122ee4909e00e9320e62fb8229cf37a8161a3d8", UpdateFeed.UpdaterArchiveSha256);
+        Assert.Equal("1.20.1", UpdateFeed.UpdaterVersion);
+        Assert.Equal("264669ec480264f36bb425dd81d51e6402f61d68d9177522f914aa9fcdfca806", UpdateFeed.UpdaterArchiveSha256);
         Assert.Equal("RWTZDJM+Ify8UukJiWfvLcLvjvrVlHcXY/A9cgbOIStr+c19FIlY8x4B", UpdateFeed.ManifestPublicKey);
 
         string notices = File.ReadAllText(Path.Combine(root, "installer", "THIRD-PARTY-NOTICES.txt"));
         Assert.Contains("BSD 3-Clause License", notices, StringComparison.Ordinal);
         Assert.Contains("Benjamin Höglinger-Stelzer", notices, StringComparison.Ordinal);
-        Assert.Contains("Vicius 1.20.0", notices, StringComparison.Ordinal);
+        Assert.Contains("Vicius 1.20.1", notices, StringComparison.Ordinal);
         Assert.Contains("DebugView++ 1.30.0.0", notices, StringComparison.Ordinal);
         Assert.Contains("Boost Software License", notices, StringComparison.Ordinal);
 
