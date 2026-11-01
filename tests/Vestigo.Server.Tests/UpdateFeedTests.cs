@@ -21,7 +21,10 @@ public class UpdateFeedTests
         JsonElement release = root.GetProperty("releases")[0];
         Assert.Equal(42, root.GetProperty("manifestVersion").GetInt64());
         Assert.Equal("1.2.3.4", release.GetProperty("version").GetString());
-        Assert.Equal(UpdateFeed.PackageUrl, release.GetProperty("downloadUrl").GetString());
+        Assert.Equal(UpdateFeed.PackageUrl("1.2.3.4"), release.GetProperty("downloadUrl").GetString());
+        Assert.Equal(
+            "https://buildbot.nefarius.at/builds/Vestigo/latest/Vestigo-v1.2.3.4.msi",
+            release.GetProperty("downloadUrl").GetString());
         Assert.Equal(3_960_832, release.GetProperty("downloadSize").GetInt64());
         Assert.Equal(new string('a', 64), release.GetProperty("checksum").GetProperty("checksum").GetString());
         Assert.Equal("SHA256", release.GetProperty("checksum").GetProperty("checksumAlg").GetString());
@@ -122,6 +125,8 @@ public class UpdateFeedTests
         Assert.Contains("Step.InstallFinalize", installer, StringComparison.Ordinal);
         Assert.Contains("Step.RemoveFiles", installer, StringComparison.Ordinal);
         Assert.Contains("THIRD-PARTY-NOTICES.txt", installer, StringComparison.Ordinal);
+        Assert.Contains("OutFileName = \"Vestigo-v\" + version", installer, StringComparison.Ordinal);
+        Assert.Contains(UpdateFeed.CurrentPackagePointerFileName, installer, StringComparison.Ordinal);
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
         Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView)", build, StringComparison.Ordinal);
@@ -132,6 +137,12 @@ public class UpdateFeedTests
         Assert.Contains("nefcon-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("DebugViewPP-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("RequireTrustedPublisher(stagedPath, UpdateFeed.PublisherSubject)", build, StringComparison.Ordinal);
+        Assert.Contains("RequireCurrentMsi(InstallerOutputDir)", build, StringComparison.Ordinal);
+        Assert.Contains("UpdateFeed.CurrentPackagePointerFileName", build, StringComparison.Ordinal);
+        Assert.Contains("UpdateFeed.PackageFileName(productVersion)", build, StringComparison.Ordinal);
+        Assert.Equal("Vestigo-v1.2.3.4.msi", UpdateFeed.PackageFileName("1.2.3.4"));
+        Assert.Equal("current-msi.txt", UpdateFeed.CurrentPackagePointerFileName);
+        Assert.Equal("Vestigo-v*.msi", UpdateFeed.PackageFileNamePattern);
         Assert.Equal("1.20.0", UpdateFeed.UpdaterVersion);
         Assert.Equal("ca627af5f9f1c87f5a54d3be8122ee4909e00e9320e62fb8229cf37a8161a3d8", UpdateFeed.UpdaterArchiveSha256);
         Assert.Equal("RWTZDJM+Ify8UukJiWfvLcLvjvrVlHcXY/A9cgbOIStr+c19FIlY8x4B", UpdateFeed.ManifestPublicKey);
@@ -152,6 +163,11 @@ public class UpdateFeedTests
         Assert.Contains("updates.json.minisig", workflow, StringComparison.Ordinal);
         Assert.Contains("github.run_id", workflow, StringComparison.Ordinal);
         Assert.Contains("dist/updates.json", workflow, StringComparison.Ordinal);
+        Assert.Contains("Vestigo-v*.msi", workflow, StringComparison.Ordinal);
+        Assert.Contains("Resolve versioned MSI", workflow, StringComparison.Ordinal);
+        Assert.Contains("current-msi.txt", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("installer/Vestigo.msi", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("dist/Vestigo.msi", workflow, StringComparison.Ordinal);
     }
 
     private static UpdateManifestSpec Sample()

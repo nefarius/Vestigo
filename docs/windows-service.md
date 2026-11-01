@@ -42,8 +42,8 @@ Silent installs set the same choices as public MSI properties (`VESTIGO_API_TOKE
 | `VESTIGO_API_TOKEN` | token text | existing token, else a generated one |
 
 ```powershell
-msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=localhost VESTIGO_AUTH_MODE=none VESTIGO_PORT=5098
-msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=token VESTIGO_API_TOKEN=<your-token>
+msiexec /i Vestigo-v1.2.3.4.msi /qn VESTIGO_LISTEN_MODE=localhost VESTIGO_AUTH_MODE=none VESTIGO_PORT=5098
+msiexec /i Vestigo-v1.2.3.4.msi /qn VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=token VESTIGO_API_TOKEN=<your-token>
 ```
 
 With token mode and no token on the command line (and none stored), the installer generates one; read it from the settings file before pointing an MCP client at `/mcp`. Invalid values fail the install. The firewall rule is removed on uninstall and when a repair or upgrade switches to a localhost mode. Repair and modify rewrite the installer-owned settings (`ListenAddress`, `ListenPort`, `ApiTokens`, `Vestigo:Modules:<Name>:Enabled`, and `Vestigo:Software:AllowUninstall`); only non-owned settings are retained. Uninstall removes the service and firewall rule and leaves the ProgramData settings tree in place.
@@ -57,8 +57,8 @@ The defaults equal the server defaults in every listen mode: all modules selecte
 The same deferred action that writes the listen settings also writes `Vestigo:Modules:<Name>:Enabled` for every module and `Vestigo:Software:AllowUninstall`, from the feature states. The installer therefore owns those keys; a repair or modify rewrites them. On upgrade the page starts from the modules in the existing settings file (when the installer runs elevated, otherwise from the defaults). Silent installs use the standard feature properties, or `VESTIGO_MOD_<NAME>` (`1` or `0`, for example `VESTIGO_MOD_PROCESSES=1`) to seed the default level:
 
 ```powershell
-msiexec /i Vestigo.msi /qn ADDLOCAL=Server,Jobs,Processes,Software,SoftwareUninstall VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=none
-msiexec /i Vestigo.msi /qn ADDLOCAL=ALL REMOVE=Devices,Processes,RemoteDebugger,Desktop,DebugOutput,SoftwareUninstall
+msiexec /i Vestigo-v1.2.3.4.msi /qn ADDLOCAL=Server,Jobs,Processes,Software,SoftwareUninstall VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=none
+msiexec /i Vestigo-v1.2.3.4.msi /qn ADDLOCAL=ALL REMOVE=Devices,Processes,RemoteDebugger,Desktop,DebugOutput,SoftwareUninstall
 ```
 
 With `ADDLOCAL` only the listed features (and their required parents) are installed, so list every module you want. `ADDLOCAL=ALL` selects every feature, including the default-off ones, so the second example removes them again.

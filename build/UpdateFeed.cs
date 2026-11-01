@@ -22,9 +22,10 @@ public static class UpdateFeed
 {
     public const string DirectoryUrl = "https://buildbot.nefarius.at/builds/Vestigo/latest/";
     public const string ManifestFileName = "updates.json";
-    public const string PackageFileName = "Vestigo.msi";
+    public const string PackageFileNamePrefix = "Vestigo-v";
+    public const string PackageFileNamePattern = PackageFileNamePrefix + "*.msi";
+    public const string CurrentPackagePointerFileName = "current-msi.txt";
     public const string ManifestUrl = DirectoryUrl + ManifestFileName;
-    public const string PackageUrl = DirectoryUrl + PackageFileName;
     public const string PublisherSubject = "Nefarius Software Solutions e.U.";
     public const string ManifestPublicKey = "RWTZDJM+Ify8UukJiWfvLcLvjvrVlHcXY/A9cgbOIStr+c19FIlY8x4B";
     public const string RegistryKey = @"SOFTWARE\Nefarius Software Solutions\Vestigo";
@@ -79,7 +80,7 @@ public static class UpdateFeed
             Version = Version.Parse(productVersion),
             Summary = summary,
             PublishedAt = spec.PublishedAt.ToUniversalTime(),
-            DownloadUrl = PackageUrl,
+            DownloadUrl = PackageUrl(productVersion),
             DownloadSize = spec.DownloadSize,
             LaunchArguments = LaunchArguments,
             RunAsAdmin = true,
@@ -213,6 +214,12 @@ public static class UpdateFeed
             }
         }
     }
+
+    public static string PackageFileName(string productVersion)
+        => PackageFileNamePrefix + RequireProductVersion(productVersion) + ".msi";
+
+    public static string PackageUrl(string productVersion)
+        => DirectoryUrl + PackageFileName(productVersion);
 
     public static string RequireProductVersion(string productVersion)
     {
