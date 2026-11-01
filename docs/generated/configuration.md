@@ -52,4 +52,6 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `SpoolRetention` | `1.00:00:00` |
 | `SymbolCache` | `null` |
 | `SymbolServer` | `null` |
+| `VolumeRootAccess` | `Read, Write, Execute` |
+| `VolumeRoots` | `None` |
 

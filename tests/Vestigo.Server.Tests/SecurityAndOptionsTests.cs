@@ -117,6 +117,28 @@ public class SecurityAndOptionsTests
         Assert.DoesNotContain("Processes", warning, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(VolumeRootMode.None, RootAccess.Read | RootAccess.Write, false)]
+    [InlineData(VolumeRootMode.FixedVolumes, RootAccess.Read, false)]
+    [InlineData(VolumeRootMode.FixedVolumes, RootAccess.Read | RootAccess.Write, true)]
+    [InlineData(VolumeRootMode.AllVolumesLive, RootAccess.Read | RootAccess.Execute, true)]
+    public void Options_WarnWhenVolumeRootsGrantWriteOrExecute(
+        VolumeRootMode mode,
+        RootAccess access,
+        bool expectWarning)
+    {
+        VestigoOptions options = new() { VolumeRoots = mode, VolumeRootAccess = access };
+
+        string? warning = options.GetVolumeRootWarning();
+
+        Assert.Equal(expectWarning, warning is not null);
+        if (warning is not null)
+        {
+            Assert.Contains(mode.ToString(), warning, StringComparison.Ordinal);
+            Assert.DoesNotContain("secret", warning, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void Options_RejectBlankTokensAndNonPositiveLimits()
     {

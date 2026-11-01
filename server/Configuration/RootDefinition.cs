@@ -13,6 +13,24 @@ public enum RootAccess
 }
 
 /// <summary>
+///     How Vestigo turns current drive volumes into named roots. Custom <see cref="VestigoOptions.Roots" /> stay additive.
+/// </summary>
+public enum VolumeRootMode
+{
+    None = 0,
+    SystemDrive = 1,
+    FixedVolumes = 2,
+    AllVolumes = 3,
+    AllVolumesLive = 4
+}
+
+/// <summary>Reserved names for volume roots generated from <see cref="VolumeRootMode" />.</summary>
+public static class VolumeRootNames
+{
+    public const string Prefix = "drive-";
+}
+
+/// <summary>
 ///     A named, access-controlled directory that clients may address as <c>name:relative\path</c>.
 /// </summary>
 public sealed class RootDefinition

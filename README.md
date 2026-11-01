@@ -44,7 +44,7 @@ The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopba
 
 - Tokens are compared by SHA-256 digest and are never written to logs.
 - Trace ETL, PDB, TMF, and conversion-output paths stay inside `AllowedInputRoots` or `AllowedOutputRoots`.
-- File, log, process, and device paths use named `Vestigo:Roots` with `Read`, `Write`, and `Execute`.
+- File, log, process, and device paths use named `Vestigo:Roots` (and optional `VolumeRoots`) with `Read`, `Write`, and `Execute`.
 - Output files are not overwritten unless the tool argument says so.
 - Event count, input size, output size, capture duration, job output, and spool retention are bounded.
 

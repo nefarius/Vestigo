@@ -27,6 +27,16 @@ public sealed class VestigoOptions
 
     public List<RootDefinition> Roots { get; set; } = [];
 
+    /// <summary>
+    ///     Adds lettered drive volumes as named roots (<c>drive-c</c>, <c>drive-d</c>, …). Default is
+    ///     <see cref="VolumeRootMode.None" /> so hand-written configs stay unchanged. The MSI writes
+    ///     <see cref="VolumeRootMode.FixedVolumes" /> on a fresh install.
+    /// </summary>
+    public VolumeRootMode VolumeRoots { get; set; } = VolumeRootMode.None;
+
+    /// <summary>Access granted to every volume root produced by <see cref="VolumeRoots" />.</summary>
+    public RootAccess VolumeRootAccess { get; set; } = RootAccess.Read | RootAccess.Write | RootAccess.Execute;
+
     public Dictionary<string, ModuleSettings> Modules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public ProcessesOptions Processes { get; set; } = new();
@@ -106,6 +116,22 @@ public sealed class VestigoOptions
               "Configure Vestigo:ApiTokens or bind to a loopback address."
             : null;
 
+    /// <summary>
+    ///     Returns a startup warning when volume roots grant Write or Execute on whole volumes, otherwise null.
+    /// </summary>
+    public string? GetVolumeRootWarning()
+    {
+        if (VolumeRoots == VolumeRootMode.None ||
+            (VolumeRootAccess & (RootAccess.Write | RootAccess.Execute)) == 0)
+        {
+            return null;
+        }
+
+        return $"SECURITY WARNING: Vestigo:VolumeRoots is {VolumeRoots} with {VolumeRootAccess} access. " +
+               "A client can replace files on those volumes, including drivers, services and scripts. " +
+               "Grant Write or Execute only when needed, and use API tokens whenever the endpoint is reachable by more than one user.";
+    }
+
     public void Validate()
     {
         if (!IPAddress.TryParse(ListenAddress, out IPAddress? address) || address.AddressFamily == AddressFamily.Unspecified)
@@ -170,6 +196,27 @@ public sealed class VestigoOptions
             {
                 throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs at least one access flag.");
             }
+
+            if (root.Name.StartsWith(VolumeRootNames.Prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Vestigo:Roots name '{root.Name}' is reserved for volume roots. Choose a different name or set Vestigo:VolumeRoots to None.");
+            }
+        }
+
+        if (!Enum.IsDefined(VolumeRoots))
+        {
+            throw new InvalidOperationException($"Vestigo:VolumeRoots '{VolumeRoots}' is not a recognised mode.");
+        }
+
+        if ((VolumeRootAccess & ~(RootAccess.Read | RootAccess.Write | RootAccess.Execute)) != 0)
+        {
+            throw new InvalidOperationException("Vestigo:VolumeRootAccess contains unrecognised flags.");
+        }
+
+        if (VolumeRoots != VolumeRootMode.None && VolumeRootAccess == RootAccess.None)
+        {
+            throw new InvalidOperationException("Vestigo:VolumeRootAccess needs at least one access flag when VolumeRoots is not None.");
         }
 
         Environment.Validate();

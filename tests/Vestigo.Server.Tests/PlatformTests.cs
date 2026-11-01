@@ -58,10 +58,41 @@ public class PlatformTests : IDisposable
         duplicate.Roots.Add(new RootDefinition { Name = "ARTIFACTS", Path = _root, Access = RootAccess.Read });
         VestigoOptions relative = new() { Roots = [new RootDefinition { Name = "rel", Path = "relative", Access = RootAccess.Read }] };
         VestigoOptions shortName = new() { Roots = [new RootDefinition { Name = "c", Path = _root, Access = RootAccess.Read }] };
+        VestigoOptions reserved = new() { Roots = [new RootDefinition { Name = "drive-c", Path = _root, Access = RootAccess.Read }] };
+        VestigoOptions noVolumeAccess = new() { VolumeRoots = VolumeRootMode.FixedVolumes, VolumeRootAccess = RootAccess.None };
 
         Assert.Throws<InvalidOperationException>(duplicate.Validate);
         Assert.Throws<InvalidOperationException>(relative.Validate);
         Assert.Throws<InvalidOperationException>(shortName.Validate);
+        Assert.Throws<InvalidOperationException>(reserved.Validate);
+        Assert.Throws<InvalidOperationException>(noVolumeAccess.Validate);
+    }
+
+    [Fact]
+    public void RootPolicy_MergesCustomAndVolumeRoots()
+    {
+        FakeVolumeEnumerator enumerator = new()
+        {
+            Volumes =
+            {
+                new VolumeInfo(@"C:\", DriveType.Fixed, true),
+                new VolumeInfo(@"E:\", DriveType.Removable, true)
+            }
+        };
+        VestigoOptions options = new()
+        {
+            Roots = [new RootDefinition { Name = "artifacts", Path = _root, Access = RootAccess.Read }],
+            VolumeRoots = VolumeRootMode.FixedVolumes,
+            VolumeRootAccess = RootAccess.Read | RootAccess.Write
+        };
+        RootPolicy policy = new(options, new VolumeRootSource(options, enumerator));
+
+        Assert.Equal(["artifacts", "drive-c"], policy.Roots.Select(root => root.Name));
+        Assert.True(policy.Resolve(@"artifacts:a.txt", RootAccess.Read).Success);
+        Assert.Equal("access_denied", policy.Resolve(@"artifacts:a.txt", RootAccess.Write).ErrorCode);
+        Assert.True(policy.Resolve(@"C:\Windows\notepad.exe", RootAccess.Write).Success);
+        Assert.Equal("access_denied", policy.Resolve(@"C:\Windows\notepad.exe", RootAccess.Execute).ErrorCode);
+        Assert.Equal("unknown_root", policy.Resolve(@"drive-e:file.txt", RootAccess.Read).ErrorCode);
     }
 
     [Fact]

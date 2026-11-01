@@ -7,9 +7,9 @@ using WixSharp;
 namespace Vestigo.Installer;
 
 /// <summary>
-///     Adds the access and authentication pages, their managed custom actions, the secure properties, and the
-///     conditional firewall rule to the MSI. The pages are native WiX dialogs; only the token generator,
-///     existing-settings reader, and the elevated settings merge run as managed (net48 DTF) custom actions.
+///     Adds the access, authentication, and file-system roots pages, their managed custom actions, the secure
+///     properties, and the conditional firewall rule to the MSI. The pages are native WiX dialogs; only the token
+///     generator, existing-settings reader, and the elevated settings merge run as managed (net48 DTF) custom actions.
 /// </summary>
 static class ListenPage
 {
@@ -18,6 +18,8 @@ static class ListenPage
     const string FirewallComponentId = "VestigoFirewallRule";
     const string AccessDialogId = "VestigoAccessDlg";
     const string AuthDialogId = "VestigoAuthDlg";
+    const string RootsDialogId = "VestigoRootsDlg";
+    const string RootsAccessDialogId = "VestigoRootsAccessDlg";
     const string ErrorDialogId = "VestigoInputErrorDlg";
     const string NotRemoving = "NOT (REMOVE~=\"ALL\")";
 
@@ -55,7 +57,9 @@ static class ListenPage
         package.Add(
             SecureProperty("VESTIGO_LISTEN_MODE", null),
             SecureProperty("VESTIGO_AUTH_MODE", null),
-            SecureProperty("VESTIGO_PORT", null));
+            SecureProperty("VESTIGO_PORT", null),
+            SecureProperty("VESTIGO_ROOTS_MODE", null),
+            SecureProperty("VESTIGO_ROOTS_ACCESS", null));
         foreach (string name in ModuleSelection.All.Select(m => m.PropertyName))
         {
             package.Add(SecureProperty(name, null));
@@ -280,7 +284,88 @@ static class ListenPage
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
                 noToken + " AND " + listenLocalhost));
-        WireNavigation(authDialog, AccessDialogId, "CustomizeDlg");
+        WireNavigation(authDialog, AccessDialogId, RootsDialogId);
+
+        const string customRoots = "VESTIGO_ROOTS_MODE=\"" + RootSettings.ModeCustom + "\"";
+        const string liveRoots = "VESTIGO_ROOTS_MODE=\"" + RootSettings.ModeLive + "\"";
+        const string volumeRoots = "NOT (" + customRoots + ")";
+        const string writeOrExecute = "VESTIGO_ROOTS_ACCESS <> \"" + RootSettings.AccessRead + "\"";
+
+        XElement rootsDialog = WizardDialog(
+            RootsDialogId,
+            "File system access",
+            "Choose which volumes clients may access as named roots.",
+            RootsRadioGroup(),
+            WithShow(
+                Control(
+                    "VolumeNote",
+                    "Text",
+                    20,
+                    154,
+                    330,
+                    48,
+                    "These volumes become named roots (drive-c, drive-d, ...) and are merged with any Vestigo:Roots already in appsettings.json.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                volumeRoots + " AND NOT (" + liveRoots + ")",
+                startHidden: false),
+            WithShow(
+                Control(
+                    "LiveNote",
+                    "Text",
+                    20,
+                    154,
+                    330,
+                    48,
+                    "Includes volumes that appear after the service starts. Merged with any Vestigo:Roots already in appsettings.json.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                liveRoots),
+            WithShow(
+                Control(
+                    "CustomNote",
+                    "Text",
+                    20,
+                    154,
+                    330,
+                    60,
+                    "Leave this empty here. Add Vestigo:Roots in %ProgramData%\\Nefarius Software Solutions\\Vestigo\\appsettings.json.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                customRoots));
+        WireRootsNavigation(rootsDialog);
+
+        XElement rootsAccessDialog = WizardDialog(
+            RootsAccessDialogId,
+            "Volume access",
+            "Choose the access granted to every volume root.",
+            RootsAccessRadioGroup(),
+            WithShow(
+                Control(
+                    "AccessWarning",
+                    "Text",
+                    20,
+                    130,
+                    330,
+                    70,
+                    "Write or execute on whole volumes lets clients replace drivers, services and scripts. Use API tokens on shared machines.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                writeOrExecute,
+                startHidden: false),
+            WithShow(
+                Control(
+                    "ReadNote",
+                    "Text",
+                    20,
+                    130,
+                    330,
+                    48,
+                    "Clients can list and read files on those volumes. Write and execute still need a custom Vestigo:Roots entry.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                "NOT (" + writeOrExecute + ")"));
+        WireNavigation(rootsAccessDialog, RootsDialogId, "CustomizeDlg");
 
         XElement errorDialog = new(
             Wix + "Dialog",
@@ -292,16 +377,31 @@ static class ListenPage
             Control("Ok", "PushButton", 102, 62, 56, 17, "!(loc.WixUIOK)", ("Default", "yes"), ("Cancel", "yes")));
         errorDialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Ok").Add(Publish("EndDialog", "Return", 1, null));
 
-        // License continues to access; access continues to authentication; Back from the feature tree returns there.
+        // License continues to access, then authentication, then roots (and volume access unless custom), then features.
         // Order 10 overrides the stock WixUI publish events for the same controls.
         return new XElement(
             Wix + "UI",
             accessDialog,
             authDialog,
+            rootsDialog,
+            rootsAccessDialog,
             errorDialog,
             new XElement(Wix + "DialogRef", new XAttribute("Id", "CancelDlg")),
             PublishOn("LicenseAgreementDlg", "Next", "NewDialog", AccessDialogId, 10, "LicenseAccepted = \"1\""),
-            PublishOn("CustomizeDlg", "Back", "NewDialog", AuthDialogId, 10, "NOT Installed"));
+            PublishOn(
+                "CustomizeDlg",
+                "Back",
+                "NewDialog",
+                RootsAccessDialogId,
+                10,
+                "NOT Installed AND VESTIGO_ROOTS_MODE <> \"" + RootSettings.ModeCustom + "\""),
+            PublishOn(
+                "CustomizeDlg",
+                "Back",
+                "NewDialog",
+                RootsDialogId,
+                11,
+                "NOT Installed AND VESTIGO_ROOTS_MODE = \"" + RootSettings.ModeCustom + "\""));
     }
 
     static XElement WizardDialog(string id, string title, string description, params XElement[] body)
@@ -341,6 +441,21 @@ static class ListenPage
             Publish("SpawnDialog", "CancelDlg", 1, null));
     }
 
+    static void WireRootsNavigation(XElement dialog)
+    {
+        const string noError = "VESTIGO_INPUT_ERROR = \"\"";
+        const string custom = "VESTIGO_ROOTS_MODE=\"" + RootSettings.ModeCustom + "\"";
+        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Next").Add(
+            Publish("DoAction", "VestigoApplyUiChoice", 1, null),
+            Publish("SpawnDialog", ErrorDialogId, 2, "VESTIGO_INPUT_ERROR <> \"\""),
+            Publish("NewDialog", RootsAccessDialogId, 3, noError + " AND NOT (" + custom + ")"),
+            Publish("NewDialog", "CustomizeDlg", 4, noError + " AND " + custom));
+        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Back").Add(
+            Publish("NewDialog", AuthDialogId, 1, null));
+        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Cancel").Add(
+            Publish("SpawnDialog", "CancelDlg", 1, null));
+    }
+
     static XElement ListenRadioGroup()
     {
         XElement group = new(
@@ -361,6 +476,34 @@ static class ListenPage
             Radio(ListenSettings.AuthToken, 0, "Require an API token (recommended)"),
             Radio(ListenSettings.AuthNone, 17, "No API token"));
         XElement control = Control("AuthChoice", "RadioButtonGroup", 20, 58, 330, 40, null, ("Property", "VESTIGO_AUTH_MODE"));
+        control.Add(group);
+        return control;
+    }
+
+    static XElement RootsRadioGroup()
+    {
+        XElement group = new(
+            Wix + "RadioButtonGroup",
+            new XAttribute("Property", "VESTIGO_ROOTS_MODE"),
+            Radio(RootSettings.ModeSystem, 0, "System drive only"),
+            Radio(RootSettings.ModeFixed, 17, "Local fixed disks (recommended)"),
+            Radio(RootSettings.ModeAll, 34, "All current volumes"),
+            Radio(RootSettings.ModeLive, 51, "All volumes, including later plug-and-play"),
+            Radio(RootSettings.ModeCustom, 68, "Custom paths (edit appsettings.json)"));
+        XElement control = Control("RootsChoice", "RadioButtonGroup", 20, 58, 330, 90, null, ("Property", "VESTIGO_ROOTS_MODE"));
+        control.Add(group);
+        return control;
+    }
+
+    static XElement RootsAccessRadioGroup()
+    {
+        XElement group = new(
+            Wix + "RadioButtonGroup",
+            new XAttribute("Property", "VESTIGO_ROOTS_ACCESS"),
+            Radio(RootSettings.AccessRead, 0, "Read only"),
+            Radio(RootSettings.AccessReadWrite, 17, "Read and write"),
+            Radio(RootSettings.AccessReadWriteExecute, 34, "Read, write and execute (recommended)"));
+        XElement control = Control("AccessChoice", "RadioButtonGroup", 20, 58, 330, 56, null, ("Property", "VESTIGO_ROOTS_ACCESS"));
         control.Add(group);
         return control;
     }
