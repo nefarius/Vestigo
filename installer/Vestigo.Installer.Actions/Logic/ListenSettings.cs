@@ -51,8 +51,6 @@ namespace Vestigo.Installer.Actions.Logic
         public string? ExistingAddress { get; }
 
         public bool BindsAny => ListenMode == ListenSettings.ListenAny;
-
-        public int UiChoice => ListenSettings.ToUiChoice(ListenMode, AuthMode);
     }
 
     /// <summary>
@@ -71,25 +69,6 @@ namespace Vestigo.Installer.Actions.Logic
         public const string AnyAddress = "0.0.0.0";
         public const string SectionName = "Vestigo";
 
-        /// <summary>Radio-button choice: 1 localhost/no token, 2 localhost/token, 3 any/no token, 4 any/token.</summary>
-        public static int ToUiChoice(string listenMode, string authMode)
-        {
-            bool any = listenMode == ListenAny;
-            bool token = authMode == AuthToken;
-            return (any ? 3 : 1) + (token ? 1 : 0);
-        }
-
-        public static void FromUiChoice(int choice, out string listenMode, out string authMode)
-        {
-            if (choice < 1 || choice > 4)
-            {
-                throw new ArgumentException("Choose one of the four listen modes.");
-            }
-
-            listenMode = choice >= 3 ? ListenAny : ListenLocalhost;
-            authMode = choice % 2 == 0 ? AuthToken : AuthNone;
-        }
-
         /// <summary>32 random bytes as unpadded base64url (43 characters).</summary>
         public static string GenerateToken()
         {
@@ -107,7 +86,7 @@ namespace Vestigo.Installer.Actions.Logic
             return address != null && IPAddress.TryParse(address, out IPAddress? ip) && IPAddress.IsLoopback(ip);
         }
 
-        /// <summary>Maps an existing address and token presence onto the four modes.</summary>
+        /// <summary>Maps an existing address and token presence onto listen and auth modes.</summary>
         public static void MapExisting(ExistingSettings existing, out string listenMode, out string authMode)
         {
             bool parsed = existing.Address != null && IPAddress.TryParse(existing.Address, out _);
