@@ -155,14 +155,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @(Get-ChildItem -LiteralPath 'publish-x64\installer' -Filter 'Vestigo-v*.msi' -File)
-          if ($files.Count -ne 1) {
-            throw "Expected one Vestigo-v*.msi in publish-x64\installer but found $($files.Count)."
+          $pointer = 'publish-x64\installer\current-msi.txt'
+          if (-not (Test-Path -LiteralPath $pointer)) { throw "File not found: $pointer" }
+          $name = (Get-Content -LiteralPath $pointer -Raw).Trim()
+          if ($name -notmatch '^Vestigo-v.+\.msi$') {
+            throw "Installer pointer is not a versioned MSI file name: $name"
           }
-          $relative = ($files[0].FullName.Substring((Get-Location).Path.Length + 1) -replace '\\', '/')
-          "path=$($files[0].FullName)" >> $env:GITHUB_OUTPUT
+          $file = Join-Path 'publish-x64\installer' $name
+          if (-not (Test-Path -LiteralPath $file)) { throw "File not found: $file" }
+          $relative = ($file.Substring((Get-Location).Path.Length + 1) -replace '\\', '/')
+          "path=$file" >> $env:GITHUB_OUTPUT
           "relative=$relative" >> $env:GITHUB_OUTPUT
-          "name=$($files[0].Name)" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
 
       - name: Assert MSI is unsigned
         if: success() && startsWith(github.ref, 'refs/tags/v')

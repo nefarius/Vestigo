@@ -203,6 +203,9 @@ static class Program
                 throw new InvalidOperationException($"WiX did not produce '{msi}'.");
             }
 
+            System.IO.File.WriteAllText(
+                Path.Combine(options.OutputDir, "current-msi.txt"),
+                Path.GetFileName(msi) + Environment.NewLine);
             Console.WriteLine(msi);
             return 0;
         }

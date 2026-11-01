@@ -24,6 +24,7 @@ public static class UpdateFeed
     public const string ManifestFileName = "updates.json";
     public const string PackageFileNamePrefix = "Vestigo-v";
     public const string PackageFileNamePattern = PackageFileNamePrefix + "*.msi";
+    public const string CurrentPackagePointerFileName = "current-msi.txt";
     public const string ManifestUrl = DirectoryUrl + ManifestFileName;
     public const string PublisherSubject = "Nefarius Software Solutions e.U.";
     public const string ManifestPublicKey = "RWTZDJM+Ify8UukJiWfvLcLvjvrVlHcXY/A9cgbOIStr+c19FIlY8x4B";

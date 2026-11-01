@@ -251,7 +251,7 @@ class Build : FalloutBuild
                 "Set VESTIGO_MINISIGN_KEY to the minisign private-key path and VESTIGO_MINISIGN_PASSWORD to its passphrase.");
         }
 
-        string msiPath = RequireVersionedMsi(InstallerOutputDir);
+        string msiPath = RequireCurrentMsi(InstallerOutputDir);
         AuthenticodeTrust.RequireTrustedPublisher(msiPath, UpdateFeed.PublisherSubject);
         string productVersion = ReadMsiProductVersion(msiPath);
         string expectedName = UpdateFeed.PackageFileName(productVersion);
@@ -260,6 +260,7 @@ class Build : FalloutBuild
             throw new InvalidOperationException(
                 $"Signed MSI '{Path.GetFileName(msiPath)}' does not match product version '{productVersion}'.");
         }
+
         string manifestPath = InstallerOutputDir / UpdateFeed.ManifestFileName;
         using FileStream msi = File.OpenRead(msiPath);
         UpdateManifestSpec spec = new()
@@ -281,22 +282,36 @@ class Build : FalloutBuild
         UpdateFeed.VerifyManifest(manifestPath, UpdateFeed.ManifestPublicKey);
     }
 
-    static string RequireVersionedMsi(AbsolutePath directory)
+    static string RequireCurrentMsi(AbsolutePath directory)
     {
         if (!Directory.Exists(directory))
         {
             throw new DirectoryNotFoundException($"Installer output directory not found: {directory}");
         }
 
-        string[] files = Directory.GetFiles(directory, UpdateFeed.PackageFileNamePattern);
-        if (files.Length != 1)
+        string pointerPath = directory / UpdateFeed.CurrentPackagePointerFileName;
+        if (!File.Exists(pointerPath))
         {
-            throw new FileNotFoundException(
-                $"Expected one {UpdateFeed.PackageFileNamePattern} in {directory} but found {files.Length}.",
-                directory);
+            throw new FileNotFoundException("BuildInstaller pointer not found. Run BuildInstaller first.", pointerPath);
         }
 
-        return files[0];
+        string name = File.ReadAllText(pointerPath).Trim();
+        if (name.Length == 0 ||
+            name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            !name.StartsWith(UpdateFeed.PackageFileNamePrefix, StringComparison.OrdinalIgnoreCase) ||
+            !name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"The installer pointer '{name}' is not a versioned Vestigo MSI file name.");
+        }
+
+        string msiPath = directory / name;
+        if (!File.Exists(msiPath))
+        {
+            throw new FileNotFoundException("Signed MSI not found.", msiPath);
+        }
+
+        return msiPath;
     }
 
     static string ReadMsiProductVersion(string msiPath)

@@ -126,6 +126,7 @@ public class UpdateFeedTests
         Assert.Contains("Step.RemoveFiles", installer, StringComparison.Ordinal);
         Assert.Contains("THIRD-PARTY-NOTICES.txt", installer, StringComparison.Ordinal);
         Assert.Contains("OutFileName = \"Vestigo-v\" + version", installer, StringComparison.Ordinal);
+        Assert.Contains(UpdateFeed.CurrentPackagePointerFileName, installer, StringComparison.Ordinal);
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
         Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView)", build, StringComparison.Ordinal);
@@ -136,9 +137,11 @@ public class UpdateFeedTests
         Assert.Contains("nefcon-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("DebugViewPP-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("RequireTrustedPublisher(stagedPath, UpdateFeed.PublisherSubject)", build, StringComparison.Ordinal);
-        Assert.Contains("RequireVersionedMsi(InstallerOutputDir)", build, StringComparison.Ordinal);
+        Assert.Contains("RequireCurrentMsi(InstallerOutputDir)", build, StringComparison.Ordinal);
+        Assert.Contains("UpdateFeed.CurrentPackagePointerFileName", build, StringComparison.Ordinal);
         Assert.Contains("UpdateFeed.PackageFileName(productVersion)", build, StringComparison.Ordinal);
         Assert.Equal("Vestigo-v1.2.3.4.msi", UpdateFeed.PackageFileName("1.2.3.4"));
+        Assert.Equal("current-msi.txt", UpdateFeed.CurrentPackagePointerFileName);
         Assert.Equal("Vestigo-v*.msi", UpdateFeed.PackageFileNamePattern);
         Assert.Equal("1.20.0", UpdateFeed.UpdaterVersion);
         Assert.Equal("ca627af5f9f1c87f5a54d3be8122ee4909e00e9320e62fb8229cf37a8161a3d8", UpdateFeed.UpdaterArchiveSha256);
@@ -162,6 +165,7 @@ public class UpdateFeedTests
         Assert.Contains("dist/updates.json", workflow, StringComparison.Ordinal);
         Assert.Contains("Vestigo-v*.msi", workflow, StringComparison.Ordinal);
         Assert.Contains("Resolve versioned MSI", workflow, StringComparison.Ordinal);
+        Assert.Contains("current-msi.txt", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("installer/Vestigo.msi", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("dist/Vestigo.msi", workflow, StringComparison.Ordinal);
     }
