@@ -19,7 +19,7 @@ The service account needs:
 
 ## Listen mode and API token
 
-After the license page the installer asks how the server is reachable. The four modes and their effect on `Vestigo:ListenAddress`, `ApiTokens`, and the firewall:
+After the license page the installer asks where the server listens, then whether it requires an API token. The combinations and their effect on `Vestigo:ListenAddress`, `ApiTokens`, and the firewall:
 
 | Mode | `ListenAddress` | `ApiTokens` | Firewall rule |
 | --- | --- | --- | --- |
@@ -28,9 +28,9 @@ After the license page the installer asks how the server is reachable. The four 
 | 3. Any address, no token (shows a warning) | `0.0.0.0` | empty | inbound TCP, chosen port |
 | 4. Any address, with token (default) | `0.0.0.0` | one token | inbound TCP, chosen port |
 
-The page also takes the port (default 5098) and, for token modes, the token. It is pre-filled with a random suggestion (32 random bytes, base64url) that you can replace; tokens must be at least 16 characters without spaces. A deferred, elevated action runs before the service starts and writes the installer-owned settings into `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`: `Vestigo:ListenAddress`, `ListenPort`, `ApiTokens`, `Vestigo:Modules:<Name>:Enabled` for every module, and `Vestigo:Software:AllowUninstall`. Only non-owned settings are retained. The file is UTF-8 without BOM and its ACL allows only SYSTEM and Administrators. It holds the token in clear text. If the existing file is not valid JSON it is kept as `appsettings.json.bak-<time>` and a new one is written.
+The access page also takes the port (default 5098). The authentication page, for token mode, takes the token. It is pre-filled with a random suggestion (32 random bytes, base64url) that you can replace; tokens must be at least 16 characters without spaces. A deferred, elevated action runs before the service starts and writes the installer-owned settings into `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`: `Vestigo:ListenAddress`, `ListenPort`, `ApiTokens`, `Vestigo:Modules:<Name>:Enabled` for every module, and `Vestigo:Software:AllowUninstall`. Only non-owned settings are retained. The file is UTF-8 without BOM and its ACL allows only SYSTEM and Administrators. It holds the token in clear text. If the existing file is not valid JSON it is kept as `appsettings.json.bak-<time>` and a new one is written.
 
-On upgrade the page is pre-filled from the existing file: a loopback address maps to localhost, any other address to "any address", and a non-empty `ApiTokens` to token mode. The existing token is kept unless you change it. The page can only read the file when the installer runs elevated; otherwise it shows the defaults, and an untouched suggested token never replaces an existing one. A specific non-loopback address already in the file (for example `192.168.1.5`) is kept in the "any address" modes.
+On upgrade the pages are pre-filled from the existing file: a loopback address maps to localhost, any other address to "any address", and a non-empty `ApiTokens` to token mode. The existing token is kept unless you change it. The pages can only read the file when the installer runs elevated; otherwise they show the defaults, and an untouched suggested token never replaces an existing one. A specific non-loopback address already in the file (for example `192.168.1.5`) is kept in the "any address" modes.
 
 Silent installs set the same choices as public MSI properties (`VESTIGO_API_TOKEN` is hidden, so it is not written to the MSI log, but the command line itself may be recorded by your shell or deployment tool):
 
@@ -50,9 +50,9 @@ With token mode and no token on the command line (and none stored), the installe
 
 ## Modules
 
-The page after the listen page is the standard feature tree. `Vestigo MCP Server` (binaries and service) is required; each module is a child feature whose id is the module name, nested by dependency: `Processes` and `Software` sit below `Jobs`, `RemoteDebugger` below `Processes`, and `SoftwareUninstall` (`Vestigo:Software:AllowUninstall`) below `Software`. A child cannot be installed without its parent, which matches the server's dependency checks.
+The page after authentication is the standard feature tree. `Vestigo MCP Server` (binaries and service) is required; each module is a child feature whose id is the module name, nested by dependency: `Processes` and `Software` sit below `Jobs`, `RemoteDebugger` below `Processes`, and `SoftwareUninstall` (`Vestigo:Software:AllowUninstall`) below `Software`. A child cannot be installed without its parent, which matches the server's dependency checks.
 
-The defaults equal the server defaults in every listen mode: all modules selected except `Devices`, `Processes`, `RemoteDebugger`, `Desktop`, `DebugOutput` and `SoftwareUninstall`. Nothing is blocked by the listen or token mode. The listen page only shows a note when no token is chosen, because every module you enable is then open to whoever can reach the server. A lab VLAN with any address, no token, and `Processes` plus `SoftwareUninstall` is allowed; the service logs a `SECURITY WARNING` at startup.
+The defaults equal the server defaults in every listen mode: all modules selected except `Devices`, `Processes`, `RemoteDebugger`, `Desktop`, `DebugOutput` and `SoftwareUninstall`. Nothing is blocked by the listen or token mode. The authentication page only shows a note when no token is chosen, because every module you enable is then open to whoever can reach the server. A lab VLAN with any address, no token, and `Processes` plus `SoftwareUninstall` is allowed; the service logs a `SECURITY WARNING` at startup.
 
 The same deferred action that writes the listen settings also writes `Vestigo:Modules:<Name>:Enabled` for every module and `Vestigo:Software:AllowUninstall`, from the feature states. The installer therefore owns those keys; a repair or modify rewrites them. On upgrade the page starts from the modules in the existing settings file (when the installer runs elevated, otherwise from the defaults). Silent installs use the standard feature properties, or `VESTIGO_MOD_<NAME>` (`1` or `0`, for example `VESTIGO_MOD_PROCESSES=1`) to seed the default level:
 

@@ -8,29 +8,6 @@ public class InstallerSettingsTests
 {
     private const string LongToken = "0123456789abcdefghij";
 
-    [Theory]
-    [InlineData(ListenSettings.ListenLocalhost, ListenSettings.AuthNone, 1)]
-    [InlineData(ListenSettings.ListenLocalhost, ListenSettings.AuthToken, 2)]
-    [InlineData(ListenSettings.ListenAny, ListenSettings.AuthNone, 3)]
-    [InlineData(ListenSettings.ListenAny, ListenSettings.AuthToken, 4)]
-    public void UiChoice_RoundTripsAllFourModes(string listen, string auth, int choice)
-    {
-        Assert.Equal(choice, ListenSettings.ToUiChoice(listen, auth));
-
-        ListenSettings.FromUiChoice(choice, out string mappedListen, out string mappedAuth);
-
-        Assert.Equal(listen, mappedListen);
-        Assert.Equal(auth, mappedAuth);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(5)]
-    public void UiChoice_RejectsOutOfRange(int choice)
-    {
-        Assert.Throws<ArgumentException>(() => ListenSettings.FromUiChoice(choice, out _, out _));
-    }
-
     [Fact]
     public void GenerateToken_IsUnpaddedBase64UrlOf32Bytes()
     {
@@ -101,7 +78,6 @@ public class InstallerSettingsTests
         Assert.Equal(ListenSettings.AuthToken, resolved.AuthMode);
         Assert.Equal(5098, resolved.Port);
         Assert.Equal(43, resolved.Token.Length);
-        Assert.Equal(4, resolved.UiChoice);
     }
 
     [Fact]
@@ -126,7 +102,6 @@ public class InstallerSettingsTests
         Assert.Equal(ListenSettings.AuthToken, resolved.AuthMode);
         Assert.Equal(7000, resolved.Port);
         Assert.Equal(LongToken, resolved.Token);
-        Assert.Equal(2, resolved.UiChoice);
     }
 
     [Fact]

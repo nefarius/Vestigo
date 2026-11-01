@@ -14,9 +14,9 @@ using WixToolset.Dtf.WindowsInstaller;
 namespace Vestigo.Installer.Actions
 {
     /// <summary>
-    ///     MSI custom actions for the listen/security page. Token values are never written to the MSI log.
+    ///     MSI custom actions for the access and authentication pages. Token values are never written to the MSI log.
     ///     Properties: VESTIGO_LISTEN_MODE, VESTIGO_AUTH_MODE, VESTIGO_PORT, VESTIGO_API_TOKEN (public, hidden token),
-    ///     VESTIGO_UI_MODE (radio choice), VESTIGO_INPUT_ERROR (dialog validation text),
+    ///     VESTIGO_INPUT_ERROR (dialog validation text),
     ///     VESTIGO_TOKEN_SUGGESTED (auto-generated token the user may not have edited).
     /// </summary>
     public static class CustomActions
@@ -25,7 +25,6 @@ namespace Vestigo.Installer.Actions
         private const string AuthModeProperty = "VESTIGO_AUTH_MODE";
         private const string PortProperty = "VESTIGO_PORT";
         private const string TokenProperty = "VESTIGO_API_TOKEN";
-        private const string UiModeProperty = "VESTIGO_UI_MODE";
         private const string ErrorProperty = "VESTIGO_INPUT_ERROR";
         private const string SuggestedProperty = "VESTIGO_TOKEN_SUGGESTED";
         private const string WriteDataProperty = "VestigoWriteSettings";
@@ -90,8 +89,8 @@ namespace Vestigo.Installer.Actions
         }
 
         /// <summary>
-        ///     Immediate, called by the dialog's Next button. Maps the radio choice to the public properties and validates
-        ///     port and token. Problems are reported through VESTIGO_INPUT_ERROR; it never fails the install.
+        ///     Immediate, called by each dialog's Next button. Validates the listen, auth, port, and token properties.
+        ///     Problems are reported through VESTIGO_INPUT_ERROR; it never fails the install.
         /// </summary>
         [CustomAction]
         public static ActionResult VestigoApplyUiChoice(Session session)
@@ -99,21 +98,15 @@ namespace Vestigo.Installer.Actions
             session[ErrorProperty] = string.Empty;
             try
             {
-                if (!int.TryParse(session[UiModeProperty], out int choice))
-                {
-                    throw new ArgumentException("Choose one of the four listen modes.");
-                }
-
-                ListenSettings.FromUiChoice(choice, out string listen, out string auth);
                 ExistingSettings existing = ListenSettings.ReadExisting(TryReadSettingsFile());
                 string token = session[TokenProperty];
                 bool suggestion = !string.IsNullOrWhiteSpace(token) &&
                                   string.Equals(token, session[SuggestedProperty], StringComparison.Ordinal);
-                if (auth == ListenSettings.AuthToken && !string.IsNullOrWhiteSpace(token))
+                if (!string.IsNullOrWhiteSpace(token))
                 {
                     token = token.Trim();
                     string tokenError = ListenSettings.ValidateToken(token);
-                    if (tokenError != null)
+                    if (session[AuthModeProperty] == ListenSettings.AuthToken && tokenError != null)
                     {
                         throw new ArgumentException(tokenError);
                     }
@@ -125,7 +118,14 @@ namespace Vestigo.Installer.Actions
                     portText = ListenSettings.DefaultPort.ToString();
                 }
 
-                ResolvedSettings resolved = ListenSettings.Resolve(listen, auth, portText, token, existing, suggestion, IsUpgrade(session));
+                ResolvedSettings resolved = ListenSettings.Resolve(
+                    session[ListenModeProperty],
+                    session[AuthModeProperty],
+                    portText,
+                    token,
+                    existing,
+                    suggestion,
+                    IsUpgrade(session));
                 Publish(session, resolved);
             }
             catch (ArgumentException ex)
@@ -262,7 +262,6 @@ namespace Vestigo.Installer.Actions
             session[AuthModeProperty] = resolved.AuthMode;
             session[PortProperty] = resolved.Port.ToString();
             session[TokenProperty] = resolved.Token;
-            session[UiModeProperty] = resolved.UiChoice.ToString();
         }
 
         private static string SettingsFilePath()

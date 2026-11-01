@@ -7,16 +7,17 @@ using WixSharp;
 namespace Vestigo.Installer;
 
 /// <summary>
-///     Adds the listen/security page, its managed custom actions, the secure properties, and the conditional firewall
-///     rule to the MSI. The page is a native WiX dialog; only the token generator, existing-settings reader, and the
-///     elevated settings merge run as managed (net48 DTF) custom actions.
+///     Adds the access and authentication pages, their managed custom actions, the secure properties, and the
+///     conditional firewall rule to the MSI. The pages are native WiX dialogs; only the token generator,
+///     existing-settings reader, and the elevated settings merge run as managed (net48 DTF) custom actions.
 /// </summary>
 static class ListenPage
 {
     const string WixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
     const string BinaryId = "VestigoActionsBin";
     const string FirewallComponentId = "VestigoFirewallRule";
-    const string DialogId = "VestigoListenDlg";
+    const string AccessDialogId = "VestigoAccessDlg";
+    const string AuthDialogId = "VestigoAuthDlg";
     const string ErrorDialogId = "VestigoInputErrorDlg";
     const string NotRemoving = "NOT (REMOVE~=\"ALL\")";
 
@@ -51,10 +52,13 @@ static class ListenPage
 
         // Public, secure properties so silent installs (and the UI-to-server hand-off) can carry the choices.
         // Hidden keeps the token out of the MSI log by adding it to MsiHiddenProperties.
-        foreach (string name in new[] { "VESTIGO_LISTEN_MODE", "VESTIGO_AUTH_MODE", "VESTIGO_PORT" }
-                     .Concat(ModuleSelection.All.Select(m => m.PropertyName)))
+        package.Add(
+            SecureProperty("VESTIGO_LISTEN_MODE", ListenSettings.ListenAny),
+            SecureProperty("VESTIGO_AUTH_MODE", ListenSettings.AuthToken),
+            SecureProperty("VESTIGO_PORT", null));
+        foreach (string name in ModuleSelection.All.Select(m => m.PropertyName))
         {
-            package.Add(new XElement(Wix + "Property", new XAttribute("Id", name), new XAttribute("Secure", "yes")));
+            package.Add(SecureProperty(name, null));
         }
 
         foreach (string name in new[] { "VESTIGO_API_TOKEN", "VESTIGO_TOKEN_SUGGESTED" })
@@ -68,7 +72,6 @@ static class ListenPage
 
         // CustomActionData of the deferred action carries the token.
         package.Add(new XElement(Wix + "Property", new XAttribute("Id", "VestigoWriteSettings"), new XAttribute("Hidden", "yes")));
-        package.Add(new XElement(Wix + "Property", new XAttribute("Id", "VESTIGO_UI_MODE"), new XAttribute("Value", "4")));
 
         package.Add(new XElement(
             Wix + "InstallExecuteSequence",
@@ -181,79 +184,88 @@ static class ListenPage
 
     static XElement BuildUi()
     {
-        const string hideForNoToken = "VESTIGO_UI_MODE=\"1\" OR VESTIGO_UI_MODE=\"3\"";
+        const string noToken = "VESTIGO_AUTH_MODE=\"" + ListenSettings.AuthNone + "\"";
+        const string listenAny = "VESTIGO_LISTEN_MODE=\"" + ListenSettings.ListenAny + "\"";
+        const string listenLocalhost = "VESTIGO_LISTEN_MODE=\"" + ListenSettings.ListenLocalhost + "\"";
 
-        XElement dialog = new(
-            Wix + "Dialog",
-            new XAttribute("Id", DialogId),
-            new XAttribute("Width", "370"),
-            new XAttribute("Height", "270"),
-            new XAttribute("Title", "[ProductName] Setup"),
-            Control("BannerBitmap", "Bitmap", 0, 0, 370, 44, "!(loc.LicenseAgreementDlgBannerBitmap)", ("TabSkip", "no")),
-            Control("BannerLine", "Line", 0, 44, 370, 0, null),
-            Control("BottomLine", "Line", 0, 234, 370, 0, null),
-            Control("Title", "Text", 15, 6, 340, 15, "{\\WixUI_Font_Title}Server access", ("Transparent", "yes"), ("NoPrefix", "yes")),
-            Control(
-                "Description",
-                "Text",
-                25,
-                23,
-                340,
-                15,
-                "Choose where the Vestigo MCP server listens and whether it needs an API token.",
-                ("Transparent", "yes"),
-                ("NoPrefix", "yes")),
-            RadioGroup(),
-            Control("PortLabel", "Text", 20, 130, 40, 12, "Port:", ("Transparent", "yes"), ("NoPrefix", "yes")),
-            Control("PortEdit", "Edit", 62, 127, 50, 15, null, ("Property", "VESTIGO_PORT"), ("Text", "{5}")),
-            WithHide(Control("TokenLabel", "Text", 20, 150, 40, 12, "Token:", ("Transparent", "yes"), ("NoPrefix", "yes")), hideForNoToken),
-            WithHide(Control("TokenEdit", "Edit", 62, 147, 288, 15, null, ("Property", "VESTIGO_API_TOKEN"), ("Text", "{200}")), hideForNoToken),
+        XElement accessDialog = WizardDialog(
+            AccessDialogId,
+            "Server access",
+            "Choose where the Vestigo MCP server listens.",
+            ListenRadioGroup(),
+            Control("PortLabel", "Text", 20, 110, 40, 12, "Port:", ("Transparent", "yes"), ("NoPrefix", "yes")),
+            Control("PortEdit", "Edit", 62, 107, 50, 15, null, ("Property", "VESTIGO_PORT"), ("Text", "{5}")),
+            WithShow(
+                Control(
+                    "AnyNote",
+                    "Text",
+                    20,
+                    136,
+                    330,
+                    36,
+                    "Any network address adds an inbound Windows Firewall rule for this port. The rule is removed on uninstall.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                listenAny,
+                startHidden: false),
+            WithShow(
+                Control(
+                    "LocalNote",
+                    "Text",
+                    20,
+                    136,
+                    330,
+                    24,
+                    "The server will only accept connections from this PC. No firewall rule is added.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                listenLocalhost));
+        WireNavigation(accessDialog, "LicenseAgreementDlg", AuthDialogId);
+
+        XElement authDialog = WizardDialog(
+            AuthDialogId,
+            "Authentication",
+            "Choose whether the server requires an API token.",
+            AuthRadioGroup(),
+            WithHide(Control("TokenLabel", "Text", 20, 110, 40, 12, "Token:", ("Transparent", "yes"), ("NoPrefix", "yes")), noToken),
+            WithHide(Control("TokenEdit", "Edit", 62, 107, 288, 15, null, ("Property", "VESTIGO_API_TOKEN"), ("Text", "{200}")), noToken),
+            WithHide(
+                Control(
+                    "TokenNote",
+                    "Text",
+                    20,
+                    130,
+                    330,
+                    70,
+                    "A suggested token is filled in; you can replace it. Stored in clear text under %ProgramData%, readable only by SYSTEM and Administrators.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                noToken),
             WithShow(
                 Control(
                     "OpenWarning",
                     "Text",
                     20,
-                    150,
+                    110,
                     330,
-                    30,
-                    "{\\WixUI_Font_Title}No token: anyone who can reach this PC on the network can use the server and every module you enable next, including processes, services, drivers and uninstalls.",
+                    70,
+                    "No token: anyone who can reach this PC on the network can use the server and every module you enable next.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                "VESTIGO_UI_MODE=\"3\""),
+                noToken + " AND " + listenAny),
             WithShow(
                 Control(
                     "LocalOpenNote",
                     "Text",
                     20,
-                    150,
+                    110,
                     330,
-                    24,
-                    "{\\WixUI_Font_Title}No token: any program on this PC can use every module you enable next, including processes, services, drivers and uninstalls.",
+                    70,
+                    "No token: any program on this PC can use every module you enable next.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                "VESTIGO_UI_MODE=\"1\""),
-            Control(
-                "Note",
-                "Text",
-                20,
-                182,
-                330,
-                48,
-                "A suggested token is filled in; you can replace it. The token is stored in clear text in %ProgramData%\\Nefarius Software Solutions\\Vestigo\\appsettings.json, readable only by SYSTEM and Administrators. " +
-                "Modes that listen on any address add an inbound Windows Firewall rule for the port, removed on uninstall.",
-                ("Transparent", "yes"),
-                ("NoPrefix", "yes")),
-            Control("Back", "PushButton", 180, 243, 56, 17, "!(loc.WixUIBack)"),
-            Control("Next", "PushButton", 236, 243, 56, 17, "!(loc.WixUINext)", ("Default", "yes")),
-            Control("Cancel", "PushButton", 304, 243, 56, 17, "!(loc.WixUICancel)", ("Cancel", "yes")));
-        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Next").Add(
-            Publish("DoAction", "VestigoApplyUiChoice", 1, null),
-            Publish("SpawnDialog", ErrorDialogId, 2, "VESTIGO_INPUT_ERROR <> \"\""),
-            Publish("NewDialog", "CustomizeDlg", 3, "VESTIGO_INPUT_ERROR = \"\""));
-        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Back").Add(
-            Publish("NewDialog", "LicenseAgreementDlg", 1, null));
-        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Cancel").Add(
-            Publish("SpawnDialog", "CancelDlg", 1, null));
+                noToken + " AND " + listenLocalhost));
+        WireNavigation(authDialog, AccessDialogId, "CustomizeDlg");
 
         XElement errorDialog = new(
             Wix + "Dialog",
@@ -265,27 +277,75 @@ static class ListenPage
             Control("Ok", "PushButton", 102, 62, 56, 17, "!(loc.WixUIOK)", ("Default", "yes"), ("Cancel", "yes")));
         errorDialog.Elements(Wix + "Control").First().Add(Publish("EndDialog", "Return", 1, null));
 
-        // The license page continues to this page, and Back from the feature page returns here.
+        // License continues to access; access continues to authentication; Back from the feature tree returns there.
         // Order 10 overrides the stock WixUI publish events for the same controls.
         return new XElement(
             Wix + "UI",
-            dialog,
+            accessDialog,
+            authDialog,
             errorDialog,
             new XElement(Wix + "DialogRef", new XAttribute("Id", "CancelDlg")),
-            PublishOn("LicenseAgreementDlg", "Next", "NewDialog", DialogId, 10, "LicenseAccepted = \"1\""),
-            PublishOn("CustomizeDlg", "Back", "NewDialog", DialogId, 10, "NOT Installed"));
+            PublishOn("LicenseAgreementDlg", "Next", "NewDialog", AccessDialogId, 10, "LicenseAccepted = \"1\""),
+            PublishOn("CustomizeDlg", "Back", "NewDialog", AuthDialogId, 10, "NOT Installed"));
     }
 
-    static XElement RadioGroup()
+    static XElement WizardDialog(string id, string title, string description, params XElement[] body)
+    {
+        XElement dialog = new(
+            Wix + "Dialog",
+            new XAttribute("Id", id),
+            new XAttribute("Width", "370"),
+            new XAttribute("Height", "270"),
+            new XAttribute("Title", "[ProductName] Setup"),
+            Control("BannerBitmap", "Bitmap", 0, 0, 370, 44, "!(loc.LicenseAgreementDlgBannerBitmap)", ("TabSkip", "no")),
+            Control("BannerLine", "Line", 0, 44, 370, 0, null),
+            Control("BottomLine", "Line", 0, 234, 370, 0, null),
+            Control("Title", "Text", 15, 6, 340, 15, "{\\WixUI_Font_Title}" + title, ("Transparent", "yes"), ("NoPrefix", "yes")),
+            Control("Description", "Text", 25, 23, 340, 15, description, ("Transparent", "yes"), ("NoPrefix", "yes")));
+        foreach (XElement control in body)
+        {
+            dialog.Add(control);
+        }
+
+        dialog.Add(
+            Control("Back", "PushButton", 180, 243, 56, 17, "!(loc.WixUIBack)"),
+            Control("Next", "PushButton", 236, 243, 56, 17, "!(loc.WixUINext)", ("Default", "yes")),
+            Control("Cancel", "PushButton", 304, 243, 56, 17, "!(loc.WixUICancel)", ("Cancel", "yes")));
+        return dialog;
+    }
+
+    static void WireNavigation(XElement dialog, string backDialog, string nextDialog)
+    {
+        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Next").Add(
+            Publish("DoAction", "VestigoApplyUiChoice", 1, null),
+            Publish("SpawnDialog", ErrorDialogId, 2, "VESTIGO_INPUT_ERROR <> \"\""),
+            Publish("NewDialog", nextDialog, 3, "VESTIGO_INPUT_ERROR = \"\""));
+        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Back").Add(
+            Publish("NewDialog", backDialog, 1, null));
+        dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Cancel").Add(
+            Publish("SpawnDialog", "CancelDlg", 1, null));
+    }
+
+    static XElement ListenRadioGroup()
     {
         XElement group = new(
             Wix + "RadioButtonGroup",
-            new XAttribute("Property", "VESTIGO_UI_MODE"),
-            Radio("1", 0, "Localhost only, no API token"),
-            Radio("2", 17, "Localhost only, require an API token"),
-            Radio("3", 34, "Any network address, no API token (not recommended)"),
-            Radio("4", 51, "Any network address, require an API token (recommended)"));
-        XElement control = Control("ModeChoice", "RadioButtonGroup", 20, 52, 330, 70, null, ("Property", "VESTIGO_UI_MODE"));
+            new XAttribute("Property", "VESTIGO_LISTEN_MODE"),
+            Radio(ListenSettings.ListenAny, 0, "Any network address (recommended)"),
+            Radio(ListenSettings.ListenLocalhost, 17, "Localhost only"));
+        XElement control = Control("ListenChoice", "RadioButtonGroup", 20, 58, 330, 40, null, ("Property", "VESTIGO_LISTEN_MODE"));
+        control.Add(group);
+        return control;
+    }
+
+    static XElement AuthRadioGroup()
+    {
+        XElement group = new(
+            Wix + "RadioButtonGroup",
+            new XAttribute("Property", "VESTIGO_AUTH_MODE"),
+            Radio(ListenSettings.AuthToken, 0, "Require an API token (recommended)"),
+            Radio(ListenSettings.AuthNone, 17, "No API token"));
+        XElement control = Control("AuthChoice", "RadioButtonGroup", 20, 58, 330, 40, null, ("Property", "VESTIGO_AUTH_MODE"));
         control.Add(group);
         return control;
     }
@@ -299,6 +359,17 @@ static class ListenPage
             new XAttribute("Width", 330),
             new XAttribute("Height", 17),
             new XAttribute("Text", text));
+
+    static XElement SecureProperty(string name, string? value)
+    {
+        XElement property = new(Wix + "Property", new XAttribute("Id", name), new XAttribute("Secure", "yes"));
+        if (value is not null)
+        {
+            property.Add(new XAttribute("Value", value));
+        }
+
+        return property;
+    }
 
     static XElement Control(
         string id,
@@ -334,12 +405,19 @@ static class ListenPage
     static XElement WithHide(XElement control, string condition)
     {
         control.Add(new XAttribute("HideCondition", condition));
+        control.Add(new XAttribute("ShowCondition", "NOT (" + condition + ")"));
         return control;
     }
 
-    static XElement WithShow(XElement control, string condition)
+    static XElement WithShow(XElement control, string condition, bool startHidden = true)
     {
+        if (startHidden)
+        {
+            control.Add(new XAttribute("Hidden", "yes"));
+        }
+
         control.Add(new XAttribute("ShowCondition", condition));
+        control.Add(new XAttribute("HideCondition", "NOT (" + condition + ")"));
         return control;
     }
 
