@@ -40,7 +40,15 @@ File, log, process, and device tools use named `Vestigo:Roots` plus any `VolumeR
 
 ## Health is degraded
 
-The process is up, but an allowed input or output root is still empty. Tools that take paths fail until those roots are set. An unhealthy result means the spool directory is not writable.
+The process is up, but `AllowedInputRoots` or `AllowedOutputRoots` is still empty. Only the Trace tools that take ETL, PDB, TMF, or conversion-output paths fail until those lists are set. Named `Roots` and `VolumeRoots` tools keep working. A default MSI install reports Degraded for this reason. An unhealthy result means the spool directory is not writable.
+
+## Interactive-session tools fail
+
+`close_app`, `list_windows`, `list_displays`, `take_screenshot`, `list_audio_endpoints`, `set_default_audio_endpoint`, and `run_process` with `context: interactive` run in the console user's session.
+
+`no_interactive_session` means nobody is logged on at the console, or the service is not running as SYSTEM so it cannot query that session. `elevation_unavailable` means `elevated: true` was requested and the console user has no linked administrator token. `desktop_unavailable` means the lock screen, the UAC secure desktop, or another capture that cannot see the user's desktop.
+
+`screenshots_disabled` means `Vestigo:Desktop:AllowScreenshots` is false. `set_default_disabled` means `Vestigo:Audio:AllowSetDefault` is false. `boot_changes_disabled` means `Vestigo:System:AllowBootConfigurationChanges` is false. `secure_boot_enabled` means `set_test_signing` tried to turn test signing on while Secure Boot is on or its state is unknown.
 
 ## The updater does not offer a release
 
