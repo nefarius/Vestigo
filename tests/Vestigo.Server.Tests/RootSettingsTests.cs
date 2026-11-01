@@ -19,6 +19,22 @@ public class RootSettingsTests
         Assert.True(existing.HasCustomRoots);
     }
 
+    [Fact]
+    public void ReadExisting_NormalizesNumericModeAndAccess()
+    {
+        ExistingRootSettings? existing = RootSettings.ReadExisting(
+            """{ "Vestigo": { "VolumeRoots": 2, "VolumeRootAccess": 6 } }""");
+        ExistingRootSettings? unsupported = RootSettings.ReadExisting(
+            """{ "Vestigo": { "VolumeRoots": 9, "VolumeRootAccess": 8 } }""");
+
+        Assert.NotNull(existing);
+        Assert.Equal(RootSettings.ServerFixedVolumes, existing.VolumeRoots);
+        Assert.Equal("Write, Execute", existing.VolumeRootAccess);
+        Assert.NotNull(unsupported);
+        Assert.Null(unsupported.VolumeRoots);
+        Assert.Null(unsupported.VolumeRootAccess);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -80,11 +96,13 @@ public class RootSettingsTests
         ExistingRootSettings existing = new("FixedVolumes", "Write, Execute", hasCustomRoots: false);
 
         ResolvedRootSettings unchanged = RootSettings.Resolve(null, null, existing);
-        ResolvedRootSettings published = RootSettings.Resolve("fixed", "rwx", existing);
-        ResolvedRootSettings edited = RootSettings.Resolve("fixed", "r", existing);
+        ResolvedRootSettings prefilled = RootSettings.Resolve("fixed", "rwx", existing);
+        ResolvedRootSettings selected = RootSettings.Resolve("fixed", "rwx", existing, accessIsExplicit: true);
+        ResolvedRootSettings edited = RootSettings.Resolve("fixed", "r", existing, accessIsExplicit: true);
 
         Assert.Equal("Write, Execute", unchanged.VolumeRootAccessValue);
-        Assert.Equal("Write, Execute", published.VolumeRootAccessValue);
+        Assert.Equal("Write, Execute", prefilled.VolumeRootAccessValue);
+        Assert.Equal(RootSettings.ServerReadWriteExecute, selected.VolumeRootAccessValue);
         Assert.Equal(RootSettings.ServerRead, edited.VolumeRootAccessValue);
     }
 

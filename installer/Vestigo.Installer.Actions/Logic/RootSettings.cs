@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace Vestigo.Installer.Actions.Logic
 {
@@ -150,19 +151,9 @@ namespace Vestigo.Installer.Actions.Logic
                 return null;
             }
 
-            string? volumeRoots = null;
-            if (vestigo.TryGetIgnoreCase("VolumeRoots", out object? mode) && mode is string modeText &&
-                modeText.Trim().Length > 0)
-            {
-                volumeRoots = modeText.Trim();
-            }
-
-            string? volumeRootAccess = null;
-            if (vestigo.TryGetIgnoreCase("VolumeRootAccess", out object? access) && access is string accessText &&
-                accessText.Trim().Length > 0)
-            {
-                volumeRootAccess = accessText.Trim();
-            }
+            string? volumeRoots = ReadModeValue(vestigo.TryGetIgnoreCase("VolumeRoots", out object? mode) ? mode : null);
+            string? volumeRootAccess = ReadAccessValue(
+                vestigo.TryGetIgnoreCase("VolumeRootAccess", out object? access) ? access : null);
 
             bool hasCustomRoots = false;
             if (vestigo.TryGetIgnoreCase("Roots", out object? roots) && roots is List<object?> list)
@@ -184,14 +175,15 @@ namespace Vestigo.Installer.Actions.Logic
         ///     Combines explicit MSI property values with the existing file and defaults. Blank inputs fall back to the
         ///     existing value, then to <see cref="ModeFixed" /> and <see cref="AccessReadWriteExecute" />. On an upgrade
         ///     where the file has no <c>VolumeRoots</c> key but does have custom <c>Roots</c>, the default mode is
-        ///     <see cref="ModeCustom" />. A blank access property keeps the existing flags text. Throws
-        ///     <see cref="ArgumentException" /> for invalid values.
+        ///     <see cref="ModeCustom" />. Existing access text is kept only when the access input was not an explicit
+        ///     installer selection. Throws <see cref="ArgumentException" /> for invalid values.
         /// </summary>
         public static ResolvedRootSettings Resolve(
             string? mode,
             string? access,
             ExistingRootSettings? existing,
-            bool isUpgrade = false)
+            bool isUpgrade = false,
+            bool accessIsExplicit = false)
         {
             string defaultMode = ModeFixed;
             if (existing != null)
@@ -227,8 +219,7 @@ namespace Vestigo.Installer.Actions.Logic
                 AccessReadWrite,
                 AccessReadWriteExecute);
             string? persistedAccess = null;
-            if (string.IsNullOrWhiteSpace(access) ||
-                (mappedAccess != null && string.Equals(resolvedAccess, mappedAccess, StringComparison.Ordinal)))
+            if (!accessIsExplicit)
             {
                 persistedAccess = resolvedMode != ModeCustom &&
                                   string.Equals(existingAccess, ServerNone, StringComparison.OrdinalIgnoreCase)
@@ -247,6 +238,93 @@ namespace Vestigo.Installer.Actions.Logic
         {
             vestigo.SetIgnoreCase("VolumeRoots", settings.VolumeRootsValue);
             vestigo.SetIgnoreCase("VolumeRootAccess", settings.VolumeRootAccessValue);
+        }
+
+        private static string? ReadModeValue(object? value)
+        {
+            if (value is string text && text.Trim().Length > 0)
+            {
+                return text.Trim();
+            }
+
+            if (value is JsonNumber number &&
+                int.TryParse(number.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+                parsed >= 0 && parsed <= 4)
+            {
+                if (parsed == 0)
+                {
+                    return ServerNone;
+                }
+
+                if (parsed == 1)
+                {
+                    return ServerSystemDrive;
+                }
+
+                if (parsed == 2)
+                {
+                    return ServerFixedVolumes;
+                }
+
+                if (parsed == 3)
+                {
+                    return ServerAllVolumes;
+                }
+
+                return ServerAllVolumesLive;
+            }
+
+            return null;
+        }
+
+        private static string? ReadAccessValue(object? value)
+        {
+            if (value is string text && text.Trim().Length > 0)
+            {
+                return text.Trim();
+            }
+
+            if (value is JsonNumber number &&
+                int.TryParse(number.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+                parsed >= 0 && (parsed & ~7) == 0)
+            {
+                if (parsed == 0)
+                {
+                    return ServerNone;
+                }
+
+                bool read = (parsed & 1) != 0;
+                bool write = (parsed & 2) != 0;
+                bool execute = (parsed & 4) != 0;
+                if (read && write && execute)
+                {
+                    return ServerReadWriteExecute;
+                }
+
+                if (read && write)
+                {
+                    return ServerReadWrite;
+                }
+
+                if (write && execute)
+                {
+                    return "Write, Execute";
+                }
+
+                if (read && execute)
+                {
+                    return "Read, Execute";
+                }
+
+                if (execute)
+                {
+                    return "Execute";
+                }
+
+                return write ? "Write" : ServerRead;
+            }
+
+            return null;
         }
 
         private static string? MapServerMode(string? value)
