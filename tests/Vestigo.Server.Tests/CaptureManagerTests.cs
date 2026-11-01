@@ -5,6 +5,7 @@ using Nefarius.Utilities.ETW.Deserializer.WPP;
 using Vestigo.Configuration;
 using Vestigo.Etws;
 using Vestigo.Security;
+using Vestigo.Spooling;
 using Vestigo.Tools;
 
 namespace Vestigo.Server.Tests;
@@ -499,5 +500,45 @@ public class CaptureManagerTests : IDisposable
     private sealed class UnusedHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => throw new NotSupportedException();
+    }
+}
+
+public class NdjsonSpoolTests
+{
+    [Fact]
+    public async Task ReadAsync_WaitsOnAnEmptyLivePageUntilAConcurrentAppendSignals()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "vestigo-spool-" + Guid.NewGuid().ToString("N") + ".ndjson");
+        await using NdjsonSpool spool = new(path);
+        spool.OpenWrite();
+
+        Task<NdjsonPage> pending = spool.ReadAsync(
+            0,
+            10,
+            () => "Running",
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+        await Task.Delay(50);
+        Assert.False(pending.IsCompleted);
+        await spool.AppendAsync("{}"u8.ToArray());
+
+        NdjsonPage page = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Single(page.Events);
+        Assert.Equal("{}", page.Events[0]);
+        TryDelete(path);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
     }
 }

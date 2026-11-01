@@ -144,9 +144,10 @@ public sealed class NdjsonSpool : IAsyncDisposable
     }
 
     /// <summary>
-    ///     Reads after <paramref name="afterSequence" />. When no unread lines remain and the producer is
-    ///     still running, waits up to <paramref name="wait" /> for a signal. <paramref name="state" /> is
-    ///     invoked on each attempt so a terminal state set while waiting is visible.
+    ///     Reads after <paramref name="afterSequence" />. When the first page is empty and the producer is
+    ///     still running, waits up to <paramref name="wait" /> on the signal captured before that read so a
+    ///     concurrent append is not missed. <paramref name="state" /> is invoked on each attempt so a
+    ///     terminal state set while waiting is visible.
     /// </summary>
     public async Task<NdjsonPage> ReadAsync(
         long afterSequence,
@@ -159,8 +160,7 @@ public sealed class NdjsonSpool : IAsyncDisposable
     {
         TaskCompletionSource signal = Signal;
         NdjsonPage page = Read(afterSequence, batch, state(), include, scanLimit);
-        bool noUnread = afterSequence >= Interlocked.Read(ref EventCount);
-        if (page.Events.Count == 0 && noUnread && !page.Completed && wait > TimeSpan.Zero)
+        if (page.Events.Count == 0 && !page.Completed && wait > TimeSpan.Zero)
         {
             try
             {

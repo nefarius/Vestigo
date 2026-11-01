@@ -153,10 +153,27 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
             string id = Guid.NewGuid().ToString("N")[..12];
             DebugCaptureJob job = new(id, Path.Combine(VestigoPaths.SpoolDirectory, "dbg-" + id + ".ndjson"));
             _jobs[id] = job;
-            job.State = "Running";
             job.Reader = Task.Run(
                 () => ReadLoopAsync(job, executable, arguments.Value!, duration),
                 CancellationToken.None);
+            try
+            {
+                await job.Started.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                await CleanupFailedStartAsync(job).ConfigureAwait(false);
+                if (ex is OperationCanceledException)
+                {
+                    throw;
+                }
+
+                return OperationResult<DebugCaptureStatus>.Fail(
+                    job.ErrorCode ?? "capture_failed",
+                    job.Error ?? ex.GetBaseException().Message);
+            }
+
+            job.State = "Running";
             _logger.LogInformation("Started debug-output capture {CaptureId}", job.Id);
             return OperationResult<DebugCaptureStatus>.Ok(job.ToStatus());
         }
@@ -321,6 +338,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
                                {
                                    job.ProcessId = pid;
                                    SaveOwnedProcess(new OwnedDebugViewProcess(pid, job.StartedAt, executable));
+                                   job.Started.TrySetResult();
                                },
                                linked.Token))
             {
@@ -352,6 +370,13 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
                     message.ProcessName,
                     message.Message);
                 byte[] utf8 = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions);
+                long projected = utf8.Length + 1;
+                if (Interlocked.Read(ref job.Spool.ByteCount) + projected > _options.DebugOutput.MaxOutputBytes)
+                {
+                    job.StopReason = "limit_reached";
+                    break;
+                }
+
                 long events = await job.Spool.AppendAsync(utf8).ConfigureAwait(false);
                 if (events >= _options.DebugOutput.MaxMessages ||
                     Interlocked.Read(ref job.Spool.ByteCount) >= _options.DebugOutput.MaxOutputBytes)
@@ -393,6 +418,12 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
         }
         finally
         {
+            if (!job.Started.Task.IsCompleted)
+            {
+                job.Started.TrySetException(
+                    new InvalidOperationException(job.Error ?? "DebugViewConsole did not start."));
+            }
+
             job.StoppedAt = DateTimeOffset.UtcNow;
             await job.Spool.DisposeAsync().ConfigureAwait(false);
             ClearOwnedProcess();
@@ -418,10 +449,30 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
             catch (TimeoutException)
             {
                 job.Error ??= "Timed out waiting for the debug-output reader to stop.";
+                return OperationResult<DebugCaptureStatus>.Fail("stop_timeout", job.Error);
             }
         }
 
         return OperationResult<DebugCaptureStatus>.Ok(job.ToStatus());
+    }
+
+    private async Task CleanupFailedStartAsync(DebugCaptureJob job)
+    {
+        await job.Cancellation.CancelAsync().ConfigureAwait(false);
+        if (job.Reader is not null)
+        {
+            try
+            {
+                await job.Reader.WaitAsync(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                job.Error ??= "Timed out waiting for the debug-output reader to stop.";
+            }
+        }
+
+        TryDelete(job.Spool.Path);
+        _jobs.TryRemove(job.Id, out _);
     }
 
     private bool TryCreatePredicate(
@@ -670,6 +721,8 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
         public int? ProcessId { get; set; }
 
         public Task? Reader { get; set; }
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public CancellationTokenSource Cancellation { get; } = new();
 

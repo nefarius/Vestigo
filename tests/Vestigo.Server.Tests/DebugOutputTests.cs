@@ -113,8 +113,10 @@ public class DebugOutputManagerTests : IDisposable
         OperationResult<DebugCaptureStatus> second = await manager.StartCaptureAsync(EmptyRequest(), CancellationToken.None);
 
         Assert.True(first.Success);
+        Assert.Equal(4242, first.Value!.ProcessId);
+        Assert.Equal("Running", first.Value.State);
         Assert.Equal("capture_busy", second.ErrorCode);
-        await manager.StopAsync(first.Value!.Id);
+        await manager.StopAsync(first.Value.Id);
     }
 
     [Fact]
@@ -132,6 +134,22 @@ public class DebugOutputManagerTests : IDisposable
         Assert.Equal("executable_missing", missing.ErrorCode);
         Assert.Equal("hash_mismatch", mismatch.ErrorCode);
         Assert.Empty(process.Started);
+    }
+
+    [Fact]
+    public async Task Start_FailsAndCleansUpWhenTheProcessDoesNotStart()
+    {
+        FakeDebugViewProcess process = new()
+        {
+            FailBeforeStart = new InvalidOperationException("launch failed")
+        };
+        DebugOutputManager manager = CreateManager(process, out _, out _);
+        OperationResult<DebugCaptureStatus> started = await manager.StartCaptureAsync(EmptyRequest(), CancellationToken.None);
+
+        Assert.False(started.Success);
+        Assert.Equal("capture_failed", started.ErrorCode);
+        Assert.Contains("launch failed", started.Error, StringComparison.Ordinal);
+        Assert.Empty(manager.List());
     }
 
     [Fact]
@@ -182,6 +200,27 @@ public class DebugOutputManagerTests : IDisposable
         Assert.Equal("limit_reached", limitStatus.StopReason);
         Assert.Equal(1, limitStatus.MessageCount);
         Assert.Equal("duration_elapsed", durationStatus.StopReason);
+    }
+
+    [Fact]
+    public async Task ReadLoop_DoesNotAppendAnEventThatWouldExceedTheByteBudget()
+    {
+        FakeDebugViewProcess process = new()
+        {
+            Lines =
+            [
+                Line("12:00:00.000", 1, "a.exe", "one"),
+                Line("12:00:00.001", 1, "a.exe", "two")
+            ]
+        };
+        DebugOutputManager manager = CreateManager(process, out VestigoOptions options, out _);
+        options.DebugOutput.MaxOutputBytes = 50;
+        OperationResult<DebugCaptureStatus> started = await manager.StartCaptureAsync(EmptyRequest(), CancellationToken.None);
+        DebugCaptureStatus status = await WaitForTerminalAsync(manager, started.Value!.Id);
+
+        Assert.Equal("limit_reached", status.StopReason);
+        Assert.Equal(0, status.MessageCount);
+        Assert.Equal(0, status.ByteCount);
     }
 
     [Fact]
@@ -331,12 +370,19 @@ public class DebugOutputManagerTests : IDisposable
 
         public List<IReadOnlyList<string>> Started { get; } = [];
 
+        public Exception? FailBeforeStart { get; set; }
+
         public async IAsyncEnumerable<DebugViewLine> RunAsync(
             string executable,
             IReadOnlyList<string> arguments,
             Action<int>? onStarted,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            if (FailBeforeStart is not null)
+            {
+                throw FailBeforeStart;
+            }
+
             Started.Add(arguments);
             onStarted?.Invoke(ProcessId);
             foreach (DebugViewLine line in Lines)
