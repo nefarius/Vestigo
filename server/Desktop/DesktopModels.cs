@@ -12,6 +12,18 @@ public sealed record DesktopRect(int X, int Y, int Width, int Height)
         && other.X < X + Width
         && Y < other.Y + other.Height
         && other.Y < Y + Height;
+
+    /// <summary>The overlapping rectangle, or null when the overlap is empty.</summary>
+    public DesktopRect? Intersection(DesktopRect other)
+    {
+        int left = Math.Max(X, other.X);
+        int top = Math.Max(Y, other.Y);
+        int right = Math.Min(X + Width, other.X + other.Width);
+        int bottom = Math.Min(Y + Height, other.Y + other.Height);
+        int width = right - left;
+        int height = bottom - top;
+        return width > 0 && height > 0 ? new DesktopRect(left, top, width, height) : null;
+    }
 }
 
 /// <summary>Width and height in physical pixels.</summary>
@@ -107,3 +119,111 @@ public sealed record WindowSelector(
 
     public static Regex? CompileTitle(string? pattern) => CloseSelector.CompileTitle(pattern);
 }
+
+/// <summary>Screenshot target accepted by <c>take_screenshot</c> and the session helper.</summary>
+public static class ScreenCaptureTarget
+{
+    public const string Desktop = "desktop";
+
+    public const string Display = "display";
+
+    public const string Window = "window";
+
+    public const string Region = "region";
+
+    public const int DefaultMaxEdge = 1920;
+
+    public const int MaxMaxEdge = 8192;
+
+    public static bool TryParse(string? value, out string target, out string? error)
+    {
+        target = Desktop;
+        error = null;
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, Desktop, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(value, Display, StringComparison.OrdinalIgnoreCase))
+        {
+            target = Display;
+            return true;
+        }
+
+        if (string.Equals(value, Window, StringComparison.OrdinalIgnoreCase))
+        {
+            target = Window;
+            return true;
+        }
+
+        if (string.Equals(value, Region, StringComparison.OrdinalIgnoreCase))
+        {
+            target = Region;
+            return true;
+        }
+
+        error = "target must be 'desktop', 'display', 'window' or 'region'.";
+        return false;
+    }
+}
+
+/// <summary>Parameters for one screen capture, passed to the session helper as arguments.</summary>
+public sealed record ScreenCaptureRequest(
+    string Target,
+    string? Display,
+    string? WindowHandle,
+    IReadOnlyList<int> Pids,
+    IReadOnlyList<string> ProcessNames,
+    string? TitlePattern,
+    DesktopRect? Region,
+    bool IncludeCursor,
+    int MaxEdge,
+    bool IncludeFullImage,
+    long MaxBytes)
+{
+    public static ScreenCaptureRequest DesktopPreview { get; } = new(
+        ScreenCaptureTarget.Desktop,
+        null,
+        null,
+        [],
+        [],
+        null,
+        null,
+        false,
+        ScreenCaptureTarget.DefaultMaxEdge,
+        false,
+        DesktopOptions.DefaultMaxScreenshotBytes);
+}
+
+/// <summary>PNG capture plus metadata. Image payloads are base64 for the session-helper JSON contract.</summary>
+public sealed record ScreenCaptureResult(
+    string Target,
+    DesktopRect Bounds,
+    DesktopSize Size,
+    DesktopSize? PreviewSize,
+    int Dpi,
+    IReadOnlyList<string> Displays,
+    string? WindowHandle,
+    string? WindowTitle,
+    string? PreviewPngBase64,
+    string? FullPngBase64,
+    int SessionId);
+
+/// <summary>Screenshot metadata returned to the MCP client. Image bytes travel as MCP image content, not here.</summary>
+public sealed record ScreenCaptureInfo(
+    string Target,
+    DesktopRect Bounds,
+    DesktopSize Size,
+    DesktopSize? PreviewSize,
+    int Dpi,
+    IReadOnlyList<string> Displays,
+    string? WindowHandle,
+    string? WindowTitle,
+    string? SavedPath,
+    long? SavedSize,
+    string? SavedSha256,
+    bool? ReplacedExisting,
+    int SessionId);
+
+/// <summary>Decoded helper capture ready to become a <c>CallToolResult</c>.</summary>
+public sealed record CapturedScreenshot(ScreenCaptureInfo Info, byte[]? PreviewPng);

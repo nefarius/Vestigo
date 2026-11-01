@@ -101,6 +101,7 @@ public static class ModuleRegistry
 
         bool debugOutput = enabled.Any(module => module.Name == "DebugOutput");
         bool desktop = enabled.Any(module => module.Name == "Desktop");
+        bool desktopScreenshots = desktop && options.Desktop.AllowScreenshots;
         bool audio = enabled.Any(module => module.Name == "Audio");
         bool audioSetDefault = audio && options.Audio.AllowSetDefault;
         if (capabilities.Count == 0 && !debugOutput && !desktop && !audio)
@@ -118,7 +119,10 @@ public static class ModuleRegistry
             if (desktop)
             {
                 names.Add("Desktop");
-                clauses.Add($"{reach} can list windows, titles, and displays on the console user's desktop.");
+                clauses.Add(
+                    desktopScreenshots
+                        ? $"{reach} can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop."
+                        : $"{reach} can list windows, titles, and displays on the console user's desktop.");
             }
 
             if (audio)
@@ -147,7 +151,9 @@ public static class ModuleRegistry
         string extras = "";
         if (desktop)
         {
-            extras += "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop. ";
+            extras += desktopScreenshots
+                ? "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop. "
+                : "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop. ";
         }
 
         if (audio)

@@ -138,7 +138,7 @@ The `Processes` module is disabled by default and requires the `Jobs` module. Th
 
 ## Desktop
 
-The `Desktop` module is disabled by default. It lists Win32 windows and the GDI/physical displays they are rendered on. Window titles from the console user's desktop are information disclosure; read [security.md](security.md#desktop) first. Enabling it without `ApiTokens` is allowed and logs a startup `SECURITY WARNING`.
+The `Desktop` module is disabled by default. It lists Win32 windows and the GDI/physical displays they are rendered on, and can take screenshots of that desktop. Window titles and screen contents from the console user's desktop are information disclosure; read [security.md](security.md#desktop) first. Enabling it without `ApiTokens` is allowed and logs a startup `SECURITY WARNING`. Screenshots stay off until `Vestigo:Desktop:AllowScreenshots` is `true`.
 
 `list_windows` returns each matching window's handle (hex), title, class, owning process (pid, name, path when `PROCESS_QUERY_LIMITED_INFORMATION` is allowed), parent (null when the parent is the desktop), owner, root owner, visibility, minimized/maximized/cloaked, `GetWindowRect` bounds, DWM extended-frame bounds, client size, window DPI, nearest GDI display (`\\.\DISPLAY1`), and every display its bounds intersect. Coordinates are physical pixels: the enumerator switches the thread to per-monitor DPI awareness for the call.
 
@@ -147,6 +147,12 @@ Filters combine: `pid` or `processName`, narrowed by `titleRegex` and `className
 Windows belong to a desktop, so the default `interactive` context starts `Vestigo.exe --session-helper list-windows` in the console user's session; it prints JSON and exits. `context: service` only sees the service's own desktop (session 0 when Vestigo runs as a service). Interactive enumeration needs a console user; it fails with `no_interactive_session` otherwise. Secure and locked desktops are not visible. `ProcessPath` may be null for protected processes. Titles are read with `SendMessageTimeout` so a hung window cannot stall the listing (that title is then empty).
 
 `list_displays` returns the GDI topology (`\\.\DISPLAYn`, bounds, work area, DPI, primary) plus the physical targets `QueryDisplayConfig` reports for each source, including cloned outputs (`friendlyName`, `devicePath`, EDID manufacturer/product, output technology, connector instance). When that API is unavailable (session 0, some RDP sessions) the tool falls back to `EnumDisplayDevices` and may return empty monitor details.
+
+`take_screenshot` captures a PNG of the console user's desktop. `target` is `desktop` (the default; the virtual screen across all monitors), `display` (one GDI display: `display` is `primary` or `\\.\DISPLAYn` from `list_displays`), `window` (one top-level window), or `region` (`x`, `y`, `width`, `height` in the same physical-pixel coordinates `list_displays` reports; the rectangle is clipped to the virtual screen and an empty overlap fails with `empty_region`). A window is selected with `windowHandle` from `list_windows`, or with `pid` / `processName` / `titleRegex` that must resolve to exactly one visible top-level window (`ambiguous_window` lists the candidates; `window_not_found` and `window_minimized` are the other failures). Do not pass both a handle and the filter fields.
+
+The tool returns a downscaled PNG as MCP image content (longest edge `maxEdge`, default 1920; `0` omits the preview) plus JSON metadata: target, captured bounds, full and preview sizes, DPI, intersecting displays, window handle and title when relevant, and the saved path, size and SHA-256 when `saveTo` is set. `saveTo` is a `root:relative\file.png` in a root with Write access; `overwrite` replaces an existing file. `includeCursor` draws the mouse pointer. The capture always runs in the interactive session through `Vestigo.exe --session-helper capture-screen`; there is no service-session path.
+
+Known limitations: the lock screen and UAC secure desktop fail with `desktop_unavailable`; DRM or `SetWindowDisplayAffinity` windows, and some GPU or fullscreen-exclusive apps, can render black with `PrintWindow`; protected content is not bypassed. Image bytes and base64 are never logged.
 
 ## Audio
 
