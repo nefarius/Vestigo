@@ -40,7 +40,7 @@ File, log, process, and device tools use named `Vestigo:Roots` plus any `VolumeR
 
 ## Health is degraded
 
-The process is up, but `AllowedInputRoots` or `AllowedOutputRoots` is still empty. Only the Trace tools that take ETL, PDB, TMF, or conversion-output paths fail until those lists are set. Named `Roots` and `VolumeRoots` tools keep working. A default MSI install reports Degraded for this reason. An unhealthy result means the spool directory is not writable.
+The process is up, but `AllowedInputRoots` or `AllowedOutputRoots` is still empty. A Trace call fails for that reason only when it uses a path governed by that list. Calls without ETL, PDB, TMF, or conversion-output paths are unaffected. Named `Roots` and `VolumeRoots` tools keep working. A default MSI install reports Degraded for this reason. An unhealthy result means the spool directory is not writable.
 
 ## Interactive-session tools fail
 
