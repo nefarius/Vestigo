@@ -49,6 +49,16 @@ WM_SETTINGCHANGE
 SEND_MESSAGE_TIMEOUT_FLAGS
 TOKEN_USER
 
+// State directories: open without following links, enumerate and set DACLs by handle
+GetFileInformationByHandleEx
+OpenFileById
+GetSecurityInfo
+SetKernelObjectSecurity
+LocalFree
+FILE_ID_BOTH_DIR_INFO
+FILE_ATTRIBUTE_TAG_INFO
+FILE_ID_DESCRIPTOR
+
 // RemoteDebugger module: Authenticode verification of the downloaded installer
 WinVerifyTrust
 WINTRUST_DATA

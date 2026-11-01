@@ -8,6 +8,8 @@
 
 The listen address is not an IP address, a limit is not positive, or a token entry is blank. The exception names the setting.
 
+`Refusing to use the Vestigo state directory: ...` means the state tree under `%ProgramData%\Nefarius Software Solutions\Vestigo` failed verification: a path component is a link or junction, a directory has an untrusted owner, or a parent can be modified by non-administrators. Remove the link, or take ownership as Administrators and fix the permissions, or reinstall the MSI (it re-applies the protected ACL), then restart the service.
+
 ## The server is not reachable from another machine
 
 `ListenAddress` must be `0.0.0.0` or `::` (or the machine address), and the inbound firewall rule `Vestigo MCP Server` must exist for the port. The MSI adds it for the "any address" modes. Restart the service after editing `appsettings.json`. A startup `SECURITY WARNING` in the log means no `ApiTokens` are set while the server is reachable from the network.

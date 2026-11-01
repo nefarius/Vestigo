@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
@@ -173,6 +174,8 @@ namespace Vestigo.Installer.Actions
         {
             try
             {
+                // First, so reparse points are rejected before any settings-file read or write.
+                SecureStateDirectories(session);
                 CustomActionData data = session.CustomActionData;
                 string path = SettingsFilePath();
                 string current = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
@@ -199,7 +202,6 @@ namespace Vestigo.Installer.Actions
                     merged = ListenSettings.Merge(null, resolved, modules);
                 }
 
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
                 string temp = path + ".tmp";
                 WriteSecureFile(temp, new UTF8Encoding(false).GetBytes(merged));
                 if (File.Exists(path))
@@ -305,6 +307,97 @@ namespace Vestigo.Installer.Actions
             {
                 stream.Write(content, 0, content.Length);
             }
+        }
+
+        /// <summary>
+        ///     Creates (or re-secures on upgrade) the ProgramData state tree with a protected SYSTEM + Administrators
+        ///     DACL and fails the install when a component is a reparse point. The company folder's ACL is always
+        ///     reset; an untrusted owner is logged and replaced. Other Nefarius products' subfolders are left alone.
+        /// </summary>
+        private static void SecureStateDirectories(Session session)
+        {
+            string company = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                CompanyFolder);
+            string product = Path.Combine(company, ProductFolder);
+            string[] managed =
+            {
+                product,
+                Path.Combine(product, "logs"),
+                Path.Combine(product, "spool"),
+                Path.Combine(product, "symcache")
+            };
+
+            foreach (string existing in new[] { company }.Concat(managed))
+            {
+                if (Directory.Exists(existing) && (File.GetAttributes(existing) & System.IO.FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidOperationException("'" + existing + "' is a reparse point; refusing to use it for Vestigo state.");
+                }
+            }
+
+            SecurityIdentifier administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            SecurityIdentifier system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+
+            if (!Directory.Exists(company))
+            {
+                new DirectoryInfo(company).Create(CompanyFolderSecurity(system, administrators));
+            }
+            else
+            {
+                DirectoryInfo companyInfo = new DirectoryInfo(company);
+                if (!IsTrustedOwner(companyInfo.GetAccessControl(), system, administrators))
+                {
+                    session.Log("Taking ownership of '" + company + "' (untrusted owner).");
+                }
+
+                companyInfo.SetAccessControl(CompanyFolderSecurity(system, administrators));
+            }
+
+            foreach (string directory in managed)
+            {
+                DirectorySecurity security = StateDirectorySecurity(system, administrators);
+                DirectoryInfo info = new DirectoryInfo(directory);
+                if (!info.Exists)
+                {
+                    info.Create(security);
+                }
+                else
+                {
+                    info.SetAccessControl(security);
+                }
+            }
+
+            session.Log("Secured Vestigo state directories under " + product + ".");
+        }
+
+        private static bool IsTrustedOwner(FileSystemSecurity security, SecurityIdentifier system, SecurityIdentifier administrators)
+        {
+            SecurityIdentifier owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            return owner != null && (owner.Equals(system) || owner.Equals(administrators));
+        }
+
+        private static DirectorySecurity StateDirectorySecurity(SecurityIdentifier system, SecurityIdentifier administrators)
+        {
+            DirectorySecurity security = new DirectorySecurity();
+            security.SetOwner(administrators);
+            security.SetAccessRuleProtection(true, false);
+            InheritanceFlags inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+            security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+            return security;
+        }
+
+        private static DirectorySecurity CompanyFolderSecurity(SecurityIdentifier system, SecurityIdentifier administrators)
+        {
+            DirectorySecurity security = StateDirectorySecurity(system, administrators);
+            security.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+                FileSystemRights.ReadAndExecute,
+                InheritanceFlags.None,
+                PropagationFlags.None,
+                AccessControlType.Allow));
+            return security;
         }
 
         private static void SecureFile(string path)

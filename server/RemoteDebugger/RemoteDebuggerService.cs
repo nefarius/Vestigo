@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Vestigo.Configuration;
 using Vestigo.Jobs;
 using Vestigo.Processes;
+using Vestigo.Security;
 
 namespace Vestigo.RemoteDebugger;
 
@@ -151,7 +152,16 @@ public sealed class RemoteDebuggerService(
     private async Task<int> DownloadVerifyInstallAsync(Uri url, JobContext output, CancellationToken cancellationToken)
     {
         string directory = Path.Combine(VestigoPaths.SpoolDirectory, "remote-debugger", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        try
+        {
+            StateDirectories.EnsureSubdirectory(directory);
+        }
+        catch (InvalidOperationException ex)
+        {
+            output.WriteLine("Refusing to download: " + ex.Message);
+            return 1;
+        }
+
         string file = Path.Combine(directory, "VS_RemoteTools.exe");
         try
         {
@@ -203,6 +213,8 @@ public sealed class RemoteDebuggerService(
                 return 1;
             }
 
+            // Fail closed if a path component was swapped for a link while the download ran.
+            StateDirectories.EnsureSubdirectory(directory);
             output.WriteLine($"Signature valid, signer: {signature.Value}");
             LaunchRequest request = new(file, RemoteDebuggerPlanner.InstallArguments, directory, new Dictionary<string, string>(), LaunchContext.Service, false);
             output.WriteLine("Running: " + RemoteDebuggerPlanner.Describe(RemoteDebuggerPlanner.InstallArguments));

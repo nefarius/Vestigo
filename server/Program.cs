@@ -28,9 +28,7 @@ WebApplicationOptions webOptions = new()
 };
 
 Directory.SetCurrentDirectory(AppContext.BaseDirectory);
-Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
-Directory.CreateDirectory(VestigoPaths.LogDirectory);
-Directory.CreateDirectory(VestigoPaths.SpoolDirectory);
+IReadOnlyList<string> stateRepairs = StateDirectories.EnsureSecure();
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(webOptions);
 builder.Configuration.AddJsonFile(VestigoPaths.SettingsFilePath, optional: true, reloadOnChange: false);
@@ -89,6 +87,11 @@ builder.Services.AddMcpServer()
 
 WebApplication app = builder.Build();
 Log.Information("Vestigo modules enabled: {Modules}", string.Join(", ", modules.Select(module => module.Name)));
+foreach (string repair in stateRepairs)
+{
+    app.Logger.LogWarning("{StateDirectoryRepair}", repair);
+}
+
 if (vestigo.GetExposureWarning() is { } exposureWarning)
 {
     app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
