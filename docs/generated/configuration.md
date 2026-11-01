@@ -10,7 +10,8 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `AttachableSessions` | `empty` |
 | `BufferSizeKb` | `64` |
 | `ClockResolution` | `QueryPerformanceCounter` |
-| `Devices` | `defaults (see Devices:*)` |
+| `Devices:NefconPath` | `null` |
+| `Devices:NefconTimeout` | `00:02:00` |
 | `Environment:ProtectedNames` | `COMSPEC, SystemRoot, windir` |
 | `EventLog:MaxEvents` | `500` |
 | `EventLog:MaxScannedEvents` | `20000` |
@@ -32,13 +33,15 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `MaxReadBatch` | `200` |
 | `MaxReadWait` | `00:00:30` |
 | `Modules` | `empty` |
-| `Processes:AllowPathLookup` | `True` |
+| `Processes:AllowPathLookup` | `true` |
 | `RemoteDebugger:DefaultPort` | `4026` |
 | `RemoteDebugger:ExtraSearchPaths` | `empty` |
 | `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` |
 | `Roots` | `empty` |
-| `Services` | `defaults (see Services:*)` |
-| `Software` | `Vestigo.Software.SoftwareOptions` |
+| `Services:ProtectedNames` | `Vestigo, RpcSs, DcomLaunch, PlugPlay, Power, LSM, SamSs` |
+| `Software:AllowUninstall` | `false` |
+| `Software:MaxUninstallDuration` | `00:30:00` |
+| `Software:ProtectedNames` | `Vestigo` |
 | `SpoolRetention` | `1.00:00:00` |
 | `SymbolCache` | `null` |
 | `SymbolServer` | `null` |

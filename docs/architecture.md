@@ -5,13 +5,15 @@ Vestigo is one ASP.NET Core process. It hosts the official MCP Streamable HTTP e
 ```mermaid
 flowchart LR
     client[MCP client] --> mcp["/mcp"]
-    mcp --> tools[Trace tools]
-    tools --> offline[Offline conversion]
-    tools --> jobs[Capture manager]
-    offline --> etw[Nefarius.Utilities.ETW]
-    jobs --> session[EtwRealtimeSession]
-    session --> spool[ProgramData spool]
-    jobs --> spool
+    client --> filesHttp["/files"]
+    client --> health["/health"]
+    mcp --> auth[API token when configured]
+    filesHttp --> auth
+    auth --> modules[Enabled modules]
+    modules --> jobs[Job manager]
+    modules --> roots[Trace and named roots]
+    modules --> state[ProgramData state]
+    jobs --> state
 ```
 
 Offline conversion scans or decodes `.etl` files and writes a bounded JSON or NDJSON file. Realtime capture creates a `Vestigo-` session, enables WPP providers, and appends decoded events to a spool. Clients read that spool with `read_capture`. The server is stateless HTTP and cannot push, so live following is a long-poll: a read with `waitSeconds` parks on a per-job signal that the reader sets after every flushed event and when the job ends. The spool uses exact `\n`-terminated lines with a sparse byte-offset checkpoint every 1024 events, so reads seek instead of rescanning. `attach_etw_session` creates a job in `Attached` mode that consumes an external session by name; it is excluded from the owned-sessions file and from orphan cleanup, and stopping it only cancels Vestigo's consumer.
@@ -32,7 +34,7 @@ Tool logic (name validation, protected-name refusal, wait loops and timeouts, re
 
 ## Modules
 
-Features are `VestigoModule` classes listed in `ModuleRegistry`. A module contributes services, MCP tool types, and optional HTTP endpoints, and is switched with `Vestigo:Modules:<Name>:Enabled`. Current modules: `Trace` (the WPP and ETW tools below), `Jobs` (background jobs with paged output, wait, and cancel), `Processes` (run, list, close, and kill processes; opt-in, requires `Jobs` and API tokens), `Files` (root-confined file tools plus authenticated `PUT`/`GET /files/{root}/{path}` transfer endpoints), `Environment` (machine, user, and process environment variables), `Logs` (tail and incremental reads of text files), `EventLog` (Windows event log channels and `.evtx` files), `Services` (Windows services and kernel drivers; enabled by default), `Software` (installed software inventory and gated silent uninstall; depends on `Jobs`) and `Devices` (driver install, device nodes, class filters, and device state; opt-in), and `RemoteDebugger` (install and run `msvsmon.exe`; opt-in, depends on `Jobs` and `Processes`). A module can declare `Dependencies`, and startup fails when an enabled module needs a disabled one. The `Files` module keeps its replace and locked-file logic in `FileDeployer`; reboot-time operations go through `IRebootScheduler`, implemented with CsWin32 `MoveFileEx`, and signature checks use `WinVerifyTrust`.
+Features are `VestigoModule` classes listed in `ModuleRegistry`. A module contributes services, MCP tool types, and optional HTTP endpoints, and is switched with `Vestigo:Modules:<Name>:Enabled`. Current modules: `Trace` (the WPP and ETW tools below), `Jobs` (background jobs with paged output, wait, and cancel), `Processes` (run, list, close, and kill processes; opt-in, requires `Jobs`), `Files` (root-confined file tools plus `PUT`/`GET /files/{root}/{path}` transfer endpoints that use the same authentication as `/mcp`), `Environment` (machine, user, and process environment variables), `Logs` (tail and incremental reads of text files), `EventLog` (Windows event log channels and `.evtx` files), `Services` (Windows services and kernel drivers; enabled by default), `Software` (installed software inventory and gated silent uninstall; depends on `Jobs`), `Devices` (driver install, device nodes, class filters, and device state; opt-in), and `RemoteDebugger` (install and run `msvsmon.exe`; opt-in, depends on `Jobs` and `Processes`). A module can declare `Dependencies`, and startup fails when an enabled module needs a disabled one. Enabling `Processes`, `Devices`, or `RemoteDebugger` without `ApiTokens` is allowed and logs a startup `SECURITY WARNING`. `Services` is named in that warning only when the server binds beyond loopback, and `Software:AllowUninstall` only when the Software module is also enabled. The `Files` module keeps its replace and locked-file logic in `FileDeployer`; reboot-time operations go through `IRebootScheduler`, implemented with CsWin32 `MoveFileEx`, and signature checks use `WinVerifyTrust`. `/files` is anonymous while `ApiTokens` is empty.
 
 File-system access for new modules goes through `RootPolicy`: named roots with `Read`, `Write` and `Execute` flags and the same link-following canonicalization as the trace path policy. Long operations run as jobs so an MCP call stays short.
 

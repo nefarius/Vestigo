@@ -12,4 +12,26 @@ Supported environment segments are `srv*cache*url`, `srv*url`, and `cache*dir`. 
 
 TMF files supply message formats. They do not supply provider GUIDs. PDB files can supply both. Provider-name rewrite is enabled only when a loaded PDB has a usable WPP control name.
 
-Downloaded files stay in the cache directory. Vestigo does not delete them as part of spool retention.
+Explicit `SymbolServer` or `SymbolCache` values take precedence over `_NT_SYMBOL_PATH`. `AllowedInputRoots` are searched only for PDB files whose embedded GUID and age match; they are not a general symbol path.
+
+Practical setup:
+
+```text
+_NT_SYMBOL_PATH=srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+```
+
+Or set the same pair in the machine settings and ignore the environment:
+
+```json
+{
+  "Vestigo": {
+    "SymbolCache": "C:\\symbols",
+    "SymbolServer": "https://msdl.microsoft.com/download/symbols",
+    "AllowedInputRoots": [ "D:\\traces" ]
+  }
+}
+```
+
+Pass explicit PDB or TMF paths to `start_capture` and `validate_decoding_sources` when the live session cannot discover them. For conversion, `scan_etl_metadata` reports the PDB name, GUID, age, and symbol-server index prefix to look up.
+
+Downloaded files stay in the cache directory. Vestigo does not delete them as part of spool retention. If a configured `SymbolCache` sits outside the settings tree, allow write access for the trusted identity that runs Vestigo (the configured MSI service account, or the user running `dotnet run`). Do not share a writable cache between a privileged service and an untrusted user; see [security.md](security.md) and [configuration.md](configuration.md). Use [troubleshooting.md](troubleshooting.md#decoded-text-is-missing) when formats are missing.

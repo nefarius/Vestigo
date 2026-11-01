@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 
@@ -45,8 +46,8 @@ public static class McpToolCatalog
                 continue;
             }
 
-            builder.AppendLine("| Parameter | Type | Description |");
-            builder.AppendLine("| --- | --- | --- |");
+            builder.AppendLine("| Parameter | Type | Required | Default | Description |");
+            builder.AppendLine("| --- | --- | --- | --- | --- |");
             foreach (ParameterInfo parameter in parameters)
             {
                 string parameterDescription = parameter.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
@@ -55,6 +56,10 @@ public static class McpToolCatalog
                     .Append("` | `")
                     .Append(DisplayType(parameter.ParameterType))
                     .Append("` | ")
+                    .Append(parameter.HasDefaultValue ? "no" : "yes")
+                    .Append(" | ")
+                    .Append(parameter.HasDefaultValue ? $"`{FormatDefault(parameter.DefaultValue)}`" : "")
+                    .Append(" | ")
                     .Append(parameterDescription.Replace("|", "\\|", StringComparison.Ordinal))
                     .AppendLine(" |");
             }
@@ -78,13 +83,40 @@ public static class McpToolCatalog
             return DisplayType(type.GetElementType()!) + "[]";
         }
 
+        if (type.IsGenericType)
+        {
+            string name = type.Name;
+            int tick = name.IndexOf('`', StringComparison.Ordinal);
+            if (tick >= 0)
+            {
+                name = name[..tick];
+            }
+
+            return name + "<" + string.Join(", ", type.GetGenericArguments().Select(DisplayType)) + ">";
+        }
+
         return type.Name switch
         {
             "String" => "string",
             "Boolean" => "bool",
+            "Byte" => "byte",
             "Int32" => "int",
             "Int64" => "long",
+            "UInt32" => "uint",
+            "UInt64" => "ulong",
+            "Single" => "float",
+            "Double" => "double",
+            "Decimal" => "decimal",
+            "Object" => "object",
             _ => type.Name
         };
     }
+
+    private static string FormatDefault(object? value) => value switch
+    {
+        null => "null",
+        bool flag => flag ? "true" : "false",
+        string text => text,
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
+    };
 }

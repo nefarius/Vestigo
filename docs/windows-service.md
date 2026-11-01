@@ -28,7 +28,7 @@ After the license page the installer asks how the server is reachable. The four 
 | 3. Any address, no token (shows a warning) | `0.0.0.0` | empty | inbound TCP, chosen port |
 | 4. Any address, with token (default) | `0.0.0.0` | one token | inbound TCP, chosen port |
 
-The page also takes the port (default 5098) and, for token modes, the token. It is pre-filled with a random suggestion (32 random bytes, base64url) that you can replace; tokens must be at least 16 characters without spaces. A deferred, elevated action runs before the service starts and merges only `Vestigo:ListenAddress`, `ListenPort`, and `ApiTokens` into `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. Every other key is kept. The file is UTF-8 without BOM and its ACL allows only SYSTEM and Administrators. It holds the token in clear text. If the existing file is not valid JSON it is kept as `appsettings.json.bak-<time>` and a new one is written.
+The page also takes the port (default 5098) and, for token modes, the token. It is pre-filled with a random suggestion (32 random bytes, base64url) that you can replace; tokens must be at least 16 characters without spaces. A deferred, elevated action runs before the service starts and writes the installer-owned settings into `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`: `Vestigo:ListenAddress`, `ListenPort`, `ApiTokens`, `Vestigo:Modules:<Name>:Enabled` for every module, and `Vestigo:Software:AllowUninstall`. Only non-owned settings are retained. The file is UTF-8 without BOM and its ACL allows only SYSTEM and Administrators. It holds the token in clear text. If the existing file is not valid JSON it is kept as `appsettings.json.bak-<time>` and a new one is written.
 
 On upgrade the page is pre-filled from the existing file: a loopback address maps to localhost, any other address to "any address", and a non-empty `ApiTokens` to token mode. The existing token is kept unless you change it. The page can only read the file when the installer runs elevated; otherwise it shows the defaults, and an untouched suggested token never replaces an existing one. A specific non-loopback address already in the file (for example `192.168.1.5`) is kept in the "any address" modes.
 
@@ -46,7 +46,7 @@ msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=localhost VESTIGO_AUTH_MODE=none 
 msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=token VESTIGO_API_TOKEN=<your-token>
 ```
 
-With token mode and no token on the command line (and none stored), the installer generates one; read it from the settings file. Invalid values fail the install. The firewall rule is removed on uninstall and when a repair or upgrade switches to a localhost mode.
+With token mode and no token on the command line (and none stored), the installer generates one; read it from the settings file before pointing an MCP client at `/mcp`. Invalid values fail the install. The firewall rule is removed on uninstall and when a repair or upgrade switches to a localhost mode. Repair and modify rewrite the installer-owned settings (`ListenAddress`, `ListenPort`, `ApiTokens`, `Vestigo:Modules:<Name>:Enabled`, and `Vestigo:Software:AllowUninstall`); only non-owned settings are retained. Uninstall removes the service and firewall rule and leaves the ProgramData settings tree in place.
 
 ## Modules
 
