@@ -110,6 +110,7 @@ QueryFullProcessImageName
 GetDC
 ReleaseDC
 CreateCompatibleDC
+CreateCompatibleBitmap
 CreateDIBSection
 SelectObject
 BitBlt

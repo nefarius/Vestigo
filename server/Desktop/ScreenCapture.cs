@@ -378,58 +378,82 @@ public static class ScreenCapture
     {
         if (target.Target == ScreenCaptureTarget.Window && !target.Window.IsNull)
         {
+            if (target.WindowRect is { } windowRect &&
+                (windowRect.X != target.Bounds.X || windowRect.Y != target.Bounds.Y ||
+                 windowRect.Width != target.Bounds.Width || windowRect.Height != target.Bounds.Height))
+            {
+                return CropPrintedWindow(target.Window, screen, memory, windowRect, target.Bounds);
+            }
+
             if (Win32PInvoke.PrintWindow(target.Window, memory, (PRINT_WINDOW_FLAGS)PwRenderFullContent))
             {
-                if (target.WindowRect is { } windowRect &&
-                    (windowRect.X != target.Bounds.X || windowRect.Y != target.Bounds.Y ||
-                     windowRect.Width != target.Bounds.Width || windowRect.Height != target.Bounds.Height))
-                {
-                    return CropPrintedWindow(screen, memory, windowRect, target.Bounds);
-                }
-
                 return true;
             }
         }
 
-        return Win32PInvoke.BitBlt(
-            memory,
-            0,
-            0,
-            target.Bounds.Width,
-            target.Bounds.Height,
-            screen,
-            target.Bounds.X,
-            target.Bounds.Y,
-            (ROP_CODE)((uint)ROP_CODE.SRCCOPY | CaptureBlt));
+        return ScreenBlit(screen, memory, target.Bounds);
     }
 
-    private static bool CropPrintedWindow(HDC screen, HDC memory, DesktopRect windowRect, DesktopRect frame)
+    private static bool CropPrintedWindow(HWND window, HDC screen, HDC memory, DesktopRect windowRect, DesktopRect frame)
     {
-        int dx = frame.X - windowRect.X;
-        int dy = frame.Y - windowRect.Y;
-        if (dx == 0 && dy == 0 && frame.Width == windowRect.Width && frame.Height == windowRect.Height)
+        if (windowRect.Width is <= 0 or > 32767 || windowRect.Height is <= 0 or > 32767)
         {
-            return true;
+            return ScreenBlit(screen, memory, frame);
         }
 
-        // PrintWindow filled memory with the full window. Copy the DWM frame into a same-size blit from memory
-        // onto itself only when the frame is a subset; otherwise fall back to a screen blit of the frame.
-        if (dx >= 0 && dy >= 0 && dx + frame.Width <= windowRect.Width && dy + frame.Height <= windowRect.Height)
+        HDC full = Win32PInvoke.CreateCompatibleDC(screen);
+        if (full.IsNull)
         {
-            return Win32PInvoke.BitBlt(memory, 0, 0, frame.Width, frame.Height, memory, dx, dy, ROP_CODE.SRCCOPY);
+            return ScreenBlit(screen, memory, frame);
         }
 
-        return Win32PInvoke.BitBlt(
+        HBITMAP bitmap = Win32PInvoke.CreateCompatibleBitmap(screen, windowRect.Width, windowRect.Height);
+        if (bitmap.IsNull)
+        {
+            Win32PInvoke.DeleteDC(full);
+            return ScreenBlit(screen, memory, frame);
+        }
+
+        HGDIOBJ previous = Win32PInvoke.SelectObject(full, bitmap);
+        try
+        {
+            if (!Win32PInvoke.PrintWindow(window, full, (PRINT_WINDOW_FLAGS)PwRenderFullContent))
+            {
+                return ScreenBlit(screen, memory, frame);
+            }
+
+            int dx = frame.X - windowRect.X;
+            int dy = frame.Y - windowRect.Y;
+            if (dx >= 0 && dy >= 0 && dx + frame.Width <= windowRect.Width && dy + frame.Height <= windowRect.Height)
+            {
+                return Win32PInvoke.BitBlt(memory, 0, 0, frame.Width, frame.Height, full, dx, dy, ROP_CODE.SRCCOPY);
+            }
+
+            return ScreenBlit(screen, memory, frame);
+        }
+        finally
+        {
+            if (!previous.IsNull)
+            {
+                Win32PInvoke.SelectObject(full, previous);
+            }
+
+            Win32PInvoke.DeleteObject(bitmap);
+            Win32PInvoke.DeleteDC(full);
+        }
+    }
+
+    private static bool ScreenBlit(HDC screen, HDC memory, DesktopRect bounds) =>
+        Win32PInvoke.BitBlt(
             memory,
             0,
             0,
-            frame.Width,
-            frame.Height,
+            bounds.Width,
+            bounds.Height,
             screen,
-            frame.X,
-            frame.Y,
+            bounds.X,
+            bounds.Y,
             (ROP_CODE)((uint)ROP_CODE.SRCCOPY | CaptureBlt));
-    }
 
     private static unsafe void DrawCursor(HDC hdc, DesktopRect bounds)
     {

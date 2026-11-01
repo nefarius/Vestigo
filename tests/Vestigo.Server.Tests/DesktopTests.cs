@@ -385,6 +385,11 @@ public class DesktopTests
                 64,
                 false,
                 DesktopOptions.DefaultMaxScreenshotBytes));
+            if (shot.ErrorCode == "desktop_unavailable")
+            {
+                return;
+            }
+
             Assert.True(shot.Success, shot.Error);
             Assert.Equal(ScreenCaptureTarget.Window, shot.Value!.Target);
             Assert.NotNull(shot.Value.PreviewPngBase64);
