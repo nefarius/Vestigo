@@ -146,9 +146,16 @@ public sealed class StateDirectoriesTests : IDisposable
             AccessControlType.Allow));
         spool.SetAccessControl(security);
         string target = Directory.CreateDirectory(Path.Combine(_base, "target")).FullName;
-        CreateJunction(Path.Combine(VestigoPaths.SpoolDirectory, "trap"), target);
+        string kept = Path.Combine(target, "kept.txt");
+        File.WriteAllText(kept, "x");
+        string targetBefore = new DirectoryInfo(target).GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+        string fileBefore = new FileInfo(kept).GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+        string child = Directory.CreateDirectory(Path.Combine(VestigoPaths.SpoolDirectory, "child")).FullName;
+        CreateJunction(Path.Combine(child, "trap"), target);
 
         Assert.Throws<InvalidOperationException>(() => StateDirectories.EnsureSecure());
+        Assert.Equal(targetBefore, new DirectoryInfo(target).GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access));
+        Assert.Equal(fileBefore, new FileInfo(kept).GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access));
     }
 
     [Fact]

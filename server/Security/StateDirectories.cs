@@ -237,10 +237,46 @@ public static class StateDirectories
             return;
         }
 
-        info.SetAccessControl(ProtectedSecurity(extra));
-        ResetChildren(info, extra);
+        // Set the new DACL on this directory only. SetSecurityInfo would propagate it and follow links.
+        DirectorySecurity replacement = ProtectedSecurity(extra);
+        using (SafeFileHandle handle = OpenForRepair(path))
+        {
+            WriteDacl(handle, replacement.GetSecurityDescriptorBinaryForm());
+            ResetOpened(handle, path, extra, replacement);
+        }
+
         repairs.Add($"Reset permissions of '{path}' to SYSTEM and Administrators only" +
                     (writer is null ? " (inheritance was enabled)." : $" (it was writable by {writer})."));
+    }
+
+    /// <summary>Opens a directory without following a link, or refuses with the state-directory error.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows6.0.6000")]
+    private static SafeFileHandle OpenForRepair(string path)
+    {
+        SafeFileHandle handle;
+        try
+        {
+            handle = OpenNoFollow(path, asDirectory: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            throw Unsafe($"permissions of '{path}' could not be reset ({ex.GetType().Name})");
+        }
+
+        try
+        {
+            if (IsReparsePoint(handle))
+            {
+                throw Unsafe($"'{path}' is a reparse point (link or junction), which Vestigo does not follow");
+            }
+
+            return handle;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Requires a trusted owner for the root and every component down to <paramref name="full" />.</summary>
@@ -277,34 +313,10 @@ public static class StateDirectories
     /// <summary>
     ///     Resets descendants through handles opened with backup semantics and without following links, so a reparse
     ///     point swapped in after the name was listed cannot redirect the ACL write. Children are opened by file id
-    ///     from the parent handle.
+    ///     from the parent handle. Each child's DACL is written only to that handle.
     /// </summary>
     [System.Runtime.Versioning.SupportedOSPlatform("windows6.0.6000")]
-    private static void ResetChildren(DirectoryInfo directory, string? extra)
-    {
-        SafeFileHandle handle;
-        try
-        {
-            handle = OpenNoFollow(directory.FullName, asDirectory: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
-        {
-            throw Unsafe($"permissions of '{directory.FullName}' could not be reset ({ex.GetType().Name})");
-        }
-
-        using (handle)
-        {
-            if (IsReparsePoint(handle))
-            {
-                throw Unsafe($"'{directory.FullName}' is a reparse point (link or junction), which Vestigo does not follow");
-            }
-
-            ResetOpened(handle, directory.FullName, extra);
-        }
-    }
-
-    [System.Runtime.Versioning.SupportedOSPlatform("windows6.0.6000")]
-    private static void ResetOpened(SafeFileHandle directory, string displayPath, string? extra)
+    private static void ResetOpened(SafeFileHandle directory, string displayPath, string? extra, DirectorySecurity parentSecurity)
     {
         foreach ((string name, long fileId) in ListChildren(directory))
         {
@@ -324,10 +336,11 @@ public static class StateDirectories
                 }
                 else
                 {
-                    ApplyInheritedDacl(child);
-                    if ((attributes & FileAttributes.Directory) != 0)
+                    bool isDirectory = (attributes & FileAttributes.Directory) != 0;
+                    ApplyInheritedDacl(child, isDirectory, parentSecurity);
+                    if (isDirectory)
                     {
-                        ResetOpened(child, childPath, extra);
+                        ResetOpened(child, childPath, extra, parentSecurity);
                     }
                 }
             }
@@ -444,44 +457,79 @@ public static class StateDirectories
         }
     }
 
-    /// <summary>Replaces the DACL with an unprotected empty one so the entry inherits the parent.</summary>
+    /// <summary>
+    ///     Writes the DACL the child would have inherited, directly onto <paramref name="handle" />.
+    ///     <c>SetKernelObjectSecurity</c> does not propagate to descendants, so a junction is never followed.
+    /// </summary>
     [System.Runtime.Versioning.SupportedOSPlatform("windows6.0.6000")]
-    private static unsafe void ApplyInheritedDacl(SafeFileHandle handle)
+    private static void ApplyInheritedDacl(SafeFileHandle handle, bool isDirectory, DirectorySecurity parentSecurity)
     {
-        FileSecurity security = new();
-        security.SetAccessRuleProtection(isProtected: false, preserveInheritance: false);
-        byte[] binary = security.GetSecurityDescriptorBinaryForm();
-        fixed (byte* sd = binary)
+        RawAcl acl = new(RawAcl.AclRevision, 8);
+        foreach (FileSystemAccessRule rule in parentSecurity.GetAccessRules(true, true, typeof(SecurityIdentifier)))
         {
-            if (!PInvoke.GetSecurityDescriptorDacl(new PSECURITY_DESCRIPTOR(sd), out BOOL present, out ACL* dacl, out _) || !present || dacl is null)
+            bool container = rule.InheritanceFlags.HasFlag(InheritanceFlags.ContainerInherit);
+            bool objects = rule.InheritanceFlags.HasFlag(InheritanceFlags.ObjectInherit);
+            if (isDirectory ? !container && !objects : !objects)
             {
-                throw new IOException("Could not build an inheriting DACL.");
+                continue;
             }
 
-            // The SafeHandle overload copies ACL by value and would drop the ACEs that follow the header.
-            bool referenced = false;
-            handle.DangerousAddRef(ref referenced);
-            try
+            AceFlags flags = AceFlags.Inherited;
+            if (isDirectory && !rule.PropagationFlags.HasFlag(PropagationFlags.NoPropagateInherit))
             {
-                WIN32_ERROR error = PInvoke.SetSecurityInfo(
-                    new HANDLE(handle.DangerousGetHandle()),
-                    SE_OBJECT_TYPE.SE_FILE_OBJECT,
-                    OBJECT_SECURITY_INFORMATION.DACL_SECURITY_INFORMATION | OBJECT_SECURITY_INFORMATION.UNPROTECTED_DACL_SECURITY_INFORMATION,
-                    PSID.Null,
-                    PSID.Null,
-                    dacl,
-                    null);
-                if (error != WIN32_ERROR.ERROR_SUCCESS)
+                if (container)
                 {
-                    throw new Win32Exception((int)error);
+                    flags |= AceFlags.ContainerInherit;
+                }
+
+                if (objects)
+                {
+                    flags |= AceFlags.ObjectInherit;
+                }
+
+                // An object-only ACE does not grant access to the directory; it only passes on to files.
+                if (!container || rule.PropagationFlags.HasFlag(PropagationFlags.InheritOnly))
+                {
+                    flags |= AceFlags.InheritOnly;
                 }
             }
-            finally
+
+            AceQualifier qualifier = rule.AccessControlType == AccessControlType.Allow
+                ? AceQualifier.AccessAllowed
+                : AceQualifier.AccessDenied;
+            acl.InsertAce(
+                acl.Count,
+                new CommonAce(flags, qualifier, (int)rule.FileSystemRights, (SecurityIdentifier)rule.IdentityReference, false, null));
+        }
+
+        if (acl.Count == 0)
+        {
+            throw new IOException("The parent directory has no inheritable permissions to apply.");
+        }
+
+        RawSecurityDescriptor descriptor = new(
+            ControlFlags.DiscretionaryAclPresent | ControlFlags.DiscretionaryAclAutoInherited,
+            owner: null,
+            group: null,
+            systemAcl: null,
+            discretionaryAcl: acl);
+        byte[] binary = new byte[descriptor.BinaryLength];
+        descriptor.GetBinaryForm(binary, 0);
+        WriteDacl(handle, binary);
+    }
+
+    /// <summary>Replaces the DACL of the already-open object and nothing else.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows6.0.6000")]
+    private static unsafe void WriteDacl(SafeFileHandle handle, byte[] securityDescriptor)
+    {
+        fixed (byte* sd = securityDescriptor)
+        {
+            if (!PInvoke.SetKernelObjectSecurity(
+                    handle,
+                    OBJECT_SECURITY_INFORMATION.DACL_SECURITY_INFORMATION,
+                    new PSECURITY_DESCRIPTOR(sd)))
             {
-                if (referenced)
-                {
-                    handle.DangerousRelease();
-                }
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
             }
         }
     }

@@ -53,8 +53,7 @@ TOKEN_USER
 GetFileInformationByHandleEx
 OpenFileById
 GetSecurityInfo
-SetSecurityInfo
-GetSecurityDescriptorDacl
+SetKernelObjectSecurity
 LocalFree
 FILE_ID_BOTH_DIR_INFO
 FILE_ATTRIBUTE_TAG_INFO
