@@ -52,7 +52,7 @@ Window closing, desktop enumeration, and audio endpoint access need the target s
 
 ### Audio
 
-`AudioTools` lists endpoints and switches defaults through `AudioInventory`. The service path calls `AudioEndpoints` in-process. The interactive path launches the session helper as the console user. Enumeration uses [NAudio.Wasapi](https://github.com/naudio/NAudio) (`MMDeviceEnumerator`) for volume, mute, a short peak-meter sample, sessions, and the current default roles. Switching calls the undocumented `IPolicyConfig.SetDefaultEndpoint` (hand-declared) and is gated by `Vestigo:Audio:AllowSetDefault`.
+`AudioTools` lists endpoints and switches defaults through `AudioInventory`. The service path calls `AudioEndpoints` in-process. The interactive path launches the session helper as the console user. Enumeration uses [NAudio.Wasapi](https://github.com/naudio/NAudio) (`MMDeviceEnumerator`) for volume, mute, a short peak-meter sample, sessions, and the current default roles. Switching calls the undocumented `IPolicyConfig.SetDefaultEndpoint` (hand-declared). `AudioTools` refuses the switch unless `Vestigo:Audio:AllowSetDefault` is true; the helper does not read the machine settings file.
 
 ### RemoteDebugger
 

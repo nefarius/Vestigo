@@ -362,10 +362,7 @@ public static class SessionHelper
     }
 
     /// <summary>Runs the helper command and returns the process exit code.</summary>
-    /// <param name="allowSetDefault">
-    ///     <c>Vestigo:Audio:AllowSetDefault</c> loaded by the caller from configuration, never from these arguments.
-    /// </param>
-    public static int Run(string[] args, bool allowSetDefault)
+    public static int Run(string[] args)
     {
         if (args.Length < 2 || args[0] != Flag)
         {
@@ -379,7 +376,7 @@ public static class SessionHelper
             ListWindowsCommand => RunListWindows(args),
             ListDisplaysCommand => RunListDisplays(args),
             ListAudioCommand => RunListAudio(args),
-            SetDefaultAudioCommand => RunSetDefaultAudio(args, allowSetDefault),
+            SetDefaultAudioCommand => RunSetDefaultAudio(args),
             _ => Reject($"Unknown session-helper command '{args[1]}'.")
         };
     }
@@ -455,13 +452,10 @@ public static class SessionHelper
         return 0;
     }
 
-    private static int RunSetDefaultAudio(string[] args, bool allowSetDefault)
+    private static int RunSetDefaultAudio(string[] args)
     {
-        if (!allowSetDefault)
-        {
-            return Reject("Changing the default audio endpoint is disabled. Set Vestigo:Audio:AllowSetDefault to true.");
-        }
-
+        // Gated by AudioTools from the service's VestigoOptions. This process is the console
+        // user and must not open the machine settings file (it holds API tokens).
         if (!TryParseSetDefaultAudio(args, out string id, out string role, out string? error))
         {
             return Reject(error!);

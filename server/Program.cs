@@ -6,7 +6,6 @@ using ModelContextProtocol.AspNetCore;
 
 using Serilog;
 
-using Vestigo.Audio;
 using Vestigo.Configuration;
 using Vestigo.Devices;
 using Vestigo.Etws;
@@ -18,7 +17,7 @@ using Vestigo.Security;
 // Session helper: started by the service inside the console user's session; must not boot the web host.
 if (SessionHelper.IsInvocation(args))
 {
-    Environment.ExitCode = SessionHelper.Run(args, AudioAllowSetDefault.Load());
+    Environment.ExitCode = SessionHelper.Run(args);
     return;
 }
 

@@ -53,60 +53,6 @@ public class AudioTests
         Assert.False(SessionHelper.TryParseSetDefaultAudio([SessionHelper.Flag, SessionHelper.SetDefaultAudioCommand, "--id", "x", "--role", "output"], out _, out _, out _));
     }
 
-    [Fact]
-    public void SessionHelper_SetDefaultAudio_RejectsWhenAllowSetDefaultIsFalse()
-    {
-        TextWriter previous = Console.Out;
-        StringWriter output = new();
-        Console.SetOut(output);
-        try
-        {
-            int code = SessionHelper.Run(
-                [SessionHelper.Flag, SessionHelper.SetDefaultAudioCommand, "--id", "x", "--role", "all"],
-                allowSetDefault: false);
-            Assert.Equal(2, code);
-        }
-        finally
-        {
-            Console.SetOut(previous);
-        }
-
-        Assert.Contains("Vestigo:Audio:AllowSetDefault", output.ToString(), StringComparison.Ordinal);
-        Assert.DoesNotContain("not_found", output.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AudioAllowSetDefault_ReadsJsonSettingsNotArguments()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "vestigo-audio-allow-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        string? previous = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
-        try
-        {
-            File.WriteAllText(
-                Path.Combine(directory, "appsettings.json"),
-                """{ "Vestigo": { "Audio": { "AllowSetDefault": true } } }""");
-            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", directory);
-            Assert.True(AudioAllowSetDefault.Load());
-
-            File.WriteAllText(
-                Path.Combine(directory, "appsettings.json"),
-                """{ "Vestigo": { "Audio": { "AllowSetDefault": false } } }""");
-            Assert.False(AudioAllowSetDefault.Load());
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", previous);
-            try
-            {
-                Directory.Delete(directory, recursive: true);
-            }
-            catch (IOException)
-            {
-            }
-        }
-    }
-
     [Theory]
     [InlineData(null, AudioSelector.RoleDefault, new[] { "console", "multimedia" })]
     [InlineData("default", AudioSelector.RoleDefault, new[] { "console", "multimedia" })]
@@ -221,36 +167,6 @@ public class AudioTests
     }
 
     [Fact]
-    public async Task SessionHelperClient_PassesServiceSettingsDirectory()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "vestigo-audio-helper-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        string? previous = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
-        try
-        {
-            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", directory);
-            CapturingLauncher launcher = new();
-            AudioInventory inventory = new(launcher, new SessionHelperClient(launcher));
-
-            await inventory.ListAsync(AudioSelector.Defaults, LaunchContext.Interactive, CancellationToken.None);
-
-            Assert.NotNull(launcher.Last);
-            Assert.Equal(VestigoPaths.SettingsDirectory, launcher.Last.Environment["VESTIGO_SETTINGS_DIR"]);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", previous);
-            try
-            {
-                Directory.Delete(directory, recursive: true);
-            }
-            catch (IOException)
-            {
-            }
-        }
-    }
-
-    [Fact]
     public void List_ServiceContext_SucceedsOnWindows()
     {
         if (!OperatingSystem.IsWindows())
@@ -273,21 +189,6 @@ public class AudioTests
 
     private static AudioTools CreateTools(IProcessLauncher launcher, VestigoOptions options) =>
         new(new AudioInventory(launcher, new SessionHelperClient(launcher)), options);
-
-    private sealed class CapturingLauncher : IProcessLauncher
-    {
-        public LaunchRequest? Last { get; private set; }
-
-        public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) =>
-            OperationResult<bool>.Ok(true);
-
-        public Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
-        {
-            Last = request;
-            File.WriteAllText(output.OutputPath, """{"error":"stop"}""");
-            return Task.FromResult(2);
-        }
-    }
 
     private sealed class UnavailableLauncher : IProcessLauncher
     {
