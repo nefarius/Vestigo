@@ -159,7 +159,7 @@ public class SystemToolsTests
 
         BootConfigurationChange change = service.SetTestSigning(false).Value!;
 
-        Assert.False(change.After);
+        Assert.False(change.After!.Value);
         Assert.Equal(1, platform.SetTestSigningCalls);
     }
 
@@ -233,9 +233,23 @@ public class SystemToolsTests
 
         BootConfigurationChange change = service.SetTestSigning(true).Value!;
 
-        Assert.True(change.After);
+        Assert.True(change.After!.Value);
         Assert.True(change.RebootRequired);
         Assert.Equal("testSigning", change.Setting);
+    }
+
+    [Fact]
+    public void SetWhqlDeveloperTestMode_ReportsRebootRequiredWhenProbeIsUnknown()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.WhqlReadError = new InvalidOperationException("missing");
+
+        BootConfigurationChange change = service.SetWhqlDeveloperTestMode(true).Value!;
+
+        Assert.Null(change.Before);
+        Assert.Null(change.After);
+        Assert.True(change.RebootRequired);
+        Assert.Equal(1, platform.SetWhqlCalls);
     }
 
     [Fact]

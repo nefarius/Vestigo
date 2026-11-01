@@ -34,8 +34,8 @@ public sealed record BootSecurityResult(
 public sealed record BootConfigurationChange(
     string Setting,
     bool Enabled,
-    bool Before,
-    bool After,
+    bool? Before,
+    bool? After,
     bool RebootRequired);
 
 /// <summary>Validates and maps host OS and boot-security probes. Never reboots the machine.</summary>
@@ -134,7 +134,7 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
             enabled,
             static p => p.WhqlDeveloperTestMode,
             static (p, value) => p.SetWhqlDeveloperTestMode(value),
-            rebootRequired: (before, after) => before != after);
+            rebootRequired: (before, after) => before is null || after is null || before != after);
     }
 
     private OperationResult<BootConfigurationChange> Write(
@@ -170,8 +170,8 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
             new BootConfigurationChange(
                 setting,
                 enabled,
-                before ?? !enabled,
-                after ?? enabled,
+                before,
+                after,
                 rebootRequired(before, after)));
     }
 
