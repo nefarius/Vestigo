@@ -8,7 +8,7 @@ namespace Vestigo.Processes;
 
 /// <summary>
 ///     Starts <c>Vestigo.exe --session-helper ...</c> as the console user and parses the single JSON document it
-///     writes to stdout. Used by window close and by desktop enumeration, which only see the caller's desktop.
+///     writes to stdout. Used by window close, desktop enumeration, and screenshots, which only see the caller's desktop.
 /// </summary>
 public sealed class SessionHelperClient(IProcessLauncher launcher)
 {
@@ -90,7 +90,11 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
             using JsonDocument document = JsonDocument.Parse(line);
             if (document.RootElement.TryGetProperty("error", out JsonElement error))
             {
-                return OperationResult<T>.Fail("invalid_request", error.GetString() ?? "The session helper rejected the request.");
+                string code = document.RootElement.TryGetProperty("errorCode", out JsonElement errorCode) &&
+                              errorCode.GetString() is { Length: > 0 } parsed
+                    ? parsed
+                    : "invalid_request";
+                return OperationResult<T>.Fail(code, error.GetString() ?? "The session helper rejected the request.");
             }
 
             T? value = document.RootElement.Deserialize<T>(SessionHelper.Json);

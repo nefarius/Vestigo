@@ -788,6 +788,28 @@ Returns the last lines of a text file under a root with Read access. The file is
 | `lines` | `int` | no | `100` | Number of lines to return. Clamped to MaxTailLines. |
 | `maxBytes` | `int?` | no | `null` | Maximum bytes to examine from the end of the file. Clamped to MaxTailBytes. |
 
+## `take_screenshot`
+
+Captures a PNG of the console user's desktop. target 'desktop' (default) is the virtual screen across all monitors; 'display' is one GDI display (display='primary' or \\.\DISPLAYn from list_displays); 'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel coordinates list_displays reports. Returns a downscaled preview as image content (maxEdge, default 1920; 0 omits it) plus JSON metadata. saveTo stores the full-resolution PNG in a root with Write access (root:relative\file.png). Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `target` | `string` | no | `desktop` | 'desktop' (default), 'display', 'window' or 'region'. |
+| `display` | `string` | no | `null` | GDI device name such as \\.\DISPLAY2, or 'primary'. Required for target 'display'. |
+| `windowHandle` | `string` | no | `null` | Hex window handle from list_windows (0x...). |
+| `pid` | `int?` | no | `null` | Process id of the window to capture. |
+| `processName` | `string` | no | `null` | Process name, with or without .exe. |
+| `titleRegex` | `string` | no | `null` | .NET regular expression matched against window titles (case-insensitive). |
+| `x` | `int?` | no | `null` | Region left, virtual-screen physical pixels. |
+| `y` | `int?` | no | `null` | Region top, virtual-screen physical pixels. |
+| `width` | `int?` | no | `null` | Region width in physical pixels. |
+| `height` | `int?` | no | `null` | Region height in physical pixels. |
+| `includeCursor` | `bool` | no | `false` | Draw the mouse cursor on the capture. |
+| `maxEdge` | `int` | no | `1920` | Longest edge of the inline preview in pixels. 0 omits the preview. Default 1920. |
+| `saveTo` | `string` | no | `null` | Optional destination as root:relative\file.png. Needs Write access. |
+| `overwrite` | `bool` | no | `false` | Replace an existing saveTo file. |
+| `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when capturing as the console user. |
+
 ## `uninstall_driver`
 
 Uninstalls the driver described by an INF inside a readable root (nefcon --uninstall-driver).

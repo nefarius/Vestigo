@@ -19,6 +19,8 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `DebugOutput:MaxMessages` | `1000000` |
 | `DebugOutput:MaxOutputBytes` | `536870912` |
 | `DebugOutput:MaxPatternLength` | `256` |
+| `Desktop:AllowScreenshots` | `false` |
+| `Desktop:MaxScreenshotBytes` | `134217728` |
 | `Devices:NefconPath` | `null` |
 | `Devices:NefconTimeout` | `00:02:00` |
 | `Environment:ProtectedNames` | `COMSPEC, SystemRoot, windir` |
