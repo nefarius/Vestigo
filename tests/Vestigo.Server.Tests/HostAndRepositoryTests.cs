@@ -143,6 +143,7 @@ public class RepositoryBoundaryTests
                      "MaxOutputBytes", "MaxCaptureDuration", "SpoolRetention", "MaxConcurrentCaptures",
                      "MaxReadBatch", "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds",
                      "ClockResolution", "Software:AllowUninstall", "Software:ProtectedNames",
+                     "System:AllowBootConfigurationChanges",
                      "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
                      "Services:ProtectedNames", "Processes:AllowPathLookup", "Files:MaxUploadBytes",
                      "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256",

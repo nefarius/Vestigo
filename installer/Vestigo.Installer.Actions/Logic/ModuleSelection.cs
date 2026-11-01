@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DebugOutput and software uninstall are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DebugOutput, software uninstall, and boot configuration writes are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -34,8 +34,29 @@ namespace Vestigo.Installer.Actions.Logic
     }
 
     /// <summary>
+    ///     A pseudo-module that maps to a boolean option under <c>Vestigo:&lt;Section&gt;:&lt;Key&gt;</c> instead of
+    ///     <c>Vestigo:Modules:&lt;Name&gt;:Enabled</c>.
+    /// </summary>
+    public sealed class OptionToggle
+    {
+        public OptionToggle(string name, string section, string key)
+        {
+            Name = name;
+            Section = section;
+            Key = key;
+        }
+
+        public string Name { get; }
+
+        public string Section { get; }
+
+        public string Key { get; }
+    }
+
+    /// <summary>
     ///     Pure logic for the module feature tree: the module list, reading choices from the existing settings, the
-    ///     deferred-action data format, and the merge into <c>Vestigo:Modules</c> and <c>Vestigo:Software:AllowUninstall</c>.
+    ///     deferred-action data format, and the merge into <c>Vestigo:Modules</c> and option toggles such as
+    ///     <c>Vestigo:Software:AllowUninstall</c>.
     /// </summary>
     public static class ModuleSelection
     {
@@ -45,11 +66,21 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Software:AllowUninstall</c>.</summary>
         public const string SoftwareUninstall = "SoftwareUninstall";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowBootConfigurationChanges</c>.</summary>
+        public const string BootConfigurationChanges = "BootConfigurationChanges";
+
+        public static readonly IReadOnlyList<OptionToggle> OptionToggles = new List<OptionToggle>
+        {
+            new OptionToggle(SoftwareUninstall, "Software", "AllowUninstall"),
+            new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges")
+        };
+
         public static readonly IReadOnlyList<ModuleDefinition> All = new List<ModuleDefinition>
         {
             new ModuleDefinition("Trace", "Trace", "Offline ETL/WPP conversion and managed realtime capture.", true, null),
             new ModuleDefinition("Files", "Files", "Root-confined file tools plus authenticated PUT/GET transfer endpoints.", true, null),
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
+            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail and incremental reads of text log files.", true, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
             new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop.", false, null),
@@ -60,8 +91,27 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
-            new ModuleDefinition(SoftwareUninstall, "Silent uninstall", "Allow silent uninstalls of installed software as the service account (Vestigo:Software:AllowUninstall). Administrator-equivalent.", false, "Software")
+            new ModuleDefinition(SoftwareUninstall, "Silent uninstall", "Allow silent uninstalls of installed software as the service account (Vestigo:Software:AllowUninstall). Administrator-equivalent.", false, "Software"),
+            new ModuleDefinition(BootConfigurationChanges, "Boot configuration", "Allow changing BCD test-signing and WHQL developer test mode (Vestigo:System:AllowBootConfigurationChanges). Administrator-equivalent. Takes effect after reboot.", false, "System")
         };
+
+        public static bool IsOptionToggle(string name)
+        {
+            return FindOptionToggle(name) != null;
+        }
+
+        public static OptionToggle? FindOptionToggle(string name)
+        {
+            foreach (OptionToggle toggle in OptionToggles)
+            {
+                if (string.Equals(toggle.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return toggle;
+                }
+            }
+
+            return null;
+        }
 
         public static ModuleDefinition? Find(string name)
         {
@@ -121,7 +171,7 @@ namespace Vestigo.Installer.Actions.Logic
                 foreach (KeyValuePair<string, object?> member in moduleObject.Members)
                 {
                     ModuleDefinition? module = Find(member.Key);
-                    if (module != null && module.Name != SoftwareUninstall && member.Value is JsonObject settings &&
+                    if (module != null && !IsOptionToggle(module.Name) && member.Value is JsonObject settings &&
                         settings.TryGetIgnoreCase("Enabled", out object? enabled) && enabled is bool flag)
                     {
                         result[module.Name] = flag;
@@ -129,10 +179,14 @@ namespace Vestigo.Installer.Actions.Logic
                 }
             }
 
-            if (vestigo.TryGetIgnoreCase("Software", out object? software) && software is JsonObject softwareObject &&
-                softwareObject.TryGetIgnoreCase("AllowUninstall", out object? allow) && allow is bool allowFlag)
+            foreach (OptionToggle toggle in OptionToggles)
             {
-                result[SoftwareUninstall] = allowFlag;
+                if (vestigo.TryGetIgnoreCase(toggle.Section, out object? sectionValue) &&
+                    sectionValue is JsonObject sectionObject &&
+                    sectionObject.TryGetIgnoreCase(toggle.Key, out object? allow) && allow is bool allowFlag)
+                {
+                    result[toggle.Name] = allowFlag;
+                }
             }
 
             return result;
@@ -189,8 +243,9 @@ namespace Vestigo.Installer.Actions.Logic
         }
 
         /// <summary>
-        ///     Writes <c>Vestigo:Modules:&lt;Name&gt;:Enabled</c> and <c>Vestigo:Software:AllowUninstall</c> for the given states,
-        ///     keeping every other member (including other keys inside the touched objects).
+        ///     Writes <c>Vestigo:Modules:&lt;Name&gt;:Enabled</c> and each option toggle (for example
+        ///     <c>Vestigo:Software:AllowUninstall</c>) for the given states, keeping every other member
+        ///     (including other keys inside the touched objects).
         /// </summary>
         public static void Apply(JsonObject vestigo, IDictionary<string, bool> states)
         {
@@ -212,7 +267,7 @@ namespace Vestigo.Installer.Actions.Logic
 
             foreach (ModuleDefinition module in All)
             {
-                if (module.Name == SoftwareUninstall || !states.TryGetValue(module.Name, out bool enabled))
+                if (IsOptionToggle(module.Name) || !states.TryGetValue(module.Name, out bool enabled))
                 {
                     continue;
                 }
@@ -239,20 +294,26 @@ namespace Vestigo.Installer.Actions.Logic
                 settings.SetIgnoreCase("Enabled", enabled);
             }
 
-            if (states.TryGetValue(SoftwareUninstall, out bool allow))
+            foreach (OptionToggle toggle in OptionToggles)
             {
-                JsonObject software;
-                if (vestigo.TryGetIgnoreCase("Software", out object? existingSoftware) && existingSoftware is JsonObject existingSoftwareObject)
+                if (!states.TryGetValue(toggle.Name, out bool allow))
                 {
-                    software = existingSoftwareObject;
+                    continue;
+                }
+
+                JsonObject section;
+                if (vestigo.TryGetIgnoreCase(toggle.Section, out object? existingSection) &&
+                    existingSection is JsonObject existingSectionObject)
+                {
+                    section = existingSectionObject;
                 }
                 else
                 {
-                    software = new JsonObject();
-                    vestigo.SetIgnoreCase("Software", software);
+                    section = new JsonObject();
+                    vestigo.SetIgnoreCase(toggle.Section, section);
                 }
 
-                software.SetIgnoreCase("AllowUninstall", allow);
+                section.SetIgnoreCase(toggle.Key, allow);
             }
         }
     }

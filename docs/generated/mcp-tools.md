@@ -171,6 +171,12 @@ Finds devices that expose a device interface GUID and returns their instance IDs
 | `interfaceGuid` | `string` | yes |  | Device interface GUID. |
 | `presentOnly` | `bool` | no | `true` | Only currently present devices. False also returns phantom devices. |
 
+## `get_boot_security`
+
+Returns UEFI vs legacy BIOS, Secure Boot, BCD test-signing (configured, takes effect at next boot), the running kernel test-signing state, WHQL developer test mode, and rebootPending when the BCD value and the running state differ. Notes cover Secure Boot, a pending reboot, and that BCD changes apply only to the default boot entry.
+
+No parameters.
+
 ## `get_capture`
 
 Returns status, counters, and the last error for one capture.
@@ -244,6 +250,12 @@ Returns state, start type, binary path, type (including KERNEL_DRIVER), error co
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `name` | `string` | yes |  | Service name (not the display name). |
+
+## `get_system_info`
+
+Returns the host Windows name, edition, display version (for example 24H2), version string, major/minor/build/UBR, whether it is Windows 11 or Server, whether the install was in-place upgraded, OS and processor bitness, ARM64, UAC disabled, and the machine name. One failed probe becomes a null field.
+
+No parameters.
 
 ## `get_upload_url`
 
@@ -630,6 +642,22 @@ Sets the start type: boot, system, auto, demand or disabled. boot and system are
 | --- | --- | --- | --- | --- |
 | `name` | `string` | yes |  | Service name. |
 | `startType` | `string` | yes |  | boot, system, auto, demand or disabled. |
+
+## `set_test_signing`
+
+Sets BCDE_LIBRARY_TYPE_ALLOW_PRERELEASE_SIGNATURES on the default boot entry. Requires Vestigo:System:AllowBootConfigurationChanges. Refused with secure_boot_enabled when turning test signing on unless Secure Boot is known to be disabled. Does not reboot; the running kernel changes only after a restart. Never logs secrets.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | `bool` | yes |  | true to enable test signing, false to disable it. |
+
+## `set_whql_developer_test_mode`
+
+Sets the kernel WHQL developer test mode policy that allows traditional cross-signed drivers. Requires Vestigo:System:AllowBootConfigurationChanges. Availability depends on the Windows build. Does not reboot.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | `bool` | yes |  | true to enable WHQL developer test mode, false to disable it. |
 
 ## `start_capture`
 

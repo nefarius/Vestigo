@@ -15,7 +15,7 @@ public class ModuleSelectionTests
     {
         VestigoModuleNames();
 
-        foreach (ModuleDefinition definition in ModuleSelection.All.Where(m => m.Name != ModuleSelection.SoftwareUninstall))
+        foreach (ModuleDefinition definition in ModuleSelection.All.Where(m => !ModuleSelection.IsOptionToggle(m.Name)))
         {
             VestigoModule module = Assert.Single(ModuleRegistry.All, m => m.Name == definition.Name);
             Assert.Equal(module.EnabledByDefault, definition.DefaultOn);
@@ -26,13 +26,15 @@ public class ModuleSelectionTests
         }
 
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SoftwareUninstall]);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.BootConfigurationChanges]);
+        Assert.Equal("System", ModuleSelection.Find(ModuleSelection.BootConfigurationChanges)?.Parent);
     }
 
     private static void VestigoModuleNames()
     {
         Assert.Equal(
             ModuleRegistry.All.Select(m => m.Name).OrderBy(n => n),
-            ModuleSelection.All.Where(m => m.Name != ModuleSelection.SoftwareUninstall).Select(m => m.Name).OrderBy(n => n));
+            ModuleSelection.All.Where(m => !ModuleSelection.IsOptionToggle(m.Name)).Select(m => m.Name).OrderBy(n => n));
     }
 
     private static bool IsAncestor(string ancestor, string name)
@@ -58,7 +60,8 @@ public class ModuleSelectionTests
         {
             ["Processes"] = true,
             ["Logs"] = true,
-            ["SoftwareUninstall"] = true
+            ["SoftwareUninstall"] = true,
+            ["BootConfigurationChanges"] = true
         };
 
         string merged = ListenSettings.Merge(existing, Open(), states);
@@ -67,6 +70,7 @@ public class ModuleSelectionTests
         Assert.True(read["Processes"]);
         Assert.True(read["Logs"]);
         Assert.True(read["SoftwareUninstall"]);
+        Assert.True(read["BootConfigurationChanges"]);
         Assert.Contains("\"SymbolServer\"", merged);
         Assert.Contains("\"Extra\": 1", merged);
         Assert.Contains("\"Serilog\"", merged);
@@ -77,19 +81,26 @@ public class ModuleSelectionTests
     public void Merge_MatchesKeysCaseInsensitively_WithoutDuplicates()
     {
         const string existing = """
-            { "Vestigo": { "modules": { "processes": { "enabled": false } }, "software": { "allowuninstall": false } } }
+            { "Vestigo": { "modules": { "processes": { "enabled": false } }, "software": { "allowuninstall": false }, "system": { "allowbootconfigurationchanges": false } } }
             """;
 
         string merged = ListenSettings.Merge(
             existing,
             Open(),
-            new Dictionary<string, bool> { ["Processes"] = true, ["SoftwareUninstall"] = true });
+            new Dictionary<string, bool>
+            {
+                ["Processes"] = true,
+                ["SoftwareUninstall"] = true,
+                ["BootConfigurationChanges"] = true
+            });
 
         Assert.Contains("\"enabled\": true", merged);
         Assert.Contains("\"allowuninstall\": true", merged);
+        Assert.Contains("\"allowbootconfigurationchanges\": true", merged);
         Assert.DoesNotContain("\"Enabled\"", merged);
         Assert.DoesNotContain("\"Modules\"", merged);
         Assert.DoesNotContain("\"AllowUninstall\"", merged);
+        Assert.DoesNotContain("\"AllowBootConfigurationChanges\"", merged);
         Assert.True(ModuleSelection.ReadExisting(merged)["Processes"]);
     }
 
@@ -109,11 +120,12 @@ public class ModuleSelectionTests
         Assert.Empty(ModuleSelection.ReadExisting("""{ "Vestigo": { "ListenPort": 1 } }"""));
 
         IDictionary<string, bool> read = ModuleSelection.ReadExisting(
-            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false } } }""");
+            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "System": { "AllowBootConfigurationChanges": true } } }""");
 
-        Assert.Equal(2, read.Count);
+        Assert.Equal(3, read.Count);
         Assert.True(read["Devices"]);
         Assert.False(read["SoftwareUninstall"]);
+        Assert.True(read["BootConfigurationChanges"]);
     }
 
     [Fact]
