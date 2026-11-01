@@ -173,7 +173,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
                     job.Error ?? ex.GetBaseException().Message);
             }
 
-            job.State = "Running";
+            job.TrySetState("Running");
             _logger.LogInformation("Started debug-output capture {CaptureId}", job.Id);
             return OperationResult<DebugCaptureStatus>.Ok(job.ToStatus());
         }
@@ -388,7 +388,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
 
             if (dbwinError is not null)
             {
-                job.State = "Failed";
+                job.TrySetState("Failed");
                 job.Error = dbwinError;
                 job.StopReason = "dbwin_in_use";
                 job.ErrorCode = "dbwin_in_use";
@@ -398,7 +398,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
                 job.StopReason ??= linked.IsCancellationRequested && !job.Cancellation.IsCancellationRequested
                     ? "duration_elapsed"
                     : "completed";
-                job.State = "Stopped";
+                job.TrySetState("Stopped");
             }
         }
         catch (OperationCanceledException)
@@ -406,11 +406,11 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
             job.StopReason ??= durationSource.IsCancellationRequested && !job.Cancellation.IsCancellationRequested
                 ? "duration_elapsed"
                 : "stopped";
-            job.State = "Stopped";
+            job.TrySetState("Stopped");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            job.State = "Failed";
+            job.TrySetState("Failed");
             job.Error = ex.GetType().Name + ": " + ex.Message;
             job.StopReason = "failed";
             job.ErrorCode = "capture_failed";
@@ -706,7 +706,7 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
 
         public NdjsonSpool Spool { get; } = new(spoolPath);
 
-        public string State { get; set; } = "Starting";
+        public string State { get; private set; } = "Starting";
 
         public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
 
@@ -725,6 +725,20 @@ public sealed class DebugOutputManager : IHostedService, IDisposable
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public CancellationTokenSource Cancellation { get; } = new();
+
+        /// <summary>Moves out of <c>Starting</c> or <c>Running</c>. A terminal state is kept.</summary>
+        public void TrySetState(string state)
+        {
+            lock (this)
+            {
+                if (State is "Stopped" or "Failed")
+                {
+                    return;
+                }
+
+                State = state;
+            }
+        }
 
         public DebugCaptureStatus ToStatus() => new(
             Id,
