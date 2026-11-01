@@ -6,10 +6,11 @@ Version numbers come from MinVer and `v*` tags. The MSI product version is read 
 
 The workflow (`.github/workflows/build.yml`) builds the app once and hands the result to the installer job:
 
-`build` -> `build-installer` -> `release` (tags only)
+`security` and `build` run in parallel, then `build-installer` -> `release` (tags only)
 
+- `security` (Ubuntu) runs Gitleaks, Semgrep (`p/csharp`), and OSV Scanner. `.gitleaks.toml` allowlists the fake installer test token. OSV restore writes NuGet lock files for the net10 projects (`--no-dependencies` so the net48 custom-action project is not restored on Linux). The DTF packages stay on the frozen WiX 5.0.2 set. A finding fails this job, and `build-installer` needs it, so secrets, SAST, and dependency advisories block the MSI and release.
 - `build` (Windows) runs the tests, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView`, and uploads `publish-x64/` (`server`, `updater`, `tools`) as the `vestigo-publish-x64` artifact (3-day retention).
-- `build-installer` (Windows, `needs: build`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything.
+- `build-installer` (Windows, `needs: [build, security]`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything.
 - `release` (tags only) publishes the signed files.
 
 Pull requests and `master` build an unsigned MSI as a smoke test and do not upload it.

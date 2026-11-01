@@ -1,0 +1,8 @@
+title = "Vestigo"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Installer settings tests use a fixed fake API token"
+regexes = ['''0123456789abcdefghij''']

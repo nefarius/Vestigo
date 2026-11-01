@@ -22,6 +22,8 @@
     -->
     <PackageReference Include="NJsonSchema.Annotations" />
     <PackageReference Include="Fallout.Common" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
 
 </Project>

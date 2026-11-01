@@ -155,6 +155,10 @@ public class UpdateFeedTests
         Assert.Contains("Boost Software License", notices, StringComparison.Ordinal);
 
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build.yml"));
+        Assert.Contains("needs: [build, security]", workflow, StringComparison.Ordinal);
+        Assert.Contains("gitleaks detect", workflow, StringComparison.Ordinal);
+        Assert.Contains("semgrep scan --config p/csharp", workflow, StringComparison.Ordinal);
+        Assert.Contains("google/osv-scanner-action/osv-scanner-action@v2.7.0", workflow, StringComparison.Ordinal);
         int verified = workflow.IndexOf("Verify signed MSI", StringComparison.Ordinal);
         int signed = workflow.IndexOf("Sign update manifest", StringComparison.Ordinal);
         int uploaded = workflow.IndexOf("Upload MSI artifact", StringComparison.Ordinal);

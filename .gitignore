@@ -193,6 +193,7 @@ publish/
 PublishScripts/
 
 # NuGet Packages
+**/packages.lock.json
 *.nupkg
 # NuGet Symbol Packages
 *.snupkg

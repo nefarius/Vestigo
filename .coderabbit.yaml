@@ -14,6 +14,7 @@ reviews:
     - "!installer/DebugViewPP-LICENSE.txt"
     - "!installer/nefcon-LICENSE.txt"
   tools:
+    # Secret, SAST, and OSV scans are enforced by the CI security job.
     gitleaks:
       enabled: false
     languagetool:
