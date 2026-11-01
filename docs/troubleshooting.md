@@ -40,7 +40,15 @@ File, log, process, and device tools use named `Vestigo:Roots` plus any `VolumeR
 
 ## Health is degraded
 
-The process is up, but an allowed input or output root is still empty. Tools that take paths fail until those roots are set. An unhealthy result means the spool directory is not writable.
+The process is up, but `AllowedInputRoots` or `AllowedOutputRoots` is still empty. A Trace call fails for that reason only when it uses a path governed by that list. Calls without ETL, PDB, TMF, or conversion-output paths are unaffected. Named `Roots` and `VolumeRoots` tools keep working. A default MSI install reports Degraded for this reason. An unhealthy result means the spool directory is not writable.
+
+## Interactive-session tools fail
+
+`close_app`, `list_windows`, `list_displays`, `list_audio_endpoints`, and `set_default_audio_endpoint` default to `context: interactive` (the console user's session through the session helper). `context: service` runs those tools in-process on the service desktop and does not need a console user. `take_screenshot` is interactive only. `run_process` defaults to `service`; only `context: interactive` needs a console user.
+
+`no_interactive_session` means nobody is logged on at the console. `token_unavailable` means the console-user token could not be opened (the service needs SYSTEM). `elevation_unavailable` means `elevated: true` was requested and the console user has no linked administrator token. `desktop_unavailable` means the lock screen or UAC secure desktop, no displays are attached, `GetDC` failed, or the desktop blit failed. A failed `PrintWindow` is not enough: capture falls back to `BitBlt`. `helper_timeout` means the session helper did not finish in time. `helper_failed` means it exited without a usable JSON result, or a screenshot PNG could not be decoded.
+
+`screenshots_disabled` means `Vestigo:Desktop:AllowScreenshots` is false. `set_default_disabled` means `Vestigo:Audio:AllowSetDefault` is false. `boot_changes_disabled` means `Vestigo:System:AllowBootConfigurationChanges` is false. `secure_boot_enabled` means `set_test_signing` tried to turn test signing on while Secure Boot is on or its state is unknown.
 
 ## The updater does not offer a release
 
