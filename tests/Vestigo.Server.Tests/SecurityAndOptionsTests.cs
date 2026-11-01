@@ -72,6 +72,7 @@ public class SecurityAndOptionsTests
         {
             ListenAddress = address,
             Software = { AllowUninstall = true },
+            System = { AllowBootConfigurationChanges = true },
             Modules =
             {
                 ["Processes"] = new ModuleSettings { Enabled = true },
@@ -92,6 +93,7 @@ public class SecurityAndOptionsTests
             Assert.Contains("Processes", warning);
             Assert.Contains("Devices", warning);
             Assert.Contains("Software uninstall", warning);
+            Assert.Contains("Boot configuration changes", warning);
             Assert.DoesNotContain("secret-value", warning);
         }
     }

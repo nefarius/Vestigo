@@ -52,7 +52,7 @@ The `Services` module lists and controls Win32 services and kernel/file-system d
 
 `create_driver_service` and `delete_service` use the bundled nefcon runner and only handle `KERNEL_DRIVER` services. `create_driver_service` needs an existing `.sys` file reachable through a root that allows `Execute` (`root:relative\path` or an absolute path inside such a root); `delete_service` takes a plain name and refuses Win32 and file-system driver services. A result with `RebootRequired` means the change completes after a restart.
 
-Driver caveats: Windows only loads signed kernel drivers, so `start_service` on an unsigned driver fails with `driver_signature` (error 577) or `driver_blocked` (1275) unless test-signing mode is enabled (`bcdedit /set testsigning on`, then reboot) or the driver carries a valid signature. A driver that starts and immediately stops is reported as `timeout`; check `get_service` for the exit code. Mutating tools refuse the names in `Vestigo:Services:ProtectedNames`. They need the elevated service account; otherwise they return `access_denied`.
+Driver caveats: Windows only loads signed kernel drivers, so `start_service` on an unsigned driver fails with `driver_signature` (error 577) or `driver_blocked` (1275) unless test-signing mode is enabled or the driver carries a valid signature. Use `get_boot_security` to see the BCD value and the running kernel state; `set_test_signing` writes the default boot entry when `Vestigo:System:AllowBootConfigurationChanges` is true, then reboot. Secure Boot blocks test signing. A driver that starts and immediately stops is reported as `timeout`; check `get_service` for the exit code. Mutating tools refuse the names in `Vestigo:Services:ProtectedNames`. They need the elevated service account; otherwise they return `access_denied`.
 
 ## Software
 
@@ -67,6 +67,16 @@ The `Software` module inventories installed programs from the `Uninstall` regist
 `get_environment_variable` reads one variable from `machine` (`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`), `user` (the registry hive of the user logged on at the console) or `process` scope. Registry values are returned unexpanded with their kind (`REG_SZ` or `REG_EXPAND_SZ`). User scope fails with `user_not_available` when nobody is logged on. `list_environment_variables` lists a scope, optionally names only.
 
 `set_environment_variable` takes an `operation` of `set`, `unset`, `append` or `prepend`. Append and prepend treat the value as `;`-separated entries (for example `PATH`), skip entries that are already present, and keep an existing `REG_EXPAND_SZ` kind. `expand` writes `REG_EXPAND_SZ` for `set`. A change to machine or user scope broadcasts `WM_SETTINGCHANGE`; the result reports `broadcast` as `sent`, `timeout` or `skipped`. Names in `Vestigo:Environment:ProtectedNames` are refused with `protected_name`. The value is never echoed or logged.
+
+## System
+
+The `System` module reports the host Windows version and boot-security posture through `Nefarius.Utilities.WindowsVersion`. It is enabled by default. Writes stay off until `Vestigo:System:AllowBootConfigurationChanges` is `true`.
+
+`get_system_info` returns the OS name, edition, display version (for example 24H2), version string, major/minor/build/UBR, whether it is Windows 11 or Server, whether the install was in-place upgraded (`grandfathered`), OS and processor bitness, ARM64, whether UAC is disabled, and the machine name. A probe that fails becomes a null field instead of failing the call.
+
+`get_boot_security` returns `uefi`, `secureBoot`, `testSigningConfigured` (BCD on the default boot entry), `testSigningActive` (the running kernel), `whqlDeveloperTestMode`, and `rebootPending` when the BCD value and the running state differ. `notes` explain Secure Boot blocking test signing, a pending reboot, and that BCD changes apply only to the default boot entry. WHQL developer test mode is not present on every Windows build; a missing value is null.
+
+`set_test_signing` and `set_whql_developer_test_mode` fail with `boot_changes_disabled` unless the option is enabled. Turning test signing on while Secure Boot is enabled fails with `secure_boot_enabled`. A BCD write failure is `bcd_write_failed`; a WHQL policy write failure is `ci_write_failed`; lack of elevation is `access_denied`. Vestigo never reboots the machine: BCD test-signing takes effect at the next boot, and WHQL developer test mode availability depends on the Windows build.
 
 ## Logs
 
