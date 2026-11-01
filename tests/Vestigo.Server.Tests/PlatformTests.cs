@@ -58,13 +58,27 @@ public class PlatformTests : IDisposable
         duplicate.Roots.Add(new RootDefinition { Name = "ARTIFACTS", Path = _root, Access = RootAccess.Read });
         VestigoOptions relative = new() { Roots = [new RootDefinition { Name = "rel", Path = "relative", Access = RootAccess.Read }] };
         VestigoOptions shortName = new() { Roots = [new RootDefinition { Name = "c", Path = _root, Access = RootAccess.Read }] };
-        VestigoOptions reserved = new() { Roots = [new RootDefinition { Name = "drive-c", Path = _root, Access = RootAccess.Read }] };
+        VestigoOptions reserved = new()
+        {
+            VolumeRoots = VolumeRootMode.FixedVolumes,
+            VolumeRootAccess = RootAccess.Read,
+            Roots = [new RootDefinition { Name = "drive-c", Path = _root, Access = RootAccess.Read }]
+        };
+        VestigoOptions driveWhenNone = new() { Roots = [new RootDefinition { Name = "drive-c", Path = _root, Access = RootAccess.Read }] };
+        VestigoOptions backupsWhenEnabled = new()
+        {
+            VolumeRoots = VolumeRootMode.FixedVolumes,
+            VolumeRootAccess = RootAccess.Read,
+            Roots = [new RootDefinition { Name = "drive-backups", Path = _root, Access = RootAccess.Read }]
+        };
         VestigoOptions noVolumeAccess = new() { VolumeRoots = VolumeRootMode.FixedVolumes, VolumeRootAccess = RootAccess.None };
 
         Assert.Throws<InvalidOperationException>(duplicate.Validate);
         Assert.Throws<InvalidOperationException>(relative.Validate);
         Assert.Throws<InvalidOperationException>(shortName.Validate);
         Assert.Throws<InvalidOperationException>(reserved.Validate);
+        driveWhenNone.Validate();
+        backupsWhenEnabled.Validate();
         Assert.Throws<InvalidOperationException>(noVolumeAccess.Validate);
     }
 

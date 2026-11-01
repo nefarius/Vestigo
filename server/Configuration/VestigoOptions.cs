@@ -197,10 +197,10 @@ public sealed class VestigoOptions
                 throw new InvalidOperationException($"Vestigo:Roots '{root.Name}' needs at least one access flag.");
             }
 
-            if (root.Name.StartsWith(VolumeRootNames.Prefix, StringComparison.OrdinalIgnoreCase))
+            if (VolumeRoots != VolumeRootMode.None && VolumeRootNames.ConflictsWithGenerated(root.Name))
             {
                 throw new InvalidOperationException(
-                    $"Vestigo:Roots name '{root.Name}' is reserved for volume roots. Choose a different name or set Vestigo:VolumeRoots to None.");
+                    $"Vestigo:Roots name '{root.Name}' conflicts with a generated volume root. Choose a different name or set Vestigo:VolumeRoots to None.");
             }
         }
 

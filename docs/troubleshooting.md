@@ -11,7 +11,7 @@ The exception names the setting. Common causes:
 - `ListenAddress` is not an IP address, `Kestrel:Endpoints` is set, or `ListenPort` is outside 1-65535.
 - A token, attachable-session, root name, or protected-name entry is blank.
 - A size, count, or duration limit is not positive, or `MaxReadWait` is outside 0-2 minutes.
-- A named root is missing an absolute path, has a duplicate name, has no access flags, or uses a name reserved for volume roots (`drive-…`).
+- A named root is missing an absolute path, has a duplicate name, has no access flags, or uses a generated volume-root name (`drive-c`, …) while `VolumeRoots` is not `None`.
 - `VolumeRoots` is set and `VolumeRootAccess` has no flags.
 - `Vestigo:Modules:<Name>` names an unknown module, or an enabled module depends on a disabled one (`Processes` and `Software` need `Jobs`; `RemoteDebugger` needs `Jobs` and `Processes`).
 - `Devices:NefconPath`, `RemoteDebugger:ExtraSearchPaths`, or another module-specific setting failed validation.

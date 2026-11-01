@@ -28,6 +28,19 @@ public enum VolumeRootMode
 public static class VolumeRootNames
 {
     public const string Prefix = "drive-";
+
+    /// <summary>True for generated names such as <c>drive-c</c>, not <c>drive-backups</c>.</summary>
+    public static bool ConflictsWithGenerated(string name)
+    {
+        if (name.Length != Prefix.Length + 1 ||
+            !name.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        char letter = char.ToLowerInvariant(name[Prefix.Length]);
+        return letter is >= 'a' and <= 'z';
+    }
 }
 
 /// <summary>

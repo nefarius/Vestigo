@@ -21,8 +21,18 @@ public sealed class DriveInfoVolumeEnumerator : IVolumeEnumerator
 {
     public IReadOnlyList<VolumeInfo> Enumerate()
     {
+        DriveInfo[] drives;
+        try
+        {
+            drives = DriveInfo.GetDrives();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+
         List<VolumeInfo> volumes = [];
-        foreach (DriveInfo drive in DriveInfo.GetDrives())
+        foreach (DriveInfo drive in drives)
         {
             bool ready;
             try

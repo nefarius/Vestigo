@@ -67,11 +67,25 @@ public class RootSettingsTests
     [Fact]
     public void Resolve_UpgradeWithoutCustomRootsDefaultsToFixed()
     {
-        ExistingRootSettings existing = new(null, null, hasCustomRoots: false);
+        ExistingRootSettings missing = new(null, null, hasCustomRoots: false);
+        ExistingRootSettings unrecognized = new("NotAMode", null, hasCustomRoots: true);
 
-        ResolvedRootSettings resolved = RootSettings.Resolve(null, null, existing, isUpgrade: true);
+        Assert.Equal(RootSettings.ModeFixed, RootSettings.Resolve(null, null, missing, isUpgrade: true).Mode);
+        Assert.Equal(RootSettings.ModeFixed, RootSettings.Resolve(null, null, unrecognized, isUpgrade: true).Mode);
+    }
 
-        Assert.Equal(RootSettings.ModeFixed, resolved.Mode);
+    [Fact]
+    public void Resolve_BlankAccessKeepsExistingFlagsText()
+    {
+        ExistingRootSettings existing = new("FixedVolumes", "Write, Execute", hasCustomRoots: false);
+
+        ResolvedRootSettings unchanged = RootSettings.Resolve(null, null, existing);
+        ResolvedRootSettings published = RootSettings.Resolve("fixed", "rwx", existing);
+        ResolvedRootSettings edited = RootSettings.Resolve("fixed", "r", existing);
+
+        Assert.Equal("Write, Execute", unchanged.VolumeRootAccessValue);
+        Assert.Equal("Write, Execute", published.VolumeRootAccessValue);
+        Assert.Equal(RootSettings.ServerRead, edited.VolumeRootAccessValue);
     }
 
     [Fact]

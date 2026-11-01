@@ -27,10 +27,18 @@ namespace Vestigo.Installer.Actions.Logic
     /// <summary>Validated installer roots choices, ready to be written to appsettings.json.</summary>
     public sealed class ResolvedRootSettings
     {
+        private readonly string? _persistedAccess;
+
         public ResolvedRootSettings(string mode, string access)
+            : this(mode, access, null)
+        {
+        }
+
+        public ResolvedRootSettings(string mode, string access, string? persistedAccess)
         {
             Mode = mode;
             Access = access;
+            _persistedAccess = persistedAccess;
         }
 
         /// <summary><see cref="RootSettings.ModeCustom" />, <see cref="RootSettings.ModeSystem" />, <see cref="RootSettings.ModeFixed" />, <see cref="RootSettings.ModeAll" />, or <see cref="RootSettings.ModeLive" />.</summary>
@@ -71,6 +79,11 @@ namespace Vestigo.Installer.Actions.Logic
         {
             get
             {
+                if (_persistedAccess != null)
+                {
+                    return _persistedAccess;
+                }
+
                 if (Access == RootSettings.AccessRead)
                 {
                     return RootSettings.ServerRead;
@@ -170,8 +183,9 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>
         ///     Combines explicit MSI property values with the existing file and defaults. Blank inputs fall back to the
         ///     existing value, then to <see cref="ModeFixed" /> and <see cref="AccessReadWriteExecute" />. On an upgrade
-        ///     where the file has no <c>VolumeRoots</c> but does have custom <c>Roots</c>, the default mode is
-        ///     <see cref="ModeCustom" />. Throws <see cref="ArgumentException" /> for invalid values.
+        ///     where the file has no <c>VolumeRoots</c> key but does have custom <c>Roots</c>, the default mode is
+        ///     <see cref="ModeCustom" />. A blank access property keeps the existing flags text. Throws
+        ///     <see cref="ArgumentException" /> for invalid values.
         /// </summary>
         public static ResolvedRootSettings Resolve(
             string? mode,
@@ -187,13 +201,15 @@ namespace Vestigo.Installer.Actions.Logic
                 {
                     defaultMode = mapped;
                 }
-                else if (isUpgrade && existing.HasCustomRoots)
+                else if (isUpgrade && existing.VolumeRoots == null && existing.HasCustomRoots)
                 {
                     defaultMode = ModeCustom;
                 }
             }
 
-            string defaultAccess = MapServerAccess(existing != null ? existing.VolumeRootAccess : null) ?? AccessReadWriteExecute;
+            string? existingAccess = existing != null ? existing.VolumeRootAccess : null;
+            string? mappedAccess = MapServerAccess(existingAccess);
+            string defaultAccess = mappedAccess ?? AccessReadWriteExecute;
             string resolvedMode = Normalize(
                 mode,
                 "VESTIGO_ROOTS_MODE",
@@ -210,7 +226,14 @@ namespace Vestigo.Installer.Actions.Logic
                 AccessRead,
                 AccessReadWrite,
                 AccessReadWriteExecute);
-            return new ResolvedRootSettings(resolvedMode, resolvedAccess);
+            string? persistedAccess = null;
+            if (string.IsNullOrWhiteSpace(access) ||
+                (mappedAccess != null && string.Equals(resolvedAccess, mappedAccess, StringComparison.Ordinal)))
+            {
+                persistedAccess = existingAccess;
+            }
+
+            return new ResolvedRootSettings(resolvedMode, resolvedAccess, persistedAccess);
         }
 
         /// <summary>

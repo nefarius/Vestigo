@@ -40,7 +40,7 @@ Silent installs set the same choices as public MSI properties (`VESTIGO_API_TOKE
 | `VESTIGO_AUTH_MODE` | `none` or `token` | existing setting, else `token` |
 | `VESTIGO_PORT` | 1-65535 | existing setting, else `5098` |
 | `VESTIGO_API_TOKEN` | token text | existing token, else a generated one |
-| `VESTIGO_ROOTS_MODE` | `custom`, `system`, `fixed`, `all`, or `live` | existing `VolumeRoots`, else `custom` on upgrade when `Roots` is already set, else `fixed` |
+| `VESTIGO_ROOTS_MODE` | `custom`, `system`, `fixed`, `all`, or `live` | existing `VolumeRoots`, else `custom` on upgrade when `VolumeRoots` is missing and `Roots` is already set, else `fixed` |
 | `VESTIGO_ROOTS_ACCESS` | `r`, `rw`, or `rwx` | existing `VolumeRootAccess`, else `rwx` |
 
 ```powershell
