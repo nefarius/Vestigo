@@ -97,6 +97,27 @@ public class SecurityAndOptionsTests
     }
 
     [Fact]
+    public void PrivilegedModules_WarnsForDebugOutputAlone()
+    {
+        VestigoOptions options = new()
+        {
+            ListenAddress = "127.0.0.1",
+            Modules = Vestigo.Modules.ModuleRegistry.All.ToDictionary(
+                module => module.Name,
+                module => new ModuleSettings { Enabled = module.Name == "DebugOutput" },
+                StringComparer.OrdinalIgnoreCase)
+        };
+
+        string? warning = Vestigo.Modules.ModuleRegistry.GetPrivilegedModuleWarning(options);
+
+        Assert.NotNull(warning);
+        Assert.Contains("DebugOutput", warning, StringComparison.Ordinal);
+        Assert.Contains("OutputDebugString", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("administrator-equivalent", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("Processes", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Options_RejectBlankTokensAndNonPositiveLimits()
     {
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { ApiTokens = [""] }.Validate());

@@ -52,13 +52,13 @@ With token mode and no token on the command line (and none stored), the installe
 
 The page after the listen page is the standard feature tree. `Vestigo MCP Server` (binaries and service) is required; each module is a child feature whose id is the module name, nested by dependency: `Processes` and `Software` sit below `Jobs`, `RemoteDebugger` below `Processes`, and `SoftwareUninstall` (`Vestigo:Software:AllowUninstall`) below `Software`. A child cannot be installed without its parent, which matches the server's dependency checks.
 
-The defaults equal the server defaults in every listen mode: all modules selected except `Devices`, `Processes`, `RemoteDebugger`, `Desktop` and `SoftwareUninstall`. Nothing is blocked by the listen or token mode. The listen page only shows a note when no token is chosen, because every module you enable is then open to whoever can reach the server. A lab VLAN with any address, no token, and `Processes` plus `SoftwareUninstall` is allowed; the service logs a `SECURITY WARNING` at startup.
+The defaults equal the server defaults in every listen mode: all modules selected except `Devices`, `Processes`, `RemoteDebugger`, `Desktop`, `DebugOutput` and `SoftwareUninstall`. Nothing is blocked by the listen or token mode. The listen page only shows a note when no token is chosen, because every module you enable is then open to whoever can reach the server. A lab VLAN with any address, no token, and `Processes` plus `SoftwareUninstall` is allowed; the service logs a `SECURITY WARNING` at startup.
 
 The same deferred action that writes the listen settings also writes `Vestigo:Modules:<Name>:Enabled` for every module and `Vestigo:Software:AllowUninstall`, from the feature states. The installer therefore owns those keys; a repair or modify rewrites them. On upgrade the page starts from the modules in the existing settings file (when the installer runs elevated, otherwise from the defaults). Silent installs use the standard feature properties, or `VESTIGO_MOD_<NAME>` (`1` or `0`, for example `VESTIGO_MOD_PROCESSES=1`) to seed the default level:
 
 ```powershell
 msiexec /i Vestigo.msi /qn ADDLOCAL=Server,Jobs,Processes,Software,SoftwareUninstall VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=none
-msiexec /i Vestigo.msi /qn ADDLOCAL=ALL REMOVE=Devices,Processes,RemoteDebugger,Desktop,SoftwareUninstall
+msiexec /i Vestigo.msi /qn ADDLOCAL=ALL REMOVE=Devices,Processes,RemoteDebugger,Desktop,DebugOutput,SoftwareUninstall
 ```
 
 With `ADDLOCAL` only the listed features (and their required parents) are installed, so list every module you want. `ADDLOCAL=ALL` selects every feature, including the default-off ones, so the second example removes them again.

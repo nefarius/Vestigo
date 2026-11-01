@@ -124,10 +124,13 @@ public class UpdateFeedTests
         Assert.Contains("THIRD-PARTY-NOTICES.txt", installer, StringComparison.Ordinal);
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
-        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon)", build, StringComparison.Ordinal);
+        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView)", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", installer, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_DEBUGVIEW", build, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_DEBUGVIEW", installer, StringComparison.Ordinal);
         Assert.Contains("nefcon-LICENSE.txt", installer, StringComparison.Ordinal);
+        Assert.Contains("DebugViewPP-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("RequireTrustedPublisher(stagedPath, UpdateFeed.PublisherSubject)", build, StringComparison.Ordinal);
         Assert.Equal("1.20.0", UpdateFeed.UpdaterVersion);
         Assert.Equal("ca627af5f9f1c87f5a54d3be8122ee4909e00e9320e62fb8229cf37a8161a3d8", UpdateFeed.UpdaterArchiveSha256);
@@ -137,6 +140,8 @@ public class UpdateFeedTests
         Assert.Contains("BSD 3-Clause License", notices, StringComparison.Ordinal);
         Assert.Contains("Benjamin Höglinger-Stelzer", notices, StringComparison.Ordinal);
         Assert.Contains("Vicius 1.20.0", notices, StringComparison.Ordinal);
+        Assert.Contains("DebugView++ 1.30.0.0", notices, StringComparison.Ordinal);
+        Assert.Contains("Boost Software License", notices, StringComparison.Ordinal);
 
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build.yml"));
         int verified = workflow.IndexOf("Verify signed MSI", StringComparison.Ordinal);

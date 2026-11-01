@@ -32,6 +32,7 @@ class Build : FalloutBuild
     static AbsolutePath UpdaterStageDir => PublishRoot / "updater";
     static AbsolutePath ToolsStageDir => PublishRoot / NefconPin.StageDirectoryName;
     static AbsolutePath StagedNefconExe => ToolsStageDir / NefconPin.Executable;
+    static AbsolutePath StagedDebugViewExe => ToolsStageDir / DebugViewPin.Executable;
     static AbsolutePath InstallerProjectFile => RootDirectory / "installer" / "Vestigo.Installer.csproj";
     static AbsolutePath StagedUpdaterExe => UpdaterStageDir / UpdateFeed.UpdaterExecutable;
 
@@ -88,9 +89,14 @@ class Build : FalloutBuild
         .Executes(StageNefcon);
 
     [UsedImplicitly]
+    public Target PrepareDebugView => _ => _
+        .Description("Stage the pinned DebugViewConsole.exe (tools\\DebugViewConsole.exe) for the MSI")
+        .Executes(StageDebugView);
+
+    [UsedImplicitly]
     public Target BuildInstaller => _ => _
         .Description("Publish Vestigo and build the x64 MSI. Requires Windows and WiX 5.0.2.")
-        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon)
+        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView)
         .Executes(() =>
         {
             if (!OperatingSystem.IsWindows())
@@ -103,12 +109,14 @@ class Build : FalloutBuild
             const string envOut = "VESTIGO_INSTALLER_OUT";
             const string envUpdater = "VESTIGO_INSTALLER_UPDATER";
             const string envNefcon = "VESTIGO_INSTALLER_NEFCON";
+            const string envDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
             try
             {
                 Environment.SetEnvironmentVariable(envServer, PublishServerDir);
                 Environment.SetEnvironmentVariable(envOut, InstallerOutputDir);
                 Environment.SetEnvironmentVariable(envUpdater, StagedUpdaterExe);
                 Environment.SetEnvironmentVariable(envNefcon, StagedNefconExe);
+                Environment.SetEnvironmentVariable(envDebugView, StagedDebugViewExe);
                 DotNetTasks.DotNetRun(settings => settings
                     .SetProjectFile(InstallerProjectFile)
                     .SetConfiguration(Configuration.Release));
@@ -119,6 +127,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envOut, null);
                 Environment.SetEnvironmentVariable(envUpdater, null);
                 Environment.SetEnvironmentVariable(envNefcon, null);
+                Environment.SetEnvironmentVariable(envDebugView, null);
             }
         });
 
@@ -204,6 +213,22 @@ class Build : FalloutBuild
 
         matches[0].ExtractToFile(stagedPath);
         AuthenticodeTrust.RequireTrustedPublisher(stagedPath, UpdateFeed.PublisherSubject);
+    }
+
+    void StageDebugView()
+    {
+        Directory.CreateDirectory(ToolsStageDir);
+        using HttpClient client = new() { Timeout = TimeSpan.FromMinutes(2) };
+        byte[] executable = client.GetByteArrayAsync(DebugViewPin.AssetUrl).GetAwaiter().GetResult();
+        string actualHash = Convert.ToHexString(SHA256.HashData(executable)).ToLowerInvariant();
+        if (!string.Equals(actualHash, DebugViewPin.Sha256, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"DebugViewConsole {DebugViewPin.Version} hash {actualHash} does not match the pinned digest.");
+        }
+
+        string stagedPath = StagedDebugViewExe;
+        File.WriteAllBytes(stagedPath, executable);
     }
 
     void PublishSignedManifest()
