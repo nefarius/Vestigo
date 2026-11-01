@@ -9,7 +9,10 @@ internal sealed class FakeVolumeEnumerator : IVolumeEnumerator
 
     public string? SystemDrive { get; set; }
 
-    public IReadOnlyList<VolumeInfo> Enumerate() => [.. Volumes];
+    public Exception? Failure { get; set; }
+
+    public VolumeEnumeration Enumerate() =>
+        Failure is null ? VolumeEnumeration.Succeeded([.. Volumes]) : VolumeEnumeration.FromError(Failure);
 
     public string? ResolveSystemDrive() => SystemDrive;
 }
@@ -152,6 +155,25 @@ public class VolumeRootSourceTests
         enumerator.Volumes.RemoveAt(0);
         clock.Advance(VolumeRootSource.LiveCacheDuration);
         Assert.Equal("drive-e", Assert.Single(source.Current).Name);
+    }
+
+    [Fact]
+    public void SnapshotModes_RetryAfterEnumerationFailure()
+    {
+        FakeVolumeEnumerator enumerator = new()
+        {
+            Failure = new IOException("busy"),
+            Volumes = { new VolumeInfo(@"C:\", DriveType.Fixed, true) }
+        };
+        VolumeRootSource source = new(Options(VolumeRootMode.FixedVolumes), enumerator);
+
+        Assert.Empty(source.Current);
+
+        enumerator.Failure = null;
+        Assert.Equal("drive-c", Assert.Single(source.Current).Name);
+
+        enumerator.Volumes.Add(new VolumeInfo(@"D:\", DriveType.Fixed, true));
+        Assert.Equal("drive-c", Assert.Single(source.Current).Name);
     }
 
     [Fact]

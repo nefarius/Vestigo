@@ -230,7 +230,10 @@ namespace Vestigo.Installer.Actions.Logic
             if (string.IsNullOrWhiteSpace(access) ||
                 (mappedAccess != null && string.Equals(resolvedAccess, mappedAccess, StringComparison.Ordinal)))
             {
-                persistedAccess = existingAccess;
+                persistedAccess = resolvedMode != ModeCustom &&
+                                  string.Equals(existingAccess, ServerNone, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : existingAccess;
             }
 
             return new ResolvedRootSettings(resolvedMode, resolvedAccess, persistedAccess);

@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 
+using Microsoft.Extensions.Logging;
+
 using Vestigo.Configuration;
 
 namespace Vestigo.Security;
@@ -8,10 +10,30 @@ namespace Vestigo.Security;
 /// <summary>A lettered volume that may become a named root.</summary>
 public sealed record VolumeInfo(string RootPath, DriveType Type, bool IsReady);
 
+/// <summary>Outcome of listing lettered volumes. <see cref="Volumes" /> is null when enumeration failed.</summary>
+public sealed class VolumeEnumeration
+{
+    private VolumeEnumeration(IReadOnlyList<VolumeInfo>? volumes, Exception? error)
+    {
+        Volumes = volumes;
+        Error = error;
+    }
+
+    public IReadOnlyList<VolumeInfo>? Volumes { get; }
+
+    public Exception? Error { get; }
+
+    public bool Failed => Volumes is null;
+
+    public static VolumeEnumeration Succeeded(IReadOnlyList<VolumeInfo> volumes) => new(volumes, null);
+
+    public static VolumeEnumeration FromError(Exception error) => new(null, error);
+}
+
 /// <summary>Enumerates current volumes and resolves the system drive. Tests substitute a fake.</summary>
 public interface IVolumeEnumerator
 {
-    IReadOnlyList<VolumeInfo> Enumerate();
+    VolumeEnumeration Enumerate();
 
     string? ResolveSystemDrive();
 }
@@ -19,7 +41,7 @@ public interface IVolumeEnumerator
 /// <summary>Windows volumes from <see cref="DriveInfo" /> and the system drive from SpecialFolder / %SystemDrive%.</summary>
 public sealed class DriveInfoVolumeEnumerator : IVolumeEnumerator
 {
-    public IReadOnlyList<VolumeInfo> Enumerate()
+    public VolumeEnumeration Enumerate()
     {
         DriveInfo[] drives;
         try
@@ -28,7 +50,7 @@ public sealed class DriveInfoVolumeEnumerator : IVolumeEnumerator
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return [];
+            return VolumeEnumeration.FromError(ex);
         }
 
         List<VolumeInfo> volumes = [];
@@ -47,7 +69,7 @@ public sealed class DriveInfoVolumeEnumerator : IVolumeEnumerator
             volumes.Add(new VolumeInfo(drive.Name, drive.DriveType, ready));
         }
 
-        return volumes;
+        return VolumeEnumeration.Succeeded(volumes);
     }
 
     public string? ResolveSystemDrive()
@@ -94,8 +116,9 @@ public sealed class VolumeRootSource
     private readonly VestigoOptions _options;
     private readonly IVolumeEnumerator _enumerator;
     private readonly TimeProvider _clock;
+    private readonly ILogger<VolumeRootSource>? _logger;
     private readonly object _gate = new();
-    private readonly IReadOnlyList<RootDefinition>? _snapshot;
+    private IReadOnlyList<RootDefinition>? _snapshot;
     private IReadOnlyList<RootDefinition>? _cached;
     private DateTimeOffset _cachedAt;
 
@@ -109,14 +132,24 @@ public sealed class VolumeRootSource
     {
     }
 
-    public VolumeRootSource(VestigoOptions options, IVolumeEnumerator enumerator, TimeProvider? clock)
+    public VolumeRootSource(VestigoOptions options, IVolumeEnumerator enumerator, ILogger<VolumeRootSource> logger)
+        : this(options, enumerator, TimeProvider.System, logger)
+    {
+    }
+
+    public VolumeRootSource(
+        VestigoOptions options,
+        IVolumeEnumerator enumerator,
+        TimeProvider? clock,
+        ILogger<VolumeRootSource>? logger = null)
     {
         _options = options;
         _enumerator = enumerator;
         _clock = clock ?? TimeProvider.System;
-        if (options.VolumeRoots != VolumeRootMode.AllVolumesLive)
+        _logger = logger;
+        if (options.VolumeRoots is not VolumeRootMode.None and not VolumeRootMode.AllVolumesLive)
         {
-            _snapshot = Build();
+            _snapshot = TryBuild();
         }
     }
 
@@ -125,9 +158,34 @@ public sealed class VolumeRootSource
     {
         get
         {
-            if (_snapshot is not null)
+            if (_options.VolumeRoots == VolumeRootMode.None)
             {
-                return _snapshot;
+                return [];
+            }
+
+            if (_options.VolumeRoots != VolumeRootMode.AllVolumesLive)
+            {
+                IReadOnlyList<RootDefinition>? snapshot = _snapshot;
+                if (snapshot is not null)
+                {
+                    return snapshot;
+                }
+
+                lock (_gate)
+                {
+                    if (_snapshot is not null)
+                    {
+                        return _snapshot;
+                    }
+
+                    IReadOnlyList<RootDefinition>? built = TryBuild();
+                    if (built is not null)
+                    {
+                        _snapshot = built;
+                    }
+
+                    return built ?? [];
+                }
             }
 
             lock (_gate)
@@ -138,14 +196,20 @@ public sealed class VolumeRootSource
                     return _cached;
                 }
 
-                _cached = Build();
+                IReadOnlyList<RootDefinition>? built = TryBuild();
+                if (built is null)
+                {
+                    return _cached ?? [];
+                }
+
+                _cached = built;
                 _cachedAt = now;
-                return _cached;
+                return built;
             }
         }
     }
 
-    private IReadOnlyList<RootDefinition> Build()
+    private IReadOnlyList<RootDefinition>? TryBuild()
     {
         if (_options.VolumeRoots == VolumeRootMode.None)
         {
@@ -161,8 +225,18 @@ public sealed class VolumeRootSource
             return roots;
         }
 
+        VolumeEnumeration enumeration = _enumerator.Enumerate();
+        if (enumeration.Failed)
+        {
+            _logger?.LogWarning(
+                enumeration.Error,
+                "Failed to enumerate drive volumes for Vestigo:VolumeRoots {Mode}.",
+                _options.VolumeRoots);
+            return null;
+        }
+
         bool includeAll = _options.VolumeRoots is VolumeRootMode.AllVolumes or VolumeRootMode.AllVolumesLive;
-        foreach (VolumeInfo volume in _enumerator.Enumerate())
+        foreach (VolumeInfo volume in enumeration.Volumes!)
         {
             if (!volume.IsReady)
             {

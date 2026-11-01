@@ -89,6 +89,18 @@ public class RootSettingsTests
     }
 
     [Fact]
+    public void Resolve_VolumeModeReplacesNoneAccessWithResolvedFlags()
+    {
+        ExistingRootSettings existing = new("None", RootSettings.ServerNone, hasCustomRoots: false);
+
+        ResolvedRootSettings volume = RootSettings.Resolve("fixed", null, existing);
+        ResolvedRootSettings custom = RootSettings.Resolve("custom", null, existing);
+
+        Assert.Equal(RootSettings.ServerReadWriteExecute, volume.VolumeRootAccessValue);
+        Assert.Equal(RootSettings.ServerNone, custom.VolumeRootAccessValue);
+    }
+
+    [Fact]
     public void Resolve_UsesExistingModeAndAccess()
     {
         ExistingRootSettings existing = new("SystemDrive", "Read", hasCustomRoots: true);
