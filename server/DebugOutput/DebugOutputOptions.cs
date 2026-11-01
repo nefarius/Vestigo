@@ -19,12 +19,6 @@ public sealed class DebugOutputOptions
     /// </summary>
     public string? ExpectedSha256 { get; set; } = DefaultExpectedSha256;
 
-    /// <summary>
-    ///     DebugViewConsole always attempts a Global <c>DBWIN_BUFFER</c> reader when the session is not session 0.
-    ///     In session 0 (the Windows service) the local and global buffers are the same mapping.
-    /// </summary>
-    public bool CaptureGlobal { get; set; } = true;
-
     public TimeSpan MaxDuration { get; set; } = TimeSpan.FromHours(1);
 
     public int MaxMessages { get; set; } = 1_000_000;

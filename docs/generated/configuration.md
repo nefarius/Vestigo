@@ -10,7 +10,6 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `AttachableSessions` | `empty` |
 | `BufferSizeKb` | `64` |
 | `ClockResolution` | `QueryPerformanceCounter` |
-| `DebugOutput:CaptureGlobal` | `true` |
 | `DebugOutput:ExecutablePath` | `null` |
 | `DebugOutput:ExpectedSha256` | `79b01acd3aaa630e17ff4419fe9be8c66f5e8f758328c78af7346a594106fd60` |
 | `DebugOutput:MaxDuration` | `01:00:00` |

@@ -144,7 +144,7 @@ public class RepositoryBoundaryTests
                      "ClockResolution", "Software:AllowUninstall", "Software:ProtectedNames",
                      "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
                      "Services:ProtectedNames", "Processes:AllowPathLookup", "Files:MaxUploadBytes",
-                     "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256", "DebugOutput:CaptureGlobal",
+                     "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256",
                      "DebugOutput:MaxDuration", "DebugOutput:MaxMessages", "DebugOutput:MaxOutputBytes",
                      "DebugOutput:MaxFilterPatterns", "DebugOutput:MaxPatternLength"
                  })
