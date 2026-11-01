@@ -22,24 +22,32 @@ public static class DisplayTopology
 
     public static IReadOnlyList<DisplayInfo> Enumerate()
     {
-        List<GdiMonitor> monitors = EnumerateGdiMonitors();
-        IReadOnlyDictionary<string, DisplayExtras> extras = TryQueryDisplayConfig()
-            ?? EnumerateDisplayDevices();
+        nint previousDpi = WindowEnumerator.SetDpiAware();
+        try
+        {
+            List<GdiMonitor> monitors = EnumerateGdiMonitors();
+            IReadOnlyDictionary<string, DisplayExtras> extras = TryQueryDisplayConfig()
+                ?? EnumerateDisplayDevices();
 
-        return monitors
-            .Select(monitor =>
-            {
-                extras.TryGetValue(monitor.DeviceName, out DisplayExtras? extra);
-                return new DisplayInfo(
-                    monitor.DeviceName,
-                    monitor.Primary,
-                    monitor.Bounds,
-                    monitor.WorkArea,
-                    monitor.Dpi,
-                    extra?.AdapterName,
-                    extra?.Monitors ?? []);
-            })
-            .ToList();
+            return monitors
+                .Select(monitor =>
+                {
+                    extras.TryGetValue(monitor.DeviceName, out DisplayExtras? extra);
+                    return new DisplayInfo(
+                        monitor.DeviceName,
+                        monitor.Primary,
+                        monitor.Bounds,
+                        monitor.WorkArea,
+                        monitor.Dpi,
+                        extra?.AdapterName,
+                        extra?.Monitors ?? []);
+                })
+                .ToList();
+        }
+        finally
+        {
+            WindowEnumerator.RestoreDpi(previousDpi);
+        }
     }
 
     private sealed record GdiMonitor(string DeviceName, bool Primary, DesktopRect Bounds, DesktopRect WorkArea, int Dpi);

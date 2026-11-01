@@ -21,7 +21,7 @@ public sealed class DesktopTools(DesktopInventory inventory)
         [Description(".NET regular expression matched against window titles (case-insensitive).")] string? titleRegex = null,
         [Description("Window class name (case-insensitive).")] string? className = null,
         [Description("Include hidden windows. Cloaked (virtual-desktop) windows are still listed when visible.")] bool includeHidden = false,
-        [Description("Also enumerate child windows of each top-level window.")] bool includeChildren = false,
+        [Description("Also enumerate child windows of each top-level window. Child titles are omitted.")] bool includeChildren = false,
         [Description("Maximum windows to return, 1 to 5000.")] int limit = WindowSelector.DefaultLimit,
         [Description("'interactive' (default) or 'service'.")] string context = "interactive",
         [Description("Interactive only: use the elevated token when enumerating as the console user.")] bool elevated = false,

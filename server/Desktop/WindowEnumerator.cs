@@ -40,6 +40,11 @@ public static class WindowEnumerator
             RestoreDpi(previousDpi);
         }
 
+        if (state.TitleTimeout is not null)
+        {
+            throw state.TitleTimeout;
+        }
+
         return new WindowListResult(state.Windows, displays, state.Truncated, Process.GetCurrentProcess().SessionId);
     }
 
@@ -48,6 +53,8 @@ public static class WindowEnumerator
         public List<WindowInfo> Windows { get; } = [];
 
         public bool Truncated { get; private set; }
+
+        public RegexMatchTimeoutException? TitleTimeout { get; set; }
 
         private readonly Dictionary<int, (string Name, string? Path)> _processes = [];
 
@@ -82,23 +89,32 @@ public static class WindowEnumerator
                 return EnumerateChildren(window, children);
             }
 
-            string title = WindowInspection.Title(window);
+            // Child control text is not a window title; omit it so titleRegex cannot match edit/static contents.
+            string title = children ? WindowInspection.Title(window) : string.Empty;
             string className = WindowInspection.ClassName(window);
-            if (selector.Matches(title, className, titleRegex))
+            try
             {
-                if (Windows.Count >= selector.Limit)
+                if (selector.Matches(title, className, titleRegex))
                 {
-                    Truncated = true;
-                    return false;
-                }
+                    if (Windows.Count >= selector.Limit)
+                    {
+                        Truncated = true;
+                        return false;
+                    }
 
-                if (process.Path is null)
-                {
-                    process = (process.Name, WindowInspection.ProcessPath((int)pid));
-                    _processes[(int)pid] = process;
-                }
+                    if (process.Path is null)
+                    {
+                        process = (process.Name, WindowInspection.ProcessPath((int)pid));
+                        _processes[(int)pid] = process;
+                    }
 
-                Windows.Add(Describe(window, (int)pid, (int)threadId, process.Name, process.Path, title, className, visible));
+                    Windows.Add(Describe(window, (int)pid, (int)threadId, process.Name, process.Path, title, className, visible));
+                }
+            }
+            catch (RegexMatchTimeoutException ex)
+            {
+                TitleTimeout = ex;
+                return false;
             }
 
             return EnumerateChildren(window, children);
@@ -106,9 +122,9 @@ public static class WindowEnumerator
 
         private bool EnumerateChildren(HWND window, bool children)
         {
-            if (!children || !selector.IncludeChildren || Truncated)
+            if (!children || !selector.IncludeChildren || Truncated || TitleTimeout is not null)
             {
-                return !Truncated;
+                return TitleTimeout is null && !Truncated;
             }
 
             GCHandle handle = GCHandle.Alloc(this);
@@ -124,7 +140,7 @@ public static class WindowEnumerator
                 handle.Free();
             }
 
-            return !Truncated;
+            return TitleTimeout is null && !Truncated;
         }
 
         private WindowInfo Describe(
@@ -179,9 +195,15 @@ public static class WindowEnumerator
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
     private static BOOL EnumCallback(HWND window, LPARAM parameter)
     {
+        EnumState state = (EnumState)GCHandle.FromIntPtr((nint)parameter.Value).Target!;
         try
         {
-            return ((EnumState)GCHandle.FromIntPtr((nint)parameter.Value).Target!).Visit(window, children: true);
+            return state.Visit(window, children: true);
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            state.TitleTimeout = ex;
+            return false;
         }
         catch (Exception)
         {
@@ -192,9 +214,15 @@ public static class WindowEnumerator
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
     private static BOOL ChildCallback(HWND window, LPARAM parameter)
     {
+        EnumState state = (EnumState)GCHandle.FromIntPtr((nint)parameter.Value).Target!;
         try
         {
-            return ((EnumState)GCHandle.FromIntPtr((nint)parameter.Value).Target!).Visit(window, children: false);
+            return state.Visit(window, children: false);
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            state.TitleTimeout = ex;
+            return false;
         }
         catch (Exception)
         {
@@ -249,7 +277,7 @@ public static class WindowEnumerator
         return string.IsNullOrEmpty(device) ? null : device;
     }
 
-    private static nint SetDpiAware()
+    internal static nint SetDpiAware()
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 14393))
         {
@@ -259,7 +287,7 @@ public static class WindowEnumerator
         return (nint)PInvoke.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
-    private static void RestoreDpi(nint previous)
+    internal static void RestoreDpi(nint previous)
     {
         if (previous == 0 || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 14393))
         {

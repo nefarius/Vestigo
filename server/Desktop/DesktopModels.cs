@@ -37,6 +37,7 @@ public sealed record DisplayInfo(
     IReadOnlyList<PhysicalMonitor> Monitors);
 
 /// <summary>One Win32 window and the display it is rendered on.</summary>
+/// <param name="Title">Top-level window title. Child windows use an empty title so control text is not exposed or matched.</param>
 public sealed record WindowInfo(
     string Handle,
     string Title,

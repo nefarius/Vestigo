@@ -36,8 +36,15 @@ public sealed class DesktopInventory(IProcessLauncher launcher, SessionHelperCli
                 return OperationResult<WindowListResult>.Fail("windows_required", "Window enumeration requires Windows.");
             }
 
-            return OperationResult<WindowListResult>.Ok(
-                await Task.Run(() => WindowEnumerator.List(selector), cancellationToken).ConfigureAwait(false));
+            try
+            {
+                return OperationResult<WindowListResult>.Ok(
+                    await Task.Run(() => WindowEnumerator.List(selector), cancellationToken).ConfigureAwait(false));
+            }
+            catch (RegexMatchTimeoutException ex)
+            {
+                return OperationResult<WindowListResult>.Fail("invalid_request", "titleRegex timed out: " + ex.Message);
+            }
         }
 
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);

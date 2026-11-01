@@ -81,6 +81,7 @@ public class DesktopTests
         Assert.True(new WindowSelector([5], [], null, null, false, false, 10).Matches(5, "x", "", "", null));
         Assert.False(new WindowSelector([5], [], null, null, false, false, 10).Matches(6, "x", "", "", null));
         Assert.True(new WindowSelector([], [], "tit", null, false, false, 10).Matches(1, "any", "my title", "x", WindowSelector.CompileTitle("tit")));
+        Assert.False(new WindowSelector([], [], "Button", null, false, true, 10).Matches("", "Button", WindowSelector.CompileTitle("Button")));
     }
 
     [Fact]

@@ -428,7 +428,7 @@ Lists Win32 windows on the chosen desktop with owning process, parent and owner,
 | `titleRegex` | `string` | no | `null` | .NET regular expression matched against window titles (case-insensitive). |
 | `className` | `string` | no | `null` | Window class name (case-insensitive). |
 | `includeHidden` | `bool` | no | `false` | Include hidden windows. Cloaked (virtual-desktop) windows are still listed when visible. |
-| `includeChildren` | `bool` | no | `false` | Also enumerate child windows of each top-level window. |
+| `includeChildren` | `bool` | no | `false` | Also enumerate child windows of each top-level window. Child titles are omitted. |
 | `limit` | `int` | no | `500` | Maximum windows to return, 1 to 5000. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when enumerating as the console user. |

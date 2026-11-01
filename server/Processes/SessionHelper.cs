@@ -288,6 +288,10 @@ public static class SessionHelper
         {
             return Reject("Invalid title pattern: " + ex.Message);
         }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException ex)
+        {
+            return Reject("Title pattern timed out: " + ex.Message);
+        }
     }
 
     private static int RunListDisplays(string[] args)
