@@ -121,6 +121,7 @@ public sealed class VolumeRootSource
     private IReadOnlyList<RootDefinition>? _snapshot;
     private IReadOnlyList<RootDefinition>? _cached;
     private DateTimeOffset _cachedAt;
+    private DateTimeOffset? _retryAfter;
 
     public VolumeRootSource(VestigoOptions options)
         : this(options, new DriveInfoVolumeEnumerator(), TimeProvider.System)
@@ -150,6 +151,10 @@ public sealed class VolumeRootSource
         if (options.VolumeRoots is not VolumeRootMode.None and not VolumeRootMode.AllVolumesLive)
         {
             _snapshot = TryBuild();
+            if (_snapshot is null)
+            {
+                _retryAfter = _clock.GetUtcNow() + LiveCacheDuration;
+            }
         }
     }
 
@@ -178,7 +183,14 @@ public sealed class VolumeRootSource
                         return _snapshot;
                     }
 
+                    DateTimeOffset now = _clock.GetUtcNow();
+                    if (InRetryBackoff(now))
+                    {
+                        return [];
+                    }
+
                     IReadOnlyList<RootDefinition>? built = TryBuild();
+                    NoteBuild(built, now);
                     if (built is not null)
                     {
                         _snapshot = built;
@@ -196,7 +208,13 @@ public sealed class VolumeRootSource
                     return _cached;
                 }
 
+                if (InRetryBackoff(now))
+                {
+                    return _cached ?? [];
+                }
+
                 IReadOnlyList<RootDefinition>? built = TryBuild();
+                NoteBuild(built, now);
                 if (built is null)
                 {
                     return _cached ?? [];
@@ -259,6 +277,13 @@ public sealed class VolumeRootSource
         }
 
         return roots;
+    }
+
+    private bool InRetryBackoff(DateTimeOffset now) => _retryAfter is { } deadline && now < deadline;
+
+    private void NoteBuild(IReadOnlyList<RootDefinition>? built, DateTimeOffset now)
+    {
+        _retryAfter = built is null ? now + LiveCacheDuration : null;
     }
 
     private void TryAdd(List<RootDefinition> roots, HashSet<string> names, string? path)

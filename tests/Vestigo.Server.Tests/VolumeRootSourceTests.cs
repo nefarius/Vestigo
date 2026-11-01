@@ -165,11 +165,13 @@ public class VolumeRootSourceTests
             Failure = new IOException("busy"),
             Volumes = { new VolumeInfo(@"C:\", DriveType.Fixed, true) }
         };
-        VolumeRootSource source = new(Options(VolumeRootMode.FixedVolumes), enumerator);
-
-        Assert.Empty(source.Current);
+        ControllableTimeProvider clock = new();
+        VolumeRootSource source = new(Options(VolumeRootMode.FixedVolumes), enumerator, clock);
 
         enumerator.Failure = null;
+        Assert.Empty(source.Current);
+
+        clock.Advance(VolumeRootSource.LiveCacheDuration);
         Assert.Equal("drive-c", Assert.Single(source.Current).Name);
 
         enumerator.Volumes.Add(new VolumeInfo(@"D:\", DriveType.Fixed, true));
