@@ -6,6 +6,7 @@ using Nefarius.Utilities.ETW.Symbols;
 
 using Vestigo.Configuration;
 using Vestigo.Security;
+using Vestigo.Spooling;
 
 namespace Vestigo.Etws;
 
@@ -52,7 +53,6 @@ public sealed class CaptureManager : IHostedService, IDisposable
     public const string SessionPrefix = "Vestigo-";
     public const string ManagedMode = "Managed";
     public const string AttachedMode = "Attached";
-    private const int CheckpointInterval = 1024;
 
     private readonly VestigoOptions _options;
     private readonly SymbolCatalogService _symbols;
@@ -231,72 +231,14 @@ public sealed class CaptureManager : IHostedService, IDisposable
             ? TimeSpan.Zero
             : TimeSpan.FromTicks(Math.Min(wait.Ticks, _options.MaxReadWait.Ticks));
 
-        // Capture the signal before looking for data so a write between the check and the await is not lost.
-        TaskCompletionSource signal = job.Signal;
-        CapturePage page = ReadPage(job, afterSequence, batch);
-        if (page.Events.Count == 0 && !page.Completed && effectiveWait > TimeSpan.Zero)
-        {
-            try
-            {
-                await signal.Task.WaitAsync(effectiveWait, cancellationToken).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-            }
-
-            page = ReadPage(job, afterSequence, batch);
-        }
-
-        return OperationResult<CapturePage>.Ok(page);
-    }
-
-    private static CapturePage ReadPage(CaptureJob job, long afterSequence, int batch)
-    {
-        // State first: a terminal state is only set after the last event has been flushed.
-        string state = job.State;
-        bool terminal = state is "Stopped" or "Failed";
-        long committed = Interlocked.Read(ref job.ByteCount);
-        List<string> events = [];
-
-        if (committed > 0 && File.Exists(job.SpoolPath))
-        {
-            (long sequence, long offset) = job.FindCheckpoint(afterSequence);
-            using FileStream stream = new(job.SpoolPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            stream.Seek(offset, SeekOrigin.Begin);
-            using BufferedStream buffered = new(stream, 64 * 1024);
-            using MemoryStream line = new();
-            long position = offset;
-            while (position < committed && events.Count < batch)
-            {
-                int next = buffered.ReadByte();
-                if (next < 0)
-                {
-                    break;
-                }
-
-                position++;
-                if (next != '\n')
-                {
-                    line.WriteByte((byte)next);
-                    continue;
-                }
-
-                if (line.Length > 0)
-                {
-                    sequence++;
-                    if (sequence > afterSequence)
-                    {
-                        events.Add(System.Text.Encoding.UTF8.GetString(line.GetBuffer(), 0, (int)line.Length));
-                    }
-
-                    line.SetLength(0);
-                }
-            }
-        }
-
-        long nextSequence = afterSequence + events.Count;
-        bool completed = terminal && nextSequence >= Interlocked.Read(ref job.EventCount);
-        return new CapturePage(job.Id, nextSequence, events, state, completed);
+        NdjsonPage page = await job.Spool.ReadAsync(
+            afterSequence,
+            batch,
+            () => job.State,
+            effectiveWait,
+            cancellationToken).ConfigureAwait(false);
+        return OperationResult<CapturePage>.Ok(
+            new CapturePage(job.Id, page.NextSequence, page.Events, page.State, page.Completed));
     }
 
     public async Task<OperationResult<CaptureStatus>> AttachAsync(
@@ -465,26 +407,15 @@ public sealed class CaptureManager : IHostedService, IDisposable
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(job.Cancellation.Token, durationSource.Token);
         try
         {
-            await using FileStream stream = new(job.SpoolPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+            job.Spool.OpenWrite();
             await foreach (ReadOnlyMemory<byte> item in job.Session!.ReadEventsAsync(
                                sources.Context,
                                sources.CanRewriteProviderNames,
                                () => Interlocked.Increment(ref job.MissingFormatCount),
                                linked.Token))
             {
-                // Write exact bytes plus '\n' so offsets are precise, then publish the counters.
-                await stream.WriteAsync(item, CancellationToken.None);
-                stream.WriteByte((byte)'\n');
-                await stream.FlushAsync(CancellationToken.None);
-                long events = Interlocked.Increment(ref job.EventCount);
-                long bytes = Interlocked.Add(ref job.ByteCount, item.Length + 1);
-                if (events % CheckpointInterval == 0)
-                {
-                    job.AddCheckpoint(bytes);
-                }
-
-                job.Notify();
-                if (events >= _options.MaxEvents || bytes >= _options.MaxOutputBytes)
+                long events = await job.Spool.AppendAsync(item).ConfigureAwait(false);
+                if (events >= _options.MaxEvents || Interlocked.Read(ref job.Spool.ByteCount) >= _options.MaxOutputBytes)
                 {
                     job.StopReason = "limit_reached";
                     break;
@@ -511,13 +442,14 @@ public sealed class CaptureManager : IHostedService, IDisposable
         finally
         {
             job.StoppedAt = DateTimeOffset.UtcNow;
+            await job.Spool.DisposeAsync().ConfigureAwait(false);
             if (job.Session is not null)
             {
                 await job.Session.DisposeAsync().ConfigureAwait(false);
             }
 
             SaveOwnedSessions();
-            job.Notify();
+            job.Spool.Notify();
         }
     }
 
@@ -641,50 +573,17 @@ public sealed class CaptureManager : IHostedService, IDisposable
 
     private sealed class CaptureJob(string id, string sessionName, string spoolPath, string mode = ManagedMode)
     {
-        private readonly object _checkpointLock = new();
-        private readonly List<long> _checkpoints = [];
-        private TaskCompletionSource _signal = NewSignal();
-
         public string Mode { get; } = mode;
-
-        /// <summary>Completes when new events are written or the job ends.</summary>
-        public TaskCompletionSource Signal => Volatile.Read(ref _signal);
-
-        public void Notify() => Interlocked.Exchange(ref _signal, NewSignal()).TrySetResult();
-
-        /// <summary>Records the byte offset that follows event number (n+1)*CheckpointInterval.</summary>
-        public void AddCheckpoint(long offset)
-        {
-            lock (_checkpointLock)
-            {
-                _checkpoints.Add(offset);
-            }
-        }
-
-        /// <summary>Returns the nearest checkpoint at or before <paramref name="sequence" />.</summary>
-        public (long Sequence, long Offset) FindCheckpoint(long sequence)
-        {
-            lock (_checkpointLock)
-            {
-                int index = (int)Math.Min(sequence / CheckpointInterval, _checkpoints.Count);
-                return index == 0 ? (0, 0) : (index * (long)CheckpointInterval, _checkpoints[index - 1]);
-            }
-        }
-
-        private static TaskCompletionSource NewSignal() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public string Id { get; } = id;
 
         public string SessionName { get; } = sessionName;
 
-        public string SpoolPath { get; } = spoolPath;
+        public NdjsonSpool Spool { get; } = new(spoolPath);
+
+        public string SpoolPath => Spool.Path;
 
         public string State { get; set; } = "Starting";
-
-        public long EventCount;
-
-        public long ByteCount;
 
         public int MissingFormatCount;
 
@@ -706,8 +605,8 @@ public sealed class CaptureManager : IHostedService, IDisposable
             Id,
             SessionName,
             State,
-            EventCount,
-            ByteCount,
+            Spool.EventCount,
+            Spool.ByteCount,
             MissingFormatCount,
             StartedAt,
             StoppedAt,

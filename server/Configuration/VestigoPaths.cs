@@ -26,6 +26,8 @@ public static class VestigoPaths
 
     public static string OwnedSessionsPath => Path.Combine(SettingsDirectory, "owned-sessions.json");
 
+    public static string OwnedDebugViewPath => Path.Combine(SettingsDirectory, "owned-debugview.json");
+
     public static string DefaultSymbolCache => Path.Combine(SettingsDirectory, "symcache");
 
     private static string SettingsRoot =>

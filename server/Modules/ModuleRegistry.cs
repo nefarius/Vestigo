@@ -21,7 +21,8 @@ public static class ModuleRegistry
         new TraceModule(),
         new EnvironmentModule(),
         new LogsModule(),
-        new EventLogModule()
+        new EventLogModule(),
+        new DebugOutputModule()
     ];
 
     public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options) =>

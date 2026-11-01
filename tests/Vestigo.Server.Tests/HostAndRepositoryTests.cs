@@ -143,7 +143,10 @@ public class RepositoryBoundaryTests
                      "MaxReadBatch", "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds",
                      "ClockResolution", "Software:AllowUninstall", "Software:ProtectedNames",
                      "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
-                     "Services:ProtectedNames", "Processes:AllowPathLookup", "Files:MaxUploadBytes"
+                     "Services:ProtectedNames", "Processes:AllowPathLookup", "Files:MaxUploadBytes",
+                     "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256", "DebugOutput:CaptureGlobal",
+                     "DebugOutput:MaxDuration", "DebugOutput:MaxMessages", "DebugOutput:MaxOutputBytes",
+                     "DebugOutput:MaxFilterPatterns", "DebugOutput:MaxPatternLength"
                  })
         {
             Assert.Contains(name, generated, StringComparison.Ordinal);

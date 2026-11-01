@@ -19,8 +19,11 @@ static class Program
     internal const string EnvOut = "VESTIGO_INSTALLER_OUT";
     internal const string EnvUpdater = "VESTIGO_INSTALLER_UPDATER";
     internal const string EnvNefcon = "VESTIGO_INSTALLER_NEFCON";
+    internal const string EnvDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
     const string NefconExecutableName = "nefconc.exe";
     const string NefconLicenseName = "nefcon-LICENSE.txt";
+    const string DebugViewExecutableName = "DebugViewConsole.exe";
+    const string DebugViewLicenseName = "DebugViewPP-LICENSE.txt";
     const string UpdaterExecutableName = "Nefarius_Vestigo_Updater.exe";
     const string UpdaterConfigurationName = "Nefarius_Vestigo_Updater.json";
     const string NoticesName = "THIRD-PARTY-NOTICES.txt";
@@ -57,9 +60,20 @@ static class Program
                 throw new FileNotFoundException($"nefcon license not found: {nefconLicensePath}");
             }
 
+            string debugViewLicensePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, DebugViewLicenseName));
+            if (!System.IO.File.Exists(debugViewLicensePath))
+            {
+                throw new FileNotFoundException($"DebugView++ license not found: {debugViewLicensePath}");
+            }
+
             if (!string.Equals(Path.GetFileName(options.NefconExe), NefconExecutableName, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException($"The nefcon executable must be named {NefconExecutableName}.");
+            }
+
+            if (!string.Equals(Path.GetFileName(options.DebugViewExe), DebugViewExecutableName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"The DebugViewConsole executable must be named {DebugViewExecutableName}.");
             }
 
             if (!string.Equals(Path.GetFileName(options.UpdaterExe), UpdaterExecutableName, StringComparison.OrdinalIgnoreCase))
@@ -124,7 +138,9 @@ static class Program
                     new Dir(
                         "tools",
                         new WixSharp.File(feature, options.NefconExe),
-                        new WixSharp.File(feature, nefconLicensePath))),
+                        new WixSharp.File(feature, nefconLicensePath),
+                        new WixSharp.File(feature, options.DebugViewExe),
+                        new WixSharp.File(feature, debugViewLicensePath))),
                 new RegKey(
                     feature,
                     RegistryHive.LocalMachine,
@@ -276,6 +292,8 @@ static class Program
 
         public required string NefconExe { get; init; }
 
+        public required string DebugViewExe { get; init; }
+
         public static Options Parse(string[] args)
         {
             string cwd = Directory.GetCurrentDirectory();
@@ -283,7 +301,8 @@ static class Program
             string output = Path.GetFullPath(Path.Combine(cwd, "publish-x64", "installer"));
             string updater = "";
             string nefcon = "";
-            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon);
+            string debugView = "";
+            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon, ref debugView);
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -304,17 +323,22 @@ static class Program
                 {
                     nefcon = RequirePath(args, ref i, "nefcon");
                 }
+                else if (argument is "--debugview")
+                {
+                    debugView = RequirePath(args, ref i, "debugview");
+                }
                 else if (argument is "--help" or "-h")
                 {
                     Console.WriteLine("""
                         Vestigo MCP Server — MSI builder (WixSharp / WiX 5.0.2)
 
-                          --server,  -s <dir>   Published server output (default: ./publish-x64/server)
-                          --out,     -o <dir>   MSI output directory (default: ./publish-x64/installer)
-                          --updater, -u <file>  Staged Nefarius_Vestigo_Updater.exe
-                          --nefcon,  -n <file>  Staged nefconc.exe (installed under tools\)
+                          --server,    -s <dir>   Published server output (default: ./publish-x64/server)
+                          --out,       -o <dir>   MSI output directory (default: ./publish-x64/installer)
+                          --updater,   -u <file>  Staged Nefarius_Vestigo_Updater.exe
+                          --nefcon,    -n <file>  Staged nefconc.exe (installed under tools\)
+                          --debugview     <file>  Staged DebugViewConsole.exe (installed under tools\)
 
-                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON
+                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON, VESTIGO_INSTALLER_DEBUGVIEW
                         """);
                     Environment.Exit(0);
                 }
@@ -324,7 +348,14 @@ static class Program
                 }
             }
 
-            return new Options { ServerPublishDir = server, OutputDir = output, UpdaterExe = updater, NefconExe = nefcon };
+            return new Options
+            {
+                ServerPublishDir = server,
+                OutputDir = output,
+                UpdaterExe = updater,
+                NefconExe = nefcon,
+                DebugViewExe = debugView
+            };
         }
 
         public void Validate()
@@ -349,15 +380,31 @@ static class Program
                 throw new FileNotFoundException($"nefcon executable not found: {NefconExe}");
             }
 
+            if (!System.IO.File.Exists(DebugViewExe))
+            {
+                throw new FileNotFoundException($"DebugViewConsole executable not found: {DebugViewExe}");
+            }
+
             Directory.CreateDirectory(OutputDir);
         }
 
-        static void ApplyEnvironmentOverrides(ref string server, ref string output, ref string updater, ref string nefcon)
+        static void ApplyEnvironmentOverrides(
+            ref string server,
+            ref string output,
+            ref string updater,
+            ref string nefcon,
+            ref string debugView)
         {
             string? nefconOverride = Environment.GetEnvironmentVariable(EnvNefcon);
             if (!string.IsNullOrWhiteSpace(nefconOverride))
             {
                 nefcon = Path.GetFullPath(nefconOverride);
+            }
+
+            string? debugViewOverride = Environment.GetEnvironmentVariable(EnvDebugView);
+            if (!string.IsNullOrWhiteSpace(debugViewOverride))
+            {
+                debugView = Path.GetFullPath(debugViewOverride);
             }
 
             string? serverOverride = Environment.GetEnvironmentVariable(EnvServer);

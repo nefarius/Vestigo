@@ -30,6 +30,20 @@ To follow a capture live, loop on `read_capture` with `waitSeconds` greater than
 
 Capture duration cannot exceed `MaxCaptureDuration`. The spool is removed after `SpoolRetention` once the capture has stopped.
 
+## Debug output
+
+The `DebugOutput` module is disabled by default. It runs the bundled DebugViewConsole (DebugView++ 1.30.0.0) and forwards Win32 `OutputDebugString` messages to the calling agent. Only one capture runs at a time; a second `start_debug_capture` fails with `capture_busy`. Read [security.md](security.md#debug-output) first.
+
+`start_debug_capture` starts DebugViewConsole with capture-time substring filters (`includeMessages`, `excludeMessages`, `includeProcesses`, `excludeProcesses`) and an optional `duration` capped by `Vestigo:DebugOutput:MaxDuration`. The call returns when the process has been launched, not when capture ends.
+
+`list_debug_captures` and `get_debug_capture` report state, message count, bytes, the child PID, and the stop reason.
+
+`read_debug_output` returns NDJSON lines after `afterSequence`. Each line is `{receivedAt, time, pid, processName, message}`. Pass the returned `NextSequence` to the next call. `limit` is clamped to `MaxReadBatch`. To follow a capture live, loop with `waitSeconds` greater than zero (clamped to `MaxReadWait`) and stop when `Completed` is true. Optional read-time filters (`messageRegex`, `excludeRegex`, `processIds`, `processNames` globs) skip non-matching lines; `nextSequence` still advances past every scanned line. Regexes use `RegexOptions.NonBacktracking | IgnoreCase`.
+
+`stop_debug_capture` sends Ctrl+C to DebugViewConsole and then kills the process tree.
+
+Windows allows only one `DBWIN_BUFFER` reader per session. Another DebugView or DebugView++ instance fails the start with `dbwin_in_use`. Processes that have a debugger attached send their output to the debugger instead of this capture. Kernel `DbgPrint` is not captured.
+
 ## Services
 
 The `Services` module lists and controls Win32 services and kernel/file-system drivers. Names are service names, not display names. States are `stopped`, `start_pending`, `stop_pending`, `running`, `continue_pending`, `pause_pending` and `paused`. Start types are `boot`, `system`, `auto`, `demand` and `disabled`; `boot` and `system` are only valid for drivers.

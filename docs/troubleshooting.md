@@ -45,6 +45,12 @@ The process is up, but an allowed input or output root is still empty. Tools tha
 
 The installed configuration must remain at `%ProgramFiles%\Nefarius Software Solutions\Vestigo\Nefarius_Vestigo_Updater.json`. The registry value `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version` must be the installed MSI product version. A manifest whose `manifestVersion` is older than the last one this user accepted is rejected. Exit code 104 means the manifest or its `.minisig` sidecar could not be verified. Exit code 116 means the downloaded MSI checksum or Authenticode publisher check failed.
 
+## Debug-output capture fails
+
+`executable_missing` means `tools\DebugViewConsole.exe` is not next to Vestigo.exe and `Vestigo:DebugOutput:ExecutablePath` is unset. Reinstall or stage the pinned asset with `.\build.ps1 PrepareDebugView`. `hash_mismatch` means the file's SHA-256 is not `Vestigo:DebugOutput:ExpectedSha256`; set that value to empty only for a path you replaced on purpose. `capture_busy` means another debug-output capture is still running; stop it first. `dbwin_in_use` means another DebugView, DebugView++, or similar reader already owns `DBWIN_BUFFER`. Close that viewer and retry. Vestigo never sends DebugViewConsole's `-x` flag, because that would stop every instance on the machine.
+
+Messages from a process that has a debugger attached go to the debugger, not to this capture. Kernel `DbgPrint` is not captured. In session 0 the local and Global buffers are the same mapping.
+
 ## Decoded text is missing
 
 `MissingFormatCount` counts WPP events whose message format was not in the loaded PDB or TMF sources. Add the matching symbol file or enable symbol resolution for offline ETL. Enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` stay numeric.

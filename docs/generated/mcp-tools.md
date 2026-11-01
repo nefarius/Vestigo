@@ -187,6 +187,14 @@ Returns the upper and lower filter driver service names registered for a device 
 | --- | --- | --- | --- | --- |
 | `classGuid` | `string` | yes |  | Device setup class GUID. |
 
+## `get_debug_capture`
+
+Returns status, counters, and the last error for one debug-output capture.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `captureId` | `string` | yes |  | Capture identifier. |
+
 ## `get_device`
 
 Returns details of one device by instance ID: hardware and compatible IDs, class, service, present flag, problem code and devnode status (problemCode 0 means no problem), and installed driver key, description, provider, version, date and INF.
@@ -313,6 +321,12 @@ Terminates a process by pid or exact name. entireTree also kills its descendants
 ## `list_captures`
 
 Lists captures owned by this Vestigo process.
+
+No parameters.
+
+## `list_debug_captures`
+
+Lists debug-output captures owned by this Vestigo process.
 
 No parameters.
 
@@ -466,6 +480,21 @@ Reads a page of decoded NDJSON events from a capture spool. To follow a live cap
 | `limit` | `int?` | no | `null` | Maximum events to return. The server clamps this to its configured batch size. |
 | `waitSeconds` | `double` | no | `0` | When no events are available yet, wait up to this many seconds for new ones. Clamped to the server's MaxReadWait. |
 
+## `read_debug_output`
+
+Reads a page of NDJSON OutputDebugString events from a capture spool. Each line is {receivedAt, time, pid, processName, message}. To follow a live capture, call repeatedly with afterSequence set to the previous nextSequence and waitSeconds > 0 (long-poll); stop when completed is true. Read-time filters skip non-matching lines and still advance nextSequence past every scanned line.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `captureId` | `string` | yes |  | Capture identifier. |
+| `afterSequence` | `long` | no | `0` | Return events after this sequence. Use 0 to start at the beginning. |
+| `limit` | `int?` | no | `null` | Maximum matching events to return. The server clamps this to its configured batch size. |
+| `waitSeconds` | `double` | no | `0` | When no unread events are available yet, wait up to this many seconds for new ones. Clamped to the server's MaxReadWait. |
+| `messageRegex` | `string` | no | `null` | Optional .NET regex (NonBacktracking, ignore-case) that the message must match. |
+| `excludeRegex` | `string` | no | `null` | Optional .NET regex (NonBacktracking, ignore-case) that excludes a matching message. |
+| `processIds` | `int[]` | no | `null` | When set, only messages from these process IDs are returned. |
+| `processNames` | `string[]` | no | `null` | When set, only messages whose process name matches one of these simple globs (* and ?) are returned. |
+
 ## `read_job_output`
 
 Reads a page of text output from a job. Pass the returned NextOffset to continue.
@@ -592,6 +621,18 @@ Starts a managed realtime WPP capture. Events are spooled locally; use read_capt
 | `matchAllKeyword` | `string` | no | `null` | Match-all keyword bitmask. Omit for no match-all filter. |
 | `duration` | `string` | no | `null` | Maximum capture duration, for example 00:05:00. Capped by server configuration. |
 
+## `start_debug_capture`
+
+Starts the single DebugViewConsole capture of OutputDebugString messages. Events are spooled locally; use read_debug_output (with waitSeconds to follow live) to read them. A second start fails with capture_busy until the running capture is stopped.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `includeMessages` | `string[]` | no | `null` | Substring include filters passed to DebugViewConsole -i. Case-insensitive. Omit to capture every message. |
+| `excludeMessages` | `string[]` | no | `null` | Substring exclude filters passed to DebugViewConsole -e. Case-insensitive. |
+| `includeProcesses` | `string[]` | no | `null` | Process-name include filters passed to DebugViewConsole --include-process. |
+| `excludeProcesses` | `string[]` | no | `null` | Process-name exclude filters passed to DebugViewConsole --exclude-process. |
+| `duration` | `string` | no | `null` | Maximum capture duration, for example 00:05:00. Capped by Vestigo:DebugOutput:MaxDuration. |
+
 ## `start_remote_debugger`
 
 Starts msvsmon.exe with /nostatus /silent /nofirewallwarn, /port, /timeout and the chosen authentication. Default context is 'interactive' (the console user's desktop), so attach rights match that user. auth 'windows' (default) authenticates callers; allowUsers adds /allow entries. auth 'none' disables authentication completely and requires iUnderstandNoAuthIsInsecure: true. Refuses a second instance on the same port. Connect Visual Studio to <host>:<port> afterwards.
@@ -630,6 +671,14 @@ Returns metadata for a file or directory: size, times, optional SHA-256, PE vers
 ## `stop_capture`
 
 Stops a capture. For managed captures this also stops the ETW session; for attached captures it only detaches.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `captureId` | `string` | yes |  | Capture identifier. |
+
+## `stop_debug_capture`
+
+Stops the DebugViewConsole capture. Sends Ctrl+C, then kills the process tree if it does not exit.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

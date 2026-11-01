@@ -8,8 +8,8 @@ The workflow (`.github/workflows/build.yml`) builds the app once and hands the r
 
 `build` -> `build-installer` -> `release` (tags only)
 
-- `build` (Windows) runs the tests, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon`, and uploads `publish-x64/` (`server`, `updater`, `tools`) as the `vestigo-publish-x64` artifact (3-day retention).
-- `build-installer` (Windows, `needs: build`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything.
+- `build` (Windows) runs the tests, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView`, and uploads `publish-x64/` (`server`, `updater`, `tools`) as the `vestigo-publish-x64` artifact (3-day retention).
+- `build-installer` (Windows, `needs: build`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything.
 - `release` (tags only) publishes the signed files.
 
 Pull requests and `master` build an unsigned MSI as a smoke test and do not upload it.
@@ -64,3 +64,14 @@ To bump nefcon manually:
 2. Compute its SHA-256 (`Get-FileHash`) and confirm `Get-AuthenticodeSignature` on `x64\nefconc.exe` reports a valid Nefarius signature.
 3. Update `Version`, `ArchiveSha256`, and `ArchiveUrl` in `build/NefconPin.cs`, and the version in `installer\THIRD-PARTY-NOTICES.txt` and `installer\nefcon-LICENSE.txt` if the license changed.
 4. Run `.\build.ps1 PrepareNefcon` and the test suite.
+
+## DebugView++ pin
+
+`PrepareDebugView` (a dependency of `BuildInstaller`, run by the `build` CI job) downloads the pinned DebugView++ `DebugViewConsole.exe` asset, checks its SHA-256, and stages it to `publish-x64\tools\`. There is no Authenticode publisher check: the binary is third-party. The MSI installs it as `tools\DebugViewConsole.exe` with `tools\DebugViewPP-LICENSE.txt`; the Boost notice is also in `installer\THIRD-PARTY-NOTICES.txt`. Vestigo re-checks the same digest before every launch.
+
+To bump DebugViewConsole manually:
+
+1. Download `DebugViewConsole.exe` from the [DebugView++ releases](https://github.com/CobaltFusion/DebugViewPP/releases) (`gh release download 1.30.0.0 -R CobaltFusion/DebugViewPP -p DebugViewConsole.exe`).
+2. Compute its SHA-256 (`Get-FileHash`).
+3. Update `Version`, `Sha256`, and `AssetUrl` in `build/DebugViewPin.cs`, `DebugOutputOptions.DefaultExpectedSha256` in `server/DebugOutput/DebugOutputOptions.cs`, and the version in `installer\THIRD-PARTY-NOTICES.txt` and `installer\DebugViewPP-LICENSE.txt` if the license changed.
+4. Run `.\build.ps1 PrepareDebugView` and the test suite.
