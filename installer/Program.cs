@@ -162,7 +162,7 @@ static class Program
                 LicenceFile = licensePath,
                 Version = version,
                 OutDir = options.OutputDir,
-                OutFileName = "Vestigo"
+                OutFileName = "Vestigo-v" + version
             };
             project.ControlPanelInfo.Manufacturer = Manufacturer;
             project.MajorUpgrade = MajorUpgrade.Default;

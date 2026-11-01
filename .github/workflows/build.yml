@@ -149,12 +149,27 @@ jobs:
         if: success() && startsWith(github.ref, 'refs/tags/v')
         run: .\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView
 
+      - name: Resolve versioned MSI
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        id: msi
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem -LiteralPath 'publish-x64\installer' -Filter 'Vestigo-v*.msi' -File)
+          if ($files.Count -ne 1) {
+            throw "Expected one Vestigo-v*.msi in publish-x64\installer but found $($files.Count)."
+          }
+          $relative = ($files[0].FullName.Substring((Get-Location).Path.Length + 1) -replace '\\', '/')
+          "path=$($files[0].FullName)" >> $env:GITHUB_OUTPUT
+          "relative=$relative" >> $env:GITHUB_OUTPUT
+          "name=$($files[0].Name)" >> $env:GITHUB_OUTPUT
+
       - name: Assert MSI is unsigned
         if: success() && startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $file = 'publish-x64\installer\Vestigo.msi'
+          $file = '${{ steps.msi.outputs.path }}'
           if (-not (Test-Path -LiteralPath $file)) { throw "File not found: $file" }
           $sig = Get-AuthenticodeSignature -LiteralPath $file
           if ($sig.Status -ne 'NotSigned') {
@@ -169,14 +184,14 @@ jobs:
           token: ${{ secrets.SIGN_RELAY_CI_TOKEN }}
           in-place: true
           skip-tool-install: true
-          files: publish-x64/installer/Vestigo.msi
+          files: ${{ steps.msi.outputs.relative }}
 
       - name: Verify signed MSI
         if: success() && startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $file = 'publish-x64\installer\Vestigo.msi'
+          $file = '${{ steps.msi.outputs.path }}'
           $sig = Get-AuthenticodeSignature -LiteralPath $file
           if ($sig.Status -ne 'Valid' -or -not $sig.SignerCertificate) {
             throw "File is not validly signed: $file (Status=$($sig.Status))."
@@ -208,7 +223,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $files = @(
-            'publish-x64\installer\Vestigo.msi'
+            '${{ steps.msi.outputs.path }}'
             'publish-x64\installer\updates.json'
             'publish-x64\installer\updates.json.minisig'
           )
@@ -222,7 +237,7 @@ jobs:
         with:
           name: ${{ github.event.repository.name }}-msi
           path: |
-            publish-x64/installer/Vestigo.msi
+            publish-x64/installer/Vestigo-v*.msi
             publish-x64/installer/updates.json
             publish-x64/installer/updates.json.minisig
           if-no-files-found: error
@@ -253,7 +268,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            dist/Vestigo.msi
+            dist/Vestigo-v*.msi
             dist/updates.json
             dist/updates.json.minisig
           fail_on_unmatched_files: true

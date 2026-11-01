@@ -251,14 +251,15 @@ class Build : FalloutBuild
                 "Set VESTIGO_MINISIGN_KEY to the minisign private-key path and VESTIGO_MINISIGN_PASSWORD to its passphrase.");
         }
 
-        string msiPath = InstallerOutputDir / "Vestigo.msi";
-        if (!File.Exists(msiPath))
-        {
-            throw new FileNotFoundException("Signed MSI not found.", msiPath);
-        }
-
+        string msiPath = RequireVersionedMsi(InstallerOutputDir);
         AuthenticodeTrust.RequireTrustedPublisher(msiPath, UpdateFeed.PublisherSubject);
         string productVersion = ReadMsiProductVersion(msiPath);
+        string expectedName = UpdateFeed.PackageFileName(productVersion);
+        if (!string.Equals(Path.GetFileName(msiPath), expectedName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Signed MSI '{Path.GetFileName(msiPath)}' does not match product version '{productVersion}'.");
+        }
         string manifestPath = InstallerOutputDir / UpdateFeed.ManifestFileName;
         using FileStream msi = File.OpenRead(msiPath);
         UpdateManifestSpec spec = new()
@@ -278,6 +279,24 @@ class Build : FalloutBuild
         File.WriteAllBytes(manifestPath, UpdateFeed.CreateManifest(spec));
         UpdateFeed.SignManifest(manifestPath, keyPath, password);
         UpdateFeed.VerifyManifest(manifestPath, UpdateFeed.ManifestPublicKey);
+    }
+
+    static string RequireVersionedMsi(AbsolutePath directory)
+    {
+        if (!Directory.Exists(directory))
+        {
+            throw new DirectoryNotFoundException($"Installer output directory not found: {directory}");
+        }
+
+        string[] files = Directory.GetFiles(directory, UpdateFeed.PackageFileNamePattern);
+        if (files.Length != 1)
+        {
+            throw new FileNotFoundException(
+                $"Expected one {UpdateFeed.PackageFileNamePattern} in {directory} but found {files.Length}.",
+                directory);
+        }
+
+        return files[0];
     }
 
     static string ReadMsiProductVersion(string msiPath)
