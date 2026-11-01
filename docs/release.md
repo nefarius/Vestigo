@@ -17,13 +17,13 @@ Pull requests and `master` build an unsigned MSI as a smoke test and do not uplo
 A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
 
 1. Checks that `Vestigo.exe` and `Vestigo.dll` are unsigned.
-3. Signs both with SignRelay.
-4. Builds `publish-x64\installer\Vestigo.msi` from those signed binaries.
-5. Signs and verifies the MSI.
-6. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key.
-7. Verifies the sidecar against the public key embedded in Vicius 1.20.0.
-8. Uploads `Vestigo.msi`, `updates.json`, and `updates.json.minisig` as one artifact and posts the Buildbot webhook.
-9. Publishes a GitHub Release for the tag, with generated notes and those three files attached. Installed clients do not download the GitHub copies.
+2. Signs both with SignRelay.
+3. Builds `publish-x64\installer\Vestigo.msi` from those signed binaries.
+4. Signs and verifies the MSI.
+5. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key.
+6. Verifies the sidecar against the public key embedded in Vicius 1.20.0.
+7. Uploads `Vestigo.msi`, `updates.json`, and `updates.json.minisig` as one artifact and posts the Buildbot webhook.
+8. Publishes a GitHub Release for the tag, with generated notes and those three files attached. Installed clients do not download the GitHub copies.
 
 The tag pipeline requires `SIGN_RELAY_SERVER`, `SIGN_RELAY_CI_TOKEN`, `WEBHOOK_URL`, `MINISIGN_PRIVATE_KEY`, and `MINISIGN_PASSWORD`. `MINISIGN_PRIVATE_KEY` is the minisign private-key file contents. The workflow writes it to a temporary file, passes that path as `VESTIGO_MINISIGN_KEY`, and deletes the file. It does not print the key or passphrase.
 
@@ -34,6 +34,10 @@ Buildbot publishes the three files together under `https://buildbot.nefarius.at/
 WiX is pinned to CLI `5.0.2`, `WixToolset.UI.wixext/5.0.2`, and `WixToolset.Firewall.wixext/5.0.2` (install each with `wix extension add -g <name>/5.0.2`). The installer also builds `installer/Vestigo.Installer.Actions` (net48, WiX DTF 5.0.2): `dotnet run` on the installer builds it first and embeds `Vestigo.Installer.Actions.CA.dll` in the MSI, so no extra release step is needed. The WixSharp project GUID is `7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71`. The MSI product code is generated for each build. The upgrade code is `9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64`. A later MSI with that upgrade code replaces an earlier Vestigo installation. The installer stops when the x64 .NET 10 ASP.NET Core runtime is missing.
 
 Keep `installer/License.rtf` aligned with `LICENSE`.
+
+## Generated documentation
+
+`docs/generated/configuration.md` and `docs/generated/mcp-tools.md` are produced from `ConfigurationCatalog` and `McpToolCatalog`. After changing options or MCP tool attributes, regenerate them by running the test suite with `VESTIGO_REGENERATE_DOCS=1`, then run the suite again without that variable so the checked-in files match.
 
 `BuildInstaller` downloads the pinned Vicius 1.20.0 x64 archive, checks its SHA-256, and requires the extracted executable to have a valid Authenticode signature for `Nefarius Software Solutions e.U.` before the MSI packages it as `Nefarius_Vestigo_Updater.exe`. The MSI also installs `Nefarius_Vestigo_Updater.json` and `THIRD-PARTY-NOTICES.txt`.
 

@@ -13,12 +13,15 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`; strongly recommended whenever `ListenAddress` is not loopback. |
 | `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
 | `AllowedOutputRoots` | empty | Roots for conversion output. |
-| `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. |
-| `Modules` | all enabled except `Processes`, `Devices` and `RemoteDebugger` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `Logs`, `EventLog`, `Services`, `Processes`, `Devices`, `RemoteDebugger`) on or off. Unknown names fail startup. `Processes`, `Devices` and `RemoteDebugger` are disabled by default. A module whose dependency is disabled fails startup: `Processes` needs `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes`, `Devices`, `RemoteDebugger` or `Software:AllowUninstall` without any `ApiTokens` is allowed but logs a startup `SECURITY WARNING` naming them (`Services` is named too when the server is bound beyond loopback). The MSI writes this section from its feature tree; see [windows-service.md](windows-service.md#modules). |
-| `Devices` | defaults | Device management: `Devices:NefconPath` (absolute path of `nefconc.exe`, default `tools\nefconc.exe` next to `Vestigo.exe`) and `Devices:NefconTimeout` (`00:02:00`, upper bound for one nefcon run). |
-| `Services` | defaults | Services module: `Services:ProtectedNames` (default `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs`) lists service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
+| `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. These are separate from the trace-only `AllowedInputRoots` / `AllowedOutputRoots`. |
+| `Modules` | all enabled except `Processes`, `Devices` and `RemoteDebugger` | `Vestigo:Modules:<Name>:Enabled` switches a feature module (`Trace`, `Jobs`, `Files`, `Environment`, `Logs`, `EventLog`, `Services`, `Software`, `Processes`, `Devices`, `RemoteDebugger`) on or off. Unknown names fail startup. `Processes`, `Devices` and `RemoteDebugger` are disabled by default. A module whose dependency is disabled fails startup: `Processes` and `Software` need `Jobs`, and `RemoteDebugger` needs `Jobs` and `Processes`. Enabling `Processes`, `Devices`, `RemoteDebugger` or `Software:AllowUninstall` without any `ApiTokens` is allowed but logs a startup `SECURITY WARNING` naming them (`Services` is named too when the server is bound beyond loopback). The MSI writes this section from its feature tree; see [windows-service.md](windows-service.md#modules). |
+| `Devices:NefconPath` | `null` | Absolute path of `nefconc.exe`. Empty uses `tools\nefconc.exe` next to `Vestigo.exe`. |
+| `Devices:NefconTimeout` | `00:02:00` | Upper bound for one nefcon run. |
+| `Services:ProtectedNames` | `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs` | Service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
+| `Software:AllowUninstall` | `false` | Enables `uninstall_software`. Listing remains available when the Software module is enabled. |
+| `Software:ProtectedNames` | `Vestigo` | Display-name substrings that uninstall refuses. Configured names are added to the defaults. |
+| `Software:MaxUninstallDuration` | `00:30:00` | Upper bound for one uninstall; the process tree is killed afterwards. |
 | `Processes:AllowPathLookup` | `true` | Lets `run_process` resolve bare names such as `cmd.exe` from the service `PATH`. When `false`, only files under roots with `Execute` access can be started. |
-
 | `RemoteDebugger:DefaultPort` | `4026` | Port `start_remote_debugger` uses when the caller gives none. |
 | `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` | Upper bound for the installer download inside the install job. |
 | `RemoteDebugger:ExtraSearchPaths` | empty | Absolute directories probed for `msvsmon.exe` (directly or as `<dir>\<arch>\msvsmon.exe`); a hit counts only when the file major version is 17 or 18 for the requested version. |
@@ -47,4 +50,51 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `FlushTimerSeconds` | 1 | ETW flush interval; bounds live latency for managed captures. Attached sessions keep their owner's settings. |
 | `ClockResolution` | `QueryPerformanceCounter` | `QueryPerformanceCounter`, `SystemTime`, or `CpuCycle`. |
 
-Serilog writes console output and daily files under the settings `logs` directory. The default level is Information.
+Serilog writes console output and daily files under the settings `logs` directory (`vestigo-.log`). The default level is Information. The host keeps 14 rolled files.
+
+`AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, and conversion-output paths used by the Trace tools. Named `Roots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, and the `/files` endpoints.
+
+The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `Modules:*:Enabled`, and `Software:AllowUninstall` in the machine settings file. Other keys you add are kept across repair and upgrade.
+
+## Examples
+
+Loopback development (`dotnet run` default shape), with a trace drop and a writable named root:
+
+```json
+{
+  "Vestigo": {
+    "ListenAddress": "127.0.0.1",
+    "ListenPort": 5098,
+    "ApiTokens": [],
+    "AllowedInputRoots": [ "D:\\traces" ],
+    "AllowedOutputRoots": [ "D:\\traces\\out" ],
+    "Roots": [
+      { "Name": "drops", "Path": "D:\\drops", "Access": "Read, Write" }
+    ]
+  }
+}
+```
+
+Authenticated remote access with opt-in modules. Retrieve a generated MSI token from the same file after install:
+
+```json
+{
+  "Vestigo": {
+    "ListenAddress": "0.0.0.0",
+    "ListenPort": 5098,
+    "ApiTokens": [ "<generated-or-chosen-token>" ],
+    "AllowedInputRoots": [ "D:\\traces" ],
+    "AllowedOutputRoots": [ "D:\\traces\\out" ],
+    "Roots": [
+      { "Name": "drivers", "Path": "D:\\drivers", "Access": "Read, Write, Execute" }
+    ],
+    "Modules": {
+      "Processes": { "Enabled": true },
+      "Devices": { "Enabled": true }
+    },
+    "Software": {
+      "AllowUninstall": false
+    }
+  }
+}
+```

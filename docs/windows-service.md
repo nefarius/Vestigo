@@ -46,7 +46,7 @@ msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=localhost VESTIGO_AUTH_MODE=none 
 msiexec /i Vestigo.msi /qn VESTIGO_LISTEN_MODE=any VESTIGO_AUTH_MODE=token VESTIGO_API_TOKEN=<your-token>
 ```
 
-With token mode and no token on the command line (and none stored), the installer generates one; read it from the settings file. Invalid values fail the install. The firewall rule is removed on uninstall and when a repair or upgrade switches to a localhost mode.
+With token mode and no token on the command line (and none stored), the installer generates one; read it from the settings file before pointing an MCP client at `/mcp`. Invalid values fail the install. The firewall rule is removed on uninstall and when a repair or upgrade switches to a localhost mode. Repair and modify rewrite the listen, token, and module keys the installer owns; other settings you added are kept. Uninstall removes the service and firewall rule and leaves the ProgramData settings tree in place.
 
 ## Modules
 

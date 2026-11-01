@@ -1,5 +1,5 @@
 # Vestigo.Server
 
-ASP.NET Core 10 MCP host for WPP trace conversion and realtime capture. The product overview, installer, and security model are in the [repository README](../../README.md).
+ASP.NET Core 10 host for the Vestigo MCP server: Streamable HTTP at `/mcp`, anonymous `/health`, and optional `/files` transfer when the Files module is enabled. The product overview, installer, and security model are in the [repository README](../README.md).
 
-The MCP endpoint is `/mcp`. The anonymous health endpoint is `/health`. Settings and spools are outside the content root; see [configuration](../../docs/configuration.md).
+Settings and spools are outside the content root; see [configuration](../docs/configuration.md).

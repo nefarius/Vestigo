@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 using Vestigo.Configuration;
+using Vestigo.Modules;
 using Vestigo.Tools;
 
 namespace Vestigo.Server.Tests;
@@ -132,50 +133,105 @@ public class RepositoryBoundaryTests
         string generated = ConfigurationCatalog.Markdown();
 
         Assert.Equal(generated, catalog.Replace("\r\n", "\n", StringComparison.Ordinal));
+        Assert.DoesNotContain("SoftwareOptions", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("defaults (see ", generated, StringComparison.Ordinal);
         foreach (string name in new[]
                  {
                      "ListenAddress", "ListenPort", "ApiTokens", "AllowedInputRoots", "AllowedOutputRoots",
-                     "SymbolServer", "SymbolCache", "MaxInputBytes", "MaxEvents", "MaxOutputBytes",
-                     "MaxCaptureDuration", "SpoolRetention", "MaxConcurrentCaptures", "MaxReadBatch",
-                     "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds", "ClockResolution"
+                     "Roots", "Modules", "SymbolServer", "SymbolCache", "MaxInputBytes", "MaxEvents",
+                     "MaxOutputBytes", "MaxCaptureDuration", "SpoolRetention", "MaxConcurrentCaptures",
+                     "MaxReadBatch", "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds",
+                     "ClockResolution", "Software:AllowUninstall", "Software:ProtectedNames",
+                     "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
+                     "Services:ProtectedNames", "Processes:AllowPathLookup", "Files:MaxUploadBytes"
                  })
         {
             Assert.Contains(name, generated, StringComparison.Ordinal);
             Assert.Contains(name, reference, StringComparison.Ordinal);
         }
+
+        foreach (VestigoModule module in ModuleRegistry.All)
+        {
+            Assert.Contains(module.Name, reference, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void GeneratedToolCatalog_FormatsTypesAndDefaults()
+    {
+        string generated = McpToolCatalog.Markdown();
+
+        Assert.Contains("| Parameter | Type | Required | Default | Description |", generated, StringComparison.Ordinal);
+        Assert.Contains("| `env` | `Dictionary<string, string>` |", generated, StringComparison.Ordinal);
+        Assert.Contains("| `waitSeconds` | `double` |", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dictionary`2", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("| `Double` |", generated, StringComparison.Ordinal);
     }
 
     [Fact]
     public void MarkdownLinks_ResolveInsideTheRepository()
     {
         string root = FindRepositoryRoot();
-        string[] documents =
-        [
-            Path.Combine(root, "README.md"),
-            ..Directory.GetFiles(Path.Combine(root, "docs"), "*.md", SearchOption.AllDirectories)
-        ];
+        string[] documents = Directory.GetFiles(root, "*.md", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                           && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Contains(documents, path => path.EndsWith($"{Path.DirectorySeparatorChar}server{Path.DirectorySeparatorChar}README.md", StringComparison.OrdinalIgnoreCase));
 
         foreach (string document in documents)
         {
             string text = File.ReadAllText(document);
+            HashSet<string> localSlugs = HeadingSlugs(text);
             foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, @"\[[^\]]+\]\(([^)]+)\)"))
             {
                 string target = match.Groups[1].Value;
-                if (target.StartsWith("http", StringComparison.OrdinalIgnoreCase) || target.StartsWith('#'))
+                if (target.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                string path = target.Split('#')[0];
+                string[] parts = target.Split('#', 2);
+                string path = parts[0];
+                string? fragment = parts.Length > 1 ? parts[1] : null;
                 if (path.Length == 0)
                 {
+                    Assert.True(fragment is not null && localSlugs.Contains(fragment),
+                        $"{document} links to missing fragment #{fragment}");
                     continue;
                 }
 
                 string resolved = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(document)!, path));
                 Assert.True(File.Exists(resolved) || Directory.Exists(resolved), $"{document} links to missing {target}");
+                if (fragment is not null && File.Exists(resolved))
+                {
+                    Assert.True(HeadingSlugs(File.ReadAllText(resolved)).Contains(fragment),
+                        $"{document} links to missing fragment {target}");
+                }
             }
         }
+    }
+
+    private static HashSet<string> HeadingSlugs(string markdown)
+    {
+        HashSet<string> slugs = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string line in markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            if (!line.StartsWith('#'))
+            {
+                continue;
+            }
+
+            string heading = line.TrimStart('#').Trim().Replace("`", "", StringComparison.Ordinal).Replace("*", "", StringComparison.Ordinal);
+            string slug = System.Text.RegularExpressions.Regex.Replace(heading.ToLowerInvariant(), @"[^\p{L}\p{N}\s-]", "");
+            slug = System.Text.RegularExpressions.Regex.Replace(slug, @"\s+", "-");
+            if (slug.Length > 0)
+            {
+                slugs.Add(slug);
+            }
+        }
+
+        return slugs;
     }
 
     [Fact]

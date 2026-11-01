@@ -6,9 +6,18 @@
 
 ## Startup fails immediately
 
-The listen address is not an IP address, a limit is not positive, or a token entry is blank. The exception names the setting.
+The exception names the setting. Common causes:
+
+- `ListenAddress` is not an IP address, `Kestrel:Endpoints` is set, or `ListenPort` is outside 1-65535.
+- A token, attachable-session, root name, or protected-name entry is blank.
+- A size, count, or duration limit is not positive, or `MaxReadWait` is outside 0-2 minutes.
+- A named root is missing an absolute path, has a duplicate name, or has no access flags.
+- `Vestigo:Modules:<Name>` names an unknown module, or an enabled module depends on a disabled one (`Processes` and `Software` need `Jobs`; `RemoteDebugger` needs `Jobs` and `Processes`).
+- `Devices:NefconPath`, `RemoteDebugger:ExtraSearchPaths`, or another module-specific setting failed validation.
 
 `Refusing to use the Vestigo state directory: ...` means the state tree under `%ProgramData%\Nefarius Software Solutions\Vestigo` failed verification: a path component is a link or junction, a directory has an untrusted owner, or a parent can be modified by non-administrators. Remove the link, or take ownership as Administrators and fix the permissions, or reinstall the MSI (it re-applies the protected ACL), then restart the service.
+
+A startup `SECURITY WARNING` is not a failure. It means the server is reachable without `ApiTokens` while bound beyond loopback, or administrator-equivalent modules (`Processes`, `Devices`, `RemoteDebugger`, `Services` on a non-loopback bind, or software uninstall) are enabled with no token.
 
 ## The server is not reachable from another machine
 
@@ -16,7 +25,9 @@ The listen address is not an IP address, a limit is not positive, or a token ent
 
 ## Paths are rejected
 
-`outside_root` means the canonical path is outside the configured roots. `roots_not_configured` means that list is empty. `unsupported_extension` means the file is not `.etl`, `.pdb`, `.tmf`, `.json`, or `.ndjson` for the operation that received it. `already_exists` means the output is present and `overwrite` is false.
+Trace tools use `AllowedInputRoots` and `AllowedOutputRoots`. `outside_root` means the canonical path is outside those lists. `roots_not_configured` means the list needed for that operation is empty. `unsupported_extension` means the file is not `.etl`, `.pdb`, `.tmf`, `.json`, or `.ndjson` for the operation that received it. `already_exists` means the output is present and `overwrite` is false.
+
+File, log, process, and device tools use named `Vestigo:Roots`. `unknown_root` means the `name:` prefix is not configured. `access_denied` means that root lacks the `Read`, `Write`, or `Execute` flag the operation needs, or Windows denied the file. `roots_not_configured` means `Vestigo:Roots` is empty.
 
 ## Realtime capture fails
 

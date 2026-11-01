@@ -1,6 +1,6 @@
 # MCP tools
 
-The generated parameter catalog is [generated/mcp-tools.md](generated/mcp-tools.md). Examples below use the default loopback endpoint.
+Point an MCP client at `http://127.0.0.1:5098/mcp` (Streamable HTTP). When `ApiTokens` is set, send `Authorization: Bearer <token>`. The generated parameter catalog is [generated/mcp-tools.md](generated/mcp-tools.md).
 
 ## Offline
 
@@ -84,7 +84,7 @@ Paths are `root:relative\path` (or an absolute path inside a root). Reads need `
 
 ### HTTP transfer endpoints
 
-Both endpoints use the same bearer authentication as `/mcp`.
+Both endpoints use the same authentication as `/mcp`: bearer tokens when `ApiTokens` is set, otherwise anonymous.
 
 `PUT /files/{root}/{path}?overwrite=false&deferToReboot=false` streams the request body to a temporary file in the target directory and commits it with an atomic replace. An optional `X-Content-SHA256` header is checked before the commit; a mismatch returns 422 and writes nothing. The response is JSON:
 
@@ -98,7 +98,7 @@ If the target is locked, for example a loaded driver or running executable, the 
 
 ## Processes
 
-The `Processes` module is disabled by default and requires the `Jobs` module and at least one API token. These tools run arbitrary code by design; read [security.md](security.md#processes) first.
+The `Processes` module is disabled by default and requires the `Jobs` module. These tools run arbitrary code by design; read [security.md](security.md#processes) first. Enabling it without `ApiTokens` is allowed and logs a startup `SECURITY WARNING`.
 
 `run_process` starts a process as a job. `path` is a file under a root with `Execute` access (`name:relative\path` or an absolute path inside such a root), or a bare name such as `cmd.exe` resolved from the service `PATH` when `Vestigo:Processes:AllowPathLookup` is true (the default). `args` is an array; each element is quoted for `CommandLineToArgvW`. `workingDirectory` must be under a root with `Read` access and defaults to the executable's directory. `env` overrides environment variables. `.ps1` files run through `pwsh.exe` when it is installed, otherwise `powershell.exe`, with `-NoProfile -ExecutionPolicy Bypass -File`.
 
@@ -114,7 +114,7 @@ The `Processes` module is disabled by default and requires the `Jobs` module and
 
 ## Remote debugger
 
-The `RemoteDebugger` module is disabled by default and requires the `Jobs` and `Processes` modules (and therefore at least one API token). It manages the Visual Studio Remote Debugging Tools (`msvsmon.exe`) for Visual Studio 2022 (17) and 2026 (18). A running monitor lets a remote debugger run code on this machine; read [security.md](security.md#remote-debugger) first.
+The `RemoteDebugger` module is disabled by default and requires the `Jobs` and `Processes` modules. Enabling those without `ApiTokens` logs a startup `SECURITY WARNING`. It manages the Visual Studio Remote Debugging Tools (`msvsmon.exe`) for Visual Studio 2022 (17) and 2026 (18). A running monitor lets a remote debugger run code on this machine; read [security.md](security.md#remote-debugger) first.
 
 Workflow: `get_remote_debugger_status` (is it installed?) -> `install_remote_debugger` (job) -> optionally `prepare_remote_debugger_computer` (firewall) -> `start_remote_debugger` -> connect Visual Studio (Debug > Attach to Process, connection target `host:4026`) -> `stop_remote_debugger`.
 
@@ -132,7 +132,7 @@ Every tool takes `version` (`2022` or `2026`) and `arch` (`x64` default, `arm64`
 
 ## Devices
 
-The `Devices` module changes drivers and device state. Everything here needs the elevated service account and drivers run in the kernel: installing one is arbitrary code execution at the highest privilege. That is the purpose of the module, so enable it only on machines you intend to debug drivers on (`Vestigo:Modules:Devices:Enabled`), and protect `/mcp` with an API token.
+The `Devices` module changes drivers and device state. Mutating operations need the elevated service account; the query tools are read-only and mostly work without elevation. Drivers run in the kernel: installing one is arbitrary code execution at the highest privilege. That is the purpose of the module, so enable it only on machines you intend to debug drivers on (`Vestigo:Modules:Devices:Enabled`), and protect `/mcp` with an API token whenever more than one client can reach it.
 
 Driver actions go through the bundled nefcon CLI with fixed arguments (see `INefconRunner`). Every result has `exitCode`, `outputTail` and `rebootRequired`, plus `timedOut`. Exit code `0` is success and `3010` is success that needs a restart (`rebootRequired: true`). Any other exit code returns `success: false` with error code `nefcon_failed` and the same result in `value`; exit code `1` normally means the service is not elevated or nefcon rejected an argument. A run longer than `Vestigo:Devices:NefconTimeout` is killed (`nefcon_timeout`). Calls run one at a time. A reboot is never triggered by Vestigo; apply it yourself when `rebootRequired` is true.
 
