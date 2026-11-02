@@ -29,12 +29,17 @@ public class SystemToolsTests
         public bool TestSigningConfigured { get; set; }
         public bool TestSigningActive { get; set; }
         public bool WhqlDeveloperTestMode { get; set; }
+        public UacSettings Uac { get; set; } = new(true, 5, 5, 1);
 
         public Exception? WhqlReadError { get; set; }
         public Exception? SecureBootReadError { get; set; }
         public Exception? SetTestSigningError { get; set; }
+        public Exception? ReadUacError { get; set; }
+        public Exception? WriteUacError { get; set; }
         public int SetTestSigningCalls { get; private set; }
         public int SetWhqlCalls { get; private set; }
+        public int WriteUacCalls { get; private set; }
+        public UacSettings? LastWrittenUac { get; private set; }
 
         bool? ISystemPlatform.IsSecureBootEnabled
         {
@@ -78,12 +83,47 @@ public class SystemToolsTests
             SetWhqlCalls++;
             WhqlDeveloperTestMode = enabled;
         }
+
+        public UacSettings ReadUac()
+        {
+            if (ReadUacError is not null)
+            {
+                throw ReadUacError;
+            }
+
+            return Uac;
+        }
+
+        public void WriteUac(UacSettings settings)
+        {
+            WriteUacCalls++;
+            LastWrittenUac = settings;
+            if (WriteUacError is not null)
+            {
+                throw WriteUacError;
+            }
+
+            Uac = new UacSettings(
+                settings.EnableLua ?? Uac.EnableLua,
+                settings.ConsentPromptBehaviorAdmin ?? Uac.ConsentPromptBehaviorAdmin,
+                settings.ConsentPromptBehaviorUser ?? Uac.ConsentPromptBehaviorUser,
+                settings.PromptOnSecureDesktop ?? Uac.PromptOnSecureDesktop);
+        }
     }
 
-    private static (SystemService Service, FakePlatform Platform) Create(bool allowWrites = true)
+    private static (SystemService Service, FakePlatform Platform) Create(
+        bool allowWrites = true,
+        bool allowUac = true)
     {
         FakePlatform platform = new();
-        VestigoOptions options = new() { System = { AllowBootConfigurationChanges = allowWrites } };
+        VestigoOptions options = new()
+        {
+            System =
+            {
+                AllowBootConfigurationChanges = allowWrites,
+                AllowUacChanges = allowUac
+            }
+        };
         return (new SystemService(platform, options), platform);
     }
 
@@ -282,6 +322,177 @@ public class SystemToolsTests
         Assert.Contains("Boot configuration changes", ModuleRegistry.GetPrivilegedModuleWarning(open));
         ModuleRegistry.ValidateConfiguration(tokens);
         Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
+    }
+
+    [Fact]
+    public void PrivilegedWarning_NamesUacChangesWithoutTokens()
+    {
+        VestigoOptions open = new() { System = { AllowUacChanges = true } };
+        VestigoOptions tokens = new() { ApiTokens = ["t"], System = { AllowUacChanges = true } };
+
+        ModuleRegistry.ValidateConfiguration(open);
+        Assert.Contains("UAC changes", ModuleRegistry.GetPrivilegedModuleWarning(open));
+        ModuleRegistry.ValidateConfiguration(tokens);
+        Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
+    }
+
+    [Theory]
+    [InlineData(true, 2, 1, "always")]
+    [InlineData(true, 5, 1, "default")]
+    [InlineData(true, 5, 0, "noDim")]
+    [InlineData(true, 0, 0, "never")]
+    [InlineData(false, 5, 1, "disabled")]
+    [InlineData(false, 2, 1, "disabled")]
+    [InlineData(true, 1, 1, "custom")]
+    public void MapUacLevel_MatchesSliderAndDisabled(bool enableLua, int admin, int prompt, string expected) =>
+        Assert.Equal(expected, SystemService.MapUacLevel(new UacSettings(enableLua, admin, 5, prompt)));
+
+    [Fact]
+    public void MapUacLevel_MissingValuesAreCustom()
+    {
+        Assert.Equal("custom", SystemService.MapUacLevel(new UacSettings(null, 5, 5, 1)));
+        Assert.Equal("custom", SystemService.MapUacLevel(new UacSettings(true, null, 5, 1)));
+        Assert.Equal("custom", SystemService.MapUacLevel(new UacSettings(true, 5, 5, null)));
+    }
+
+    [Fact]
+    public void GetUac_ReportsDefaultLevelAndNotes()
+    {
+        (SystemService service, _) = Create();
+
+        UacResult value = service.GetUac().Value!;
+
+        Assert.True(value.Enabled);
+        Assert.Equal("default", value.Level);
+        Assert.Equal(5, value.ConsentPromptBehaviorAdmin);
+        Assert.Equal(5, value.ConsentPromptBehaviorUser);
+        Assert.True(value.PromptOnSecureDesktop);
+        Assert.Contains(value.Notes, note => note.Contains("Group Policy", StringComparison.Ordinal));
+        Assert.Contains(value.Notes, note => note.Contains("EnableLUA", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GetUac_ReportsCustomWhenValuesDoNotMatch()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.Uac = new UacSettings(true, 1, 0, 1);
+
+        UacResult value = service.GetUac().Value!;
+
+        Assert.Equal("custom", value.Level);
+        Assert.Contains(value.Notes, note => note.Contains("do not match", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GetUac_NullsAFailedProbe()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.ReadUacError = new InvalidOperationException("missing");
+
+        UacResult value = service.GetUac().Value!;
+
+        Assert.Null(value.Enabled);
+        Assert.Equal("custom", value.Level);
+        Assert.Contains(value.Notes, note => note.Contains("could not be read", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SetUac_RefusesWhenGateIsOff_WithoutTouchingPlatform()
+    {
+        (SystemService service, FakePlatform platform) = Create(allowUac: false);
+
+        OperationResult<UacChange> result = service.SetUac("never");
+
+        Assert.False(result.Success);
+        Assert.Equal("uac_changes_disabled", result.ErrorCode);
+        Assert.Equal(0, platform.WriteUacCalls);
+    }
+
+    [Theory]
+    [InlineData("custom")]
+    [InlineData("")]
+    [InlineData("loud")]
+    public void SetUac_RejectsUnknownLevel(string level)
+    {
+        (SystemService service, FakePlatform platform) = Create();
+
+        OperationResult<UacChange> result = service.SetUac(level);
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_level", result.ErrorCode);
+        Assert.Equal(0, platform.WriteUacCalls);
+    }
+
+    [Fact]
+    public void SetUac_WritesSliderWithoutRebootWhenEnableLuaStaysOn()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+
+        UacChange change = service.SetUac("never").Value!;
+
+        Assert.Equal("never", change.Level);
+        Assert.Equal("default", change.Before);
+        Assert.Equal("never", change.After);
+        Assert.False(change.RebootRequired);
+        Assert.Equal(new UacSettings(true, 0, null, 0), platform.LastWrittenUac);
+        Assert.Equal(5, platform.Uac.ConsentPromptBehaviorUser);
+    }
+
+    [Fact]
+    public void SetUac_ReportsRebootRequiredOnlyWhenEnableLuaFlips()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+
+        UacChange disable = service.SetUac("disabled").Value!;
+
+        Assert.Equal("default", disable.Before);
+        Assert.Equal("disabled", disable.After);
+        Assert.True(disable.RebootRequired);
+        Assert.Equal(new UacSettings(false, null, null, null), platform.LastWrittenUac);
+        Assert.Equal(5, platform.Uac.ConsentPromptBehaviorAdmin);
+
+        UacChange enable = service.SetUac("default").Value!;
+
+        Assert.Equal("disabled", enable.Before);
+        Assert.Equal("default", enable.After);
+        Assert.True(enable.RebootRequired);
+    }
+
+    [Fact]
+    public void SetUac_AcceptsCaseInsensitiveLevel()
+    {
+        (SystemService service, _) = Create();
+
+        UacChange change = service.SetUac("NODIM").Value!;
+
+        Assert.Equal("noDim", change.Level);
+        Assert.Equal("noDim", change.After);
+    }
+
+    [Fact]
+    public void SetUac_MapsAccessDenied()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.WriteUacError = new UnauthorizedAccessException();
+
+        OperationResult<UacChange> result = service.SetUac("always");
+
+        Assert.False(result.Success);
+        Assert.Equal("access_denied", result.ErrorCode);
+        Assert.Equal(1, platform.WriteUacCalls);
+    }
+
+    [Fact]
+    public void SetUac_MapsWriteFailure()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.WriteUacError = new InvalidOperationException("registry locked");
+
+        OperationResult<UacChange> result = service.SetUac("always");
+
+        Assert.False(result.Success);
+        Assert.Equal("uac_write_failed", result.ErrorCode);
+        Assert.Equal("registry locked", result.Error);
     }
 
     [Fact]

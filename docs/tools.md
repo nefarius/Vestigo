@@ -83,13 +83,17 @@ The `Software` module inventories installed programs from the `Uninstall` regist
 
 ## System
 
-The `System` module reports the host Windows version and boot-security posture through `Nefarius.Utilities.WindowsVersion`. It is enabled by default. Writes stay off until `Vestigo:System:AllowBootConfigurationChanges` is `true`.
+The `System` module reports the host Windows version, boot-security posture, and UAC policy. Version and boot-security reads go through `Nefarius.Utilities.WindowsVersion`. It is enabled by default. Boot-configuration writes stay off until `Vestigo:System:AllowBootConfigurationChanges` is `true`. UAC writes stay off until `Vestigo:System:AllowUacChanges` is `true`.
 
 `get_system_info` returns the OS name, edition, display version (for example 24H2), version string, major/minor/build/UBR, whether it is Windows 11 or Server, whether the install was in-place upgraded (`grandfathered`), OS and processor bitness, ARM64, whether UAC is disabled, and the machine name. A probe that fails becomes a null field instead of failing the call.
 
 `get_boot_security` returns `uefi`, `secureBoot`, `testSigningConfigured` (BCD on the default boot entry), `testSigningActive` (the running kernel), `whqlDeveloperTestMode`, and `rebootPending` when the BCD value and the running state differ. `notes` explain Secure Boot blocking test signing, a pending reboot, and that BCD changes apply only to the default boot entry. WHQL developer test mode is not present on every Windows build; a missing value is null.
 
 `set_test_signing` and `set_whql_developer_test_mode` fail with `boot_changes_disabled` unless the option is enabled. Turning test signing on fails with `secure_boot_enabled` unless Secure Boot is known to be disabled. A BCD write failure is `bcd_write_failed`; a WHQL policy write failure is `ci_write_failed`; lack of elevation is `access_denied`. Vestigo never reboots the machine: BCD test-signing takes effect at the next boot, and WHQL developer test mode availability depends on the Windows build.
+
+`get_uac` reads `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System` and maps `EnableLUA`, `ConsentPromptBehaviorAdmin`, and `PromptOnSecureDesktop` to a slider level: `always` (2, secure desktop on), `default` (5, secure desktop on), `noDim` (5, secure desktop off), `never` (0, secure desktop off), or `disabled` (`EnableLUA` is 0). Any other combination is `custom`. The result also returns `ConsentPromptBehaviorUser` and notes that Group Policy can override these values and that `EnableLUA` changes apply after a reboot.
+
+`set_uac` accepts `always`, `default`, `noDim`, `never`, or `disabled` and fails with `uac_changes_disabled` unless the option is enabled. `custom` and any other string fail with `invalid_level`. Slider levels write `EnableLUA=1` plus the matching prompt values and leave `ConsentPromptBehaviorUser` alone. `disabled` writes only `EnableLUA=0`, so the previous slider position is kept, and it reports `rebootRequired`. Turning UAC off also breaks UWP and Store apps until it is turned back on. A registry write failure is `uac_write_failed`; lack of elevation is `access_denied`. Vestigo never reboots the machine.
 
 ## Updates
 

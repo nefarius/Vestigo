@@ -4,7 +4,7 @@ using ModelContextProtocol.Server;
 
 namespace Vestigo.SystemInfo;
 
-/// <summary>MCP tools for host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.</summary>
+/// <summary>MCP tools for host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.</summary>
 [McpServerToolType]
 public sealed class SystemTools(SystemService service)
 {
@@ -27,4 +27,14 @@ public sealed class SystemTools(SystemService service)
     public OperationResult<BootConfigurationChange> SetWhqlDeveloperTestMode(
         [Description("true to enable WHQL developer test mode, false to disable it.")] bool enabled) =>
         service.SetWhqlDeveloperTestMode(enabled);
+
+    [McpServerTool(Name = "get_uac", ReadOnly = true)]
+    [Description("Returns the host UAC policy: enabled (EnableLUA), the slider level (always, default, noDim, never, disabled, or custom), ConsentPromptBehaviorAdmin, ConsentPromptBehaviorUser, PromptOnSecureDesktop, and notes. Group Policy can override these values. EnableLUA changes apply after a reboot.")]
+    public OperationResult<UacResult> GetUac() => service.GetUac();
+
+    [McpServerTool(Name = "set_uac", ReadOnly = false, Destructive = true, Idempotent = true)]
+    [Description("Sets the UAC slider level: always, default, noDim, never, or disabled. Requires Vestigo:System:AllowUacChanges. custom is not accepted. disabled writes only EnableLUA and needs a reboot; it also breaks UWP and Store apps until UAC is turned back on. Slider-only changes keep EnableLUA on. Does not reboot. Never logs secrets.")]
+    public OperationResult<UacChange> SetUac(
+        [Description("UAC level: always, default, noDim, never, or disabled.")] string level) =>
+        service.SetUac(level);
 }

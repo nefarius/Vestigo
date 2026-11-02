@@ -106,6 +106,11 @@ public static class ModuleRegistry
             capabilities.Add("Boot configuration changes");
         }
 
+        if (options.System.AllowUacChanges && enabled.Any(module => module.Name == "System"))
+        {
+            capabilities.Add("UAC changes");
+        }
+
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
         {
             capabilities.Add("Self-update");

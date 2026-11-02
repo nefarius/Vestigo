@@ -3,13 +3,13 @@ using Vestigo.SystemInfo;
 
 namespace Vestigo.Modules;
 
-/// <summary>Host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.</summary>
+/// <summary>Host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.</summary>
 public sealed class SystemModule : VestigoModule
 {
     public override string Name => "System";
 
     public override string Description =>
-        "Host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.";
+        "Host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.";
 
     public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(SystemTools)];
 

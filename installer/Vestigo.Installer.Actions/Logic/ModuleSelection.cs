@@ -75,6 +75,9 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowBootConfigurationChanges</c>.</summary>
         public const string BootConfigurationChanges = "BootConfigurationChanges";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowUacChanges</c>.</summary>
+        public const string UacChanges = "UacChanges";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowScreenshots</c>.</summary>
         public const string DesktopScreenshots = "DesktopScreenshots";
 
@@ -87,6 +90,7 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(ScheduledTaskChanges, "ScheduledTasks", "AllowChanges"),
             new OptionToggle(AudioSetDefault, "Audio", "AllowSetDefault"),
             new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges"),
+            new OptionToggle(UacChanges, "System", "AllowUacChanges"),
             new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots"),
             new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate")
         };
@@ -96,7 +100,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Trace", "Trace", "Offline ETL/WPP conversion and managed realtime capture.", true, null),
             new ModuleDefinition("Files", "Files", "Root-confined file tools plus authenticated PUT/GET transfer endpoints.", true, null),
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
-            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.", true, null),
+            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail, incremental reads and regex search of text log files.", true, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
             new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop. Screenshots are a separate child feature.", false, null),
@@ -114,6 +118,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
             new ModuleDefinition(SoftwareUninstall, "Silent uninstall", "Allow silent uninstalls of installed software as the service account (Vestigo:Software:AllowUninstall). Administrator-equivalent.", false, "Software"),
             new ModuleDefinition(BootConfigurationChanges, "Boot configuration", "Allow changing BCD test-signing and WHQL developer test mode (Vestigo:System:AllowBootConfigurationChanges). Administrator-equivalent. Takes effect after reboot.", false, "System"),
+            new ModuleDefinition(UacChanges, "UAC changes", "Allow changing the UAC slider and EnableLUA (Vestigo:System:AllowUacChanges). Administrator-equivalent. Turning UAC off takes effect after reboot.", false, "System"),
             new ModuleDefinition("Updates", "Updates", "Check the signed Buildbot feed for a newer Vestigo release.", true, null),
             new ModuleDefinition(SelfUpdate, "Silent self-update", "Allow start_self_update to run the packaged Vicius updater (Vestigo:Updates:AllowSelfUpdate). Needs the Automatic updates feature. Administrator-equivalent: installs the signed MSI and restarts the service.", false, "Updates")
         };

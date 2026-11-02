@@ -59,10 +59,10 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p>The service context does not see user audio sessions. Per-app overrides are not shown or changed.</p>
   </article>
   <article class="card">
-    <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">BCD writes gated</span></p>
+    <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">BCD writes gated</span> <span class="pill gated">UAC writes gated</span></p>
     <h2>System and boot security</h2>
-    <p><code>get_system_info</code> reports Windows edition, display version, bitness, and UAC state. <code>get_boot_security</code> reports UEFI, Secure Boot, test-signing, and WHQL developer test mode.</p>
-    <p><code>set_test_signing</code> and <code>set_whql_developer_test_mode</code> stay off until <code>System:AllowBootConfigurationChanges</code> is true. Test-signing is refused while Secure Boot is on. Vestigo never reboots the machine.</p>
+    <p><code>get_system_info</code> reports Windows edition, display version, bitness, and UAC state. <code>get_boot_security</code> reports UEFI, Secure Boot, test-signing, and WHQL developer test mode. <code>get_uac</code> reports the slider level and EnableLUA.</p>
+    <p><code>set_test_signing</code> and <code>set_whql_developer_test_mode</code> stay off until <code>System:AllowBootConfigurationChanges</code> is true. <code>set_uac</code> stays off until <code>System:AllowUacChanges</code> is true. Test-signing is refused while Secure Boot is on. Vestigo never reboots the machine.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span></p>

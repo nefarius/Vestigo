@@ -91,6 +91,69 @@ public sealed class WindowsVersionPlatform : ISystemPlatform
     public void SetWhqlDeveloperTestMode(bool enabled) =>
         CodeIntegrityPolicyHelper.WhqlDeveloperTestMode = enabled;
 
+    public UacSettings ReadUac()
+    {
+        using RegistryKey? key = Registry.LocalMachine.OpenSubKey(
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System");
+        if (key is null)
+        {
+            return new UacSettings(null, null, null, null);
+        }
+
+        return new UacSettings(
+            ReadEnableLua(key.GetValue("EnableLUA")),
+            ReadDword(key.GetValue("ConsentPromptBehaviorAdmin")),
+            ReadDword(key.GetValue("ConsentPromptBehaviorUser")),
+            ReadDword(key.GetValue("PromptOnSecureDesktop")));
+    }
+
+    public void WriteUac(UacSettings settings)
+    {
+        using RegistryKey? key = Registry.LocalMachine.OpenSubKey(
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            writable: true);
+        if (key is null)
+        {
+            throw new InvalidOperationException("The UAC policy registry key could not be opened.");
+        }
+
+        WriteDword(key, "EnableLUA", settings.EnableLua is { } lua ? lua ? 1 : 0 : null);
+        WriteDword(key, "ConsentPromptBehaviorAdmin", settings.ConsentPromptBehaviorAdmin);
+        WriteDword(key, "ConsentPromptBehaviorUser", settings.ConsentPromptBehaviorUser);
+        WriteDword(key, "PromptOnSecureDesktop", settings.PromptOnSecureDesktop);
+    }
+
+    internal static bool? ReadEnableLua(object? value)
+    {
+        int? dword = ReadDword(value);
+        return dword is { } flag ? flag != 0 : null;
+    }
+
+    internal static int? ReadDword(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static void WriteDword(RegistryKey key, string name, int? value)
+    {
+        if (value is { } dword)
+        {
+            key.SetValue(name, dword, RegistryValueKind.DWord);
+        }
+    }
+
     internal static string FormatSoftwareArchitecture(SoftwareArchitecture bits) => bits switch
     {
         SoftwareArchitecture.Bit32 => "32",
