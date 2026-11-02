@@ -77,6 +77,57 @@ public sealed class BinarySymbolTests : IDisposable
             outside.ErrorCode);
     }
 
+    [Fact]
+    public async Task ResolveBinaryPdbPaths_AcceptsPdbUnderStoreCacheDirectory()
+    {
+        string envCache = Directory.CreateTempSubdirectory("vestigo-env-cache").FullName;
+        string? previous = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("_NT_SYMBOL_PATH", "cache*" + envCache);
+
+            string fixture = Path.Combine(RepositoryRoot(), "tests", "fixtures", "BthPS3PSM.pdb");
+            Assert.True(PdbFileIdentityReader.TryRead(fixture, out PdbFileIdentity identity));
+
+            string folder = Directory.CreateTempSubdirectory("vestigo-bins").FullName;
+            string binary = Path.Combine(folder, "BthPS3PSM.sys");
+            File.WriteAllBytes(binary, MinimalPe.WithCodeView("BthPS3PSM.pdb", identity.Guid, identity.Age));
+
+            VestigoOptions options = new()
+            {
+                Roots = [new RootDefinition { Name = "bins", Path = folder, Access = RootAccess.Read }]
+            };
+            SymbolCatalogService symbols = new(
+                options,
+                new PathPolicy(options),
+                new UnusedHttp(),
+                new RootPolicy(options));
+
+            CodeViewReadResult codeView = PortableExecutableSymbols.TryReadCodeViewPdb(binary);
+            Assert.NotNull(codeView.Metadata);
+            string cached = Path.Combine(
+                envCache,
+                codeView.Metadata.Value.IndexPrefix.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
+            File.Copy(fixture, cached, overwrite: true);
+
+            Assert.Equal(Path.GetFullPath(envCache), Path.GetFullPath(symbols.CreateStore().CacheDirectory));
+
+            OperationResult<IReadOnlyList<string>> resolved =
+                await symbols.ResolveBinaryPdbPathsAsync([binary], CancellationToken.None);
+
+            Assert.True(resolved.Success, resolved.Error);
+            string pdb = Assert.Single(resolved.Value!);
+            Assert.True(
+                pdb.StartsWith(Path.GetFullPath(envCache), StringComparison.OrdinalIgnoreCase),
+                pdb);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("_NT_SYMBOL_PATH", previous);
+        }
+    }
+
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _previous);

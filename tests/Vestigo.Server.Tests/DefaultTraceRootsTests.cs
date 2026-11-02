@@ -69,6 +69,32 @@ public sealed class DefaultTraceRootsTests : IDisposable
     }
 
     [Fact]
+    public void PathPolicy_AcceptsEnvironmentSelectedSymbolCachePdbs()
+    {
+        string envCache = Directory.CreateTempSubdirectory("vestigo-env-cache").FullName;
+        string? previous = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("_NT_SYMBOL_PATH", "cache*" + envCache);
+            string cacheFile = Path.Combine(envCache, "driver.pdb");
+            File.WriteAllText(cacheFile, "pdb");
+            PathPolicy policy = new(new VestigoOptions { MaxInputBytes = 100 });
+
+            PathCheck cache = policy.RequireExistingFile(cacheFile, [".pdb"]);
+            PathCheck cacheEtl = policy.RequireExistingFile(
+                Path.ChangeExtension(cacheFile, ".etl"),
+                [".etl"]);
+
+            Assert.True(cache.Success, cache.Error);
+            Assert.Equal("outside_root", cacheEtl.ErrorCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("_NT_SYMBOL_PATH", previous);
+        }
+    }
+
+    [Fact]
     public void RootPolicy_AddsBuiltInTracesRootUntilOverridden()
     {
         RootPolicy generated = new(new VestigoOptions());

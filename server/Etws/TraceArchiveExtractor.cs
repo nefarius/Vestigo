@@ -39,6 +39,7 @@ public sealed class TraceArchiveExtractor(VestigoOptions options, PathPolicy pat
 
             long compressedTotal = 0;
             long uncompressedTotal = 0;
+            List<(ZipArchiveEntry Entry, string TargetPath)> planned = [];
             List<string> extracted = [];
             List<string> skipped = [];
             foreach (ZipArchiveEntry entry in zip.Entries)
@@ -109,8 +110,13 @@ public sealed class TraceArchiveExtractor(VestigoOptions options, PathPolicy pat
                         $"Refusing to write through a link: '{parent}'.");
                 }
 
-                entry.ExtractToFile(target.FullPath!, overwrite: true);
-                extracted.Add(target.FullPath!);
+                planned.Add((entry, target.FullPath!));
+            }
+
+            foreach ((ZipArchiveEntry entry, string targetPath) in planned)
+            {
+                entry.ExtractToFile(targetPath, overwrite: true);
+                extracted.Add(targetPath);
             }
 
             return OperationResult<TraceArchiveExtraction>.Ok(

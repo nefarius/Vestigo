@@ -268,7 +268,7 @@ public sealed class SymbolCatalogService(
             return OperationResult<IReadOnlyList<string>>.Fail(resolved.ErrorCode!, resolved.Error!);
         }
 
-        List<string> paths = [];
+        List<string> pdbPaths = [];
         foreach (BinarySymbolResolution item in resolved.Value!)
         {
             if (item.Failure == "symbol_auth_failed")
@@ -292,10 +292,16 @@ public sealed class SymbolCatalogService(
                     item.Detail ?? $"Could not resolve a PDB for '{item.BinaryPath}'.");
             }
 
-            paths.Add(item.PdbPath);
+            PathCheck check = paths.RequireExistingFile(item.PdbPath, [".pdb"]);
+            if (!check.Success)
+            {
+                return OperationResult<IReadOnlyList<string>>.Fail(check.ErrorCode!, check.Error!);
+            }
+
+            pdbPaths.Add(check.FullPath!);
         }
 
-        return OperationResult<IReadOnlyList<string>>.Ok(paths);
+        return OperationResult<IReadOnlyList<string>>.Ok(pdbPaths);
     }
 
     internal static bool IsUnauthorized(PdbResolutionFailure failure, string? detail)
@@ -310,10 +316,37 @@ public sealed class SymbolCatalogService(
 
     internal static bool LooksLikeAuthStatus(string? detail) =>
         detail is not null &&
-        (detail.Contains("401", StringComparison.Ordinal) ||
-         detail.Contains("403", StringComparison.Ordinal) ||
+        (ContainsStatusCodeToken(detail, "401") ||
+         ContainsStatusCodeToken(detail, "403") ||
          detail.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase) ||
          detail.Contains("Forbidden", StringComparison.OrdinalIgnoreCase));
+
+    private static bool ContainsStatusCodeToken(string detail, string code)
+    {
+        int start = 0;
+        while (start <= detail.Length - code.Length)
+        {
+            int index = detail.IndexOf(code, start, StringComparison.Ordinal);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            bool leftBoundary = index == 0 || !IsStatusCodeTokenChar(detail[index - 1]);
+            int after = index + code.Length;
+            bool rightBoundary = after == detail.Length || !IsStatusCodeTokenChar(detail[after]);
+            if (leftBoundary && rightBoundary)
+            {
+                return true;
+            }
+
+            start = index + 1;
+        }
+
+        return false;
+    }
+
+    private static bool IsStatusCodeTokenChar(char c) => char.IsAsciiLetterOrDigit(c) || c == '_';
 
     internal static string? RedactUserInfo(string? url)
     {

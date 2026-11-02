@@ -163,8 +163,15 @@ public class SymbolServerAuthTests
     public void LooksLikeAuthStatus_Maps401()
     {
         Assert.True(SymbolCatalogService.LooksLikeAuthStatus("Response status code does not indicate success: 401 (Unauthorized)."));
+        Assert.True(SymbolCatalogService.LooksLikeAuthStatus("403 Forbidden"));
         Assert.True(SymbolCatalogService.IsUnauthorized(PdbResolutionFailure.DownloadFailed, "401 Unauthorized"));
+        Assert.True(SymbolCatalogService.LooksLikeAuthStatus("Unauthorized"));
+        Assert.True(SymbolCatalogService.LooksLikeAuthStatus("Forbidden"));
         Assert.False(SymbolCatalogService.LooksLikeAuthStatus("404 Not Found"));
+        Assert.False(SymbolCatalogService.LooksLikeAuthStatus("file401.pdb"));
+        Assert.False(SymbolCatalogService.LooksLikeAuthStatus("x403y"));
+        Assert.False(SymbolCatalogService.LooksLikeAuthStatus("error_1401"));
+        Assert.False(SymbolCatalogService.LooksLikeAuthStatus("Pdb403Name"));
     }
 
     private static VestigoOptions ValidAuth(

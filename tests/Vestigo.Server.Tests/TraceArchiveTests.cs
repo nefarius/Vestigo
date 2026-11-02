@@ -45,6 +45,21 @@ public sealed class TraceArchiveTests : IDisposable
     }
 
     [Fact]
+    public void Extract_ValidatesAllEntriesBeforeWriting()
+    {
+        string destination = Path.Combine(VestigoPaths.TraceDirectory, "partial");
+        Directory.CreateDirectory(destination);
+        string zip = Path.Combine(VestigoPaths.TraceDirectory, "partial.zip");
+        CreateZip(zip, ("good.pdb", "pdb"), ("..\\escape.pdb", "bad"));
+
+        OperationResult<TraceArchiveExtraction> result =
+            CreateExtractor().Extract(zip, destination, overwrite: false);
+
+        Assert.Equal("unsafe_entry", result.ErrorCode);
+        Assert.False(File.Exists(Path.Combine(destination, "good.pdb")));
+    }
+
+    [Fact]
     public void Extract_HonorsOverwriteAndEntryCap()
     {
         string zip = Path.Combine(VestigoPaths.TraceDirectory, "once.zip");

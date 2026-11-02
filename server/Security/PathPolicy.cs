@@ -1,3 +1,5 @@
+using Nefarius.Utilities.ETW.Symbols;
+
 using Vestigo.Configuration;
 
 namespace Vestigo.Security;
@@ -126,7 +128,12 @@ public sealed class PathPolicy(VestigoOptions options, RootPolicy? roots = null)
             return roots;
         }
 
-        string cache = options.EffectiveSymbolCache;
+        string cache = SymbolStoreConfiguration.Resolve(
+            options.SymbolServer,
+            options.SymbolCache,
+            Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH"),
+            options.EffectiveSymbolCache,
+            options.EffectiveInputRoots).CacheDirectory;
         foreach (string root in roots)
         {
             if (string.Equals(root, cache, PathComparison()))
