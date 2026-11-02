@@ -24,6 +24,7 @@ public sealed class ScheduledTaskHistoryReader
             string query = $"*[EventData[Data[@Name='TaskName']='{EscapeXPath(path)}']]";
             EventLogQuery logQuery = new(Channel, PathType.LogName, query) { ReverseDirection = true };
             using EventLogReader reader = new(logQuery);
+            using EventLogPropertySelector resultCode = new(["Event/EventData/Data[@Name='ResultCode']"]);
             List<ScheduledTaskHistoryEntry> entries = [];
             bool truncated = false;
             while (true)
@@ -46,7 +47,7 @@ public sealed class ScheduledTaskHistoryReader
                     record.LevelDisplayName ?? record.Level?.ToString() ?? "Unknown",
                     record.TaskDisplayName,
                     record.ActivityId?.ToString(),
-                    NamedData(record, "ResultCode"),
+                    NamedData(record, resultCode),
                     Render(record)));
             }
 
@@ -70,7 +71,7 @@ public sealed class ScheduledTaskHistoryReader
     internal static string EscapeXPath(string value) => value.Replace("'", string.Empty, StringComparison.Ordinal);
 
     /// <summary>Reads a named event-data field (for example <c>ResultCode</c>); null when the event has none.</summary>
-    private static string? NamedData(EventRecord record, string name)
+    private static string? NamedData(EventRecord record, EventLogPropertySelector selector)
     {
         if (record is not EventLogRecord logRecord)
         {
@@ -79,7 +80,6 @@ public sealed class ScheduledTaskHistoryReader
 
         try
         {
-            EventLogPropertySelector selector = new([$"Event/EventData/Data[@Name='{name}']"]);
             return logRecord.GetPropertyValues(selector).FirstOrDefault()?.ToString();
         }
         catch (Exception ex) when (ex is EventLogException or InvalidOperationException or ArgumentException)
