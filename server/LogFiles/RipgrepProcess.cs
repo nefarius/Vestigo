@@ -17,8 +17,12 @@ internal sealed class RipgrepProcess(VestigoOptions options) : IRipgrepProcess
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         int maxBytes = RipgrepLineReader.RecordByteLimit(options.Logs.MaxSearchLineLength);
-        Channel<RipgrepLine> lines = Channel.CreateUnbounded<RipgrepLine>(
-            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        Channel<RipgrepLine> lines = Channel.CreateBounded<RipgrepLine>(new BoundedChannelOptions(options.Logs.MaxSearchResults)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
 
         Command command = Cli.Wrap(executable)
             .WithArguments(args =>
