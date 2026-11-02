@@ -1,0 +1,16 @@
+title: Vestigo
+description: Windows MCP server for driver and application development
+url: https://nefarius.github.io
+baseurl: /Vestigo
+theme: minima
+permalink: pretty
+plugins:
+  - jekyll-relative-links
+relative_links:
+  enabled: true
+  collections: true
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

@@ -1,0 +1,91 @@
+---
+title: Features
+description: Vestigo feature booklet for developers and QA personnel.
+---
+
+# Feature booklet
+
+Each card is one area of the MCP surface. **On by default** is available after a stock install. **Opt-in** stays off until that module is enabled. **Gated** needs a second setting even after the module is on.
+
+See [Developers](developers.md) and [QA](qa.md) for the workflows that combine these tools. Read [Security](security.md) before enabling opt-in modules on a shared machine.
+
+<div class="cards">
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span></p>
+    <h2>WPP and ETW tracing</h2>
+    <p>Inspect a WPP PDB, validate PDB or TMF sources, scan ETL metadata, and convert an ETL file to JSON or NDJSON. <code>start_capture</code> creates a <code>Vestigo-</code> realtime session from provider GUIDs or PDB paths. Follow it with long-polling <code>read_capture</code>. <code>attach_etw_session</code> can read an existing session once you list it in <code>AttachableSessions</code>.</p>
+    <p>Vestigo decodes events; it does not write a raw ETL file. The NT Kernel Logger is not supported.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span></p>
+    <h2>Files and text search</h2>
+    <p>Named roots with <code>Read</code>, <code>Write</code>, and <code>Execute</code> confine every path. List, copy, move, delete, and mkdir stay inside those roots. <code>fetch_file</code> pulls HTTP(S) or UNC into a root as a job. Upload and download URLs can carry a one-time ticket so the API token never goes into a curl command.</p>
+    <p><code>tail_text_file</code> and <code>read_text_file_since</code> follow a growing log. <code>search_text</code> runs bundled ripgrep across a root and returns only the matching lines.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span> <span class="pill optin">Processes opt-in</span></p>
+    <h2>Processes and services</h2>
+    <p>List, start, stop, restart, and reconfigure Win32 services and kernel drivers. Create or delete a <code>KERNEL_DRIVER</code> service through bundled nefcon. Protected service names cannot be mutated.</p>
+    <p>The Processes module is off until enabled. Then <code>run_process</code> starts a job as the service account or the console user, <code>close_app</code> posts <code>WM_CLOSE</code>, and <code>kill_process</code> terminates by pid or name.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">Changes gated</span></p>
+    <h2>Scheduled tasks</h2>
+    <p>List and inspect local Task Scheduler tasks, including principal, actions, triggers, and definition XML. History comes from the Task Scheduler Operational channel when that log is enabled.</p>
+    <p>Run, stop, enable, disable, and delete stay off until <code>ScheduledTasks:AllowChanges</code> is true. Vestigo does not create or edit task definitions. Paths under <code>\Microsoft\Windows\</code> cannot be deleted or disabled.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">Uninstall gated</span></p>
+    <h2>Software</h2>
+    <p>Inventory installed programs from the Uninstall registry keys, including publisher, version, installer type, and whether a silent uninstall exists.</p>
+    <p><code>uninstall_software</code> stays off until <code>Software:AllowUninstall</code> is true. It covers MSI, Burn, Inno Setup, NSIS, and entries that publish a quiet uninstall string. Per-user entries and AppX/MSIX packages are refused.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span></p>
+    <h2>Devices and drivers</h2>
+    <p>Install and uninstall driver packages, create and remove ROOT device nodes, edit class filters, run <code>[DefaultInstall]</code> INFs, list the driver store, and enable, disable, or restart a device. Queries run in-process; mutating calls go through bundled nefcon.</p>
+    <p>Installing a driver is kernel-mode code execution. Enable this module only on machines you intend to debug drivers on.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Screenshots gated</span></p>
+    <h2>Desktop and screenshots</h2>
+    <p>List windows and displays on the console user's desktop, including titles, bounds, and monitor topology. Screenshots stay off until <code>Desktop:AllowScreenshots</code> is true. Capture the virtual screen, one display, one window, or a rectangle, and optionally save a PNG into a write root.</p>
+    <p>The lock screen and UAC secure desktop return <code>desktop_unavailable</code>. Some GPU or DRM windows capture black.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Default switch gated</span></p>
+    <h2>Audio</h2>
+    <p>List Core Audio playback and recording endpoints, volume, mute, a short peak sample, and the sessions using each device. Switching the default device stays off until <code>Audio:AllowSetDefault</code> is true.</p>
+    <p>The service context does not see user audio sessions. Per-app overrides are not shown or changed.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">BCD writes gated</span></p>
+    <h2>System and boot security</h2>
+    <p><code>get_system_info</code> reports Windows edition, display version, bitness, and UAC state. <code>get_boot_security</code> reports UEFI, Secure Boot, test-signing, and WHQL developer test mode.</p>
+    <p><code>set_test_signing</code> and <code>set_whql_developer_test_mode</code> stay off until <code>System:AllowBootConfigurationChanges</code> is true. Test-signing is refused while Secure Boot is on. Vestigo never reboots the machine.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span></p>
+    <h2>Debug output</h2>
+    <p>Capture Win32 <code>OutputDebugString</code> through bundled DebugViewConsole. Start a filtered capture, then follow it with long-polling <code>read_debug_output</code>.</p>
+    <p>Windows allows only one <code>DBWIN_BUFFER</code> reader. A debugger-attached process sends output to the debugger instead. Kernel <code>DbgPrint</code> is not captured.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span></p>
+    <h2>Event logs</h2>
+    <p>List channels and query a live log or an <code>.evtx</code> file under a read root. Filter by provider, level, event id, time range, or a raw XPath. Results are newest first and capped.</p>
+    <p>The Security channel follows Windows ACLs for the service account. Rendered messages are null when the publisher is not installed.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill on">On by default</span></p>
+    <h2>Jobs</h2>
+    <p>Long work (process launch, silent uninstall, file fetch, remote-debugger install) returns a job id. <code>wait_job</code>, <code>read_job_output</code>, and <code>cancel_job</code> page the output and stop the tree if needed.</p>
+    <p>Finished jobs are kept for a bounded retention period, then discarded.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span></p>
+    <h2>Remote debugger</h2>
+    <p>Install Visual Studio Remote Debugging Tools for 2022 or 2026, prepare the firewall, start <code>msvsmon.exe</code>, and stop it. Status reports every discovered monitor and whether Vestigo started it.</p>
+    <p>The module needs Processes and Jobs. A running monitor lets a remote debugger execute code on the machine; treat the token as administrator-equivalent.</p>
+  </article>
+</div>

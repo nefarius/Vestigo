@@ -16,6 +16,8 @@ The workflow (`.github/workflows/build.yml`) builds the app once and hands the r
 
 Pull requests and `master` build an unsigned MSI as a smoke test and do not upload it.
 
+The project site at `https://nefarius.github.io/Vestigo/` is built from `site/` by `.github/workflows/pages.yml` and redeploys when `master` receives a change under `site/` or that workflow.
+
 A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
 
 1. Checks that `Vestigo.exe` and `Vestigo.dll` are unsigned.
