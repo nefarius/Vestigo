@@ -137,6 +137,19 @@ public sealed class DefaultTraceRootsTests : IDisposable
     }
 
     [Fact]
+    public async Task HealthCheck_PreservesExistingTraceHealthFile()
+    {
+        string existing = Path.Combine(VestigoPaths.TraceDirectory, ".health");
+        File.WriteAllText(existing, "keep");
+
+        HealthCheckResult result = await new VestigoHealthCheck(new VestigoOptions())
+            .CheckHealthAsync(new HealthCheckContext());
+
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+        Assert.Equal("keep", File.ReadAllText(existing));
+    }
+
+    [Fact]
     public async Task HealthCheck_ProbesTracesWhenEitherRootListUsesDefault()
     {
         string custom = Directory.CreateTempSubdirectory("vestigo-custom-root").FullName;

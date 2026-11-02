@@ -31,9 +31,18 @@ public sealed class VestigoHealthCheck(VestigoOptions options) : IHealthCheck
             try
             {
                 string traces = StateDirectories.EnsureSubdirectory(VestigoPaths.TraceDirectory);
-                string probe = Path.Combine(traces, ".health");
-                File.WriteAllText(probe, "ok");
-                File.Delete(probe);
+                string probe = Path.Combine(traces, ".health-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    using (FileStream stream = new(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    {
+                        stream.Write("ok"u8);
+                    }
+                }
+                finally
+                {
+                    File.Delete(probe);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
