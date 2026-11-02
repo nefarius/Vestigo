@@ -13,6 +13,7 @@ namespace Vestigo.Installer;
 static class AspNetRuntimeCheck
 {
     const string WixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
+    const string NotInstalled = "NOT Installed";
 
     static readonly XNamespace Wix = WixNamespace;
     static readonly XNamespace NetFx = WixExtension.NetFxNamespace;
@@ -42,20 +43,32 @@ static class AspNetRuntimeCheck
                 new XAttribute("RollForward", AspNetRuntimePrerequisite.RollForward),
                 new XAttribute("Platform", AspNetRuntimePrerequisite.Platform)),
             new XElement(Util + "QueryNativeMachine"),
+            new XElement(Wix + "Property", new XAttribute("Id", AspNetRuntimePrerequisite.RegistryProperty)),
             new XElement(
-                Wix + "Property",
-                new XAttribute("Id", AspNetRuntimePrerequisite.RegistryProperty),
-                new XElement(
-                    Wix + "RegistrySearch",
-                    new XAttribute("Id", "VestigoX64AspNet10Search"),
-                    new XAttribute("Root", "HKLM"),
-                    new XAttribute("Key", AspNetRuntimePrerequisite.RegistryKey),
-                    new XAttribute("Name", AspNetRuntimePrerequisite.RegistryValueName),
-                    new XAttribute("Type", "raw"),
-                    new XAttribute("Bitness", "always32"))),
+                Wix + "CustomAction",
+                new XAttribute("Id", AspNetRuntimePrerequisite.DetectAction),
+                new XAttribute("BinaryRef", ListenPage.BinaryId),
+                new XAttribute("DllEntry", AspNetRuntimePrerequisite.DetectAction),
+                new XAttribute("Execute", "immediate"),
+                new XAttribute("Return", "check")),
             new XElement(
                 Wix + "Launch",
                 new XAttribute("Condition", AspNetRuntimePrerequisite.LaunchCondition),
                 new XAttribute("Message", AspNetRuntimePrerequisite.MissingMessage)));
+
+        package.Add(
+            new XElement(
+                Wix + "InstallExecuteSequence",
+                Sequence(AspNetRuntimePrerequisite.DetectAction, "Before", "LaunchConditions", NotInstalled)),
+            new XElement(
+                Wix + "InstallUISequence",
+                Sequence(AspNetRuntimePrerequisite.DetectAction, "Before", "LaunchConditions", NotInstalled)));
     }
+
+    static XElement Sequence(string action, string placement, string anchor, string condition) =>
+        new(
+            Wix + "Custom",
+            new XAttribute("Action", action),
+            new XAttribute(placement, anchor),
+            new XAttribute("Condition", condition));
 }

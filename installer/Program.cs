@@ -5,6 +5,7 @@ using System.Globalization;
 using Vestigo.Installer.Actions.Logic;
 
 using WixSharp;
+using WixSharp.CommonTasks;
 
 namespace Vestigo.Installer;
 

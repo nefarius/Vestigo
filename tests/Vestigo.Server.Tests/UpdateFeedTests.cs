@@ -113,6 +113,7 @@ public class UpdateFeedTests
         UpdateFeed.RequireBuildbotResources(configuration.RootElement);
 
         string installer = File.ReadAllText(Path.Combine(root, "installer", "Program.cs")).Replace("\r\n", "\n");
+        Assert.Contains("using WixSharp.CommonTasks;", installer, StringComparison.Ordinal);
         Assert.Contains("internal const string UpdaterFeature = \"Updater\"", installer, StringComparison.Ordinal);
         Assert.Contains("feature.Add(updaterFeature)", installer, StringComparison.Ordinal);
         Assert.Contains("new WixSharp.File(updaterFeature, options.UpdaterExe)", installer, StringComparison.Ordinal);

@@ -7,6 +7,8 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
 
+using Microsoft.Win32;
+
 using Vestigo.Installer.Actions.Logic;
 
 using WixToolset.Dtf.WindowsInstaller;
@@ -36,6 +38,37 @@ namespace Vestigo.Installer.Actions
 
         private const string CompanyFolder = "Nefarius Software Solutions";
         private const string ProductFolder = "Vestigo";
+
+        /// <summary>
+        ///     Immediate, before LaunchConditions. Sets VESTIGO_X64_ASPNET10 when the 32-bit-view x64 sharedfx
+        ///     key has a 10.0.x value name. Never fails the install.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult VestigoDetectX64AspNet10(Session session)
+        {
+            try
+            {
+                if (AspNetRuntimePrerequisite.HasCompatibleRuntime(ReadX64AspNetValueNames()))
+                {
+                    session[AspNetRuntimePrerequisite.RegistryProperty] = "1";
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not detect x64 ASP.NET 10: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            return ActionResult.Success;
+        }
+
+        private static string[] ReadX64AspNetValueNames()
+        {
+            using (RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32))
+            using (RegistryKey key = baseKey.OpenSubKey(AspNetRuntimePrerequisite.RegistryKey))
+            {
+                return key == null ? Array.Empty<string>() : key.GetValueNames();
+            }
+        }
 
         /// <summary>
         ///     Immediate, early in both sequences. Fills the VESTIGO_* properties from explicit values, the existing
