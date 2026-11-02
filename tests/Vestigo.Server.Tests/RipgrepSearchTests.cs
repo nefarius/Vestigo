@@ -129,6 +129,86 @@ public class RipgrepOutputParserTests
     }
 }
 
+public class RipgrepLineReaderTests
+{
+    [Fact]
+    public async Task Read_EmitsRecordsWithinTheCapIncludingCrlf()
+    {
+        await using MemoryStream stream = new("one\r\ntwo\nthree"u8.ToArray());
+
+        RipgrepLine[] lines = await Read(stream, maxBytes: 16, isError: false);
+
+        Assert.Equal(["one", "two", "three"], lines.Select(line => line.Text));
+        Assert.All(lines, line => Assert.False(line.IsError));
+    }
+
+    [Fact]
+    public async Task Read_SkipsOversizedRecordsAndKeepsTheNextOne()
+    {
+        await using MemoryStream stream = new("ok\nthis-record-is-too-long\nnext\n"u8.ToArray());
+
+        RipgrepLine[] lines = await Read(stream, maxBytes: 8, isError: false);
+
+        Assert.Equal(3, lines.Length);
+        Assert.Equal("ok", lines[0].Text);
+        Assert.False(lines[0].IsError);
+        Assert.Equal(RipgrepLineReader.OversizedRecordWarning, lines[1].Text);
+        Assert.True(lines[1].IsError);
+        Assert.Equal("next", lines[2].Text);
+        Assert.False(lines[2].IsError);
+    }
+
+    [Fact]
+    public async Task Read_DiscardsAnOversizedRecordThatSpansChunksAndEof()
+    {
+        byte[] payload = "short\n"u8.ToArray().Concat(Enumerable.Repeat((byte)'x', 9000)).Concat("\nafter\n"u8.ToArray()).ToArray();
+        await using MemoryStream stream = new(payload);
+
+        RipgrepLine[] lines = await Read(stream, maxBytes: 16, isError: false);
+
+        Assert.Equal(
+            ["short", RipgrepLineReader.OversizedRecordWarning, "after"],
+            lines.Select(line => line.Text));
+        Assert.False(lines[0].IsError);
+        Assert.True(lines[1].IsError);
+        Assert.False(lines[2].IsError);
+    }
+
+    [Fact]
+    public async Task Read_WarnsOncePerOversizedRecordAndForATrailingOverflow()
+    {
+        byte[] payload = "yyyyyyyyyy\nzzzzzzzzzz"u8.ToArray();
+        await using MemoryStream stream = new(payload);
+
+        RipgrepLine[] lines = await Read(stream, maxBytes: 4, isError: false);
+
+        Assert.Equal(2, lines.Length);
+        Assert.All(lines, line =>
+        {
+            Assert.True(line.IsError);
+            Assert.Equal(RipgrepLineReader.OversizedRecordWarning, line.Text);
+        });
+    }
+
+    [Fact]
+    public void RecordByteLimit_GrowsWithMaxSearchLineLength()
+    {
+        Assert.True(RipgrepLineReader.RecordByteLimit(1000) > 1000);
+        Assert.True(RipgrepLineReader.RecordByteLimit(2000) > RipgrepLineReader.RecordByteLimit(1000));
+    }
+
+    private static async Task<RipgrepLine[]> Read(Stream stream, int maxBytes, bool isError)
+    {
+        List<RipgrepLine> lines = [];
+        await foreach (RipgrepLine line in RipgrepLineReader.ReadAsync(stream, isError, maxBytes, CancellationToken.None))
+        {
+            lines.Add(line);
+        }
+
+        return [.. lines];
+    }
+}
+
 public class RipgrepSearcherTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("vestigo-rg-").FullName;
@@ -328,7 +408,7 @@ public class RipgrepIntegrationTests : IDisposable
         return new SearchTools(
             options,
             new RootPolicy(options),
-            new RipgrepSearcher(options, new RipgrepProcess(), NullLogger<RipgrepSearcher>.Instance));
+            new RipgrepSearcher(options, new RipgrepProcess(options), NullLogger<RipgrepSearcher>.Instance));
     }
 
     [Fact]
@@ -376,6 +456,25 @@ public class RipgrepIntegrationTests : IDisposable
         OperationResult<SearchResult> none = await Tools().SearchText("nomatch-zzz", "logs:big.log");
         Assert.True(none.Success);
         Assert.Empty(none.Value!.Lines);
+    }
+
+    [Fact]
+    public async Task SearchText_SkipsAnOversizedJsonRecordAndKeepsALaterMatch()
+    {
+        if (string.IsNullOrEmpty(Executable))
+        {
+            return;
+        }
+
+        File.WriteAllText(Path.Combine(_root, "huge.log"), "ERROR " + new string('x', 200_000) + "\nERROR short\n");
+
+        OperationResult<SearchResult> result = await Tools(logs => logs.MaxSearchLineLength = 80)
+            .SearchText("ERROR", "logs:huge.log");
+
+        Assert.True(result.Success, result.Error);
+        Assert.Contains(result.Value!.Lines, line => line.IsMatch && line.Text == "ERROR short");
+        Assert.DoesNotContain(result.Value.Lines, line => line.Text.Contains('x', StringComparison.Ordinal));
+        Assert.Contains(result.Value.Warnings, warning => warning == RipgrepLineReader.OversizedRecordWarning);
     }
 }
 
