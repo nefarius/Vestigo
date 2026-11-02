@@ -246,6 +246,31 @@ public class FileTicketStoreTests
     }
 
     [Fact]
+    public void Store_NeverEvictsInUseTicketsAndRefusesWhenAllBusy()
+    {
+        FileTicketStore store = new(new VestigoOptions(), new FakeTime());
+        List<string> tokens = [];
+        for (int i = 0; i < FileTicketStore.MaxOutstanding; i++)
+        {
+            tokens.Add(store.Issue("GET", Full("f" + i)).Token);
+        }
+
+        // The oldest ticket is mid-transfer, so the next issue evicts the second oldest instead.
+        Assert.NotNull(store.TryReserve(tokens[0], "GET", Full("f0")));
+        string extra = store.Issue("GET", Full("extra")).Token;
+        Assert.Null(store.TryReserve(tokens[1], "GET", Full("f1")));
+        Assert.Null(store.TryReserve(tokens[0], "GET", Full("f0")));
+        for (int i = 2; i < tokens.Count; i++)
+        {
+            Assert.NotNull(store.TryReserve(tokens[i], "GET", Full("f" + i)));
+        }
+
+        Assert.NotNull(store.TryReserve(extra, "GET", Full("extra")));
+
+        Assert.Throws<InvalidOperationException>(() => store.Issue("GET", Full("overflow")));
+    }
+
+    [Fact]
     public void Ticket_PathMatchIsCaseSensitive()
     {
         FileTicketStore store = new(new VestigoOptions(), new FakeTime());

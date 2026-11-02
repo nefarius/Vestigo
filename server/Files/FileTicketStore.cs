@@ -63,8 +63,14 @@ public sealed class FileTicketStore(VestigoOptions options, TimeProvider? time =
             Prune(now);
             while (_entries.Count >= MaxOutstanding)
             {
-                string oldest = _entries.MinBy(pair => pair.Value.Sequence).Key;
-                _entries.Remove(oldest);
+                // Never evict a ticket whose transfer is running; refuse new tickets if every slot is busy.
+                KeyValuePair<string, Entry>[] idle = _entries.Where(pair => !pair.Value.InUse).ToArray();
+                if (idle.Length == 0)
+                {
+                    throw new InvalidOperationException("Too many transfers are in progress; try again shortly.");
+                }
+
+                _entries.Remove(idle.MinBy(pair => pair.Value.Sequence).Key);
             }
 
             _entries[Hash(token)] = new Entry

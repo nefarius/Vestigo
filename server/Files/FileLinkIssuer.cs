@@ -32,7 +32,14 @@ public sealed class FileLinkIssuer(
         foreach (RootDefinition root in roots.Roots.Where(root => root.Access.HasFlag(RootAccess.Read)))
         {
             // A volume root such as C:\ already ends with a separator that TrimEndingDirectorySeparator keeps.
-            string rootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root.Path));
+            // Use the same link-following resolution as RootPolicy so the prefix matches resolved candidate paths.
+            PathCheck resolvedRoot = roots.Resolve($"{root.Name}:", RootAccess.Read);
+            if (!resolvedRoot.Success || string.IsNullOrEmpty(resolvedRoot.FullPath))
+            {
+                continue;
+            }
+
+            string rootPath = Path.TrimEndingDirectorySeparator(resolvedRoot.FullPath);
             string prefix = Path.EndsInDirectorySeparator(rootPath) ? rootPath : rootPath + Path.DirectorySeparatorChar;
             if (!candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
