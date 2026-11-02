@@ -30,21 +30,21 @@ A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiT
 
 ## Paths are rejected
 
-Trace tools use `AllowedInputRoots` and `AllowedOutputRoots`. `outside_root` means the canonical path is outside those lists. `roots_not_configured` means the list needed for that operation is empty. `unsupported_extension` means the file is not `.etl`, `.pdb`, `.tmf`, `.json`, or `.ndjson` for the operation that received it. `already_exists` means the output is present and `overwrite` is false.
+Trace tools use the effective `AllowedInputRoots` and `AllowedOutputRoots` (the built-in `traces` folder when a list is empty). `outside_root` means the canonical path is outside those lists. `unsupported_extension` means the file is not `.etl`, `.pdb`, `.tmf`, `.zip`, `.json`, or `.ndjson` for the operation that received it. `already_exists` means the output is present and `overwrite` is false. `no_codeview` means the binary has no CodeView (RSDS) debug directory. `symbols_unresolved` means a PDB identity could not be found in the cache, the trace roots, or the symbol server. `symbol_auth_failed` means the symbol server returned 401 or 403; check `Vestigo:SymbolServerAuth`. `archive_invalid`, `archive_too_large`, and `unsafe_entry` come from `extract_trace_archive`.
 
 File, log, process, and device tools use named `Vestigo:Roots` plus any `VolumeRoots`. `unknown_root` means the `name:` prefix is not configured. `access_denied` means that root lacks the `Read`, `Write`, or `Execute` flag the operation needs, or Windows denied the file. `roots_not_configured` means both `Vestigo:Roots` and `VolumeRoots` produced no roots. Per-user mapped network drives are not visible to the LocalSystem service.
 
 ## Realtime capture fails
 
-`elevation_required` means the process could not create an ETW session. Run the service elevated. `session_exists` means that session name is already active; restart Vestigo so it can stop its own orphan, or stop the named session deliberately. `providers_required` means the call had neither provider GUIDs nor a PDB with WPP control GUIDs.
+`elevation_required` means the process could not create an ETW session. Run the service elevated. `session_exists` means that session name is already active; restart Vestigo so it can stop its own orphan, or stop the named session deliberately. `providers_required` means the call had neither provider GUIDs nor a PDB with WPP control GUIDs. `no_codeview`, `symbols_unresolved`, and `symbol_auth_failed` mean `binaryPaths` could not be turned into PDBs; the capture is not started.
 
 ## Attaching to a session fails
 
 `attach_not_allowed` means the name is not matched by `Vestigo:AttachableSessions`. `session_not_found` means no running session has that name (see `list_etw_sessions`). `invalid_request` for a `Vestigo-` name means that session is owned by a capture; use `read_capture` on it. `attach_failed`, or a capture that ends `Failed`, usually means the session is not a realtime session or the process lacks permission to consume it.
 
-## Health is degraded
+## Health is degraded or unhealthy
 
-The process is up, but `AllowedInputRoots` or `AllowedOutputRoots` is still empty. A Trace call fails for that reason only when it uses a path governed by that list. Calls without ETL, PDB, TMF, or conversion-output paths are unaffected. Named `Roots` and `VolumeRoots` tools keep working. A default MSI install reports Degraded for this reason. An unhealthy result means the spool directory is not writable.
+A default install reports Healthy: empty trace-root lists use the built-in `traces` folder. Unhealthy means the spool directory or, when either list uses that default, the `traces` folder is not writable.
 
 ## Interactive-session tools fail
 
@@ -73,4 +73,4 @@ Messages from a process that has a debugger attached go to the debugger, not to 
 `changes_disabled` means `Vestigo:ScheduledTasks:AllowChanges` is false; run, stop, enable, disable and delete need it. `protected_task` means delete or disable targeted a path under `Vestigo:ScheduledTasks:ProtectedPaths`. `history_disabled` means the `Microsoft-Windows-TaskScheduler/Operational` channel is off; enable it in Task Scheduler (Enable All Tasks History) or with `wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true`. `task_disabled` means the task must be enabled before it can run, `already_running` that an instance is active, and `not_running` that there was nothing to stop. `invalid_path` means the task path is empty, is the root folder, or contains `..`, quotes, wildcards, or doubled backslashes. `not_found` means no task has that path; use `list_scheduled_tasks`. `access_denied` means the service account is not elevated.
 ## Decoded text is missing
 
-`MissingFormatCount` counts WPP events whose message format was not in the loaded PDB or TMF sources. Add the matching symbol file or enable symbol resolution for offline ETL. Enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` stay numeric.
+`MissingFormatCount` counts WPP events whose message format was not in the loaded PDB or TMF sources. Point `binaryPaths` at the installed binary, add the matching PDB or TMF under `traces`, or enable symbol resolution for offline ETL. Enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` stay numeric. `symbol_auth_failed` means the configured symbol server rejected the request.

@@ -1,13 +1,23 @@
+using Nefarius.Utilities.ETW.Symbols;
+
+using Vestigo.Configuration;
+
 namespace Vestigo.Security;
 
 /// <summary>
 ///     Canonicalizes client paths and confines them to configured roots.
 /// </summary>
-public sealed class PathPolicy(Vestigo.Configuration.VestigoOptions options)
+public sealed class PathPolicy(VestigoOptions options, RootPolicy? roots = null)
 {
+    public const string TracesRootName = "traces";
+
     public PathCheck RequireExistingFile(string requestedPath, IReadOnlyCollection<string> extensions)
     {
-        PathCheck located = Locate(requestedPath, options.AllowedInputRoots, "input");
+        PathCheck located = LocateRequested(
+            requestedPath,
+            InputRootsFor(extensions),
+            "input",
+            RootAccess.Read);
         if (!located.Success)
         {
             return located;
@@ -34,7 +44,7 @@ public sealed class PathPolicy(Vestigo.Configuration.VestigoOptions options)
 
     public PathCheck RequireOutputFile(string requestedPath, IReadOnlyCollection<string> extensions, bool overwrite)
     {
-        PathCheck located = Locate(requestedPath, options.AllowedOutputRoots, "output");
+        PathCheck located = LocateRequested(requestedPath, options.EffectiveOutputRoots, "output", RootAccess.Write);
         if (!located.Success)
         {
             return located;
@@ -71,6 +81,137 @@ public sealed class PathPolicy(Vestigo.Configuration.VestigoOptions options)
         }
 
         return results;
+    }
+
+    /// <summary>
+    ///     Resolves a directory that must lie in the effective output roots, creating it when missing.
+    /// </summary>
+    public PathCheck RequireWritableDirectory(string requestedPath)
+    {
+        PathCheck output = LocateRequested(requestedPath, options.EffectiveOutputRoots, "output", RootAccess.Write);
+        if (!output.Success)
+        {
+            return output;
+        }
+
+        string full = output.FullPath!;
+        if (File.Exists(full))
+        {
+            return PathCheck.Fail("invalid_path", "Destination is a file, not a directory.");
+        }
+
+        if (IsLink(full))
+        {
+            return PathCheck.Fail("invalid_path", "Destination must not be a link.");
+        }
+
+        Directory.CreateDirectory(full);
+        if (IsLink(full))
+        {
+            return PathCheck.Fail("invalid_path", "Destination must not be a link.");
+        }
+
+        return PathCheck.Ok(full);
+    }
+
+    private IReadOnlyList<string> InputRootsFor(IReadOnlyCollection<string> extensions)
+    {
+        IReadOnlyList<string> roots = options.EffectiveInputRoots;
+        if (!extensions.Any(extension => extension.Equals(".pdb", StringComparison.OrdinalIgnoreCase)))
+        {
+            return roots;
+        }
+
+        string cache = SymbolStoreConfiguration.Resolve(
+            options.SymbolServer,
+            options.SymbolCache,
+            Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH"),
+            options.EffectiveSymbolCache,
+            options.EffectiveInputRoots).CacheDirectory;
+        foreach (string root in roots)
+        {
+            if (string.Equals(root, cache, PathComparison()))
+            {
+                return roots;
+            }
+        }
+
+        List<string> combined = [.. roots, cache];
+        return combined;
+    }
+
+    private PathCheck LocateRequested(
+        string requestedPath,
+        IReadOnlyList<string> roots,
+        string rootKind,
+        RootAccess namedAccess)
+    {
+        if (TryExpandNamedRoot(requestedPath, namedAccess, out PathCheck expanded))
+        {
+            if (!expanded.Success)
+            {
+                return expanded;
+            }
+
+            requestedPath = expanded.FullPath!;
+        }
+
+        return Locate(requestedPath, roots, rootKind);
+    }
+
+    private bool TryExpandNamedRoot(string requestedPath, RootAccess namedAccess, out PathCheck expanded)
+    {
+        expanded = PathCheck.Fail("invalid_path", "Path is required.");
+        if (string.IsNullOrWhiteSpace(requestedPath) || requestedPath.IndexOf(':') < 0)
+        {
+            return false;
+        }
+
+        if (roots is not null && RootLooksNamed(requestedPath))
+        {
+            expanded = roots.Resolve(requestedPath, namedAccess);
+            return true;
+        }
+
+        if (TryMapTracesAlias(requestedPath, out string mapped))
+        {
+            expanded = PathCheck.Ok(mapped);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool RootLooksNamed(string requestedPath)
+    {
+        int colon = requestedPath.IndexOf(':');
+        return colon > 1 && !requestedPath.StartsWith(@"\\", StringComparison.Ordinal);
+    }
+
+    private bool TryMapTracesAlias(string requestedPath, out string mapped)
+    {
+        mapped = "";
+        const string prefix = TracesRootName + ":";
+        if (!requestedPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !options.UsesDefaultInputRoots)
+        {
+            return false;
+        }
+
+        string relative = requestedPath[prefix.Length..].TrimStart('\\', '/');
+        mapped = Path.GetFullPath(Path.Combine(VestigoPaths.TraceDirectory, relative));
+        return true;
+    }
+
+    private static bool IsLink(string path)
+    {
+        try
+        {
+            return new DirectoryInfo(path).LinkTarget is not null || new FileInfo(path).LinkTarget is not null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     internal static PathCheck Locate(string requestedPath, IReadOnlyList<string> roots, string rootKind)

@@ -190,7 +190,12 @@ public class CaptureManagerTests : IDisposable
         FakeSessionFactory factory = new() { Events = [] };
         CaptureManager manager = CreateManager(factory, out VestigoOptions options);
         SymbolCatalogService symbols = new(options, new PathPolicy(options), new UnusedHttpClientFactory());
-        TraceTools tools = new(symbols, new OfflineConversionService(options, new PathPolicy(options), symbols), manager, factory);
+        TraceTools tools = new(
+            symbols,
+            new OfflineConversionService(options, new PathPolicy(options), symbols),
+            manager,
+            factory,
+            new TraceArchiveExtractor(options, new PathPolicy(options)));
 
         OperationResult<CaptureStatus> hex = await tools.StartCapture(
             providerIds: ["11111111-1111-1111-1111-111111111111"],

@@ -40,7 +40,7 @@ public class PlatformTests : IDisposable
         RootPolicy policy = new(Options(RootAccess.Read));
 
         Assert.Equal("access_denied", policy.Resolve(@"artifacts:a.txt", RootAccess.Execute).ErrorCode);
-        Assert.Equal("access_denied", policy.Resolve(Path.Combine(_root, "a.txt"), RootAccess.Write).ErrorCode);
+        Assert.Equal("outside_root", policy.Resolve(Path.Combine(_root, "a.txt"), RootAccess.Write).ErrorCode);
         Assert.True(policy.Resolve(Path.Combine(_root, "a.txt"), RootAccess.Read).Success);
     }
 
@@ -48,7 +48,16 @@ public class PlatformTests : IDisposable
     public void RootPolicy_ReportsUnknownRootAndMissingConfiguration()
     {
         Assert.Equal("unknown_root", new RootPolicy(Options()).Resolve("other:a.txt", RootAccess.Read).ErrorCode);
-        Assert.Equal("roots_not_configured", new RootPolicy(new VestigoOptions()).Resolve("artifacts:a", RootAccess.Read).ErrorCode);
+        Assert.Equal("unknown_root", new RootPolicy(new VestigoOptions()).Resolve("artifacts:a", RootAccess.Read).ErrorCode);
+        Assert.Equal(
+            "roots_not_configured",
+            new RootPolicy(new VestigoOptions
+            {
+                Modules = new Dictionary<string, ModuleSettings>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Trace"] = new() { Enabled = false }
+                }
+            }).Resolve("artifacts:a", RootAccess.Read).ErrorCode);
     }
 
     [Fact]
@@ -101,7 +110,7 @@ public class PlatformTests : IDisposable
         };
         RootPolicy policy = new(options, new VolumeRootSource(options, enumerator));
 
-        Assert.Equal(["artifacts", "drive-c"], policy.Roots.Select(root => root.Name));
+        Assert.Equal(["artifacts", "traces", "drive-c"], policy.Roots.Select(root => root.Name));
         Assert.True(policy.Resolve(@"artifacts:a.txt", RootAccess.Read).Success);
         Assert.Equal("access_denied", policy.Resolve(@"artifacts:a.txt", RootAccess.Write).ErrorCode);
         Assert.True(policy.Resolve(@"C:\Windows\notepad.exe", RootAccess.Write).Success);

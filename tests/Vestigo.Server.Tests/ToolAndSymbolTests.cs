@@ -111,7 +111,8 @@ public class ToolAndSymbolTests : IDisposable
                 CreateSymbols(new VestigoOptions()),
                 new EtwRealtimeTraceSessionFactory(),
                 NullLogger<CaptureManager>.Instance),
-            new EtwRealtimeTraceSessionFactory());
+            new EtwRealtimeTraceSessionFactory(),
+            new TraceArchiveExtractor(new VestigoOptions(), new PathPolicy(new VestigoOptions())));
 
         OperationResult<CaptureStatus> guid = await tools.StartCapture(providerIds: ["not-a-guid"]);
         OperationResult<CaptureStatus> duration = await tools.StartCapture(
