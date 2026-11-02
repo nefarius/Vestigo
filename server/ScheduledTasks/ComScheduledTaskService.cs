@@ -51,7 +51,7 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         Invoke(() =>
         {
             dynamic task = GetTask(path);
-            object? parameters = arguments.Count == 0 ? null : arguments.Cast<object>().ToArray();
+            object? parameters = arguments.Count == 0 ? null : arguments.ToArray();
             dynamic running = task.Run(parameters);
             try
             {

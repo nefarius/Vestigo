@@ -45,6 +45,7 @@ public sealed class ScheduledTaskToolsTests
         Assert.Equal("not_found", _tools.GetScheduledTask("\\Vendor\\Missing").ErrorCode);
         Assert.Equal("invalid_path", _tools.GetScheduledTask("\\..\\x").ErrorCode);
         Assert.Equal("invalid_path", _tools.GetScheduledTask("").ErrorCode);
+        Assert.Equal("invalid_path", _tools.GetScheduledTask("\\\\").ErrorCode);
         Assert.Equal("invalid_path", _tools.GetScheduledTask("\\").ErrorCode);
         Assert.Equal("invalid_path", _tools.GetScheduledTaskHistory("\\a' or '1'='1").ErrorCode);
     }

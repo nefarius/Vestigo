@@ -273,6 +273,11 @@ public sealed class ScheduledTaskTools(
             value = value.TrimEnd('\\');
         }
 
+        if (value.Length == 0)
+        {
+            return OperationResult<string>.Fail("invalid_path", "A task path is required.");
+        }
+
         if (value.Contains("..", StringComparison.Ordinal) || value.Contains("\\\\", StringComparison.Ordinal)
             || value.IndexOfAny(['\'', '"', '*', '?', '<', '>', '|', ':', '\0']) >= 0)
         {
