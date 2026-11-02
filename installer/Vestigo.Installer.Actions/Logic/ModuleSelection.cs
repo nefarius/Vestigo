@@ -203,7 +203,30 @@ namespace Vestigo.Installer.Actions.Logic
             return result;
         }
 
-        /// <summary>Serializes states as <c>Name=1;Name=0</c> for the deferred action's CustomActionData.</summary>
+        /// <summary>
+        ///     True when an unselected, previously absent feature must not be serialized as an explicit disable.
+        ///     <see cref="DesktopScreenshots" /> is new: an upgrade from a build that lacked the feature reports
+        ///     it absent, and an unelevated immediate action cannot read <c>Desktop:AllowScreenshots</c>.
+        ///     Omitting the name from <see cref="Serialize" /> leaves the existing value in <see cref="Apply" />.
+        /// </summary>
+        public static bool PreservesExistingWhenUnselected(string name)
+        {
+            return string.Equals(name, DesktopScreenshots, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        ///     False when the feature state is only the default for a new, unselected toggle and must not be
+        ///     written. An explicit request (select or remove) or a currently installed feature is always written.
+        /// </summary>
+        public static bool ShouldWriteFeatureState(string name, bool requestIsExplicit, bool currentlyInstalled)
+        {
+            return requestIsExplicit || currentlyInstalled || !PreservesExistingWhenUnselected(name);
+        }
+
+        /// <summary>
+        ///     Serializes states as <c>Name=1;Name=0</c> for the deferred action's CustomActionData.
+        ///     Names that are omitted are left unchanged by <see cref="Apply" />.
+        /// </summary>
         public static string Serialize(IDictionary<string, bool> states)
         {
             StringBuilder builder = new StringBuilder();

@@ -259,7 +259,8 @@ namespace Vestigo.Installer.Actions
 
         /// <summary>
         ///     A module is enabled when its feature will be installed locally; when the request state is unknown the
-        ///     current state decides (repair and modify keep untouched features as they are).
+        ///     current state decides (repair and modify keep untouched features as they are). DesktopScreenshots is
+        ///     omitted when it is a new, unselected feature so an unelevated upgrade does not write AllowScreenshots=false.
         /// </summary>
         private static IDictionary<string, bool> ReadFeatureStates(Session session)
         {
@@ -269,13 +270,22 @@ namespace Vestigo.Installer.Actions
                 try
                 {
                     FeatureInfo feature = session.Features[module.Name];
-                    InstallState state = feature.RequestState;
-                    if (state == InstallState.Unknown || state == InstallState.Default || state == InstallState.NotUsed)
+                    InstallState request = feature.RequestState;
+                    bool requestIsExplicit = request != InstallState.Unknown &&
+                                             request != InstallState.Default &&
+                                             request != InstallState.NotUsed;
+                    bool currentlyInstalled = feature.CurrentState == InstallState.Local;
+                    if (!ModuleSelection.ShouldWriteFeatureState(module.Name, requestIsExplicit, currentlyInstalled))
                     {
-                        state = feature.CurrentState;
+                        continue;
                     }
 
-                    states[module.Name] = state == InstallState.Local;
+                    if (!requestIsExplicit)
+                    {
+                        request = feature.CurrentState;
+                    }
+
+                    states[module.Name] = request == InstallState.Local;
                 }
                 catch (InstallerException ex)
                 {

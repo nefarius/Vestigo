@@ -150,6 +150,34 @@ public class ModuleSelectionTests
     }
 
     [Fact]
+    public void ShouldWriteFeatureState_OmitsUnselectedNewDesktopScreenshots()
+    {
+        Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopScreenshots));
+        Assert.False(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.AudioSetDefault));
+        Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopScreenshots, requestIsExplicit: false, currentlyInstalled: false));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopScreenshots, requestIsExplicit: true, currentlyInstalled: false));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopScreenshots, requestIsExplicit: false, currentlyInstalled: true));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.AudioSetDefault, requestIsExplicit: false, currentlyInstalled: false));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState("Desktop", requestIsExplicit: false, currentlyInstalled: false));
+    }
+
+    [Fact]
+    public void Merge_WithoutDesktopScreenshots_KeepsExistingAllowScreenshots()
+    {
+        const string existing = """
+            { "Vestigo": { "Desktop": { "AllowScreenshots": true }, "Modules": { "Desktop": { "Enabled": true } } } }
+            """;
+
+        string merged = ListenSettings.Merge(
+            existing,
+            Open(),
+            new Dictionary<string, bool> { ["Desktop"] = true });
+
+        Assert.True(ModuleSelection.ReadExisting(merged)["DesktopScreenshots"]);
+        Assert.DoesNotContain("DesktopScreenshots=", ModuleSelection.Serialize(new Dictionary<string, bool> { ["Desktop"] = true }));
+    }
+
+    [Fact]
     public void CustomActionData_RoundTrips()
     {
         IDictionary<string, bool> states = ModuleSelection.Defaults();
