@@ -104,6 +104,14 @@ Deletes a file or directory inside a root with Write access. Refuses to delete a
 | `path` | `string` | yes |  | Path to delete. |
 | `recursive` | `bool` | no | `false` | Delete directory contents too. |
 
+## `delete_scheduled_task`
+
+Permanently deletes a task definition. Requires Vestigo:ScheduledTasks:AllowChanges; tasks under Vestigo:ScheduledTasks:ProtectedPaths are refused. Returns the deleted task's last known state.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
+
 ## `delete_service`
 
 Deletes a kernel driver service through nefcon. Win32 services are refused. Stop the driver first.
@@ -120,6 +128,14 @@ Disables a device by instance ID.
 | --- | --- | --- | --- | --- |
 | `instanceId` | `string` | yes |  | Device instance ID. |
 
+## `disable_scheduled_task`
+
+Disables a task so its triggers no longer fire. Requires Vestigo:ScheduledTasks:AllowChanges; tasks under Vestigo:ScheduledTasks:ProtectedPaths are refused.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
+
 ## `enable_device`
 
 Enables a device by instance ID.
@@ -127,6 +143,14 @@ Enables a device by instance ID.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `instanceId` | `string` | yes |  | Device instance ID. |
+
+## `enable_scheduled_task`
+
+Enables a task. Requires Vestigo:ScheduledTasks:AllowChanges.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
 
 ## `fetch_file`
 
@@ -250,6 +274,23 @@ Reports, for each Visual Studio version (2022, 2026) and architecture (x64, arm6
 | --- | --- | --- | --- | --- |
 | `version` | `string` | no | `null` | Optional filter: '2022' or '2026'. |
 | `arch` | `string` | no | `null` | Optional filter: 'x64', 'arm64' or 'x86'. |
+
+## `get_scheduled_task`
+
+Returns one task with its principal, actions, triggers, key settings, and the full definition XML. Arguments and XML can contain secrets.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
+
+## `get_scheduled_task_history`
+
+Returns recent events for one task from the Microsoft-Windows-TaskScheduler/Operational log, newest first. Fails with history_disabled when that channel is not enabled.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
+| `limit` | `int` | no | `50` | Maximum events to return, 1 to 1000. |
 
 ## `get_service`
 
@@ -452,6 +493,19 @@ Lists the configured named roots with their access flags and free disk space.
 
 No parameters.
 
+## `list_scheduled_tasks`
+
+Lists scheduled tasks with state, enabled flag, last and next run time, last result, author, and description, sorted by path.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `folder` | `string` | no | `\` | Folder to list, such as \ or \Microsoft\Windows. |
+| `recurse` | `bool` | no | `true` | Include tasks in subfolders. |
+| `includeHidden` | `bool` | no | `false` | Include hidden tasks. |
+| `nameContains` | `string` | no | `null` | Case-insensitive substring of the task path. |
+| `state` | `string` | no | `null` | Only tasks in this state: unknown, disabled, queued, ready or running. |
+| `limit` | `int` | no | `200` | Maximum entries to return, 1 to 1000. |
+
 ## `list_services`
 
 Lists Win32 services and kernel/file-system drivers with state, start type, image path, account, and dependencies, sorted by name.
@@ -634,6 +688,16 @@ Starts a process as a job. path is a file under a root with Execute access (name
 | `elevated` | `bool` | no | `false` | Interactive only: run with the elevated linked token. |
 | `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns the job id immediately. |
 
+## `run_scheduled_task`
+
+Starts a task now. It runs as the task's own principal (often SYSTEM), not as the Vestigo service account. Requires Vestigo:ScheduledTasks:AllowChanges. wait > 0 waits that many seconds for it to finish and returns the last result.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
+| `arguments` | `string[]` | no | `null` | Optional parameters passed to the task's actions (replace $(Arg0), $(Arg1), ...). |
+| `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns immediately. |
+
 ## `scan_etl_metadata`
 
 Lists distinct PDB identities referenced by one or more ETL files.
@@ -775,6 +839,14 @@ Stops msvsmon.exe by pid, or every instance started by Vestigo (all: true). Trie
 | `pid` | `int?` | no | `null` | Process id of an msvsmon.exe. |
 | `all` | `bool` | no | `false` | Stop all instances started by Vestigo. |
 | `gracefulTimeoutSeconds` | `int` | no | `5` | Seconds to wait after the graceful close before killing, 0 to 120. |
+
+## `stop_scheduled_task`
+
+Stops all running instances of a task. Requires Vestigo:ScheduledTasks:AllowChanges.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
 
 ## `stop_service`
 

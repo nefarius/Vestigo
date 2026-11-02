@@ -66,6 +66,9 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Software:AllowUninstall</c>.</summary>
         public const string SoftwareUninstall = "SoftwareUninstall";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:ScheduledTasks:AllowChanges</c>.</summary>
+        public const string ScheduledTaskChanges = "ScheduledTaskChanges";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Audio:AllowSetDefault</c>.</summary>
         public const string AudioSetDefault = "AudioSetDefault";
 
@@ -78,6 +81,7 @@ namespace Vestigo.Installer.Actions.Logic
         public static readonly IReadOnlyList<OptionToggle> OptionToggles = new List<OptionToggle>
         {
             new OptionToggle(SoftwareUninstall, "Software", "AllowUninstall"),
+            new OptionToggle(ScheduledTaskChanges, "ScheduledTasks", "AllowChanges"),
             new OptionToggle(AudioSetDefault, "Audio", "AllowSetDefault"),
             new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges"),
             new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots")
@@ -97,6 +101,8 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition(AudioSetDefault, "Set default audio device", "Allow changing the default, multimedia, and communications audio devices (Vestigo:Audio:AllowSetDefault).", false, "Audio"),
             new ModuleDefinition("DebugOutput", "Debug output", "Capture and filter Win32 OutputDebugString messages through DebugViewConsole. Reads debug output from every session.", false, null),
             new ModuleDefinition("Services", "Services", "List, start, stop, and configure Windows services and kernel drivers.", true, null),
+            new ModuleDefinition("ScheduledTasks", "Scheduled tasks", "List and inspect scheduled tasks and their run history.", true, null),
+            new ModuleDefinition(ScheduledTaskChanges, "Run and delete tasks", "Allow running, stopping, enabling, disabling, and deleting scheduled tasks (Vestigo:ScheduledTasks:AllowChanges). Tasks run as their own principal, often SYSTEM. Administrator-equivalent.", false, "ScheduledTasks"),
             new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, and device state via nefcon. Runs code with kernel privilege.", false, null),
             new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes and Software.", true, null),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),

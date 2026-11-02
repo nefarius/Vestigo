@@ -14,6 +14,7 @@ public static class ModuleRegistry
         new DevicesModule(),
         new JobsModule(),
         new ServicesModule(),
+        new ScheduledTasksModule(),
         new SoftwareModule(),
         new Files.FilesModule(),
         new ProcessesModule(),
@@ -92,6 +93,11 @@ public static class ModuleRegistry
         if (options.Software.AllowUninstall && enabled.Any(module => module.Name == "Software"))
         {
             capabilities.Add("Software uninstall");
+        }
+
+        if (options.ScheduledTasks.AllowChanges && enabled.Any(module => module.Name == "ScheduledTasks"))
+        {
+            capabilities.Add("Scheduled task changes");
         }
 
         if (options.System.AllowBootConfigurationChanges && enabled.Any(module => module.Name == "System"))
