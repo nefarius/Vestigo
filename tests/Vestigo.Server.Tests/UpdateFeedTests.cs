@@ -174,6 +174,12 @@ public class UpdateFeedTests
         Assert.Contains("DebugView++ 1.30.0.0", notices, StringComparison.Ordinal);
         Assert.Contains("Boost Software License", notices, StringComparison.Ordinal);
         Assert.Contains($"ripgrep {RipgrepPin.Version}", notices, StringComparison.Ordinal);
+        Assert.Contains("log 0.4.", notices, StringComparison.Ordinal);
+        Assert.Contains("regex 1.", notices, StringComparison.Ordinal);
+        Assert.Contains("encoding_rs 0.8.", notices, StringComparison.Ordinal);
+        Assert.Contains("WHATWG", notices, StringComparison.Ordinal);
+        Assert.Contains("PCRE2 10.45", notices, StringComparison.Ordinal);
+        Assert.Contains("PCRE2 License", notices, StringComparison.Ordinal);
 
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build.yml"));
         Assert.Contains("needs: [build, security, osv]", workflow, StringComparison.Ordinal);
