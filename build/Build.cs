@@ -33,6 +33,7 @@ class Build : FalloutBuild
     static AbsolutePath ToolsStageDir => PublishRoot / NefconPin.StageDirectoryName;
     static AbsolutePath StagedNefconExe => ToolsStageDir / NefconPin.Executable;
     static AbsolutePath StagedDebugViewExe => ToolsStageDir / DebugViewPin.Executable;
+    static AbsolutePath StagedRipgrepExe => ToolsStageDir / RipgrepPin.Executable;
     static AbsolutePath InstallerProjectFile => RootDirectory / "installer" / "Vestigo.Installer.csproj";
     static AbsolutePath StagedUpdaterExe => UpdaterStageDir / UpdateFeed.UpdaterExecutable;
 
@@ -94,9 +95,14 @@ class Build : FalloutBuild
         .Executes(StageDebugView);
 
     [UsedImplicitly]
+    public Target PrepareRipgrep => _ => _
+        .Description("Stage the pinned ripgrep x64 CLI (tools\\rg.exe) for the MSI")
+        .Executes(StageRipgrep);
+
+    [UsedImplicitly]
     public Target BuildInstaller => _ => _
         .Description("Publish Vestigo and build the x64 MSI. Requires Windows and WiX 5.0.2.")
-        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView)
+        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep)
         .Executes(() =>
         {
             if (!OperatingSystem.IsWindows())
@@ -110,6 +116,7 @@ class Build : FalloutBuild
             const string envUpdater = "VESTIGO_INSTALLER_UPDATER";
             const string envNefcon = "VESTIGO_INSTALLER_NEFCON";
             const string envDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
+            const string envRipgrep = "VESTIGO_INSTALLER_RIPGREP";
             try
             {
                 Environment.SetEnvironmentVariable(envServer, PublishServerDir);
@@ -117,6 +124,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envUpdater, StagedUpdaterExe);
                 Environment.SetEnvironmentVariable(envNefcon, StagedNefconExe);
                 Environment.SetEnvironmentVariable(envDebugView, StagedDebugViewExe);
+                Environment.SetEnvironmentVariable(envRipgrep, StagedRipgrepExe);
                 DotNetTasks.DotNetRun(settings => settings
                     .SetProjectFile(InstallerProjectFile)
                     .SetConfiguration(Configuration.Release));
@@ -128,6 +136,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envUpdater, null);
                 Environment.SetEnvironmentVariable(envNefcon, null);
                 Environment.SetEnvironmentVariable(envDebugView, null);
+                Environment.SetEnvironmentVariable(envRipgrep, null);
             }
         });
 
@@ -229,6 +238,48 @@ class Build : FalloutBuild
 
         string stagedPath = StagedDebugViewExe;
         File.WriteAllBytes(stagedPath, executable);
+    }
+
+    void StageRipgrep()
+    {
+        Directory.CreateDirectory(ToolsStageDir);
+        using HttpClient client = new() { Timeout = TimeSpan.FromMinutes(2) };
+        byte[] archive = client.GetByteArrayAsync(RipgrepPin.ArchiveUrl).GetAwaiter().GetResult();
+        string actualHash = Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant();
+        if (!string.Equals(actualHash, RipgrepPin.ArchiveSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"ripgrep {RipgrepPin.Version} archive hash {actualHash} does not match the pinned digest.");
+        }
+
+        using MemoryStream stream = new(archive, writable: false);
+        using ZipArchive zip = new(stream, ZipArchiveMode.Read);
+        ZipArchiveEntry[] matches = zip.Entries
+            .Where(entry => string.Equals(
+                entry.FullName.Replace('\\', '/'),
+                RipgrepPin.ArchiveEntryPath,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected one {RipgrepPin.ArchiveEntryPath} entry in the ripgrep archive but found {matches.Length}.");
+        }
+
+        using MemoryStream executable = new();
+        using (Stream entry = matches[0].Open())
+        {
+            entry.CopyTo(executable);
+        }
+
+        string executableHash = Convert.ToHexString(SHA256.HashData(executable.ToArray())).ToLowerInvariant();
+        if (!string.Equals(executableHash, RipgrepPin.ExecutableSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"ripgrep {RipgrepPin.Version} rg.exe hash {executableHash} does not match the pinned digest.");
+        }
+
+        File.WriteAllBytes(StagedRipgrepExe, executable.ToArray());
     }
 
     void PublishSignedManifest()
