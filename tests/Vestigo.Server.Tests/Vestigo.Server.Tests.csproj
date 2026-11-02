@@ -35,4 +35,11 @@
     <ProjectReference Include="..\..\server\Vestigo.Server.csproj" />
   </ItemGroup>
 
+  <Target Name="CopyServerRuntimeConfig" AfterTargets="ResolveProjectReferences">
+    <PropertyGroup>
+      <_ServerRuntimeConfig>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\server\bin\$(Configuration)\$(TargetFramework)\Vestigo.runtimeconfig.json'))</_ServerRuntimeConfig>
+    </PropertyGroup>
+    <Copy SourceFiles="$(_ServerRuntimeConfig)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" Condition="Exists('$(_ServerRuntimeConfig)')" />
+  </Target>
+
 </Project>

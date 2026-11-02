@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -92,6 +93,30 @@ public class HostTests : IDisposable
         using TcpListener listener = new(IPAddress.Loopback, 0);
         listener.Start();
         return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    [Fact]
+    public void ServerRuntimeConfig_AllowsMinorRollForwardOnAspNetCore10()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Vestigo.runtimeconfig.json");
+        Assert.True(File.Exists(path), path);
+
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
+        JsonElement runtimeOptions = document.RootElement.GetProperty("runtimeOptions");
+        Assert.Equal("Minor", runtimeOptions.GetProperty("rollForward").GetString());
+
+        JsonElement? aspNet = null;
+        foreach (JsonElement framework in runtimeOptions.GetProperty("frameworks").EnumerateArray())
+        {
+            if (framework.GetProperty("name").GetString() == "Microsoft.AspNetCore.App")
+            {
+                aspNet = framework;
+                break;
+            }
+        }
+
+        Assert.True(aspNet.HasValue);
+        Assert.Equal("10.0.0", aspNet.Value.GetProperty("version").GetString());
     }
 
     private sealed class VestigoApplication : WebApplicationFactory<Program>;

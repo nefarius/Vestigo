@@ -11,6 +11,8 @@
     <RepositoryUrl>https://github.com/nefarius/Vestigo</RepositoryUrl>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RollForward>Minor</RollForward>
+    <TargetLatestRuntimePatch>false</TargetLatestRuntimePatch>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 

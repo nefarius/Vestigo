@@ -35,7 +35,7 @@ The tag pipeline requires `SIGN_RELAY_SERVER`, `SIGN_RELAY_CI_TOKEN`, `WEBHOOK_U
 
 Buildbot publishes the three files together under `https://buildbot.nefarius.at/builds/Vestigo/latest/`. The updater requests only `updates.json` and `updates.json.minisig` from that directory, then downloads `Vestigo-v<product-version>.msi` from the URL in the signed manifest. A check that races a symlink update fails the MSI checksum and retries on the next run.
 
-WiX is pinned to CLI `5.0.2`, `WixToolset.UI.wixext/5.0.2`, and `WixToolset.Firewall.wixext/5.0.2` (install each with `wix extension add -g <name>/5.0.2`). Dependabot ignores `WixToolset.Dtf.CustomAction` and `WixToolset.Dtf.WindowsInstaller` (both `5.0.2`) and `WixSharp_wix4` (`2.14.2`), including security updates, because that set is proven compatible and later WiX majors are not a drop-in replacement. The installer also builds `installer/Vestigo.Installer.Actions` (net48, WiX DTF 5.0.2): `dotnet run` on the installer builds it first and embeds `Vestigo.Installer.Actions.CA.dll` in the MSI, so no extra release step is needed. The WixSharp project GUID is `7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71`. The MSI product code is generated for each build. The upgrade code is `9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64`. A later MSI with that upgrade code replaces an earlier Vestigo installation. The installer stops when the x64 .NET 10 ASP.NET Core runtime is missing.
+WiX is pinned to CLI `5.0.2`, `WixToolset.UI.wixext/5.0.2`, `WixToolset.Firewall.wixext/5.0.2`, and `WixToolset.Netfx.wixext/5.0.2` (install each with `wix extension add -g <name>/5.0.2`). Dependabot ignores `WixToolset.Dtf.CustomAction` and `WixToolset.Dtf.WindowsInstaller` (both `5.0.2`) and `WixSharp_wix4` (`2.14.2`), including security updates, because that set is proven compatible and later WiX majors are not a drop-in replacement. The installer also builds `installer/Vestigo.Installer.Actions` (net48, WiX DTF 5.0.2): `dotnet run` on the installer builds it first and embeds `Vestigo.Installer.Actions.CA.dll` in the MSI, so no extra release step is needed. The WixSharp project GUID is `7c2e1a44-6b8f-4d3a-9e15-2f6a8c0d4b71`. The MSI product code is generated for each build. The upgrade code is `9a4d6e28-1c7b-4f05-8d3e-5b2c7a9f0e64`. A later MSI with that upgrade code replaces an earlier Vestigo installation. The installer stops when the x64 ASP.NET Core Runtime 10.0 is missing; a later major does not satisfy the check. In a silent install the message is written to the MSI log.
 
 Keep `installer/License.rtf` aligned with `LICENSE`.
 
@@ -49,7 +49,7 @@ The manifest's release version is the MSI `ProductVersion`. When the updater fea
 
 ## Update smoke test
 
-On a Windows machine with the x64 .NET 10 ASP.NET Core runtime:
+On a Windows machine with the x64 ASP.NET Core Runtime 10.0:
 
 - Install an older signed Vestigo MSI with the updater selected (the default), then confirm `Nefarius_Vestigo_Updater.exe --install --silent --override-success-code 0` exits 0 and creates the current user's logon autostart entry and daily scheduled task.
 - Launch the updater and confirm it offers the newer Buildbot release, shows the MSI summary, and requests elevation.
