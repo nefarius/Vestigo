@@ -99,7 +99,21 @@ public sealed class ScheduledTaskTools(
             return OperationResult<ScheduledTaskHistory>.Fail(normalized.ErrorCode!, normalized.Error!);
         }
 
-        return history.Read(normalized.Value!, Math.Clamp(limit, 1, MaxHistoryLimit));
+        // Event data matches the task name case-sensitively; prefer the canonical path when the task still exists.
+        // Deleted tasks and scheduler failures fall back to the normalized input so history stays readable.
+        string historyPath = normalized.Value!;
+        try
+        {
+            if (scheduler.Get(historyPath) is { } details)
+            {
+                historyPath = details.Task.Path;
+            }
+        }
+        catch (ScheduledTaskException)
+        {
+        }
+
+        return history.Read(historyPath, Math.Clamp(limit, 1, MaxHistoryLimit));
     }
 
     [McpServerTool(Name = "run_scheduled_task")]

@@ -127,8 +127,9 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         string path = task.Path;
         int index = path.LastIndexOf('\\');
         string xml = task.Xml;
-        XElement? registration = TryParse(xml)?.Element(Ns + "RegistrationInfo");
-        XElement? settings = TryParse(xml)?.Element(Ns + "Settings");
+        XElement? definition = TryParse(xml);
+        XElement? registration = definition?.Element(Ns + "RegistrationInfo");
+        XElement? settings = definition?.Element(Ns + "Settings");
         return new ScheduledTaskInfo(
             path,
             task.Name,

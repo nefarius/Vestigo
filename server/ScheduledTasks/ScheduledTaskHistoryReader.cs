@@ -46,7 +46,7 @@ public sealed class ScheduledTaskHistoryReader
                     record.LevelDisplayName ?? record.Level?.ToString() ?? "Unknown",
                     record.TaskDisplayName,
                     record.ActivityId?.ToString(),
-                    Property(record, 1),
+                    NamedData(record, "ResultCode"),
                     Render(record)));
             }
 
@@ -69,10 +69,23 @@ public sealed class ScheduledTaskHistoryReader
     /// <summary>XPath 1.0 literals have no escape, so single quotes are rejected by path validation; strip them defensively.</summary>
     internal static string EscapeXPath(string value) => value.Replace("'", string.Empty, StringComparison.Ordinal);
 
-    private static string? Property(EventRecord record, int index)
+    /// <summary>Reads a named event-data field (for example <c>ResultCode</c>); null when the event has none.</summary>
+    private static string? NamedData(EventRecord record, string name)
     {
-        // Result-bearing events (102, 201, 203, ...) carry the result code as the second data item when present.
-        return record.Properties.Count > index ? record.Properties[index].Value?.ToString() : null;
+        if (record is not EventLogRecord logRecord)
+        {
+            return null;
+        }
+
+        try
+        {
+            EventLogPropertySelector selector = new([$"Event/EventData/Data[@Name='{name}']"]);
+            return logRecord.GetPropertyValues(selector).FirstOrDefault()?.ToString();
+        }
+        catch (Exception ex) when (ex is EventLogException or InvalidOperationException or ArgumentException)
+        {
+            return null;
+        }
     }
 
     private static string? Render(EventRecord record)
