@@ -32,8 +32,15 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `JobRetention` | `1.00:00:00` |
 | `ListenAddress` | `127.0.0.1` |
 | `ListenPort` | `5098` |
+| `Logs:MaxConcurrentSearches` | `2` |
+| `Logs:MaxSearchContextLines` | `10` |
+| `Logs:MaxSearchDuration` | `00:01:00` |
+| `Logs:MaxSearchLineLength` | `1000` |
+| `Logs:MaxSearchResults` | `1000` |
 | `Logs:MaxTailBytes` | `1048576` |
 | `Logs:MaxTailLines` | `2000` |
+| `Logs:RipgrepPath` | `null` |
+| `Logs:RipgrepSha256` | `14231169855ec5205cf5a1b6f1db358ff4aed4247c86b69ce8aae647c77f6680` |
 | `MaxCaptureDuration` | `01:00:00` |
 | `MaxConcurrentCaptures` | `4` |
 | `MaxConcurrentJobs` | `8` |

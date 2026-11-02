@@ -50,6 +50,13 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Environment:ProtectedNames` | `COMSPEC`, `SystemRoot`, `windir` | Variable names (case-insensitive) that `set_environment_variable` refuses to set or unset in any scope. |
 | `Logs:MaxTailLines` | 2000 | Maximum lines returned by one `tail_text_file` or `read_text_file_since` call. |
 | `Logs:MaxTailBytes` | 1048576 | Maximum bytes examined by one call; a longer single line is cut. |
+| `Logs:RipgrepPath` | null | Absolute path of `rg.exe` for `search_text`. Empty uses `tools\rg.exe` next to Vestigo.exe. |
+| `Logs:RipgrepSha256` | pinned ripgrep 15.2.0 digest | SHA-256 of the `rg.exe` that may be launched, checked before every search. Empty skips the check; use that only for a path you replaced on purpose. |
+| `Logs:MaxSearchResults` | 1000 | Maximum lines (matches plus context) returned by one `search_text` call; ripgrep is stopped when it is reached. |
+| `Logs:MaxSearchContextLines` | 10 | Maximum context lines requested before or after each match. |
+| `Logs:MaxSearchLineLength` | 1000 | Longest line text returned; longer lines are cut to a window around the first match. At least 80. |
+| `Logs:MaxSearchDuration` | 00:01:00 | Longest time one search may run before ripgrep is stopped and partial results are returned. |
+| `Logs:MaxConcurrentSearches` | 2 | Searches that may run at once; further calls wait briefly and then fail with `search_busy`. |
 | `EventLog:MaxEvents` | 500 | Maximum events returned by one `query_event_log` call. |
 | `EventLog:MaxScannedEvents` | 20000 | Maximum events examined per query, which bounds message text filters. |
 | `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. |
