@@ -112,6 +112,16 @@ if (vestigo.GetVolumeRootWarning() is { } volumeRootWarning)
 {
     app.Logger.LogWarning("{VolumeRootWarning}", volumeRootWarning);
 }
+
+if (vestigo.GetTracesRootOverrideWarning() is { } tracesRootWarning)
+{
+    app.Logger.LogWarning("{TracesRootWarning}", tracesRootWarning);
+}
+
+if (vestigo.GetSymbolServerQueryWarning() is { } symbolQueryWarning)
+{
+    app.Logger.LogWarning("{SymbolServerQueryWarning}", symbolQueryWarning);
+}
 if (ModuleRegistry.GetPrivilegedModuleWarning(vestigo) is { } privilegedWarning)
 {
     app.Logger.LogWarning("{PrivilegedWarning}", privilegedWarning);

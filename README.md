@@ -7,7 +7,7 @@
 
 Vestigo is a Windows MCP server for driver and application development. It hosts a stateless Streamable HTTP endpoint at `/mcp` and runs as a Windows service. Besides offline WPP conversion and realtime ETW capture, it can transfer files, inspect and control processes and services, list, inspect, and run scheduled tasks, inventory and uninstall software, manage devices and drivers, list windows and displays and take gated screenshots, list audio endpoints and switch the default device, inspect Windows version and boot-security state with gated test-signing and WHQL developer-mode changes, capture Win32 debug output, read and set environment variables, tail and regex-search text logs on the machine, query event logs, run background jobs, and install the Visual Studio remote debugger.
 
-It is remote-capable. A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` uses the repository `appsettings.json`, which defaults to loopback without tokens. WPP decoding uses [Nefarius.Utilities.ETW](https://github.com/nefarius/Nefarius.Utilities.ETW) with PDB or TMF files.
+It is remote-capable. A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` uses the repository `appsettings.json`, which defaults to loopback without tokens. WPP decoding uses [Nefarius.Utilities.ETW](https://github.com/nefarius/Nefarius.Utilities.ETW) with PDB or TMF files. A remote agent can resolve those PDBs from an installed binary, the local cache, a configured symbol server, or a file uploaded into the built-in `traces` folder.
 
 ## Requirements
 
@@ -44,7 +44,7 @@ The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopba
 ## Security
 
 - Tokens are compared by SHA-256 digest and are never written to logs.
-- Trace ETL, PDB, TMF, and conversion-output paths stay inside `AllowedInputRoots` or `AllowedOutputRoots`.
+- Trace ETL, PDB, TMF, zip, and conversion-output paths stay inside `AllowedInputRoots` or `AllowedOutputRoots`, which default to the protected `<settings>\traces` folder. Remote agents can resolve PDBs from installed binaries or upload them to the `traces` named root.
 - File, log, process, and device paths use named `Vestigo:Roots` (and optional `VolumeRoots`) with `Read`, `Write`, and `Execute`.
 - `Processes`, `Devices`, `RemoteDebugger`, `Desktop`, `Audio`, and `DebugOutput` stay off until their module is enabled. Silent uninstall, scheduled-task changes, screenshots, default-audio switching, and boot-configuration writes have separate gates (`Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Desktop:AllowScreenshots`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`). Enabling those without tokens is allowed and logs a startup `SECURITY WARNING`.
 - Output files are not overwritten unless the tool argument says so.

@@ -16,7 +16,7 @@ using Windows.Win32.Storage.FileSystem;
 namespace Vestigo.Security;
 
 /// <summary>
-///     Creates and verifies the machine-wide state tree (settings, logs, spool, symbol cache). On Windows the tree
+    ///     Creates and verifies the machine-wide state tree (settings, logs, spool, symbol cache, traces). On Windows the tree
 ///     gets a protected DACL that only SYSTEM and Administrators (plus the current account when it is not SYSTEM)
 ///     can change, which also stops a lower-privileged user from swapping a path component for a link. Reparse
 ///     points and untrusted owners fail closed.
@@ -46,7 +46,8 @@ public static class StateDirectories
             root,
             Path.GetFullPath(VestigoPaths.LogDirectory),
             Path.GetFullPath(VestigoPaths.SpoolDirectory),
-            Path.GetFullPath(VestigoPaths.DefaultSymbolCache)
+            Path.GetFullPath(VestigoPaths.DefaultSymbolCache),
+            Path.GetFullPath(VestigoPaths.TraceDirectory)
         ];
 
         if (OperatingSystem.IsWindows())

@@ -492,7 +492,7 @@ public class FileToolTests : IDisposable
         Assert.True(FileAccessGuard.IsRoot(policy, @"C:\"));
         Assert.False(FileAccessGuard.IsRoot(policy, @"C:\Windows"));
         Assert.True(policy.Resolve(@"C:\Windows\explorer.exe", RootAccess.Read).Success);
-        Assert.Equal("access_denied", policy.Resolve(@"C:\Windows\explorer.exe", RootAccess.Write).ErrorCode);
+        Assert.Equal("outside_root", policy.Resolve(@"C:\Windows\explorer.exe", RootAccess.Write).ErrorCode);
     }
 
     [Fact]

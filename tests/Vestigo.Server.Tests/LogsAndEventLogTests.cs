@@ -323,7 +323,7 @@ public class LogsAndEventLogTests : IDisposable
         Assert.Equal("invalid_channel", service.Query(" ", new EventLogFilter(), null, null, 1, true, false, default).ErrorCode);
         Assert.Equal("invalid_query", service.Query("Application", new EventLogFilter(EventIds: [1]), "*", null, 1, true, false, default).ErrorCode);
         Assert.Equal("not_found", service.Query("No-Such-Vestigo-Channel", new EventLogFilter(), null, null, 1, true, false, default).ErrorCode);
-        Assert.Equal("roots_not_configured", service.Query(@"C:\x\a.evtx", new EventLogFilter(), null, null, 1, true, false, default).ErrorCode);
+        Assert.Equal("outside_root", service.Query(@"C:\x\a.evtx", new EventLogFilter(), null, null, 1, true, false, default).ErrorCode);
     }
 
     [Fact]

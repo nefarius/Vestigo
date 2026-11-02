@@ -18,22 +18,40 @@ public sealed partial class RootPolicy(VestigoOptions options, VolumeRootSource?
         get
         {
             IReadOnlyList<RootDefinition> generated = _volumes.Current;
-            if (generated.Count == 0)
+            bool traces = options.ShouldGenerateTracesRoot;
+            if (generated.Count == 0 && !traces)
             {
                 return options.Roots;
             }
 
-            if (options.Roots.Count == 0)
+            if (options.Roots.Count == 0 && generated.Count == 0 && traces)
+            {
+                return [BuiltInTracesRoot()];
+            }
+
+            if (options.Roots.Count == 0 && !traces)
             {
                 return generated;
             }
 
-            List<RootDefinition> merged = new(options.Roots.Count + generated.Count);
+            List<RootDefinition> merged = new(options.Roots.Count + generated.Count + (traces ? 1 : 0));
             merged.AddRange(options.Roots);
+            if (traces)
+            {
+                merged.Add(BuiltInTracesRoot());
+            }
+
             merged.AddRange(generated);
             return merged;
         }
     }
+
+    internal static RootDefinition BuiltInTracesRoot() => new()
+    {
+        Name = PathPolicy.TracesRootName,
+        Path = VestigoPaths.TraceDirectory,
+        Access = RootAccess.Read | RootAccess.Write
+    };
 
     /// <summary>Resolves a path that must be reachable with <paramref name="needed" /> access.</summary>
     public PathCheck Resolve(string requestedPath, RootAccess needed)

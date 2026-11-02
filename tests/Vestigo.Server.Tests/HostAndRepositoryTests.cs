@@ -156,6 +156,8 @@ public class RepositoryBoundaryTests
                  {
                      "ListenAddress", "ListenPort", "ApiTokens", "AllowedInputRoots", "AllowedOutputRoots",
                      "Roots", "VolumeRoots", "VolumeRootAccess", "Modules", "SymbolServer", "SymbolCache",
+                     "SymbolServerAuth:Scheme", "SymbolServerAuth:HeaderName", "SymbolServerAuth:Username",
+                     "SymbolServerAuth:Secret", "SymbolServerAuth:SecretFile", "MaxArchiveEntries",
                      "MaxInputBytes", "MaxEvents",
                      "MaxOutputBytes", "MaxCaptureDuration", "SpoolRetention", "MaxConcurrentCaptures",
                      "MaxReadBatch", "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds",

@@ -11,8 +11,8 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `ListenAddress` | `127.0.0.1` | IP address to bind: loopback (`127.0.0.1`, `::1`) or any other address such as `0.0.0.0` or `::` to accept network clients. Host names are rejected, as is `Kestrel:Endpoints`. Binding beyond loopback without `ApiTokens` logs a startup warning. |
 | `ListenPort` | `5098` | HTTP port. Changing it requires a service restart. |
 | `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`; strongly recommended whenever `ListenAddress` is not loopback. |
-| `AllowedInputRoots` | empty | Roots for ETL, PDB, and TMF paths. |
-| `AllowedOutputRoots` | empty | Roots for conversion output. |
+| `AllowedInputRoots` | empty (uses `<settings>\traces`) | Roots for ETL, PDB, TMF, and uploaded zip paths. Empty means the built-in folder `%ProgramData%\Nefarius Software Solutions\Vestigo\traces` (or `traces` under `VESTIGO_SETTINGS_DIR`). Configured values replace that default; they are not merged with it. Do not put a whole volume here: symbol lookup searches each input root recursively for `*.pdb`. |
+| `AllowedOutputRoots` | empty (uses `<settings>\traces`) | Roots for conversion output and archive extraction. Empty uses the same built-in `traces` folder. |
 | `Roots` | empty | Named roots (`Name`, absolute `Path`, `Access` flags `Read, Write, Execute`). Clients address them as `name:relative\path` or by an absolute path inside a root. These are separate from the trace-only `AllowedInputRoots` / `AllowedOutputRoots`. Names such as `drive-c` are reserved only when `VolumeRoots` is not `None`; names like `drive-backups` stay available. |
 | `VolumeRoots` | `None` | Adds lettered drive volumes as named roots (`drive-c`, `drive-d`, …) that are merged with `Roots`. `None` uses only `Roots`. `SystemDrive` is the Windows directory's drive (`SpecialFolder.Windows`, then `%SystemDrive%`). `FixedVolumes` is every ready `DriveType.Fixed` volume (the MSI default on a fresh install). `AllVolumes` also includes ready removable, network, CD-ROM, and RAM volumes present at service start. `AllVolumesLive` is the same set, re-enumerated on demand with a two-second cache so volumes that appear or leave while the service is running are included. UNC paths are never added automatically. The service runs as LocalSystem, so per-user mapped network drives are not visible; only system-wide mounts appear. |
 | `VolumeRootAccess` | `Read, Write, Execute` | Access granted to every volume root produced by `VolumeRoots`. Must not be empty when `VolumeRoots` is not `None`. |
@@ -59,9 +59,15 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Logs:MaxConcurrentSearches` | 2 | Searches that may run at once; further calls wait briefly and then fail with `search_busy`. |
 | `EventLog:MaxEvents` | 500 | Maximum events returned by one `query_event_log` call. |
 | `EventLog:MaxScannedEvents` | 20000 | Maximum events examined per query, which bounds message text filters. |
-| `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. |
-| `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. A cache outside that tree is not verified: allow write access for the trusted identity that runs Vestigo (the MSI service account, or the user running `dotnet run`), and do not share it between a privileged service and an untrusted user. |
-| `MaxInputBytes` | 4294967296 | Maximum size of one input file. |
+| `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. A `user:pass@` prefix is converted to `SymbolServerAuth` Basic and stripped from the URL. A query string logs a startup warning; put API keys in `SymbolServerAuth` instead. `get_trace_settings` reports the URL with userinfo and the query string removed. |
+| `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. A cache outside that tree is not verified: allow write access for the trusted identity that runs Vestigo (the MSI service account, or the user running `dotnet run`), and do not share it between a privileged service and an untrusted user. PDB files under the resolved cache (including an environment-selected cache) may be passed to Trace tools. |
+| `SymbolServerAuth:Scheme` | `None` | `None`, `Basic`, `Bearer`, or `Header`. Requires an explicit `SymbolServer`. HTTPS is required except when the server is loopback. |
+| `SymbolServerAuth:HeaderName` | null | Header name when Scheme is `Header` (for example `X-Api-Key`). |
+| `SymbolServerAuth:Username` | null | User name when Scheme is `Basic`. |
+| `SymbolServerAuth:Secret` | null | Inline secret. Mutually exclusive with `SecretFile`. Never logged. |
+| `SymbolServerAuth:SecretFile` | null | Absolute path of a file whose contents are the secret, read once at startup. |
+| `MaxArchiveEntries` | 10000 | Upper bound for entries in one `extract_trace_archive` zip. |
+| `MaxInputBytes` | 4294967296 | Maximum size of one input file, and the uncompressed total extracted from one archive. |
 | `MaxEvents` | 1000000 | Maximum decoded events per conversion or capture. |
 | `MaxOutputBytes` | 536870912 | Maximum bytes written per conversion or capture. |
 | `MaxCaptureDuration` | `01:00:00` | Upper bound for a realtime capture. |
@@ -76,7 +82,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 
 Serilog writes console output and daily files under the settings `logs` directory (`vestigo-.log`). The default level is Information. The host keeps 14 rolled files.
 
-`AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, and conversion-output paths used by the Trace tools. Named `Roots` and any `VolumeRoots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, and the `/files` endpoints.
+`AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, zip, and conversion-output paths used by the Trace tools. When both lists are empty, Vestigo also registers a named root `traces` (Read, Write) at that folder so `get_upload_url traces:driver.pdb` works in every `VolumeRoots` mode. A configured root already named `traces` wins and a startup warning is logged. Named `Roots` and any `VolumeRoots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, binaries for `resolve_binary_symbols`, and the `/files` endpoints.
 
 The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, and `Desktop:AllowScreenshots` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
 

@@ -28,6 +28,7 @@ public sealed class StateDirectoriesTests : IDisposable
         Assert.True(Directory.Exists(VestigoPaths.SpoolDirectory));
         Assert.True(Directory.Exists(VestigoPaths.LogDirectory));
         Assert.True(Directory.Exists(VestigoPaths.DefaultSymbolCache));
+        Assert.True(Directory.Exists(VestigoPaths.TraceDirectory));
         if (!OperatingSystem.IsWindows())
         {
             return;

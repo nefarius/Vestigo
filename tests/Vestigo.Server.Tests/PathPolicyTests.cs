@@ -36,6 +36,29 @@ public class PathPolicyTests
     }
 
     [Fact]
+    public void RequireWritableDirectory_AcceptsOutputRootWhenInputIsDisjoint()
+    {
+        string input = Directory.CreateTempSubdirectory("vestigo-in").FullName;
+        string output = Directory.CreateTempSubdirectory("vestigo-out").FullName;
+        PathPolicy policy = new(new VestigoOptions
+        {
+            AllowedInputRoots = [input],
+            AllowedOutputRoots = [output]
+        });
+        string destination = Path.Combine(output, "extract");
+        string fromInput = Path.Combine(input, "extract");
+
+        PathCheck dest = policy.RequireWritableDirectory(destination);
+        PathCheck rejected = policy.RequireWritableDirectory(fromInput);
+
+        Assert.True(dest.Success, dest.Error);
+        Assert.True(Directory.Exists(dest.FullPath));
+        Assert.Equal(Path.GetFullPath(destination), dest.FullPath);
+        Assert.Equal("outside_root", rejected.ErrorCode);
+        Assert.False(Directory.Exists(fromInput));
+    }
+
+    [Fact]
     public void RequireOutputFile_RejectsOverwriteByDefault()
     {
         string root = Directory.CreateTempSubdirectory("vestigo-out").FullName;
@@ -70,7 +93,15 @@ public class PathPolicyTests
         string secret = Path.Combine(outside, "trace.etl");
         File.WriteAllText(secret, "etl");
         string link = Path.Combine(root, "escape.etl");
-        File.CreateSymbolicLink(link, secret);
+        try
+        {
+            File.CreateSymbolicLink(link, secret);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("Symbolic link privilege is not available on this machine.");
+        }
+
         PathPolicy policy = new(new VestigoOptions { AllowedInputRoots = [root] });
 
         PathCheck result = policy.RequireExistingFile(link, [".etl"]);
@@ -90,7 +121,15 @@ public class PathPolicyTests
         string file = Path.Combine(root, "trace.etl");
         File.WriteAllText(file, "etl");
         string link = Path.Combine(root, "alias.etl");
-        File.CreateSymbolicLink(link, file);
+        try
+        {
+            File.CreateSymbolicLink(link, file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("Symbolic link privilege is not available on this machine.");
+        }
+
         PathPolicy policy = new(new VestigoOptions { AllowedInputRoots = [root], MaxInputBytes = 100 });
 
         PathCheck result = policy.RequireExistingFile(link, [".etl"]);

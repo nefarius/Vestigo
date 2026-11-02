@@ -87,6 +87,13 @@ public sealed class OfflineConversionService(
                 symbols.CreateStore(),
                 symbols.CreateSymbolClient(),
                 cancellationToken);
+            if (resolved.Diagnostics.Any(line => SymbolCatalogService.LooksLikeAuthStatus(line)))
+            {
+                return OperationResult<ConversionSummary>.Fail(
+                    "symbol_auth_failed",
+                    "The symbol server rejected the request.");
+            }
+
             sources.AddRange(resolved.Sources);
             diagnostics.AddRange(resolved.Diagnostics.Take(50));
         }
