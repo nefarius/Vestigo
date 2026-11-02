@@ -29,6 +29,7 @@
         "Compile",
         "PrepareDebugView",
         "PrepareNefcon",
+        "PrepareRipgrep",
         "PrepareUpdater",
         "PublishLocal",
         "PublishUpdateManifest",

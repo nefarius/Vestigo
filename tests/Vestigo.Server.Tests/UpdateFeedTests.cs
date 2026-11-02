@@ -146,11 +146,14 @@ public class UpdateFeedTests
         Assert.Contains(UpdateFeed.CurrentPackagePointerFileName, installer, StringComparison.Ordinal);
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
-        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView)", build, StringComparison.Ordinal);
+        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep)", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", installer, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_DEBUGVIEW", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_DEBUGVIEW", installer, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_RIPGREP", build, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_RIPGREP", installer, StringComparison.Ordinal);
+        Assert.Contains("ripgrep-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("nefcon-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("DebugViewPP-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("RequireTrustedPublisher(stagedPath, UpdateFeed.PublisherSubject)", build, StringComparison.Ordinal);
@@ -170,6 +173,7 @@ public class UpdateFeedTests
         Assert.Contains("Vicius 1.20.1", notices, StringComparison.Ordinal);
         Assert.Contains("DebugView++ 1.30.0.0", notices, StringComparison.Ordinal);
         Assert.Contains("Boost Software License", notices, StringComparison.Ordinal);
+        Assert.Contains($"ripgrep {RipgrepPin.Version}", notices, StringComparison.Ordinal);
 
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build.yml"));
         Assert.Contains("needs: [build, security, osv]", workflow, StringComparison.Ordinal);

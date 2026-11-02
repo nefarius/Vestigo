@@ -80,3 +80,14 @@ To bump DebugViewConsole manually:
 2. Compute its SHA-256 (`Get-FileHash`).
 3. Update `Version`, `Sha256`, and `AssetUrl` in `build/DebugViewPin.cs`, `DebugOutputOptions.DefaultExpectedSha256` in `server/DebugOutput/DebugOutputOptions.cs`, and the version in `installer\THIRD-PARTY-NOTICES.txt` and `installer\DebugViewPP-LICENSE.txt` if the license changed.
 4. Run `.\build.ps1 PrepareDebugView` and the test suite.
+
+## ripgrep pin
+
+`PrepareRipgrep` (a dependency of `BuildInstaller`, run by the `build` CI job) downloads the pinned ripgrep Windows x64 release archive, checks its SHA-256, extracts `rg.exe`, checks the executable's own SHA-256, and stages it to `publish-x64\tools\`. There is no Authenticode publisher check: the binary is third-party. The MSI installs it as `tools\rg.exe` with `tools\ripgrep-LICENSE.txt` (MIT); the notice, including the statically linked PCRE2, is also in `installer\THIRD-PARTY-NOTICES.txt`. Vestigo re-checks the executable digest before every search.
+
+To bump ripgrep manually:
+
+1. Download the archive from the [ripgrep releases](https://github.com/BurntSushi/ripgrep/releases) (`gh release download <version> -R BurntSushi/ripgrep -p ripgrep-<version>-x86_64-pc-windows-msvc.zip`). The release also publishes a `.sha256` file to cross-check.
+2. Compute the archive's SHA-256 and the SHA-256 of the `rg.exe` inside it (`Get-FileHash`).
+3. Update `Version`, `ArchiveSha256`, `ArchiveUrl`, `ArchiveEntryPath` (it contains the version) and `ExecutableSha256` in `build/RipgrepPin.cs`, `LogsOptions.DefaultRipgrepSha256` in `server/Configuration/ModuleOptions.cs`, the version in `installer\THIRD-PARTY-NOTICES.txt` and the `LogsOptions.RipgrepSha256` summary, and `installer\ripgrep-LICENSE.txt` if the license changed.
+4. Run `.\build.ps1 PrepareRipgrep`, then the test suite with `VESTIGO_TEST_RIPGREP` set to the new `rg.exe`.
