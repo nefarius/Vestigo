@@ -1,5 +1,9 @@
 # Troubleshooting
 
+## Installer says ASP.NET Core 10 runtime is required
+
+The MSI is framework-dependent and needs the x64 ASP.NET Core Runtime 10.0 (any 10.0.x patch). The ASP.NET Core 10.0 Hosting Bundle also satisfies this. A later major (11 or newer) does not. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 and run the installer again. In a silent install the same message is written to the MSI log.
+
 ## `/mcp` returns 401
 
 `ApiTokens` is configured and the request did not include a matching bearer token. `/health` remains anonymous. The log records the authentication failure without the token value.

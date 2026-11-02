@@ -32,6 +32,10 @@ static class Program
     const string UpdaterConfigurationName = "Nefarius_Vestigo_Updater.json";
     const string NoticesName = "THIRD-PARTY-NOTICES.txt";
     const string ActionsPackageName = "Vestigo.Installer.Actions.CA.dll";
+    const string AspNetRuntimeVersion = "10.0.0";
+    const RollForward AspNetRuntimeRollForward = RollForward.minor;
+    const string AspNetRuntimeMissingMessage =
+        "Vestigo requires the ASP.NET Core Runtime 10.0 (x64). Install the ASP.NET Core 10.0 Hosting Bundle or the x64 ASP.NET Core Runtime 10.0 from https://dotnet.microsoft.com/download/dotnet/10.0, then run this installer again.";
 
     static int Main(string[] args)
     {
@@ -191,12 +195,13 @@ static class Program
             project.ControlPanelInfo.Manufacturer = Manufacturer;
             project.MajorUpgrade = MajorUpgrade.Default;
             project.SetNetPrerequisite(
-                "10.0.0",
+                AspNetRuntimeVersion,
                 RuntimeType.aspnet,
-                RollForward.latestMajor,
+                AspNetRuntimeRollForward,
                 Platform.x64,
-                "Vestigo requires the x64 .NET 10 ASP.NET Core runtime. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 and then run this installer again.");
+                AspNetRuntimeMissingMessage);
             WixExtension.UI.PreferredVersion = "5.0.2";
+            WixExtension.NetFx.PreferredVersion = "5.0.2";
             // Registration is per installing user and must not fail the service install.
             // &Updater=3 is the local install action. NOT (REMOVE~="ALL") still allows
             // registration when REMOVE lists unrelated features.
