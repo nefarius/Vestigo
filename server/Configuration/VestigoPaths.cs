@@ -30,6 +30,9 @@ public static class VestigoPaths
 
     public static string DefaultSymbolCache => Path.Combine(SettingsDirectory, "symcache");
 
+    /// <summary>Default folder for ETL, PDB, TMF, and conversion-output paths when no trace roots are configured.</summary>
+    public static string TraceDirectory => Path.Combine(SettingsDirectory, "traces");
+
     private static string SettingsRoot =>
         OperatingSystem.IsWindows()
             ? Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)

@@ -380,9 +380,10 @@ namespace Vestigo.Installer.Actions
         }
 
         /// <summary>
-        ///     Creates (or re-secures on upgrade) the ProgramData state tree with a protected SYSTEM + Administrators
-        ///     DACL and fails the install when a component is a reparse point. The company folder's ACL is always
-        ///     reset; an untrusted owner is logged and replaced. Other Nefarius products' subfolders are left alone.
+        ///     Creates (or re-secures on upgrade) the ProgramData state tree (settings, logs, spool, symcache, traces)
+        ///     with a protected SYSTEM + Administrators DACL and fails the install when a component is a reparse point.
+        ///     The company folder's ACL is always reset; an untrusted owner is logged and replaced. Other Nefarius
+        ///     products' subfolders are left alone.
         /// </summary>
         private static void SecureStateDirectories(Session session)
         {
@@ -395,7 +396,8 @@ namespace Vestigo.Installer.Actions
                 product,
                 Path.Combine(product, "logs"),
                 Path.Combine(product, "spool"),
-                Path.Combine(product, "symcache")
+                Path.Combine(product, "symcache"),
+                Path.Combine(product, "traces")
             };
 
             foreach (string existing in new[] { company }.Concat(managed))

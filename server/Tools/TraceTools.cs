@@ -9,28 +9,53 @@ namespace Vestigo.Tools;
 
 /// <summary>MCP tools for offline WPP conversion and managed realtime capture.</summary>
 [McpServerToolType]
-public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionService offline, CaptureManager captures, IRealtimeTraceSessionFactory sessions, Vestigo.Files.FileLinkIssuer? links = null)
+public sealed class TraceTools(
+    SymbolCatalogService symbols,
+    OfflineConversionService offline,
+    CaptureManager captures,
+    IRealtimeTraceSessionFactory sessions,
+    TraceArchiveExtractor archives,
+    Vestigo.Files.FileLinkIssuer? links = null)
 {
+    [McpServerTool(Name = "get_trace_settings")]
+    [Description("Returns the effective Trace roots, the traces named root, symbol cache and server (userinfo redacted), authentication scheme without the secret, attachable-session patterns, and size limits. See this tool before uploading symbols or starting a capture.")]
+    public TraceSettingsDescription GetTraceSettings() => symbols.GetSettings();
+
     [McpServerTool(Name = "inspect_wpp_pdb")]
-    [Description("Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root.")]
+    [Description("Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root. See get_trace_settings for allowed roots.")]
     public OperationResult<PdbInspection> InspectWppPdb(
-        [Description("Absolute or rooted path to a .pdb file.")] string pdbPath) =>
+        [Description("Absolute path, traces:relative path, or rooted path to a .pdb file.")] string pdbPath) =>
         symbols.InspectPdb(pdbPath);
 
     [McpServerTool(Name = "validate_decoding_sources")]
-    [Description("Loads PDB and TMF files and reports whether they can decode WPP messages.")]
+    [Description("Loads PDB and TMF files and reports whether they can decode WPP messages. See get_trace_settings for allowed roots.")]
     public OperationResult<SymbolLoadDescription> ValidateDecodingSources(
         [Description("PDB and TMF paths inside an allowed input root.")] string[] symbolPaths) =>
         symbols.ValidateSources(symbolPaths ?? []);
 
     [McpServerTool(Name = "scan_etl_metadata")]
-    [Description("Lists distinct PDB identities referenced by one or more ETL files.")]
+    [Description("Lists distinct PDB identities referenced by one or more ETL files. See get_trace_settings for allowed roots.")]
     public OperationResult<IReadOnlyList<PdbReferenceDescription>> ScanEtlMetadata(
         [Description("ETL paths inside an allowed input root.")] string[] etlPaths) =>
         symbols.ScanEtl(etlPaths ?? []);
 
+    [McpServerTool(Name = "resolve_binary_symbols")]
+    [Description("Reads the CodeView PDB identity from each .sys, .dll, or .exe under a Files root with Read access, then resolves it through the symbol cache, trace input roots, and the configured symbol server. Returns per-binary origin, local PDB path, and diagnostics.")]
+    public Task<OperationResult<IReadOnlyList<BinarySymbolResolution>>> ResolveBinarySymbols(
+        [Description("Absolute or root:relative paths of .sys, .dll, or .exe files.")] string[] binaryPaths,
+        CancellationToken cancellationToken = default) =>
+        symbols.ResolveBinariesAsync(binaryPaths ?? [], cancellationToken);
+
+    [McpServerTool(Name = "extract_trace_archive")]
+    [Description("Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory that is also inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.")]
+    public OperationResult<TraceArchiveExtraction> ExtractTraceArchive(
+        [Description("Zip path inside an allowed input root.")] string archivePath,
+        [Description("Destination directory inside the allowed input and output roots.")] string destination,
+        [Description("Replace existing extracted files.")] bool overwrite = false) =>
+        archives.Extract(archivePath, destination, overwrite);
+
     [McpServerTool(Name = "convert_etl")]
-    [Description("Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access.")]
+    [Description("Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access. See get_trace_settings for allowed roots.")]
     public async Task<OperationResult<ConversionSummary>> ConvertEtl(
         [Description("ETL paths inside an allowed input root.")] string[] etlPaths,
         [Description("Output .json or .ndjson path inside an allowed output root.")] string outputPath,
@@ -70,10 +95,11 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
     }
 
     [McpServerTool(Name = "start_capture")]
-    [Description("Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them.")]
-    public Task<OperationResult<CaptureStatus>> StartCapture(
+    [Description("Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them. See get_trace_settings for allowed roots.")]
+    public async Task<OperationResult<CaptureStatus>> StartCapture(
         [Description("PDB paths whose WPP control GUIDs should be enabled.")] string[]? pdbPaths = null,
         [Description("TMF paths used only for message decoding.")] string[]? tmfPaths = null,
+        [Description("Installed .sys, .dll, or .exe paths; their matching PDBs are resolved and treated as pdbPaths.")] string[]? binaryPaths = null,
         [Description("Additional ETW provider GUIDs.")] string[]? providerIds = null,
         [Description("Trace level: None, Critical, Error, Warning, Information, or Verbose.")] string level = "Verbose",
         [Description("Match-any keyword bitmask. Omit for all keywords.")] string? matchAnyKeyword = null,
@@ -83,17 +109,17 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
     {
         if (!TryParseGuids(providerIds, out List<Guid> providers, out string? guidError))
         {
-            return Task.FromResult(OperationResult<CaptureStatus>.Fail("invalid_request", guidError!));
+            return OperationResult<CaptureStatus>.Fail("invalid_request", guidError!);
         }
 
         if (!TryParseKeyword(matchAnyKeyword, ulong.MaxValue, out ulong anyKeyword, out string? anyError))
         {
-            return Task.FromResult(OperationResult<CaptureStatus>.Fail("invalid_request", anyError!));
+            return OperationResult<CaptureStatus>.Fail("invalid_request", anyError!);
         }
 
         if (!TryParseKeyword(matchAllKeyword, 0, out ulong allKeyword, out string? allError))
         {
-            return Task.FromResult(OperationResult<CaptureStatus>.Fail("invalid_request", allError!));
+            return OperationResult<CaptureStatus>.Fail("invalid_request", allError!);
         }
 
         TimeSpan? parsedDuration = null;
@@ -101,15 +127,30 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
         {
             if (!TimeSpan.TryParse(duration, out TimeSpan value))
             {
-                return Task.FromResult(OperationResult<CaptureStatus>.Fail("invalid_request", "Duration is not a valid timespan."));
+                return OperationResult<CaptureStatus>.Fail("invalid_request", "Duration is not a valid timespan.");
             }
 
             parsedDuration = value;
         }
 
-        return captures.StartAsync(
-            new StartCaptureRequest(pdbPaths ?? [], tmfPaths ?? [], providers, level, anyKeyword, allKeyword, parsedDuration),
-            cancellationToken);
+        OperationResult<IReadOnlyList<string>> resolved = await symbols
+            .ResolveBinaryPdbPathsAsync(binaryPaths ?? [], cancellationToken)
+            .ConfigureAwait(false);
+        if (!resolved.Success)
+        {
+            return OperationResult<CaptureStatus>.Fail(resolved.ErrorCode!, resolved.Error!);
+        }
+
+        return await captures.StartAsync(
+            new StartCaptureRequest(
+                [..pdbPaths ?? [], ..resolved.Value!],
+                tmfPaths ?? [],
+                providers,
+                level,
+                anyKeyword,
+                allKeyword,
+                parsedDuration),
+            cancellationToken).ConfigureAwait(false);
     }
 
     [McpServerTool(Name = "list_captures")]
@@ -137,10 +178,11 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
             cancellationToken);
 
     [McpServerTool(Name = "attach_etw_session")]
-    [Description("Attaches read-only to an existing realtime ETW session (not Vestigo-owned) allowed by Vestigo:AttachableSessions and decodes its events live. Read with read_capture; stop_capture only detaches and never stops the session.")]
-    public Task<OperationResult<CaptureStatus>> AttachEtwSession(
+    [Description("Attaches read-only to an existing realtime ETW session (not Vestigo-owned) allowed by Vestigo:AttachableSessions and decodes its events live. Read with read_capture; stop_capture only detaches and never stops the session. See get_trace_settings for allowed roots.")]
+    public async Task<OperationResult<CaptureStatus>> AttachEtwSession(
         [Description("Exact name of a running ETW session, as listed by list_etw_sessions.")] string sessionName,
         [Description("Optional PDB and TMF paths inside an allowed input root used to decode WPP messages.")] string[]? symbolPaths = null,
+        [Description("Installed .sys, .dll, or .exe paths; their matching PDBs are resolved and treated as symbolPaths.")] string[]? binaryPaths = null,
         [Description("Maximum attach duration, for example 00:05:00. Capped by server configuration.")] string? duration = null,
         CancellationToken cancellationToken = default)
     {
@@ -149,13 +191,23 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
         {
             if (!TimeSpan.TryParse(duration, out TimeSpan value))
             {
-                return Task.FromResult(OperationResult<CaptureStatus>.Fail("invalid_request", "Duration is not a valid timespan."));
+                return OperationResult<CaptureStatus>.Fail("invalid_request", "Duration is not a valid timespan.");
             }
 
             parsed = value;
         }
 
-        return captures.AttachAsync(new AttachSessionRequest(sessionName, symbolPaths ?? [], parsed), cancellationToken);
+        OperationResult<IReadOnlyList<string>> resolved = await symbols
+            .ResolveBinaryPdbPathsAsync(binaryPaths ?? [], cancellationToken)
+            .ConfigureAwait(false);
+        if (!resolved.Success)
+        {
+            return OperationResult<CaptureStatus>.Fail(resolved.ErrorCode!, resolved.Error!);
+        }
+
+        return await captures.AttachAsync(
+            new AttachSessionRequest(sessionName, [..symbolPaths ?? [], ..resolved.Value!], parsed),
+            cancellationToken).ConfigureAwait(false);
     }
 
     [McpServerTool(Name = "stop_capture")]

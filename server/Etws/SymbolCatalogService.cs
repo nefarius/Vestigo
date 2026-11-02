@@ -4,6 +4,7 @@ using Nefarius.Utilities.ETW.Deserializer.WPP.TMF;
 using Nefarius.Utilities.ETW.Symbols;
 
 using Vestigo.Configuration;
+using Vestigo.Files;
 using Vestigo.Security;
 
 namespace Vestigo.Etws;
@@ -23,10 +24,16 @@ public sealed record SymbolLoadDescription(int SourceCount, bool CanRewriteProvi
 /// <summary>
 ///     Inspects PDBs, loads decoding sources, and builds the configured symbol store.
 /// </summary>
-public sealed class SymbolCatalogService(VestigoOptions options, PathPolicy paths, IHttpClientFactory httpClientFactory)
+public sealed class SymbolCatalogService(
+    VestigoOptions options,
+    PathPolicy paths,
+    IHttpClientFactory httpClientFactory,
+    RootPolicy? roots = null)
 {
     private static readonly string[] SymbolExtensions = [".pdb", ".tmf"];
     private static readonly string[] EtlExtensions = [".etl"];
+    private static readonly string[] BinaryExtensions = [".sys", ".dll", ".exe"];
+    private readonly RootPolicy _roots = roots ?? new RootPolicy(options);
 
     public OperationResult<PdbInspection> InspectPdb(string pdbPath)
     {
@@ -136,8 +143,216 @@ public sealed class SymbolCatalogService(VestigoOptions options, PathPolicy path
             options.SymbolServer,
             options.SymbolCache,
             Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH"),
-            options.SymbolCache ?? VestigoPaths.DefaultSymbolCache,
-            options.AllowedInputRoots);
+            options.EffectiveSymbolCache,
+            options.EffectiveInputRoots);
 
     public HttpClient CreateSymbolClient() => httpClientFactory.CreateClient("symbols");
+
+    public TraceSettingsDescription GetSettings()
+    {
+        SymbolStoreConfiguration store = CreateStore();
+        string source = "none";
+        if (!string.IsNullOrWhiteSpace(options.SymbolServer))
+        {
+            source = "setting";
+        }
+        else if (!string.IsNullOrWhiteSpace(store.ServerUrl))
+        {
+            source = "environment";
+        }
+
+        RootDefinition? traces = _roots.Roots.FirstOrDefault(
+            root => string.Equals(root.Name, PathPolicy.TracesRootName, StringComparison.OrdinalIgnoreCase));
+        return new TraceSettingsDescription(
+            options.EffectiveInputRoots,
+            options.EffectiveOutputRoots,
+            options.UsesDefaultTraceRoots,
+            traces?.Name,
+            traces?.Path,
+            store.CacheDirectory,
+            RedactUserInfo(store.ServerUrl),
+            source,
+            new TraceAuthDescription(options.SymbolServerAuth.Scheme.ToString(), options.SymbolServerAuth.IsConfigured),
+            options.AttachableSessions,
+            options.MaxInputBytes,
+            options.MaxCaptureDuration,
+            options.MaxEvents,
+            options.MaxArchiveEntries);
+    }
+
+    public async Task<OperationResult<IReadOnlyList<BinarySymbolResolution>>> ResolveBinariesAsync(
+        IReadOnlyList<string> binaryPaths,
+        CancellationToken cancellationToken)
+    {
+        if (binaryPaths.Count == 0)
+        {
+            return OperationResult<IReadOnlyList<BinarySymbolResolution>>.Fail(
+                "invalid_request",
+                "At least one binary path is required.");
+        }
+
+        List<BinarySymbolResolution> results = [];
+        List<PdbMetaData> references = [];
+        List<int> referenceIndexes = [];
+        for (int i = 0; i < binaryPaths.Count; i++)
+        {
+            PathCheck check = RequireBinary(binaryPaths[i]);
+            if (!check.Success)
+            {
+                return OperationResult<IReadOnlyList<BinarySymbolResolution>>.Fail(check.ErrorCode!, check.Error!);
+            }
+
+            CodeViewReadResult codeView = PortableExecutableSymbols.TryReadCodeViewPdb(check.FullPath!);
+            if (codeView.Metadata is null)
+            {
+                results.Add(new BinarySymbolResolution(
+                    check.FullPath!,
+                    null,
+                    null,
+                    PdbResolutionOrigin.Unresolved.ToString(),
+                    "no_codeview",
+                    codeView.Diagnostic));
+                continue;
+            }
+
+            PdbMetaData metadata = codeView.Metadata.Value;
+            results.Add(new BinarySymbolResolution(
+                check.FullPath!,
+                new PdbReferenceDescription(metadata.PdbName, metadata.Guid, metadata.Age, metadata.IndexPrefix),
+                null,
+                PdbResolutionOrigin.Unresolved.ToString(),
+                null,
+                null));
+            references.Add(metadata);
+            referenceIndexes.Add(results.Count - 1);
+        }
+
+        if (references.Count > 0)
+        {
+            IReadOnlyList<ResolvedPdb> resolved = await SymbolStore
+                .ResolveAsync(references, CreateStore(), CreateSymbolClient(), cancellationToken)
+                .ConfigureAwait(false);
+            for (int i = 0; i < resolved.Count; i++)
+            {
+                ResolvedPdb pdb = resolved[i];
+                int index = referenceIndexes[i];
+                BinarySymbolResolution current = results[index];
+                results[index] = current with
+                {
+                    PdbPath = pdb.LocalPath,
+                    Origin = pdb.Origin.ToString(),
+                    Failure = pdb.Origin == PdbResolutionOrigin.Unresolved
+                        ? MapResolutionFailure(pdb)
+                        : null,
+                    Detail = pdb.Detail
+                };
+            }
+        }
+
+        return OperationResult<IReadOnlyList<BinarySymbolResolution>>.Ok(results);
+    }
+
+    public async Task<OperationResult<IReadOnlyList<string>>> ResolveBinaryPdbPathsAsync(
+        IReadOnlyList<string> binaryPaths,
+        CancellationToken cancellationToken)
+    {
+        if (binaryPaths.Count == 0)
+        {
+            return OperationResult<IReadOnlyList<string>>.Ok([]);
+        }
+
+        OperationResult<IReadOnlyList<BinarySymbolResolution>> resolved =
+            await ResolveBinariesAsync(binaryPaths, cancellationToken).ConfigureAwait(false);
+        if (!resolved.Success)
+        {
+            return OperationResult<IReadOnlyList<string>>.Fail(resolved.ErrorCode!, resolved.Error!);
+        }
+
+        List<string> paths = [];
+        foreach (BinarySymbolResolution item in resolved.Value!)
+        {
+            if (item.Failure == "symbol_auth_failed")
+            {
+                return OperationResult<IReadOnlyList<string>>.Fail(
+                    "symbol_auth_failed",
+                    item.Detail ?? "The symbol server rejected the request.");
+            }
+
+            if (item.Failure == "no_codeview")
+            {
+                return OperationResult<IReadOnlyList<string>>.Fail(
+                    "no_codeview",
+                    item.Detail ?? $"'{item.BinaryPath}' has no CodeView PDB identity.");
+            }
+
+            if (string.IsNullOrEmpty(item.PdbPath))
+            {
+                return OperationResult<IReadOnlyList<string>>.Fail(
+                    "symbols_unresolved",
+                    item.Detail ?? $"Could not resolve a PDB for '{item.BinaryPath}'.");
+            }
+
+            paths.Add(item.PdbPath);
+        }
+
+        return OperationResult<IReadOnlyList<string>>.Ok(paths);
+    }
+
+    internal static bool IsUnauthorized(PdbResolutionFailure failure, string? detail)
+    {
+        if (string.Equals(failure.ToString(), "Unauthorized", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return failure == PdbResolutionFailure.DownloadFailed && LooksLikeAuthStatus(detail);
+    }
+
+    internal static bool LooksLikeAuthStatus(string? detail) =>
+        detail is not null &&
+        (detail.Contains("401", StringComparison.Ordinal) ||
+         detail.Contains("403", StringComparison.Ordinal) ||
+         detail.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase) ||
+         detail.Contains("Forbidden", StringComparison.OrdinalIgnoreCase));
+
+    internal static string? RedactUserInfo(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
+        {
+            return url;
+        }
+
+        return string.IsNullOrEmpty(uri.UserInfo)
+            ? url
+            : new UriBuilder(uri) { UserName = "", Password = "" }.Uri
+                .GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
+    }
+
+    private PathCheck RequireBinary(string requestedPath)
+    {
+        PathCheck check = _roots.ResolveExisting(requestedPath, RootAccess.Read);
+        if (!check.Success)
+        {
+            return check;
+        }
+
+        if (!PathPolicy.HasExtension(check.FullPath!, BinaryExtensions))
+        {
+            return PathCheck.Fail(
+                "unsupported_extension",
+                $"'{Path.GetFileName(requestedPath)}' uses an unsupported extension.");
+        }
+
+        return FileAccessGuard.Validate(check);
+    }
+
+    private static string MapResolutionFailure(ResolvedPdb pdb)
+    {
+        if (IsUnauthorized(pdb.Failure, pdb.Detail))
+        {
+            return "symbol_auth_failed";
+        }
+
+        return pdb.Failure == PdbResolutionFailure.NotFoundOnServer ? "not_found" : "symbols_unresolved";
+    }
 }

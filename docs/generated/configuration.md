@@ -41,6 +41,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Logs:MaxTailLines` | `2000` |
 | `Logs:RipgrepPath` | `null` |
 | `Logs:RipgrepSha256` | `14231169855ec5205cf5a1b6f1db358ff4aed4247c86b69ce8aae647c77f6680` |
+| `MaxArchiveEntries` | `10000` |
 | `MaxCaptureDuration` | `01:00:00` |
 | `MaxConcurrentCaptures` | `4` |
 | `MaxConcurrentJobs` | `8` |
@@ -66,6 +67,11 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `SpoolRetention` | `1.00:00:00` |
 | `SymbolCache` | `null` |
 | `SymbolServer` | `null` |
+| `SymbolServerAuth:HeaderName` | `null` |
+| `SymbolServerAuth:Scheme` | `None` |
+| `SymbolServerAuth:Secret` | `null` |
+| `SymbolServerAuth:SecretFile` | `null` |
+| `SymbolServerAuth:Username` | `null` |
 | `System:AllowBootConfigurationChanges` | `false` |
 | `VolumeRootAccess` | `Read, Write, Execute` |
 | `VolumeRoots` | `None` |

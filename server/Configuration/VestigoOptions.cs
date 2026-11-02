@@ -71,6 +71,11 @@ public sealed class VestigoOptions
 
     public string? SymbolCache { get; set; }
 
+    public SymbolServerAuthOptions SymbolServerAuth { get; set; } = new();
+
+    /// <summary>Upper bound for entries extracted from one uploaded trace archive.</summary>
+    public int MaxArchiveEntries { get; set; } = 10_000;
+
     public long MaxInputBytes { get; set; } = 4L * 1024 * 1024 * 1024;
 
     public int MaxEvents { get; set; } = 1_000_000;
@@ -110,6 +115,63 @@ public sealed class VestigoOptions
     public DesktopOptions Desktop { get; set; } = new();
 
     public bool AuthenticationEnabled => ApiTokens.Count > 0;
+
+    /// <summary>True when <see cref="AllowedInputRoots" /> is empty and the built-in <c>traces</c> folder is used.</summary>
+    public bool UsesDefaultInputRoots => AllowedInputRoots.Count == 0;
+
+    /// <summary>True when <see cref="AllowedOutputRoots" /> is empty and the built-in <c>traces</c> folder is used.</summary>
+    public bool UsesDefaultOutputRoots => AllowedOutputRoots.Count == 0;
+
+    public bool UsesDefaultTraceRoots => UsesDefaultInputRoots && UsesDefaultOutputRoots;
+
+    public bool IsTraceEnabled =>
+        !Modules.TryGetValue("Trace", out ModuleSettings? settings) || settings.Enabled;
+
+    /// <summary>
+    ///     True when the built-in <c>traces</c> named root should be registered: Trace is enabled, input roots are
+    ///     empty, and no configured root already uses that name.
+    /// </summary>
+    public bool ShouldGenerateTracesRoot =>
+        IsTraceEnabled &&
+        UsesDefaultInputRoots &&
+        !Roots.Any(root => string.Equals(root.Name, "traces", StringComparison.OrdinalIgnoreCase));
+
+    public IReadOnlyList<string> EffectiveInputRoots =>
+        AllowedInputRoots.Count == 0 ? [VestigoPaths.TraceDirectory] : AllowedInputRoots;
+
+    public IReadOnlyList<string> EffectiveOutputRoots =>
+        AllowedOutputRoots.Count == 0 ? [VestigoPaths.TraceDirectory] : AllowedOutputRoots;
+
+    public string EffectiveSymbolCache =>
+        string.IsNullOrWhiteSpace(SymbolCache) ? VestigoPaths.DefaultSymbolCache : SymbolCache;
+
+    public bool ShouldGenerateTracesRootWarning =>
+        IsTraceEnabled &&
+        UsesDefaultInputRoots &&
+        Roots.Any(root => string.Equals(root.Name, "traces", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    ///     Returns a startup warning when a configured <c>traces</c> root replaces the built-in folder, otherwise null.
+    /// </summary>
+    public string? GetTracesRootOverrideWarning() =>
+        ShouldGenerateTracesRootWarning
+            ? "Vestigo:Roots already defines a 'traces' root; the built-in trace folder is not registered as a named root."
+            : null;
+
+    /// <summary>
+    ///     Returns a startup warning when <see cref="SymbolServer" /> has a query string, otherwise null.
+    /// </summary>
+    public string? GetSymbolServerQueryWarning()
+    {
+        if (string.IsNullOrWhiteSpace(SymbolServer) ||
+            !Uri.TryCreate(SymbolServer, UriKind.Absolute, out Uri? uri) ||
+            string.IsNullOrEmpty(uri.Query))
+        {
+            return null;
+        }
+
+        return "Vestigo:SymbolServer contains a query string. API keys in the URL are logged and returned to clients; use Vestigo:SymbolServerAuth instead.";
+    }
 
     /// <summary>
     ///     True when <see cref="ListenAddress" /> is an IP address other than loopback, such as 0.0.0.0 or ::.
@@ -162,10 +224,14 @@ public sealed class VestigoOptions
             throw new InvalidOperationException("Vestigo:ApiTokens cannot contain blank tokens.");
         }
 
-        if (MaxInputBytes < 1 || MaxEvents < 1 || MaxOutputBytes < 1 || MaxReadBatch < 1 || MaxConcurrentCaptures < 1)
+        if (MaxInputBytes < 1 || MaxEvents < 1 || MaxOutputBytes < 1 || MaxReadBatch < 1 || MaxConcurrentCaptures < 1 ||
+            MaxArchiveEntries < 1)
         {
             throw new InvalidOperationException("Vestigo size and count limits must be positive.");
         }
+
+        NormalizeSymbolServer();
+        SymbolServerAuth.Validate(SymbolServer);
 
         if (MaxCaptureDuration <= TimeSpan.Zero || SpoolRetention <= TimeSpan.Zero)
         {
@@ -260,5 +326,34 @@ public sealed class VestigoOptions
         {
             throw new InvalidOperationException("ETW buffer size and flush timer must be positive.");
         }
+    }
+
+    /// <summary>
+    ///     Converts <c>user:pass@</c> in <see cref="SymbolServer" /> to Basic authentication and strips it from the URL.
+    /// </summary>
+    internal void NormalizeSymbolServer()
+    {
+        if (string.IsNullOrWhiteSpace(SymbolServer) ||
+            !Uri.TryCreate(SymbolServer, UriKind.Absolute, out Uri? uri) ||
+            string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return;
+        }
+
+        if (SymbolServerAuth.Scheme != SymbolServerAuthScheme.None ||
+            !string.IsNullOrWhiteSpace(SymbolServerAuth.Secret) ||
+            !string.IsNullOrWhiteSpace(SymbolServerAuth.SecretFile))
+        {
+            throw new InvalidOperationException(
+                "Vestigo:SymbolServer contains userinfo and Vestigo:SymbolServerAuth is also set. Use only one.");
+        }
+
+        string[] parts = uri.UserInfo.Split(':', 2);
+        SymbolServerAuth.Scheme = SymbolServerAuthScheme.Basic;
+        SymbolServerAuth.Username = Uri.UnescapeDataString(parts[0]);
+        SymbolServerAuth.Secret = parts.Length == 2 ? Uri.UnescapeDataString(parts[1]) : "";
+
+        UriBuilder builder = new(uri) { UserName = "", Password = "" };
+        SymbolServer = builder.Uri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
     }
 }

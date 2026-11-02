@@ -15,9 +15,12 @@ public sealed class TraceModule : VestigoModule
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
-        services.AddHttpClient("symbols");
+        services.AddHttpClient("symbols")
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            .AddHttpMessageHandler(provider => new SymbolServerAuthHandler(provider.GetRequiredService<VestigoOptions>()));
         services.AddSingleton<SymbolCatalogService>();
         services.AddSingleton<OfflineConversionService>();
+        services.AddSingleton<TraceArchiveExtractor>();
         services.AddSingleton<IRealtimeTraceSessionFactory, EtwRealtimeTraceSessionFactory>();
         services.AddSingleton<CaptureManager>();
         services.AddHostedService(provider => provider.GetRequiredService<CaptureManager>());

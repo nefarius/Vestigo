@@ -14,12 +14,13 @@ Adds an existing driver service to a device class's upper or lower filter list.
 
 ## `attach_etw_session`
 
-Attaches read-only to an existing realtime ETW session (not Vestigo-owned) allowed by Vestigo:AttachableSessions and decodes its events live. Read with read_capture; stop_capture only detaches and never stops the session.
+Attaches read-only to an existing realtime ETW session (not Vestigo-owned) allowed by Vestigo:AttachableSessions and decodes its events live. Read with read_capture; stop_capture only detaches and never stops the session. See get_trace_settings for allowed roots.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `sessionName` | `string` | yes |  | Exact name of a running ETW session, as listed by list_etw_sessions. |
 | `symbolPaths` | `string[]` | no | `null` | Optional PDB and TMF paths inside an allowed input root used to decode WPP messages. |
+| `binaryPaths` | `string[]` | no | `null` | Installed .sys, .dll, or .exe paths; their matching PDBs are resolved and treated as symbolPaths. |
 | `duration` | `string` | no | `null` | Maximum attach duration, for example 00:05:00. Capped by server configuration. |
 
 ## `cancel_job`
@@ -45,7 +46,7 @@ Politely closes applications by posting WM_CLOSE to their top-level windows. Sel
 
 ## `convert_etl`
 
-Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access.
+Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access. See get_trace_settings for allowed roots.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -151,6 +152,16 @@ Enables a task. Requires Vestigo:ScheduledTasks:AllowChanges.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
+
+## `extract_trace_archive`
+
+Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory that is also inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `archivePath` | `string` | yes |  | Zip path inside an allowed input root. |
+| `destination` | `string` | yes |  | Destination directory inside the allowed input and output roots. |
+| `overwrite` | `bool` | no | `false` | Replace existing extracted files. |
 
 ## `fetch_file`
 
@@ -306,6 +317,12 @@ Returns the host Windows name, edition, display version (for example 24H2), vers
 
 No parameters.
 
+## `get_trace_settings`
+
+Returns the effective Trace roots, the traces named root, symbol cache and server (userinfo redacted), authentication scheme without the secret, attachable-session patterns, and size limits. See this tool before uploading symbols or starting a capture.
+
+No parameters.
+
 ## `get_upload_url`
 
 Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-WebRequest examples. Uploads need Write access to the root. When API tokens are configured the URL carries a one-time ticket bound to this path and these flags that expires and stops working after one successful upload, so the API token never has to be shared.
@@ -334,11 +351,11 @@ Runs the [DefaultUninstall] section of an INF inside a readable root (nefcon --i
 
 ## `inspect_wpp_pdb`
 
-Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root.
+Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root. See get_trace_settings for allowed roots.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `pdbPath` | `string` | yes |  | Absolute or rooted path to a .pdb file. |
+| `pdbPath` | `string` | yes |  | Absolute path, traces:relative path, or rooted path to a .pdb file. |
 
 ## `install_driver`
 
@@ -656,6 +673,14 @@ Removes driver store packages by original INF file name (for example mydriver.in
 | `classGuid` | `string` | no | `null` | Optional device class GUID to narrow the match. |
 | `serviceName` | `string` | no | `null` | Optional driver service name to narrow the match. |
 
+## `resolve_binary_symbols`
+
+Reads the CodeView PDB identity from each .sys, .dll, or .exe under a Files root with Read access, then resolves it through the symbol cache, trace input roots, and the configured symbol server. Returns per-binary origin, local PDB path, and diagnostics.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `binaryPaths` | `string[]` | yes |  | Absolute or root:relative paths of .sys, .dll, or .exe files. |
+
 ## `restart_device`
 
 Restarts a device (remove and re-enumerate) by instance ID, for example after installing a filter driver.
@@ -700,7 +725,7 @@ Starts a task now. It runs as the task's own principal (often SYSTEM), not as th
 
 ## `scan_etl_metadata`
 
-Lists distinct PDB identities referenced by one or more ETL files.
+Lists distinct PDB identities referenced by one or more ETL files. See get_trace_settings for allowed roots.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -771,12 +796,13 @@ Sets the kernel WHQL developer test mode policy that allows traditional cross-si
 
 ## `start_capture`
 
-Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them.
+Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them. See get_trace_settings for allowed roots.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `pdbPaths` | `string[]` | no | `null` | PDB paths whose WPP control GUIDs should be enabled. |
 | `tmfPaths` | `string[]` | no | `null` | TMF paths used only for message decoding. |
+| `binaryPaths` | `string[]` | no | `null` | Installed .sys, .dll, or .exe paths; their matching PDBs are resolved and treated as pdbPaths. |
 | `providerIds` | `string[]` | no | `null` | Additional ETW provider GUIDs. |
 | `level` | `string` | no | `Verbose` | Trace level: None, Critical, Error, Warning, Information, or Verbose. |
 | `matchAnyKeyword` | `string` | no | `null` | Match-any keyword bitmask. Omit for all keywords. |
@@ -938,7 +964,7 @@ Silently uninstalls a machine-scope program as a job. MSI uses msiexec /x /qn; E
 
 ## `validate_decoding_sources`
 
-Loads PDB and TMF files and reports whether they can decode WPP messages.
+Loads PDB and TMF files and reports whether they can decode WPP messages. See get_trace_settings for allowed roots.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
