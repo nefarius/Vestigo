@@ -106,14 +106,7 @@ public class RepositoryBoundaryTests
     [Fact]
     public void ServerRuntimeConfig_AllowsMinorRollForwardOnAspNetCore10()
     {
-        DirectoryInfo testOutput = new(AppContext.BaseDirectory);
-        string path = Path.Combine(
-            FindRepositoryRoot(),
-            "server",
-            "bin",
-            testOutput.Parent!.Name,
-            testOutput.Name,
-            "Vestigo.runtimeconfig.json");
+        string path = ServerRuntimeConfigPath();
         Assert.True(File.Exists(path), path);
 
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
@@ -327,6 +320,16 @@ public class RepositoryBoundaryTests
         Assert.Contains("Benjamin H\\u246?glinger-Stelzer", rtf, StringComparison.Ordinal);
         Assert.Contains("THE SOFTWARE IS PROVIDED \"AS IS\"", license, StringComparison.Ordinal);
         Assert.Contains("THE SOFTWARE IS PROVIDED \"AS IS\"", rtf, StringComparison.Ordinal);
+    }
+
+    private static string ServerRuntimeConfigPath()
+    {
+        string[] segments = AppContext.BaseDirectory.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+        int bin = Array.FindLastIndex(segments, segment => segment.Equals("bin", StringComparison.OrdinalIgnoreCase));
+        Assert.True(bin >= 0 && bin < segments.Length - 1, AppContext.BaseDirectory);
+        return Path.Combine([FindRepositoryRoot(), "server", "bin", .. segments[(bin + 1)..], "Vestigo.runtimeconfig.json"]);
     }
 
     private static string FindRepositoryRoot()
