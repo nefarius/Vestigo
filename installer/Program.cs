@@ -86,7 +86,7 @@ static class Program
             UpdaterRegistry registry = UpdaterRegistry.Read(updaterConfigurationPath);
             Version version = ReadProductVersion(options.ServerPublishDir);
 
-            Feature feature = new(ModuleSelection.ServerFeature, "Vestigo MCP server for WPP trace capture and decoding.");
+            Feature feature = new(ModuleSelection.ServerFeature, "Vestigo MCP server for driver and application development.");
             Feature updaterFeature = new(
                 UpdaterFeature,
                 "Installs the Vestigo updater and registers it for the installing user.")
@@ -126,7 +126,7 @@ static class Program
                     file.ServiceInstaller = new ServiceInstaller(WindowsServiceName)
                     {
                         DisplayName = "Vestigo MCP Server",
-                        Description = "Localhost MCP server for offline and realtime WPP trace capture and decoding.",
+                        Description = "Windows MCP server for driver and application development.",
                         Start = SvcStartType.auto,
                         StartOn = SvcEvent.Install,
                         StopOn = SvcEvent.InstallUninstall_Wait,
