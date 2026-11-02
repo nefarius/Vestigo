@@ -5,7 +5,7 @@
 ![Windows only](https://img.shields.io/badge/Windows-10%2B-red)
 [![Assisted by Cursor AI](https://img.shields.io/badge/Assisted%20by-Cursor%20AI-8B5CF6?style=flat)](https://cursor.com/)
 
-Vestigo is a Windows MCP server for driver and application development. It hosts a stateless Streamable HTTP endpoint at `/mcp` and runs as a Windows service. Besides offline WPP conversion and realtime ETW capture, it can transfer files, inspect and control processes and services, list, inspect, and run scheduled tasks, inventory and uninstall software, manage devices and drivers, list windows and displays and take gated screenshots, list audio endpoints and switch the default device, inspect Windows version and boot-security state with gated test-signing and WHQL developer-mode changes, capture Win32 debug output, read and set environment variables, tail text logs, query event logs, run background jobs, and install the Visual Studio remote debugger.
+Vestigo is a Windows MCP server for driver and application development. It hosts a stateless Streamable HTTP endpoint at `/mcp` and runs as a Windows service. Besides offline WPP conversion and realtime ETW capture, it can transfer files, inspect and control processes and services, list, inspect, and run scheduled tasks, inventory and uninstall software, manage devices and drivers, list windows and displays and take gated screenshots, list audio endpoints and switch the default device, inspect Windows version and boot-security state with gated test-signing and WHQL developer-mode changes, capture Win32 debug output, read and set environment variables, tail and regex-search text logs on the machine, query event logs, run background jobs, and install the Visual Studio remote debugger.
 
 It is remote-capable. A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` uses the repository `appsettings.json`, which defaults to loopback without tokens. WPP decoding uses [Nefarius.Utilities.ETW](https://github.com/nefarius/Nefarius.Utilities.ETW) with PDB or TMF files.
 
@@ -69,7 +69,7 @@ wix extension add -g WixToolset.Firewall.wixext/5.0.2
 .\build.ps1 BuildInstaller
 ```
 
-`BuildInstaller` needs network access: it downloads the pinned signed [Vicius](https://github.com/nefarius/vicius) 1.20.1 x64 updater, the pinned signed [nefcon](https://github.com/nefarius/nefcon) 1.21.0 CLI, and the pinned [DebugView++](https://github.com/CobaltFusion/DebugViewPP) 1.30.0.0 `DebugViewConsole.exe`. It verifies each archive or asset hash (and the Vicius and nefcon Authenticode signatures) before packaging them with the server. nefcon and DebugViewConsole are installed under `tools\`.
+`BuildInstaller` needs network access: it downloads the pinned signed [Vicius](https://github.com/nefarius/vicius) 1.20.1 x64 updater, the pinned signed [nefcon](https://github.com/nefarius/nefcon) 1.21.0 CLI, the pinned [DebugView++](https://github.com/CobaltFusion/DebugViewPP) 1.30.0.0 `DebugViewConsole.exe`, and the pinned [ripgrep](https://github.com/BurntSushi/ripgrep) 15.2.0 x64 archive. It verifies each archive or asset hash (and the Vicius and nefcon Authenticode signatures) before packaging them with the server. nefcon, DebugViewConsole and `rg.exe` are installed under `tools\`.
 
 The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authentication pages choose localhost or any address and whether to require an API token (any address with a token is the default) and write those choices to the ProgramData `appsettings.json`. File-system pages then choose `VolumeRoots` and `VolumeRootAccess` (fixed volumes with Read, Write, and Execute by default). A feature tree selects automatic updates (installed and registered for the installing user by default; deselect to skip) and the modules to enable, independent of the listen mode (a no-token server with powerful modules is allowed and logs a startup warning); see [docs/windows-service.md](docs/windows-service.md) for the silent-install properties. A local build is unsigned. Tagging `v*` signs `Vestigo.exe`, `Vestigo.dll`, and the MSI through SignRelay, then publishes `updates.json` and `updates.json.minisig` beside the MSI on Buildbot. If `LICENSE` changes, update `installer\License.rtf` as well. Third-party terms for the updater, nefcon, and DebugView++ are in [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt).
 
@@ -87,6 +87,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - Silent uninstall covers MSI, Burn, Inno Setup, NSIS and entries that publish a `QuietUninstallString`. Other installers are refused, per-user entries cannot be uninstalled, and AppX/MSIX packages are not listed.
 - Scheduled task tools work on the local machine only. They cannot create or edit tasks, and task history needs the `Microsoft-Windows-TaskScheduler/Operational` channel to be enabled.
 - Audio default-device switching uses the undocumented `IPolicyConfig` interface and may fail on a future Windows release. Per-app device overrides are not shown or changed. The peak meter is a short sample, not a continuous monitor. The service context does not see user audio sessions.
+- `search_text` runs the bundled ripgrep with a bounded result count, line length, run time and concurrency, so a search can stop early with `truncated` or `timedOut` set. It does not follow links or junctions, skips binary files, and decodes only UTF-8 and UTF-16 with a byte order mark. It looks at files as they are on disk and cannot follow a growing file; use `read_text_file_since` for that.
 - Vestigo never triggers a reboot; tools report or schedule reboot-time work.
 
 ## Documentation
@@ -118,3 +119,4 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - [Vicius](https://github.com/nefarius/vicius)
 - [nefcon](https://github.com/nefarius/nefcon)
 - [DebugView++](https://github.com/CobaltFusion/DebugViewPP)
+- [ripgrep](https://github.com/BurntSushi/ripgrep)

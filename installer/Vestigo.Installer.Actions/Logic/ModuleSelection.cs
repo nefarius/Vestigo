@@ -93,7 +93,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Files", "Files", "Root-confined file tools plus authenticated PUT/GET transfer endpoints.", true, null),
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
             new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.", true, null),
-            new ModuleDefinition("Logs", "Logs", "Tail and incremental reads of text log files.", true, null),
+            new ModuleDefinition("Logs", "Logs", "Tail, incremental reads and regex search of text log files.", true, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
             new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop. Screenshots are a separate child feature.", false, null),
             new ModuleDefinition(DesktopScreenshots, "Screenshots", "Allow capturing PNG screenshots of the console user's desktop, one display, one window, or a region (Vestigo:Desktop:AllowScreenshots). Discloses screen contents.", false, "Desktop"),
