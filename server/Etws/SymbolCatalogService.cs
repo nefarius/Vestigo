@@ -304,15 +304,9 @@ public sealed class SymbolCatalogService(
         return OperationResult<IReadOnlyList<string>>.Ok(pdbPaths);
     }
 
-    internal static bool IsUnauthorized(PdbResolutionFailure failure, string? detail)
-    {
-        if (string.Equals(failure.ToString(), "Unauthorized", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        return failure == PdbResolutionFailure.DownloadFailed && LooksLikeAuthStatus(detail);
-    }
+    internal static bool IsUnauthorized(PdbResolutionFailure failure, string? detail) =>
+        failure == PdbResolutionFailure.Unauthorized ||
+        (failure == PdbResolutionFailure.DownloadFailed && LooksLikeAuthStatus(detail));
 
     internal static bool LooksLikeAuthStatus(string? detail) =>
         detail is not null &&

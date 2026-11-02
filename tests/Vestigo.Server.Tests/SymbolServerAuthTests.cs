@@ -164,6 +164,7 @@ public class SymbolServerAuthTests
     {
         Assert.True(SymbolCatalogService.LooksLikeAuthStatus("Response status code does not indicate success: 401 (Unauthorized)."));
         Assert.True(SymbolCatalogService.LooksLikeAuthStatus("403 Forbidden"));
+        Assert.True(SymbolCatalogService.IsUnauthorized(PdbResolutionFailure.Unauthorized, "403 Forbidden"));
         Assert.True(SymbolCatalogService.IsUnauthorized(PdbResolutionFailure.DownloadFailed, "401 Unauthorized"));
         Assert.True(SymbolCatalogService.LooksLikeAuthStatus("Unauthorized"));
         Assert.True(SymbolCatalogService.LooksLikeAuthStatus("Forbidden"));
