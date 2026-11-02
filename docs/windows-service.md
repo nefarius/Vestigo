@@ -4,6 +4,7 @@ The MSI installs an x64, per-machine, framework-dependent service. It requires t
 
 - Service name: `Vestigo`
 - Display name: `Vestigo MCP Server`
+- Description: `Windows MCP server for driver and application development.`
 - Start: automatic, including on install
 - Stop and remove: uninstall
 
