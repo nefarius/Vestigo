@@ -209,7 +209,7 @@ static class Program
                 "--install --silent --override-success-code 0",
                 When.After,
                 Step.InstallFinalize,
-                new Condition("NOT (REMOVE~=\"ALL\") AND &Updater=3")));
+                new Condition("NOT (REMOVE~=\"ALL\") AND &Updater=3 AND UserSID<>\"S-1-5-18\"")));
             project.AddAction(UpdaterAction(
                 "DeregisterVestigoUpdater",
                 "--uninstall --silent --override-success-code 0",

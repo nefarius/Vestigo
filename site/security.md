@@ -35,6 +35,7 @@ Even after a module is on, these writes stay off until their own setting is true
 - `Desktop:AllowScreenshots`
 - `Audio:AllowSetDefault`
 - `System:AllowBootConfigurationChanges`
+- `Updates:AllowSelfUpdate`
 
 Attaching to someone else's ETW session stays off until you list the session name in `AttachableSessions`.
 

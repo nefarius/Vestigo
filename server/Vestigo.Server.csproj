@@ -27,9 +27,11 @@
     </PackageReference>
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <PackageReference Include="NAudio.Wasapi" />
+    <PackageReference Include="minisign-net" />
     <PackageReference Include="Nefarius.Utilities.DeviceManagement" />
     <PackageReference Include="Nefarius.Utilities.ETW" />
     <PackageReference Include="Nefarius.Utilities.WindowsVersion" />
+    <PackageReference Include="Nefarius.Vicius.Abstractions" />
     <PackageReference Include="Serilog.AspNetCore" />
   </ItemGroup>
 

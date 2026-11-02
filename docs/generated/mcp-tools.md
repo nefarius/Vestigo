@@ -31,6 +31,12 @@ Requests cancellation of a running job. Process jobs kill their process tree.
 | --- | --- | --- | --- | --- |
 | `jobId` | `string` | yes |  | Job identifier. |
 
+## `check_for_updates`
+
+Fetches the signed Buildbot updates.json, verifies updates.json.minisig with the Nefarius minisign public key, and compares the newest release to the installed Vestigo version (HKLM Version when the updater feature is installed, otherwise the entry assembly). Also reports whether the packaged updater is present, whether self-update is allowed, and the last start_self_update attempt.
+
+No parameters.
+
 ## `close_app`
 
 Politely closes applications by posting WM_CLOSE to their top-level windows. Select by pid, processName and/or titleRegex (filters combine: pid or name, narrowed by title). Waits gracefulTimeoutSeconds, then reports which processes are still alive; it never kills them. context 'interactive' (default) acts on the console user's desktop.
@@ -836,6 +842,14 @@ Starts msvsmon.exe with /nostatus /silent /nofirewallwarn, /port, /timeout and t
 | `allowUsers` | `string[]` | no | `null` | Windows users allowed to connect (DOMAIN\user or user@domain), each passed as /allow. Only with auth 'windows'. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: run with the elevated linked token so elevated processes can be debugged. |
+
+## `start_self_update`
+
+Launches the packaged Vicius updater with --silent-update so it downloads and installs the signed Buildbot MSI without UI. Requires Vestigo:Updates:AllowSelfUpdate and the Automatic updates feature. The updater copies itself to TEMP and exits 207 before the MSI stops this service; the MCP session will drop. dryRun returns the planned command only.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `dryRun` | `bool` | no | `false` | Return the planned updater command without running it. |
 
 ## `start_service`
 

@@ -34,6 +34,9 @@ public class ModuleSelectionTests
         Assert.Equal("System", ModuleSelection.Find(ModuleSelection.BootConfigurationChanges)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.DesktopScreenshots]);
         Assert.Equal("Desktop", ModuleSelection.Find(ModuleSelection.DesktopScreenshots)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.SelfUpdate]);
+        Assert.Equal("Updates", ModuleSelection.Find(ModuleSelection.SelfUpdate)?.Parent);
+        Assert.True(ModuleSelection.Defaults()["Updates"]);
     }
 
     private static void VestigoModuleNames()
@@ -71,7 +74,9 @@ public class ModuleSelectionTests
             ["AudioSetDefault"] = true,
             ["BootConfigurationChanges"] = true,
             ["Desktop"] = true,
-            ["DesktopScreenshots"] = true
+            ["DesktopScreenshots"] = true,
+            ["Updates"] = true,
+            ["SelfUpdate"] = true
         };
 
         string merged = ListenSettings.Merge(existing, Open(), states);
@@ -85,6 +90,8 @@ public class ModuleSelectionTests
         Assert.True(read["BootConfigurationChanges"]);
         Assert.True(read["Desktop"]);
         Assert.True(read["DesktopScreenshots"]);
+        Assert.True(read["Updates"]);
+        Assert.True(read["SelfUpdate"]);
         Assert.Contains("\"SymbolServer\"", merged);
         Assert.Contains("\"Extra\": 1", merged);
         Assert.Contains("\"Serilog\"", merged);
@@ -92,6 +99,7 @@ public class ModuleSelectionTests
         Assert.Contains("\"AllowSetDefault\": true", merged);
         Assert.Contains("\"AllowBootConfigurationChanges\": true", merged);
         Assert.Contains("\"AllowScreenshots\": true", merged);
+        Assert.Contains("\"AllowSelfUpdate\": true", merged);
     }
 
     [Fact]
