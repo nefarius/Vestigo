@@ -26,6 +26,8 @@ public class ModuleSelectionTests
         }
 
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SoftwareUninstall]);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.ScheduledTaskChanges]);
+        Assert.Equal("ScheduledTasks", ModuleSelection.Find(ModuleSelection.ScheduledTaskChanges)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.AudioSetDefault]);
         Assert.Equal("Audio", ModuleSelection.Find(ModuleSelection.AudioSetDefault)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.BootConfigurationChanges]);

@@ -50,6 +50,8 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `RemoteDebugger:ExtraSearchPaths` | `empty` |
 | `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` |
 | `Roots` | `empty` |
+| `ScheduledTasks:AllowChanges` | `false` |
+| `ScheduledTasks:ProtectedPaths` | `\Microsoft\Windows\` |
 | `Services:ProtectedNames` | `Vestigo, RpcSs, DcomLaunch, PlugPlay, Power, LSM, SamSs` |
 | `Software:AllowUninstall` | `false` |
 | `Software:MaxUninstallDuration` | `00:30:00` |

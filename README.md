@@ -5,7 +5,7 @@
 ![Windows only](https://img.shields.io/badge/Windows-10%2B-red)
 [![Assisted by Cursor AI](https://img.shields.io/badge/Assisted%20by-Cursor%20AI-8B5CF6?style=flat)](https://cursor.com/)
 
-Vestigo is a Windows MCP server for driver and application development. It hosts a stateless Streamable HTTP endpoint at `/mcp` and runs as a Windows service. Besides offline WPP conversion and realtime ETW capture, it can transfer files, inspect and control processes and services, inventory and uninstall software, manage devices and drivers, list windows and displays and take gated screenshots, list audio endpoints and switch the default device, inspect Windows version and boot-security state with gated test-signing and WHQL developer-mode changes, capture Win32 debug output, read and set environment variables, tail text logs, query event logs, run background jobs, and install the Visual Studio remote debugger.
+Vestigo is a Windows MCP server for driver and application development. It hosts a stateless Streamable HTTP endpoint at `/mcp` and runs as a Windows service. Besides offline WPP conversion and realtime ETW capture, it can transfer files, inspect and control processes and services, list, inspect, and run scheduled tasks, inventory and uninstall software, manage devices and drivers, list windows and displays and take gated screenshots, list audio endpoints and switch the default device, inspect Windows version and boot-security state with gated test-signing and WHQL developer-mode changes, capture Win32 debug output, read and set environment variables, tail text logs, query event logs, run background jobs, and install the Visual Studio remote debugger.
 
 It is remote-capable. A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` uses the repository `appsettings.json`, which defaults to loopback without tokens. WPP decoding uses [Nefarius.Utilities.ETW](https://github.com/nefarius/Nefarius.Utilities.ETW) with PDB or TMF files.
 
@@ -46,7 +46,7 @@ The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopba
 - Tokens are compared by SHA-256 digest and are never written to logs.
 - Trace ETL, PDB, TMF, and conversion-output paths stay inside `AllowedInputRoots` or `AllowedOutputRoots`.
 - File, log, process, and device paths use named `Vestigo:Roots` (and optional `VolumeRoots`) with `Read`, `Write`, and `Execute`.
-- `Processes`, `Devices`, `RemoteDebugger`, `Desktop`, `Audio`, and `DebugOutput` stay off until their module is enabled. Silent uninstall, screenshots, default-audio switching, and boot-configuration writes have separate gates (`Software:AllowUninstall`, `Desktop:AllowScreenshots`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`). Enabling those without tokens is allowed and logs a startup `SECURITY WARNING`.
+- `Processes`, `Devices`, `RemoteDebugger`, `Desktop`, `Audio`, and `DebugOutput` stay off until their module is enabled. Silent uninstall, scheduled-task changes, screenshots, default-audio switching, and boot-configuration writes have separate gates (`Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Desktop:AllowScreenshots`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`). Enabling those without tokens is allowed and logs a startup `SECURITY WARNING`.
 - Output files are not overwritten unless the tool argument says so.
 - Event count, input size, output size, capture duration, job output, and spool retention are bounded.
 
@@ -85,6 +85,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - WPP enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` remain numeric in the upstream decoder.
 - Symbol resolution uses the released `Nefarius.Utilities.ETW` package.
 - Silent uninstall covers MSI, Burn, Inno Setup, NSIS and entries that publish a `QuietUninstallString`. Other installers are refused, per-user entries cannot be uninstalled, and AppX/MSIX packages are not listed.
+- Scheduled task tools work on the local machine only. They cannot create or edit tasks, and task history needs the `Microsoft-Windows-TaskScheduler/Operational` channel to be enabled.
 - Audio default-device switching uses the undocumented `IPolicyConfig` interface and may fail on a future Windows release. Per-app device overrides are not shown or changed. The peak meter is a short sample, not a continuous monitor. The service context does not see user audio sessions.
 - Vestigo never triggers a reboot; tools report or schedule reboot-time work.
 

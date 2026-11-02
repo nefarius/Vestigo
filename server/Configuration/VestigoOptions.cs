@@ -5,6 +5,7 @@ using Vestigo.Audio;
 using Vestigo.DebugOutput;
 using Vestigo.Desktop;
 using Vestigo.Devices;
+using Vestigo.ScheduledTasks;
 using Vestigo.Services;
 using Vestigo.Software;
 using Vestigo.SystemInfo;
@@ -51,6 +52,8 @@ public sealed class VestigoOptions
     public DevicesOptions Devices { get; set; } = new();
 
     public ServicesOptions Services { get; set; } = new();
+
+    public ScheduledTasksOptions ScheduledTasks { get; set; } = new();
 
     public SoftwareOptions Software { get; set; } = new();
 
@@ -185,6 +188,7 @@ public sealed class VestigoOptions
 
         Devices.Validate();
         Services.Validate();
+        ScheduledTasks.Validate();
         Software.Validate();
         System.Validate();
 
