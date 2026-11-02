@@ -36,6 +36,29 @@ public class PathPolicyTests
     }
 
     [Fact]
+    public void RequireWritableDirectory_AcceptsOutputRootWhenInputIsDisjoint()
+    {
+        string input = Directory.CreateTempSubdirectory("vestigo-in").FullName;
+        string output = Directory.CreateTempSubdirectory("vestigo-out").FullName;
+        PathPolicy policy = new(new VestigoOptions
+        {
+            AllowedInputRoots = [input],
+            AllowedOutputRoots = [output]
+        });
+        string destination = Path.Combine(output, "extract");
+        string fromInput = Path.Combine(input, "extract");
+
+        PathCheck dest = policy.RequireWritableDirectory(destination);
+        PathCheck rejected = policy.RequireWritableDirectory(fromInput);
+
+        Assert.True(dest.Success, dest.Error);
+        Assert.True(Directory.Exists(dest.FullPath));
+        Assert.Equal(Path.GetFullPath(destination), dest.FullPath);
+        Assert.Equal("outside_root", rejected.ErrorCode);
+        Assert.False(Directory.Exists(fromInput));
+    }
+
+    [Fact]
     public void RequireOutputFile_RejectsOverwriteByDefault()
     {
         string root = Directory.CreateTempSubdirectory("vestigo-out").FullName;

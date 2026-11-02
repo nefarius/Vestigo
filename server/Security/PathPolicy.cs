@@ -84,17 +84,11 @@ public sealed class PathPolicy(VestigoOptions options, RootPolicy? roots = null)
     }
 
     /// <summary>
-    ///     Resolves a directory that must lie in both the effective input and output roots, creating it when missing.
+    ///     Resolves a directory that must lie in the effective output roots, creating it when missing.
     /// </summary>
     public PathCheck RequireWritableDirectory(string requestedPath)
     {
-        PathCheck input = LocateRequested(requestedPath, options.EffectiveInputRoots, "input", RootAccess.Write);
-        if (!input.Success)
-        {
-            return input;
-        }
-
-        PathCheck output = Locate(input.FullPath!, options.EffectiveOutputRoots, "output");
+        PathCheck output = LocateRequested(requestedPath, options.EffectiveOutputRoots, "output", RootAccess.Write);
         if (!output.Success)
         {
             return output;

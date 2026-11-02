@@ -355,10 +355,7 @@ public sealed class SymbolCatalogService(
             return url;
         }
 
-        return string.IsNullOrEmpty(uri.UserInfo)
-            ? url
-            : new UriBuilder(uri) { UserName = "", Password = "" }.Uri
-                .GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped);
+        return new UriBuilder(uri) { UserName = "", Password = "" }.Uri.GetLeftPart(UriPartial.Path);
     }
 
     private PathCheck RequireBinary(string requestedPath)

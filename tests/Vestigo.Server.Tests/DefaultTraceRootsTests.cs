@@ -137,6 +137,53 @@ public sealed class DefaultTraceRootsTests : IDisposable
     }
 
     [Fact]
+    public async Task HealthCheck_ProbesTracesWhenEitherRootListUsesDefault()
+    {
+        string custom = Directory.CreateTempSubdirectory("vestigo-custom-root").FullName;
+
+        HealthCheckResult inputDefault = await new VestigoHealthCheck(new VestigoOptions
+        {
+            AllowedOutputRoots = [custom]
+        }).CheckHealthAsync(new HealthCheckContext());
+        HealthCheckResult outputDefault = await new VestigoHealthCheck(new VestigoOptions
+        {
+            AllowedInputRoots = [custom]
+        }).CheckHealthAsync(new HealthCheckContext());
+
+        Assert.Equal(HealthStatus.Healthy, inputDefault.Status);
+        Assert.Equal(HealthStatus.Healthy, outputDefault.Status);
+
+        string traces = VestigoPaths.TraceDirectory;
+        Directory.Delete(traces, recursive: true);
+        File.WriteAllText(traces, "not-a-dir");
+        try
+        {
+            HealthCheckResult probed = await new VestigoHealthCheck(new VestigoOptions
+            {
+                AllowedInputRoots = [custom]
+            }).CheckHealthAsync(new HealthCheckContext());
+            HealthCheckResult skipped = await new VestigoHealthCheck(new VestigoOptions
+            {
+                AllowedInputRoots = [custom],
+                AllowedOutputRoots = [custom]
+            }).CheckHealthAsync(new HealthCheckContext());
+
+            Assert.Equal(HealthStatus.Unhealthy, probed.Status);
+            Assert.Contains("Trace directory is not writable", probed.Description, StringComparison.Ordinal);
+            Assert.Equal(HealthStatus.Healthy, skipped.Status);
+        }
+        finally
+        {
+            if (File.Exists(traces))
+            {
+                File.Delete(traces);
+            }
+
+            Directory.CreateDirectory(traces);
+        }
+    }
+
+    [Fact]
     public void GetTraceSettings_ReportsDefaultsAndRedactsUserInfo()
     {
         VestigoOptions options = new()
@@ -158,6 +205,22 @@ public sealed class DefaultTraceRootsTests : IDisposable
         Assert.True(settings.Auth.Configured);
         Assert.DoesNotContain("pass", settings.SymbolServer, StringComparison.Ordinal);
         Assert.Equal(10_000, settings.MaxArchiveEntries);
+    }
+
+    [Fact]
+    public void GetTraceSettings_RemovesQueryStringFromReportedUrl()
+    {
+        VestigoOptions options = new()
+        {
+            SymbolServer = "https://symbols.example/download/symbols?apiKey=hidden"
+        };
+        SymbolCatalogService symbols = new(options, new PathPolicy(options, new RootPolicy(options)), new UnusedHttp());
+
+        TraceSettingsDescription settings = symbols.GetSettings();
+
+        Assert.Equal("https://symbols.example/download/symbols?apiKey=hidden", symbols.CreateStore().ServerUrl);
+        Assert.Equal("https://symbols.example/download/symbols", settings.SymbolServer);
+        Assert.DoesNotContain("hidden", settings.SymbolServer, StringComparison.Ordinal);
     }
 
     public void Dispose()

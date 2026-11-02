@@ -4,7 +4,7 @@ Point an MCP client at `http://127.0.0.1:5098/mcp` (Streamable HTTP). When `ApiT
 
 ## Offline
 
-`get_trace_settings` returns the effective input and output roots, whether the built-in `traces` folder is in use, the `traces` named root, the symbol cache, the symbol server URL (userinfo stripped) and where it came from (`setting`, `environment`, or `none`), whether symbol-server authentication is configured (scheme only), `AttachableSessions`, and the size limits. It never returns tokens or the symbol-server secret. Call it before uploading symbols or starting a capture.
+`get_trace_settings` returns the effective input and output roots, whether the built-in `traces` folder is in use, the `traces` named root, the symbol cache, the symbol server URL (userinfo and query string removed) and where it came from (`setting`, `environment`, or `none`), whether symbol-server authentication is configured (scheme only), `AttachableSessions`, and the size limits. It never returns tokens or the symbol-server secret. Call it before uploading symbols or starting a capture.
 
 `inspect_wpp_pdb` returns WPP control GUIDs, names, and flag bits from one PDB.
 
@@ -14,7 +14,7 @@ Point an MCP client at `http://127.0.0.1:5098/mcp` (Streamable HTTP). When `ApiT
 
 `resolve_binary_symbols` reads the CodeView (RSDS) identity from each `.sys`, `.dll`, or `.exe` that lies in a Files root with `Read` access, then resolves that PDB through the symbol cache, the trace input roots, and the configured symbol server. Each result reports the identity, origin (`Cache`, `LocalSearch`, `SymbolServer`, or `Unresolved`), local PDB path, and a failure code when resolution missed (`no_codeview`, `not_found`, `symbols_unresolved`, or `symbol_auth_failed`).
 
-`extract_trace_archive` extracts `.pdb`, `.tmf`, and `.etl` entries from a zip inside an allowed input root into a directory that is also inside the allowed output roots (the built-in `traces` folder when defaults are in use). Other entries are skipped. Absolute paths, `..`, drive letters, and alternate-data-stream names are refused (`unsafe_entry`). Entry count, uncompressed size, and a 200:1 compression ratio are capped. Existing files are kept unless `overwrite` is true.
+`extract_trace_archive` extracts `.pdb`, `.tmf`, and `.etl` entries from a zip inside an allowed input root into a directory inside the allowed output roots (the built-in `traces` folder when defaults are in use). Other entries are skipped. Absolute paths, `..`, drive letters, and alternate-data-stream names are refused (`unsafe_entry`). Entry count, uncompressed size, and a 200:1 compression ratio are capped. Existing files are kept unless `overwrite` is true.
 
 `convert_etl` writes `json` or `ndjson` under an allowed output root. The tool result is a summary: path, event count, bytes, missing WPP formats, truncation, and symbol diagnostics. It does not return the trace payload. When the output file also lies in a root with `Read` access it adds a `download` link (a one-time ticket when `ApiTokens` is set); fetch the file with it instead of an API token. A 401 or 403 from the symbol server fails the conversion with `symbol_auth_failed`.
 

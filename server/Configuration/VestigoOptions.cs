@@ -170,7 +170,7 @@ public sealed class VestigoOptions
             return null;
         }
 
-        return "Vestigo:SymbolServer contains a query string. API keys in the URL are logged and returned to clients; use Vestigo:SymbolServerAuth instead.";
+        return "Vestigo:SymbolServer contains a query string. API keys in the URL may be logged; use Vestigo:SymbolServerAuth instead.";
     }
 
     /// <summary>

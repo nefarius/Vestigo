@@ -18,7 +18,7 @@ public sealed class TraceTools(
     Vestigo.Files.FileLinkIssuer? links = null)
 {
     [McpServerTool(Name = "get_trace_settings")]
-    [Description("Returns the effective Trace roots, the traces named root, symbol cache and server (userinfo redacted), authentication scheme without the secret, attachable-session patterns, and size limits. See this tool before uploading symbols or starting a capture.")]
+    [Description("Returns the effective Trace roots, the traces named root, symbol cache and server (userinfo and query string removed), authentication scheme without the secret, attachable-session patterns, and size limits. See this tool before uploading symbols or starting a capture.")]
     public TraceSettingsDescription GetTraceSettings() => symbols.GetSettings();
 
     [McpServerTool(Name = "inspect_wpp_pdb")]
@@ -47,10 +47,10 @@ public sealed class TraceTools(
         symbols.ResolveBinariesAsync(binaryPaths ?? [], cancellationToken);
 
     [McpServerTool(Name = "extract_trace_archive")]
-    [Description("Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory that is also inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.")]
+    [Description("Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.")]
     public OperationResult<TraceArchiveExtraction> ExtractTraceArchive(
         [Description("Zip path inside an allowed input root.")] string archivePath,
-        [Description("Destination directory inside the allowed input and output roots.")] string destination,
+        [Description("Destination directory inside the allowed output roots.")] string destination,
         [Description("Replace existing extracted files.")] bool overwrite = false) =>
         archives.Extract(archivePath, destination, overwrite);
 

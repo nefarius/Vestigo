@@ -44,7 +44,7 @@ File, log, process, and device tools use named `Vestigo:Roots` plus any `VolumeR
 
 ## Health is degraded or unhealthy
 
-A default install reports Healthy: empty trace-root lists use the built-in `traces` folder. Unhealthy means the spool directory or, when defaults are in use, the `traces` folder is not writable.
+A default install reports Healthy: empty trace-root lists use the built-in `traces` folder. Unhealthy means the spool directory or, when either list uses that default, the `traces` folder is not writable.
 
 ## Interactive-session tools fail
 

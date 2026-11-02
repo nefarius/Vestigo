@@ -155,12 +155,12 @@ Enables a task. Requires Vestigo:ScheduledTasks:AllowChanges.
 
 ## `extract_trace_archive`
 
-Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory that is also inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.
+Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `archivePath` | `string` | yes |  | Zip path inside an allowed input root. |
-| `destination` | `string` | yes |  | Destination directory inside the allowed input and output roots. |
+| `destination` | `string` | yes |  | Destination directory inside the allowed output roots. |
 | `overwrite` | `bool` | no | `false` | Replace existing extracted files. |
 
 ## `fetch_file`
@@ -319,7 +319,7 @@ No parameters.
 
 ## `get_trace_settings`
 
-Returns the effective Trace roots, the traces named root, symbol cache and server (userinfo redacted), authentication scheme without the secret, attachable-session patterns, and size limits. See this tool before uploading symbols or starting a capture.
+Returns the effective Trace roots, the traces named root, symbol cache and server (userinfo and query string removed), authentication scheme without the secret, attachable-session patterns, and size limits. See this tool before uploading symbols or starting a capture.
 
 No parameters.
 

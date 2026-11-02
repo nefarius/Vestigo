@@ -59,7 +59,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Logs:MaxConcurrentSearches` | 2 | Searches that may run at once; further calls wait briefly and then fail with `search_busy`. |
 | `EventLog:MaxEvents` | 500 | Maximum events returned by one `query_event_log` call. |
 | `EventLog:MaxScannedEvents` | 20000 | Maximum events examined per query, which bounds message text filters. |
-| `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. A `user:pass@` prefix is converted to `SymbolServerAuth` Basic and stripped from the URL. A query string logs a startup warning; put API keys in `SymbolServerAuth` instead. |
+| `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. A `user:pass@` prefix is converted to `SymbolServerAuth` Basic and stripped from the URL. A query string logs a startup warning; put API keys in `SymbolServerAuth` instead. `get_trace_settings` reports the URL with userinfo and the query string removed. |
 | `SymbolCache` | null | Cache directory. The default is `symcache` under the settings directory. A cache outside that tree is not verified: allow write access for the trusted identity that runs Vestigo (the MSI service account, or the user running `dotnet run`), and do not share it between a privileged service and an untrusted user. PDB files under the resolved cache (including an environment-selected cache) may be passed to Trace tools. |
 | `SymbolServerAuth:Scheme` | `None` | `None`, `Basic`, `Bearer`, or `Header`. Requires an explicit `SymbolServer`. HTTPS is required except when the server is loopback. |
 | `SymbolServerAuth:HeaderName` | null | Header name when Scheme is `Header` (for example `X-Api-Key`). |

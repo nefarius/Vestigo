@@ -26,7 +26,7 @@ public sealed class VestigoHealthCheck(VestigoOptions options) : IHealthCheck
             return Task.FromResult(HealthCheckResult.Unhealthy("Capture spool is not writable.", ex));
         }
 
-        if (options.UsesDefaultTraceRoots)
+        if (options.UsesDefaultInputRoots || options.UsesDefaultOutputRoots)
         {
             try
             {
