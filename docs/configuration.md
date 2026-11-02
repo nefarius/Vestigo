@@ -44,6 +44,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `JobRetention` | `1.00:00:00` | How long finished jobs and their output are kept. |
 | `MaxJobReadBytes` | 65536 | Maximum bytes returned by one `read_job_output` call. |
 | `Files:MaxUploadBytes` | 4294967296 | Largest accepted `PUT /files` upload or `fetch_file` download. Larger uploads get HTTP 413; larger downloads fail the job with `too_large`. The partial file is discarded in both cases. |
+| `Files:TicketLifetime` | 00:15:00 | How long a one-time `/files` transfer ticket stays valid. Must be positive and at most 24 hours. Only used when `ApiTokens` is set. |
 | `Environment:ProtectedNames` | `COMSPEC`, `SystemRoot`, `windir` | Variable names (case-insensitive) that `set_environment_variable` refuses to set or unset in any scope. |
 | `Logs:MaxTailLines` | 2000 | Maximum lines returned by one `tail_text_file` or `read_text_file_since` call. |
 | `Logs:MaxTailBytes` | 1048576 | Maximum bytes examined by one call; a longer single line is cut. |

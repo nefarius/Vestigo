@@ -45,7 +45,7 @@ Politely closes applications by posting WM_CLOSE to their top-level windows. Sel
 
 ## `convert_etl`
 
-Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary.
+Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -209,6 +209,14 @@ Returns details of one device by instance ID: hardware and compatible IDs, class
 | --- | --- | --- | --- | --- |
 | `instanceId` | `string` | yes |  | Device instance ID, for example ROOT\SYSTEM\0001. |
 
+## `get_download_url`
+
+Returns an HTTP GET URL for downloading an existing file from a root with Read access, with curl and Invoke-WebRequest examples. When API tokens are configured the URL carries a one-time ticket that expires and stops working after one successful download, so the API token never has to be shared.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
+
 ## `get_environment_variable`
 
 Reads one environment variable. Machine scope reads the Session Manager registry key and user scope reads the environment of the user logged on at the console; both return the unexpanded value and whether it is REG_EXPAND_SZ. Fails with user_not_available when nobody is logged on.
@@ -259,7 +267,7 @@ No parameters.
 
 ## `get_upload_url`
 
-Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-WebRequest examples. Uploads need Write access to the root.
+Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-WebRequest examples. Uploads need Write access to the root. When API tokens are configured the URL carries a one-time ticket bound to this path and these flags that expires and stops working after one successful upload, so the API token never has to be shared.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -790,7 +798,7 @@ Returns the last lines of a text file under a root with Read access. The file is
 
 ## `take_screenshot`
 
-Captures a PNG of the console user's desktop. target 'desktop' (default) is the virtual screen across all monitors; 'display' is one GDI display (display='primary' or \\.\DISPLAYn from list_displays); 'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel coordinates list_displays reports. Returns a downscaled preview as image content (maxEdge, default 1920; 0 omits it) plus JSON metadata. saveTo stores the full-resolution PNG in a root with Write access (root:relative\file.png). Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+Captures a PNG of the console user's desktop. target 'desktop' (default) is the virtual screen across all monitors; 'display' is one GDI display (display='primary' or \\.\DISPLAYn from list_displays); 'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel coordinates list_displays reports. Returns a downscaled preview as image content (maxEdge, default 1920; 0 omits it) plus JSON metadata. saveTo stores the full-resolution PNG in a root with Write access (root:relative\file.png) and adds a download link (one-time ticket when API tokens are configured). Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

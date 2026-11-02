@@ -9,7 +9,7 @@ namespace Vestigo.Tools;
 
 /// <summary>MCP tools for offline WPP conversion and managed realtime capture.</summary>
 [McpServerToolType]
-public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionService offline, CaptureManager captures, IRealtimeTraceSessionFactory sessions)
+public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionService offline, CaptureManager captures, IRealtimeTraceSessionFactory sessions, Vestigo.Files.FileLinkIssuer? links = null)
 {
     [McpServerTool(Name = "inspect_wpp_pdb")]
     [Description("Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root.")]
@@ -30,16 +30,26 @@ public sealed class TraceTools(SymbolCatalogService symbols, OfflineConversionSe
         symbols.ScanEtl(etlPaths ?? []);
 
     [McpServerTool(Name = "convert_etl")]
-    [Description("Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary.")]
-    public Task<OperationResult<ConversionSummary>> ConvertEtl(
+    [Description("Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access.")]
+    public async Task<OperationResult<ConversionSummary>> ConvertEtl(
         [Description("ETL paths inside an allowed input root.")] string[] etlPaths,
         [Description("Output .json or .ndjson path inside an allowed output root.")] string outputPath,
         [Description("json or ndjson.")] string format = "ndjson",
         [Description("Optional explicit PDB and TMF paths.")] string[]? symbolPaths = null,
         [Description("Resolve PDB references through the configured symbol cache and server.")] bool resolveSymbols = false,
         [Description("Replace an existing output file.")] bool overwrite = false,
-        CancellationToken cancellationToken = default) =>
-        offline.ConvertAsync(etlPaths ?? [], outputPath, format, symbolPaths ?? [], resolveSymbols, overwrite, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        OperationResult<ConversionSummary> result = await offline
+            .ConvertAsync(etlPaths ?? [], outputPath, format, symbolPaths ?? [], resolveSymbols, overwrite, cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Success && links?.TryCreateDownload(result.Value!.OutputPath) is { } download)
+        {
+            return OperationResult<ConversionSummary>.Ok(result.Value with { Download = download });
+        }
+
+        return result;
+    }
 
     [McpServerTool(Name = "list_etw_sessions")]
     [Description("Lists ETW session names currently running on this machine.")]

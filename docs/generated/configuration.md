@@ -27,6 +27,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `EventLog:MaxEvents` | `500` |
 | `EventLog:MaxScannedEvents` | `20000` |
 | `Files:MaxUploadBytes` | `4294967296` |
+| `Files:TicketLifetime` | `00:15:00` |
 | `FlushTimerSeconds` | `1` |
 | `JobRetention` | `1.00:00:00` |
 | `ListenAddress` | `127.0.0.1` |

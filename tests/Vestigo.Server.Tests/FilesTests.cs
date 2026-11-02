@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 using Vestigo.Configuration;
 using Vestigo.Files;
@@ -215,6 +216,76 @@ public class FileDeployerTests : IDisposable
     }
 }
 
+public class FileTicketStoreTests
+{
+    private sealed class FakeTime : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private static string Full(string name) => Path.GetFullPath(Path.Combine(Path.GetTempPath(), name));
+
+    [Fact]
+    public void Ticket_IsSingleUseAndBoundToMethodAndPath()
+    {
+        FileTicketStore store = new(new VestigoOptions(), new FakeTime());
+        string token = store.Issue("GET", Full("a.png")).Token;
+
+        Assert.Null(store.TryReserve(token, "PUT", Full("a.png")));
+        Assert.Null(store.TryReserve(token, "GET", Full("b.png")));
+        Assert.Null(store.TryReserve("other", "GET", Full("a.png")));
+        FileTicketStore.Reservation? reservation = store.TryReserve(token, "GET", Full("a.png"));
+        Assert.NotNull(reservation);
+        Assert.Null(store.TryReserve(token, "GET", Full("a.png")));
+
+        store.Consume(reservation);
+        Assert.Null(store.TryReserve(token, "GET", Full("a.png")));
+        Assert.Equal(0, store.Count);
+    }
+
+    [Fact]
+    public void Release_MakesTicketUsableAgain()
+    {
+        FileTicketStore store = new(new VestigoOptions(), new FakeTime());
+        string token = store.Issue("GET", Full("a.png")).Token;
+
+        FileTicketStore.Reservation reservation = store.TryReserve(token, "GET", Full("a.png"))!;
+        store.Release(reservation);
+
+        Assert.NotNull(store.TryReserve(token, "GET", Full("a.png")));
+    }
+
+    [Fact]
+    public void Ticket_ExpiresAndIsPruned()
+    {
+        FakeTime time = new();
+        FileTicketStore store = new(new VestigoOptions(), time);
+        string token = store.Issue("GET", Full("a.png")).Token;
+
+        time.Now += TimeSpan.FromMinutes(16);
+
+        Assert.Null(store.TryReserve(token, "GET", Full("a.png")));
+        store.Issue("GET", Full("b.png"));
+        Assert.Equal(1, store.Count);
+    }
+
+    [Fact]
+    public void Store_EvictsOldestWhenFull()
+    {
+        FileTicketStore store = new(new VestigoOptions(), new FakeTime());
+        string first = store.Issue("GET", Full("first")).Token;
+        for (int i = 0; i < FileTicketStore.MaxOutstanding; i++)
+        {
+            store.Issue("GET", Full("f" + i));
+        }
+
+        Assert.Equal(FileTicketStore.MaxOutstanding, store.Count);
+        Assert.Null(store.TryReserve(first, "GET", Full("first")));
+    }
+}
+
 public class FileToolTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("vestigo-filetools-").FullName;
@@ -242,13 +313,18 @@ public class FileToolTests : IDisposable
         Directory.Delete(_jobs, recursive: true);
     }
 
-    private FileTools Tools(Func<HttpRequestMessage, HttpResponseMessage>? handler = null) => new(
-        _options,
-        new RootPolicy(_options),
-        new FileDeployer(_scheduler),
-        _scheduler,
-        _jobManager,
-        new StubClientFactory(handler ?? (_ => new HttpResponseMessage(HttpStatusCode.NotFound))));
+    private FileTools Tools(Func<HttpRequestMessage, HttpResponseMessage>? handler = null)
+    {
+        RootPolicy policy = new(_options);
+        return new(
+            _options,
+            policy,
+            new FileDeployer(_scheduler),
+            _scheduler,
+            _jobManager,
+            new StubClientFactory(handler ?? (_ => new HttpResponseMessage(HttpStatusCode.NotFound))),
+            new FileLinkIssuer(_options, policy, new FileTicketStore(_options)));
+    }
 
     [Fact]
     public void ListRoots_ReportsAccessAndSpace()
@@ -414,14 +490,47 @@ public class FileToolTests : IDisposable
         OperationResult<UploadUrlInfo> result = Tools().GetUploadUrl("work:bin\\my driver.sys", overwrite: true);
 
         Assert.True(result.Success, result.Error);
-        Assert.Equal(
-            "http://127.0.0.1:5098/files/work/bin/my%20driver.sys?overwrite=true&deferToReboot=false",
-            result.Value!.Url);
-        Assert.Contains("--upload-file", result.Value.Curl, StringComparison.Ordinal);
-        Assert.Contains("Bearer <token>", result.Value.Curl, StringComparison.Ordinal);
-        Assert.Contains("Invoke-WebRequest -Method Put", result.Value.PowerShell, StringComparison.Ordinal);
+        FileLink link = result.Value!.Link;
+        Assert.StartsWith(
+            "http://127.0.0.1:5098/files/work/bin/my%20driver.sys?overwrite=true&deferToReboot=false&ticket=",
+            link.Url,
+            StringComparison.Ordinal);
+        Assert.True(link.SingleUse);
+        Assert.NotNull(link.ExpiresUtc);
+        Assert.Contains("--upload-file", link.Curl, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bearer", link.Curl, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bearer", link.PowerShell, StringComparison.Ordinal);
+        Assert.Contains("Invoke-WebRequest -Method Put", link.PowerShell, StringComparison.Ordinal);
         Assert.Equal("access_denied", Tools().GetUploadUrl("ro:x.sys").ErrorCode);
         Assert.False(Tools().GetUploadUrl("work:a\\..\\..\\b").Success);
+    }
+
+    [Fact]
+    public void GetUploadUrl_IsPlainWithoutApiTokens()
+    {
+        FileLink link = Tools().GetUploadUrl("work:a.bin").Value!.Link;
+
+        Assert.Equal("http://127.0.0.1:5098/files/work/a.bin?overwrite=false&deferToReboot=false", link.Url);
+        Assert.False(link.SingleUse);
+        Assert.Null(link.ExpiresUtc);
+    }
+
+    [Fact]
+    public void GetDownloadUrl_ReturnsTicketForExistingReadableFile()
+    {
+        _options.ApiTokens.Add("t");
+        File.WriteAllText(Path.Combine(_root, "shot.png"), "12345");
+
+        OperationResult<DownloadUrlInfo> result = Tools().GetDownloadUrl("work:shot.png");
+        OperationResult<DownloadUrlInfo> absolute = Tools().GetDownloadUrl(Path.Combine(_root, "shot.png"));
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(5, result.Value!.Size);
+        Assert.StartsWith("http://127.0.0.1:5098/files/work/shot.png?ticket=", result.Value.Link.Url, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bearer", result.Value.Link.Curl, StringComparison.Ordinal);
+        Assert.True(absolute.Success, absolute.Error);
+        Assert.NotEqual(result.Value.Link.Url, absolute.Value!.Link.Url);
+        Assert.Equal("not_found", Tools().GetDownloadUrl("work:missing.png").ErrorCode);
     }
 
     [Fact]
@@ -653,6 +762,82 @@ public class FilesEndpointTests : IDisposable
         Assert.Equal(HttpStatusCode.Unauthorized, anonymousPut.StatusCode);
         Assert.Equal(HttpStatusCode.OK, authorizedGet.StatusCode);
         Assert.Equal(HttpStatusCode.OK, authorizedPut.StatusCode);
+    }
+
+    [Fact]
+    public async Task TicketedGet_WorksOnceWithoutApiToken()
+    {
+        string file = Path.Combine(_work, "shot.png");
+        File.WriteAllText(file, "0123456789");
+        await using WebApplicationFactory<Program> factory = Create(["secret"]);
+        using HttpClient client = factory.CreateClient();
+        FileTicketStore store = factory.Services.GetRequiredService<FileTicketStore>();
+        string ticket = store.Issue("GET", file).Token;
+
+        HttpResponseMessage wrongPath = await client.GetAsync($"/files/work/other.png?ticket={ticket}");
+        HttpResponseMessage first = await client.GetAsync($"/files/work/shot.png?ticket={ticket}");
+        HttpResponseMessage second = await client.GetAsync($"/files/work/shot.png?ticket={ticket}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, wrongPath.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal("0123456789", await first.Content.ReadAsStringAsync());
+        Assert.Contains("no-store", first.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.Unauthorized, second.StatusCode);
+        Assert.Contains("invalid_ticket", await second.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ticket_IsRejectedForWrongMethod()
+    {
+        string file = Path.Combine(_work, "m.txt");
+        File.WriteAllText(file, "x");
+        await using WebApplicationFactory<Program> factory = Create(["secret"]);
+        using HttpClient client = factory.CreateClient();
+        FileTicketStore store = factory.Services.GetRequiredService<FileTicketStore>();
+        string ticket = store.Issue("GET", file).Token;
+
+        HttpResponseMessage put = await client.PutAsync($"/files/work/m.txt?overwrite=true&ticket={ticket}", Body("y"));
+        HttpResponseMessage get = await client.GetAsync($"/files/work/m.txt?ticket={ticket}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, put.StatusCode);
+        Assert.Equal("x", File.ReadAllText(file));
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+    }
+
+    [Fact]
+    public async Task TicketedPut_UsesBoundFlagsAndIsConsumedOnSuccess()
+    {
+        string file = Path.Combine(_work, "up.bin");
+        File.WriteAllText(file, "old");
+        await using WebApplicationFactory<Program> factory = Create(["secret"]);
+        using HttpClient client = factory.CreateClient();
+        FileTicketStore store = factory.Services.GetRequiredService<FileTicketStore>();
+        string noOverwrite = store.Issue("PUT", file, overwrite: false).Token;
+        string overwrite = store.Issue("PUT", file, overwrite: true).Token;
+
+        // The query string cannot widen what the ticket allows. A failed upload leaves the ticket usable.
+        HttpResponseMessage conflict = await client.PutAsync($"/files/work/up.bin?overwrite=true&ticket={noOverwrite}", Body("new"));
+        HttpResponseMessage ok = await client.PutAsync($"/files/work/up.bin?ticket={overwrite}", Body("new"));
+        HttpResponseMessage reused = await client.PutAsync($"/files/work/up.bin?ticket={overwrite}", Body("again"));
+
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, reused.StatusCode);
+        Assert.Equal("new", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public async Task Ticket_GarbageIsRejectedWithoutRevealingPathState()
+    {
+        File.WriteAllText(Path.Combine(_work, "g.txt"), "x");
+        await using WebApplicationFactory<Program> factory = Create(["secret"]);
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage garbage = await client.GetAsync("/files/work/g.txt?ticket=nonsense");
+        HttpResponseMessage missingFile = await client.GetAsync("/files/work/none.txt?ticket=nonsense");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, garbage.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingFile.StatusCode);
     }
 
     /// <summary>Content without a known length, so the request is chunked.</summary>

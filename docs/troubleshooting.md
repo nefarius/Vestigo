@@ -4,6 +4,10 @@
 
 `ApiTokens` is configured and the request did not include a matching bearer token. `/health` remains anonymous. The log records the authentication failure without the token value.
 
+## `/files` returns 401 `invalid_ticket`
+
+The URL's `ticket` is unknown, expired (`Vestigo:Files:TicketLifetime`), already used by a completed transfer, in use by another request, issued for a different method or path, or lost in a service restart. Ask the tool (`get_download_url`, `get_upload_url`, `take_screenshot`, `convert_etl`) for a fresh link. An API token in `Authorization: Bearer` also works.
+
 ## Startup fails immediately
 
 The exception names the setting. Common causes:

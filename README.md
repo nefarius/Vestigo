@@ -31,7 +31,7 @@ Reading an existing ETL file does not by itself require elevation. Creating a re
 2. Open `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. After a default MSI install this file contains a generated `ApiTokens` entry; copy that token. `dotnet run` stays anonymous until you add tokens.
 3. Point an MCP client at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is non-empty, send `Authorization: Bearer <token>`. Opening `http://127.0.0.1:5098/` in a browser shows the same connection instructions.
 
-The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopback still works on the same machine. `/` is an anonymous informational page. `/health` is always anonymous. `/mcp` and `/files` are anonymous only while `ApiTokens` is empty. Binding beyond loopback without tokens logs a startup warning.
+The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopback still works on the same machine. `/` is an anonymous informational page. `/health` is always anonymous. `/mcp` and `/files` are anonymous only while `ApiTokens` is empty. File-transfer tools return short-lived, single-use `/files` URLs, so clients never need the API token to fetch a screenshot or converted trace. Binding beyond loopback without tokens logs a startup warning.
 
 ## Projects
 

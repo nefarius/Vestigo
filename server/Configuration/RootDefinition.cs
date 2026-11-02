@@ -69,4 +69,7 @@ public sealed class ModuleSettings
 public sealed class FilesOptions
 {
     public long MaxUploadBytes { get; set; } = 4L * 1024 * 1024 * 1024;
+
+    /// <summary>How long a one-time transfer ticket stays valid. At most 24 hours.</summary>
+    public TimeSpan TicketLifetime { get; set; } = TimeSpan.FromMinutes(15);
 }
