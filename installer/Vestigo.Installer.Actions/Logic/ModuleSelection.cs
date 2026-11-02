@@ -78,13 +78,17 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowScreenshots</c>.</summary>
         public const string DesktopScreenshots = "DesktopScreenshots";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Updates:AllowSelfUpdate</c>.</summary>
+        public const string SelfUpdate = "SelfUpdate";
+
         public static readonly IReadOnlyList<OptionToggle> OptionToggles = new List<OptionToggle>
         {
             new OptionToggle(SoftwareUninstall, "Software", "AllowUninstall"),
             new OptionToggle(ScheduledTaskChanges, "ScheduledTasks", "AllowChanges"),
             new OptionToggle(AudioSetDefault, "Audio", "AllowSetDefault"),
             new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges"),
-            new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots")
+            new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots"),
+            new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate")
         };
 
         public static readonly IReadOnlyList<ModuleDefinition> All = new List<ModuleDefinition>
@@ -109,7 +113,9 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
             new ModuleDefinition(SoftwareUninstall, "Silent uninstall", "Allow silent uninstalls of installed software as the service account (Vestigo:Software:AllowUninstall). Administrator-equivalent.", false, "Software"),
-            new ModuleDefinition(BootConfigurationChanges, "Boot configuration", "Allow changing BCD test-signing and WHQL developer test mode (Vestigo:System:AllowBootConfigurationChanges). Administrator-equivalent. Takes effect after reboot.", false, "System")
+            new ModuleDefinition(BootConfigurationChanges, "Boot configuration", "Allow changing BCD test-signing and WHQL developer test mode (Vestigo:System:AllowBootConfigurationChanges). Administrator-equivalent. Takes effect after reboot.", false, "System"),
+            new ModuleDefinition("Updates", "Updates", "Check the signed Buildbot feed for a newer Vestigo release.", true, null),
+            new ModuleDefinition(SelfUpdate, "Silent self-update", "Allow start_self_update to run the packaged Vicius updater (Vestigo:Updates:AllowSelfUpdate). Needs the Automatic updates feature. Administrator-equivalent: installs the signed MSI and restarts the service.", false, "Updates")
         };
 
         public static bool IsOptionToggle(string name)

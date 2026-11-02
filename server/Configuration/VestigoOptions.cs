@@ -9,6 +9,7 @@ using Vestigo.ScheduledTasks;
 using Vestigo.Services;
 using Vestigo.Software;
 using Vestigo.SystemInfo;
+using Vestigo.Updates;
 
 namespace Vestigo.Configuration;
 
@@ -58,6 +59,8 @@ public sealed class VestigoOptions
     public SoftwareOptions Software { get; set; } = new();
 
     public SystemOptions System { get; set; } = new();
+
+    public UpdatesOptions Updates { get; set; } = new();
 
     public int MaxConcurrentJobs { get; set; } = 8;
 
@@ -257,6 +260,7 @@ public sealed class VestigoOptions
         ScheduledTasks.Validate();
         Software.Validate();
         System.Validate();
+        Updates.Validate();
 
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
         foreach (RootDefinition root in Roots)

@@ -91,6 +91,14 @@ The `System` module reports the host Windows version and boot-security posture t
 
 `set_test_signing` and `set_whql_developer_test_mode` fail with `boot_changes_disabled` unless the option is enabled. Turning test signing on fails with `secure_boot_enabled` unless Secure Boot is known to be disabled. A BCD write failure is `bcd_write_failed`; a WHQL policy write failure is `ci_write_failed`; lack of elevation is `access_denied`. Vestigo never reboots the machine: BCD test-signing takes effect at the next boot, and WHQL developer test mode availability depends on the Windows build.
 
+## Updates
+
+The `Updates` module is enabled by default. Checking the signed Buildbot feed is always available while the module is on. Installing a release stays off until `Vestigo:Updates:AllowSelfUpdate` is `true`, and it also needs the MSI `Automatic updates` feature so `Nefarius_Vestigo_Updater.exe` is present. Read [security.md](security.md#updates) first.
+
+`check_for_updates` downloads `https://buildbot.nefarius.at/builds/Vestigo/latest/updates.json` and `updates.json.minisig` as the service account, verifies the sidecar with the Nefarius minisign public key, refuses any URL outside that Buildbot directory, and compares the newest enabled release to the installed version. The installed version is `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version` when the updater feature wrote it, otherwise the entry assembly informational version. The result also reports whether the packaged updater is installed, whether self-update is allowed, and the last `start_self_update` attempt (exit code, inferred success when the installed version now matches the target, and the log tail).
+
+`start_self_update` is refused with `self_update_disabled` unless the option is enabled. It re-checks the signed feed and returns `up_to_date` without launching when no newer release exists. Otherwise it starts the packaged Vicius updater with `--silent-update --skip-self-update --ignore-busy-state --ignore-postpone --log-to-file`. The updater copies itself to `%TEMP%` and the original process exits `207` before the MSI stops the Vestigo service, so the MCP session drops. `dryRun` returns the planned command only. A second call while an updater process is running returns `update_in_progress`. Missing updater files are `updater_not_installed`; an updater that Users can modify is `untrusted_executable`; a non-success Vicius exit is `updater_failed`. Logs and the last-attempt record live under `%ProgramData%\Nefarius Software Solutions\Vestigo\updates`.
+
 ## Logs
 
 `tail_text_file` returns the last `lines` lines of a file under a root with `Read` access, examining at most `maxBytes` from the end (both clamped to `Vestigo:Logs`). The file is opened with shared access. UTF-8 and UTF-16 byte order marks are detected; otherwise UTF-8 is assumed. The result has `lines`, a `cursor` (`offset`, `length`, `identity` = creation time ticks), `truncated` and `encoding`.

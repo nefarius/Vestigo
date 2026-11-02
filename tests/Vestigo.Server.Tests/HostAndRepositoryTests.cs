@@ -163,6 +163,7 @@ public class RepositoryBoundaryTests
                      "MaxReadBatch", "MaxReadWait", "AttachableSessions", "BufferSizeKb", "FlushTimerSeconds",
                      "ClockResolution", "Software:AllowUninstall", "Software:ProtectedNames",
                      "System:AllowBootConfigurationChanges",
+                     "Updates:AllowSelfUpdate",
                      "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
                      "Services:ProtectedNames", "ScheduledTasks:AllowChanges", "ScheduledTasks:ProtectedPaths", "Processes:AllowPathLookup", "Files:MaxUploadBytes",
                      "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256",

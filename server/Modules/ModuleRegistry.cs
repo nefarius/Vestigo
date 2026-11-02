@@ -26,7 +26,8 @@ public static class ModuleRegistry
         new EventLogModule(),
         new DesktopModule(),
         new AudioModule(),
-        new DebugOutputModule()
+        new DebugOutputModule(),
+        new UpdatesModule()
     ];
 
     public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options) =>
@@ -105,6 +106,11 @@ public static class ModuleRegistry
             capabilities.Add("Boot configuration changes");
         }
 
+        if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
+        {
+            capabilities.Add("Self-update");
+        }
+
         bool debugOutput = enabled.Any(module => module.Name == "DebugOutput");
         bool desktop = enabled.Any(module => module.Name == "Desktop");
         bool desktopScreenshots = desktop && options.Desktop.AllowScreenshots;
@@ -172,6 +178,11 @@ public static class ModuleRegistry
         if (debugOutput)
         {
             extras += "The DebugOutput module is also enabled, so the same clients can read OutputDebugString messages from every session. ";
+        }
+
+        if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
+        {
+            extras += "The Updates module can also install the latest signed Vestigo release and restart the service. ";
         }
 
         return $"SECURITY WARNING: Vestigo has no Vestigo:ApiTokens and these administrator-equivalent capabilities are enabled: {string.Join(", ", capabilities)}. " +

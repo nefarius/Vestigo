@@ -124,7 +124,14 @@ public class UpdateFeedTests
         Assert.Contains(UpdateFeed.UpdaterExecutable, installer, StringComparison.Ordinal);
         Assert.Contains("--install --silent --override-success-code 0", installer, StringComparison.Ordinal);
         Assert.Contains("--uninstall --silent --override-success-code 0", installer, StringComparison.Ordinal);
-        Assert.Contains("NOT (REMOVE~=\\\"ALL\\\") AND &Updater=3", installer, StringComparison.Ordinal);
+        Assert.Contains(
+            "NOT (REMOVE~=\\\"ALL\\\") AND &Updater=3 AND UserSID<>\\\"S-1-5-18\\\"",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Equal(UpdateFeed.ManifestPublicKey, Vestigo.Updates.UpdateEndpoints.ManifestPublicKey);
+        Assert.Equal(UpdateFeed.DirectoryUrl, Vestigo.Updates.UpdateEndpoints.DirectoryUrl);
+        Assert.Equal(UpdateFeed.RegistryKey, Vestigo.Updates.UpdateEndpoints.RegistryKey);
+        Assert.Equal(UpdateFeed.UpdaterExecutable, Vestigo.Updates.UpdateEndpoints.UpdaterExecutable);
         Assert.Contains("!Updater=3 AND &Updater=2", installer, StringComparison.Ordinal);
         Assert.Contains("WIX_UPGRADE_DETECTED AND &Updater=2", installer, StringComparison.Ordinal);
         Assert.Contains("DeregisterLegacyVestigoUpdater", installer, StringComparison.Ordinal);

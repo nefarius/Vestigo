@@ -83,6 +83,12 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p>Finished jobs are kept for a bounded retention period, then discarded.</p>
   </article>
   <article class="card">
+    <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">Install gated</span></p>
+    <h2>Updates</h2>
+    <p><code>check_for_updates</code> fetches the signed Buildbot feed, verifies the minisign sidecar, and compares it to the installed version. The check is available whenever the Updates module is on.</p>
+    <p><code>start_self_update</code> stays off until <code>Updates:AllowSelfUpdate</code> is true and the Automatic updates feature is installed. It launches the packaged Vicius updater silently; the MSI restarts the service.</p>
+  </article>
+  <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span></p>
     <h2>Remote debugger</h2>
     <p>Install Visual Studio Remote Debugging Tools for 2022 or 2026, prepare the firewall, start <code>msvsmon.exe</code>, and stop it. Status reports every discovered monitor and whether Vestigo started it.</p>
