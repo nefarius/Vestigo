@@ -13,6 +13,7 @@ reviews:
     - "!installer/License.rtf"
     - "!installer/DebugViewPP-LICENSE.txt"
     - "!installer/nefcon-LICENSE.txt"
+    - "!installer/ripgrep-LICENSE.txt"
   tools:
     # Secret, SAST, and OSV scans are enforced by the CI security job.
     gitleaks:

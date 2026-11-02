@@ -20,10 +20,13 @@ static class Program
     internal const string EnvUpdater = "VESTIGO_INSTALLER_UPDATER";
     internal const string EnvNefcon = "VESTIGO_INSTALLER_NEFCON";
     internal const string EnvDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
+    internal const string EnvRipgrep = "VESTIGO_INSTALLER_RIPGREP";
     const string NefconExecutableName = "nefconc.exe";
     const string NefconLicenseName = "nefcon-LICENSE.txt";
     const string DebugViewExecutableName = "DebugViewConsole.exe";
     const string DebugViewLicenseName = "DebugViewPP-LICENSE.txt";
+    const string RipgrepExecutableName = "rg.exe";
+    const string RipgrepLicenseName = "ripgrep-LICENSE.txt";
     internal const string UpdaterFeature = "Updater";
     const string UpdaterExecutableName = "Nefarius_Vestigo_Updater.exe";
     const string UpdaterConfigurationName = "Nefarius_Vestigo_Updater.json";
@@ -67,6 +70,12 @@ static class Program
                 throw new FileNotFoundException($"DebugView++ license not found: {debugViewLicensePath}");
             }
 
+            string ripgrepLicensePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, RipgrepLicenseName));
+            if (!System.IO.File.Exists(ripgrepLicensePath))
+            {
+                throw new FileNotFoundException($"ripgrep license not found: {ripgrepLicensePath}");
+            }
+
             if (!string.Equals(Path.GetFileName(options.NefconExe), NefconExecutableName, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException($"The nefcon executable must be named {NefconExecutableName}.");
@@ -75,6 +84,11 @@ static class Program
             if (!string.Equals(Path.GetFileName(options.DebugViewExe), DebugViewExecutableName, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException($"The DebugViewConsole executable must be named {DebugViewExecutableName}.");
+            }
+
+            if (!string.Equals(Path.GetFileName(options.RipgrepExe), RipgrepExecutableName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"The ripgrep executable must be named {RipgrepExecutableName}.");
             }
 
             if (!string.Equals(Path.GetFileName(options.UpdaterExe), UpdaterExecutableName, StringComparison.OrdinalIgnoreCase))
@@ -148,7 +162,9 @@ static class Program
                         new WixSharp.File(feature, options.NefconExe),
                         new WixSharp.File(feature, nefconLicensePath),
                         new WixSharp.File(feature, options.DebugViewExe),
-                        new WixSharp.File(feature, debugViewLicensePath))),
+                        new WixSharp.File(feature, debugViewLicensePath),
+                        new WixSharp.File(feature, options.RipgrepExe),
+                        new WixSharp.File(feature, ripgrepLicensePath))),
                 new RegKey(
                     updaterFeature,
                     RegistryHive.LocalMachine,
@@ -315,6 +331,8 @@ static class Program
 
         public required string DebugViewExe { get; init; }
 
+        public required string RipgrepExe { get; init; }
+
         public static Options Parse(string[] args)
         {
             string cwd = Directory.GetCurrentDirectory();
@@ -323,7 +341,8 @@ static class Program
             string updater = "";
             string nefcon = "";
             string debugView = "";
-            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon, ref debugView);
+            string ripgrep = "";
+            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon, ref debugView, ref ripgrep);
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -348,6 +367,10 @@ static class Program
                 {
                     debugView = RequirePath(args, ref i, "debugview");
                 }
+                else if (argument is "--ripgrep")
+                {
+                    ripgrep = RequirePath(args, ref i, "ripgrep");
+                }
                 else if (argument is "--help" or "-h")
                 {
                     Console.WriteLine("""
@@ -358,8 +381,9 @@ static class Program
                           --updater,   -u <file>  Staged Nefarius_Vestigo_Updater.exe
                           --nefcon,    -n <file>  Staged nefconc.exe (installed under tools\)
                           --debugview     <file>  Staged DebugViewConsole.exe (installed under tools\)
+                          --ripgrep       <file>  Staged rg.exe (installed under tools\)
 
-                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON, VESTIGO_INSTALLER_DEBUGVIEW
+                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON, VESTIGO_INSTALLER_DEBUGVIEW, VESTIGO_INSTALLER_RIPGREP
                         """);
                     Environment.Exit(0);
                 }
@@ -375,7 +399,8 @@ static class Program
                 OutputDir = output,
                 UpdaterExe = updater,
                 NefconExe = nefcon,
-                DebugViewExe = debugView
+                DebugViewExe = debugView,
+                RipgrepExe = ripgrep
             };
         }
 
@@ -406,6 +431,11 @@ static class Program
                 throw new FileNotFoundException($"DebugViewConsole executable not found: {DebugViewExe}");
             }
 
+            if (!System.IO.File.Exists(RipgrepExe))
+            {
+                throw new FileNotFoundException($"ripgrep executable not found: {RipgrepExe}");
+            }
+
             Directory.CreateDirectory(OutputDir);
         }
 
@@ -414,8 +444,15 @@ static class Program
             ref string output,
             ref string updater,
             ref string nefcon,
-            ref string debugView)
+            ref string debugView,
+            ref string ripgrep)
         {
+            string? ripgrepOverride = Environment.GetEnvironmentVariable(EnvRipgrep);
+            if (!string.IsNullOrWhiteSpace(ripgrepOverride))
+            {
+                ripgrep = Path.GetFullPath(ripgrepOverride);
+            }
+
             string? nefconOverride = Environment.GetEnvironmentVariable(EnvNefcon);
             if (!string.IsNullOrWhiteSpace(nefconOverride))
             {
