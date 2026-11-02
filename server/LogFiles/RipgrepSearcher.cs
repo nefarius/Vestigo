@@ -155,10 +155,15 @@ public sealed class RipgrepSearcher(VestigoOptions options, IRipgrepProcess proc
                 {
                     if (!string.IsNullOrWhiteSpace(line.Text))
                     {
-                        errorLines.Add(line.Text.Trim());
+                        string message = line.Text.Trim();
+                        if (errorLines.Count < MaxWarnings)
+                        {
+                            errorLines.Add(message);
+                        }
+
                         if (warnings.Count < MaxWarnings)
                         {
-                            warnings.Add(line.Text.Trim());
+                            warnings.Add(message);
                         }
                     }
 
