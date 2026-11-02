@@ -149,6 +149,7 @@ jobs:
           wix extension add -g WixToolset.UI.wixext/5.0.2
           wix extension add -g WixToolset.Firewall.wixext/5.0.2
           wix extension add -g WixToolset.Netfx.wixext/5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
 
       - name: Require signing configuration
         if: success() && startsWith(github.ref, 'refs/tags/v')
