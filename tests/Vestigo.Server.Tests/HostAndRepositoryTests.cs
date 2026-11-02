@@ -95,10 +95,25 @@ public class HostTests : IDisposable
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
+    private sealed class VestigoApplication : WebApplicationFactory<Program>;
+}
+
+[CollectionDefinition("VestigoHost", DisableParallelization = true)]
+public sealed class VestigoHostCollection;
+
+public class RepositoryBoundaryTests
+{
     [Fact]
     public void ServerRuntimeConfig_AllowsMinorRollForwardOnAspNetCore10()
     {
-        string path = Path.Combine(AppContext.BaseDirectory, "Vestigo.runtimeconfig.json");
+        DirectoryInfo testOutput = new(AppContext.BaseDirectory);
+        string path = Path.Combine(
+            FindRepositoryRoot(),
+            "server",
+            "bin",
+            testOutput.Parent!.Name,
+            testOutput.Name,
+            "Vestigo.runtimeconfig.json");
         Assert.True(File.Exists(path), path);
 
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
@@ -119,14 +134,6 @@ public class HostTests : IDisposable
         Assert.Equal("10.0.0", aspNet.Value.GetProperty("version").GetString());
     }
 
-    private sealed class VestigoApplication : WebApplicationFactory<Program>;
-}
-
-[CollectionDefinition("VestigoHost", DisableParallelization = true)]
-public sealed class VestigoHostCollection;
-
-public class RepositoryBoundaryTests
-{
     [Fact]
     public void Projects_ConsumeReleasedPackagesInsteadOfSiblingSource()
     {
