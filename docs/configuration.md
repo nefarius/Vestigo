@@ -68,7 +68,7 @@ Serilog writes console output and daily files under the settings `logs` director
 
 `AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, and conversion-output paths used by the Trace tools. Named `Roots` and any `VolumeRoots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, and the `/files` endpoints.
 
-The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `Audio:AllowSetDefault`, and `System:AllowBootConfigurationChanges` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
+The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, and `Desktop:AllowScreenshots` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
 
 ## Examples
 

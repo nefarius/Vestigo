@@ -30,6 +30,8 @@ public class ModuleSelectionTests
         Assert.Equal("Audio", ModuleSelection.Find(ModuleSelection.AudioSetDefault)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.BootConfigurationChanges]);
         Assert.Equal("System", ModuleSelection.Find(ModuleSelection.BootConfigurationChanges)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.DesktopScreenshots]);
+        Assert.Equal("Desktop", ModuleSelection.Find(ModuleSelection.DesktopScreenshots)?.Parent);
     }
 
     private static void VestigoModuleNames()
@@ -65,7 +67,9 @@ public class ModuleSelectionTests
             ["SoftwareUninstall"] = true,
             ["Audio"] = true,
             ["AudioSetDefault"] = true,
-            ["BootConfigurationChanges"] = true
+            ["BootConfigurationChanges"] = true,
+            ["Desktop"] = true,
+            ["DesktopScreenshots"] = true
         };
 
         string merged = ListenSettings.Merge(existing, Open(), states);
@@ -77,19 +81,22 @@ public class ModuleSelectionTests
         Assert.True(read["Audio"]);
         Assert.True(read["AudioSetDefault"]);
         Assert.True(read["BootConfigurationChanges"]);
+        Assert.True(read["Desktop"]);
+        Assert.True(read["DesktopScreenshots"]);
         Assert.Contains("\"SymbolServer\"", merged);
         Assert.Contains("\"Extra\": 1", merged);
         Assert.Contains("\"Serilog\"", merged);
         Assert.Contains("\"ApiTokens\": []", merged);
         Assert.Contains("\"AllowSetDefault\": true", merged);
         Assert.Contains("\"AllowBootConfigurationChanges\": true", merged);
+        Assert.Contains("\"AllowScreenshots\": true", merged);
     }
 
     [Fact]
     public void Merge_MatchesKeysCaseInsensitively_WithoutDuplicates()
     {
         const string existing = """
-            { "Vestigo": { "modules": { "processes": { "enabled": false } }, "software": { "allowuninstall": false }, "system": { "allowbootconfigurationchanges": false } } }
+            { "Vestigo": { "modules": { "processes": { "enabled": false } }, "software": { "allowuninstall": false }, "system": { "allowbootconfigurationchanges": false }, "desktop": { "allowscreenshots": false } } }
             """;
 
         string merged = ListenSettings.Merge(
@@ -99,17 +106,21 @@ public class ModuleSelectionTests
             {
                 ["Processes"] = true,
                 ["SoftwareUninstall"] = true,
-                ["BootConfigurationChanges"] = true
+                ["BootConfigurationChanges"] = true,
+                ["DesktopScreenshots"] = true
             });
 
         Assert.Contains("\"enabled\": true", merged);
         Assert.Contains("\"allowuninstall\": true", merged);
         Assert.Contains("\"allowbootconfigurationchanges\": true", merged);
+        Assert.Contains("\"allowscreenshots\": true", merged);
         Assert.DoesNotContain("\"Enabled\"", merged);
         Assert.DoesNotContain("\"Modules\"", merged);
         Assert.DoesNotContain("\"AllowUninstall\"", merged);
         Assert.DoesNotContain("\"AllowBootConfigurationChanges\"", merged);
+        Assert.DoesNotContain("\"AllowScreenshots\"", merged);
         Assert.True(ModuleSelection.ReadExisting(merged)["Processes"]);
+        Assert.True(ModuleSelection.ReadExisting(merged)["DesktopScreenshots"]);
     }
 
     [Fact]
@@ -128,13 +139,42 @@ public class ModuleSelectionTests
         Assert.Empty(ModuleSelection.ReadExisting("""{ "Vestigo": { "ListenPort": 1 } }"""));
 
         IDictionary<string, bool> read = ModuleSelection.ReadExisting(
-            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "Audio": { "AllowSetDefault": true }, "System": { "AllowBootConfigurationChanges": true } } }""");
+            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "Audio": { "AllowSetDefault": true }, "System": { "AllowBootConfigurationChanges": true }, "Desktop": { "AllowScreenshots": true } } }""");
 
-        Assert.Equal(4, read.Count);
+        Assert.Equal(5, read.Count);
         Assert.True(read["Devices"]);
         Assert.False(read["SoftwareUninstall"]);
         Assert.True(read["AudioSetDefault"]);
         Assert.True(read["BootConfigurationChanges"]);
+        Assert.True(read["DesktopScreenshots"]);
+    }
+
+    [Fact]
+    public void ShouldWriteFeatureState_OmitsUnselectedNewDesktopScreenshots()
+    {
+        Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopScreenshots));
+        Assert.False(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.AudioSetDefault));
+        Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopScreenshots, requestIsExplicit: false, currentlyInstalled: false));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopScreenshots, requestIsExplicit: true, currentlyInstalled: false));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopScreenshots, requestIsExplicit: false, currentlyInstalled: true));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.AudioSetDefault, requestIsExplicit: false, currentlyInstalled: false));
+        Assert.True(ModuleSelection.ShouldWriteFeatureState("Desktop", requestIsExplicit: false, currentlyInstalled: false));
+    }
+
+    [Fact]
+    public void Merge_WithoutDesktopScreenshots_KeepsExistingAllowScreenshots()
+    {
+        const string existing = """
+            { "Vestigo": { "Desktop": { "AllowScreenshots": true }, "Modules": { "Desktop": { "Enabled": true } } } }
+            """;
+
+        string merged = ListenSettings.Merge(
+            existing,
+            Open(),
+            new Dictionary<string, bool> { ["Desktop"] = true });
+
+        Assert.True(ModuleSelection.ReadExisting(merged)["DesktopScreenshots"]);
+        Assert.DoesNotContain("DesktopScreenshots=", ModuleSelection.Serialize(new Dictionary<string, bool> { ["Desktop"] = true }));
     }
 
     [Fact]

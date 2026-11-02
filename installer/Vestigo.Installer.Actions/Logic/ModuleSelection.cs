@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, Audio, DebugOutput, and gated extras are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Audio, DebugOutput, and gated extras are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -72,11 +72,15 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowBootConfigurationChanges</c>.</summary>
         public const string BootConfigurationChanges = "BootConfigurationChanges";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowScreenshots</c>.</summary>
+        public const string DesktopScreenshots = "DesktopScreenshots";
+
         public static readonly IReadOnlyList<OptionToggle> OptionToggles = new List<OptionToggle>
         {
             new OptionToggle(SoftwareUninstall, "Software", "AllowUninstall"),
             new OptionToggle(AudioSetDefault, "Audio", "AllowSetDefault"),
-            new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges")
+            new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges"),
+            new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots")
         };
 
         public static readonly IReadOnlyList<ModuleDefinition> All = new List<ModuleDefinition>
@@ -87,7 +91,8 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, and code-integrity settings.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail and incremental reads of text log files.", true, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
-            new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop.", false, null),
+            new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop. Screenshots are a separate child feature.", false, null),
+            new ModuleDefinition(DesktopScreenshots, "Screenshots", "Allow capturing PNG screenshots of the console user's desktop, one display, one window, or a region (Vestigo:Desktop:AllowScreenshots). Discloses screen contents.", false, "Desktop"),
             new ModuleDefinition("Audio", "Audio", "List audio playback and recording endpoints, volumes, sessions, and defaults. Optionally switch the default device.", false, null),
             new ModuleDefinition(AudioSetDefault, "Set default audio device", "Allow changing the default, multimedia, and communications audio devices (Vestigo:Audio:AllowSetDefault).", false, "Audio"),
             new ModuleDefinition("DebugOutput", "Debug output", "Capture and filter Win32 OutputDebugString messages through DebugViewConsole. Reads debug output from every session.", false, null),
@@ -198,7 +203,30 @@ namespace Vestigo.Installer.Actions.Logic
             return result;
         }
 
-        /// <summary>Serializes states as <c>Name=1;Name=0</c> for the deferred action's CustomActionData.</summary>
+        /// <summary>
+        ///     True when an unselected, previously absent feature must not be serialized as an explicit disable.
+        ///     <see cref="DesktopScreenshots" /> is new: an upgrade from a build that lacked the feature reports
+        ///     it absent, and an unelevated immediate action cannot read <c>Desktop:AllowScreenshots</c>.
+        ///     Omitting the name from <see cref="Serialize" /> leaves the existing value in <see cref="Apply" />.
+        /// </summary>
+        public static bool PreservesExistingWhenUnselected(string name)
+        {
+            return string.Equals(name, DesktopScreenshots, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        ///     False when the feature state is only the default for a new, unselected toggle and must not be
+        ///     written. An explicit request (select or remove) or a currently installed feature is always written.
+        /// </summary>
+        public static bool ShouldWriteFeatureState(string name, bool requestIsExplicit, bool currentlyInstalled)
+        {
+            return requestIsExplicit || currentlyInstalled || !PreservesExistingWhenUnselected(name);
+        }
+
+        /// <summary>
+        ///     Serializes states as <c>Name=1;Name=0</c> for the deferred action's CustomActionData.
+        ///     Names that are omitted are left unchanged by <see cref="Apply" />.
+        /// </summary>
         public static string Serialize(IDictionary<string, bool> states)
         {
             StringBuilder builder = new StringBuilder();
