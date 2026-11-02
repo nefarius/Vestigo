@@ -10,12 +10,11 @@ Point an MCP client at a lab PC and let the agent do the install, capture, and a
 ## Install a driver
 
 1. Put the driver package (INF plus the files beside it) in a named root that has `Read` access.
-2. `create_device_node` with the class name, class GUID, and a hardware ID such as `Root\MyDriver`. `install_driver` with a `hardwareId` does this and the install in one step.
-3. `install_driver` with the INF path and the same hardware ID.
-4. `find_devices_by_hardware_id` to get the instance ID, then `restart_device` so the stack is rebuilt. If the result says `rebootRequired`, reboot yourself; Vestigo never triggers one.
-5. Iterate by installing again with `noDuplicates`, then restarting the device. Tear down with `uninstall_driver`, `remove_device_node`, and `remove_driver_store_package` so old packages do not accumulate.
+2. Create the ROOT node and install the driver in one of two ways: `create_device_node` with the class name, class GUID, and a hardware ID such as `Root\MyDriver`, then `install_driver` with the INF path; or one `install_driver` call with the INF path and that `hardwareId`, which creates the node and installs the driver.
+3. `find_devices_by_hardware_id` to get the instance ID, then `restart_device` so the stack is rebuilt. If the result says `rebootRequired`, reboot yourself; Vestigo never triggers one.
+4. Iterate by installing again with `noDuplicates`, then restarting the device. Tear down with `uninstall_driver`, `remove_device_node`, and `remove_driver_store_package` so old packages do not accumulate.
 
-Unsigned kernel drivers fail to start unless test-signing is on. `get_boot_security` shows the BCD value and the running kernel state. `set_test_signing` writes the default boot entry only when `System:AllowBootConfigurationChanges` is true, and it is refused while Secure Boot is on.
+Test-signing allows test-signed drivers to load; it does not allow unsigned drivers. `get_boot_security` shows the BCD value and the running kernel state. `set_test_signing` writes the default boot entry only when `System:AllowBootConfigurationChanges` is true, and it is refused while Secure Boot is on. Restart the PC after `set_test_signing` and before installing or loading the driver.
 
 ## Capture WPP live
 

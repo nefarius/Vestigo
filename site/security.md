@@ -11,7 +11,7 @@ Vestigo is meant to give an agent administrator-equivalent reach on a lab PC. Th
 
 - A fresh MSI install binds every interface and writes a generated bearer token into `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`.
 - `dotnet run` defaults to loopback with no tokens.
-- When `ApiTokens` is non-empty, `/mcp` and `/files` need `Authorization: Bearer <token>`. Tokens are compared by SHA-256 digest and are never written to logs.
+- When `ApiTokens` is non-empty, `/mcp` requires `Authorization: Bearer <token>`, while `/files` accepts that bearer token or a valid one-time ticket. Tokens are compared by SHA-256 digest and are never written to logs.
 - `/` and `/health` stay anonymous.
 - Binding beyond loopback without tokens is allowed and logs a startup `SECURITY WARNING`. Use that only on a network you trust.
 

@@ -10,7 +10,7 @@ Treat the lab PC as a remote pair of hands. The agent installs the build, puts t
 ## Install and uninstall a build
 
 1. `list_installed_software` / `get_installed_software` to see what is already there and whether a silent uninstall exists.
-2. Drop the new MSI or setup package into a write root, or `fetch_file` it from an HTTP(S) URL or UNC share as a job.
+2. Drop the new MSI or setup package into a write root, or `fetch_file` it from an HTTP(S) URL or UNC share as a background job. For a fetch, poll `wait_job` until the job is no longer `Running`, and start `run_process` only if the state is `Succeeded`.
 3. `run_process` (Processes is opt-in) to install. Use `wait` or `wait_job` / `read_job_output` to watch the exit code.
 4. After the run, `uninstall_software` with `dryRun` first, then for real. Silent uninstall stays off until `Software:AllowUninstall` is true. MSI, Burn, Inno Setup, NSIS, and quiet-uninstall strings are supported. Per-user entries and AppX/MSIX packages are not.
 
