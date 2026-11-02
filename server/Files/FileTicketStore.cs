@@ -106,7 +106,7 @@ public sealed class FileTicketStore(VestigoOptions options, TimeProvider? time =
 
             if (entry.InUse ||
                 !string.Equals(entry.Method, method, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(entry.FullPath, Normalize(fullPath), StringComparison.OrdinalIgnoreCase))
+                !string.Equals(entry.FullPath, Normalize(fullPath), StringComparison.Ordinal))
             {
                 return null;
             }

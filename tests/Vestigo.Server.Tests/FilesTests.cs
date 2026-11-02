@@ -246,6 +246,17 @@ public class FileTicketStoreTests
     }
 
     [Fact]
+    public void Ticket_PathMatchIsCaseSensitive()
+    {
+        FileTicketStore store = new(new VestigoOptions(), new FakeTime());
+        string token = store.Issue("GET", Full("a.png")).Token;
+
+        // Case-sensitive directories can hold case-distinct files, so a ticket never matches another casing.
+        Assert.Null(store.TryReserve(token, "GET", Full("A.png")));
+        Assert.NotNull(store.TryReserve(token, "GET", Full("a.png")));
+    }
+
+    [Fact]
     public void Release_MakesTicketUsableAgain()
     {
         FileTicketStore store = new(new VestigoOptions(), new FakeTime());
@@ -513,6 +524,26 @@ public class FileToolTests : IDisposable
         Assert.Equal("http://127.0.0.1:5098/files/work/a.bin?overwrite=false&deferToReboot=false", link.Url);
         Assert.False(link.SingleUse);
         Assert.Null(link.ExpiresUtc);
+    }
+
+    [Fact]
+    public void TryCreateDownload_WorksForVolumeRoot()
+    {
+        string file = Path.Combine(_root, "vol.png");
+        File.WriteAllText(file, "x");
+        string volume = Path.GetPathRoot(file)!;
+        VestigoOptions options = new()
+        {
+            ApiTokens = ["t"],
+            Roots = [new RootDefinition { Name = "drive-test", Path = volume, Access = RootAccess.Read }]
+        };
+        RootPolicy policy = new(options);
+
+        FileLink? link = new FileLinkIssuer(options, policy, new FileTicketStore(options)).TryCreateDownload(file);
+
+        Assert.NotNull(link);
+        Assert.Contains("/files/drive-test/", link.Url, StringComparison.Ordinal);
+        Assert.EndsWith("/vol.png", link.Url[..link.Url.IndexOf('?')], StringComparison.Ordinal);
     }
 
     [Fact]
