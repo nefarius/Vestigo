@@ -281,6 +281,37 @@ public class DesktopTests
     }
 
     [Fact]
+    public void TakeScreenshot_AddsDownloadLinkToMetadata()
+    {
+        byte[] png = ScreenCapture.EncodePng([255, 0, 0, 255], 1, 1);
+        CapturedScreenshot capture = new(
+            new ScreenCaptureInfo(
+                ScreenCaptureTarget.Desktop,
+                new DesktopRect(0, 0, 1, 1),
+                new DesktopSize(1, 1),
+                new DesktopSize(1, 1),
+                96,
+                [@"\\.\DISPLAY1"],
+                null,
+                null,
+                @"C:\shots\desk.png",
+                png.Length,
+                "abc",
+                false,
+                1),
+            png);
+        Vestigo.Files.FileLink link = new("http://h/files/shots/desk.png?ticket=t", DateTimeOffset.UtcNow, true, "curl", "ps");
+
+        CallToolResult result = DesktopTools.SuccessResult(capture, link);
+
+        TextContentBlock text = Assert.IsType<TextContentBlock>(result.Content[1]);
+        using JsonDocument document = JsonDocument.Parse(text.Text);
+        JsonElement download = document.RootElement.GetProperty("download");
+        Assert.Equal("http://h/files/shots/desk.png?ticket=t", download.GetProperty("url").GetString());
+        Assert.True(download.GetProperty("singleUse").GetBoolean());
+    }
+
+    [Fact]
     public async Task ListWindows_RejectsBadContextAndRegex()
     {
         DesktopTools tools = CreateTools(new UnavailableLauncher());

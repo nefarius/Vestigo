@@ -43,7 +43,10 @@ public sealed record PathInfo(
 public sealed record PathOperationResult(string FullPath, string? Destination, int Files);
 
 /// <summary>Upload instructions for one path.</summary>
-public sealed record UploadUrlInfo(string Url, string UrlTemplate, string Curl, string PowerShell, long MaxUploadBytes);
+public sealed record UploadUrlInfo(string FullPath, long MaxUploadBytes, FileLink Link);
+
+/// <summary>Download instructions for one existing file.</summary>
+public sealed record DownloadUrlInfo(string FullPath, long Size, FileLink Link);
 
 /// <summary>Result of scheduling a reboot-time operation.</summary>
 public sealed record RebootScheduleResult(string FullPath, bool RebootRequired);
@@ -57,7 +60,7 @@ public sealed class FileTools(
     IRebootScheduler scheduler,
     JobManager jobs,
     IHttpClientFactory httpClients,
-    IHttpContextAccessor? httpContext = null)
+    FileLinkIssuer links)
 {
     private static readonly string[] PeExtensions = [".exe", ".dll", ".sys"];
 
@@ -426,7 +429,7 @@ public sealed class FileTools(
     }
 
     [McpServerTool(Name = "get_upload_url")]
-    [Description("Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-WebRequest examples. Uploads need Write access to the root.")]
+    [Description("Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-WebRequest examples. Uploads need Write access to the root. When API tokens are configured the URL carries a one-time ticket bound to this path and these flags that expires and stops working after one successful upload, so the API token never has to be shared.")]
     public OperationResult<UploadUrlInfo> GetUploadUrl(
         [Description("Destination as root:relative\\path.")] string path,
         [Description("Replace an existing file.")] bool overwrite = false,
@@ -451,16 +454,33 @@ public sealed class FileTools(
             return OperationResult<UploadUrlInfo>.Fail("invalid_path", "Path needs a relative file name without ':' or '..'.");
         }
 
-        string baseUrl = BaseUrl();
-        string encoded = string.Join('/', relative.Split('/').Select(Uri.EscapeDataString));
-        string query = $"?overwrite={overwrite.ToString().ToLowerInvariant()}&deferToReboot={deferToReboot.ToString().ToLowerInvariant()}";
-        string url = $"{baseUrl}/files/{Uri.EscapeDataString(root)}/{encoded}{query}";
-        string template = $"{baseUrl}/files/{{root}}/{{path}}?overwrite=false&deferToReboot=false";
-        string auth = options.AuthenticationEnabled ? " -H \"Authorization: Bearer <token>\"" : string.Empty;
-        string psAuth = options.AuthenticationEnabled ? " -Headers @{ Authorization = 'Bearer <token>' }" : string.Empty;
-        string curl = $"curl.exe{auth} -H \"X-Content-SHA256: <sha256>\" --upload-file \"<local file>\" \"{url}\"";
-        string powershell = $"Invoke-WebRequest -Method Put -Uri '{url}' -InFile '<local file>'{psAuth}";
-        return OperationResult<UploadUrlInfo>.Ok(new UploadUrlInfo(url, template, curl, powershell, options.Files.MaxUploadBytes));
+        FileLink link = links.CreateUpload(root, relative, check.FullPath!, overwrite, deferToReboot);
+        return OperationResult<UploadUrlInfo>.Ok(new UploadUrlInfo(check.FullPath!, options.Files.MaxUploadBytes, link));
+    }
+
+    [McpServerTool(Name = "get_download_url")]
+    [Description("Returns an HTTP GET URL for downloading an existing file from a root with Read access, with curl and Invoke-WebRequest examples. When API tokens are configured the URL carries a one-time ticket that expires and stops working after one successful download, so the API token never has to be shared.")]
+    public OperationResult<DownloadUrlInfo> GetDownloadUrl(
+        [Description("File as root:relative\\path or an absolute path inside a root with Read access.")] string path)
+    {
+        PathCheck check = Resolve(path, RootAccess.Read, mustExist: true);
+        if (!check.Success)
+        {
+            return Fail<DownloadUrlInfo>(check);
+        }
+
+        if (!File.Exists(check.FullPath))
+        {
+            return OperationResult<DownloadUrlInfo>.Fail("not_found", $"File does not exist: '{check.FullPath}'.");
+        }
+
+        FileLink? link = links.TryCreateDownload(check.FullPath!);
+        if (link is null)
+        {
+            return OperationResult<DownloadUrlInfo>.Fail("invalid_path", "The file is not reachable through a named root with Read access.");
+        }
+
+        return Guard(() => OperationResult<DownloadUrlInfo>.Ok(new DownloadUrlInfo(check.FullPath!, new FileInfo(check.FullPath!).Length, link)));
     }
 
     [McpServerTool(Name = "delete_file_on_reboot")]
@@ -491,19 +511,6 @@ public sealed class FileTools(
         IgnoreInaccessible = true,
         RecurseSubdirectories = false
     };
-
-    private string BaseUrl()
-    {
-        HttpRequest? request = httpContext?.HttpContext?.Request;
-        if (request is not null && request.Host.HasValue)
-        {
-            return $"{request.Scheme}://{request.Host.Value}";
-        }
-
-        System.Net.IPAddress address = System.Net.IPAddress.Parse(options.ListenAddress);
-        string host = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]" : address.ToString();
-        return $"http://{host}:{options.ListenPort}";
-    }
 
     private PathCheck Resolve(string path, RootAccess access, bool mustExist = false)
     {

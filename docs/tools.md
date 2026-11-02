@@ -10,7 +10,7 @@ Point an MCP client at `http://127.0.0.1:5098/mcp` (Streamable HTTP). When `ApiT
 
 `scan_etl_metadata` returns the distinct PDB name, GUID, age, and symbol-server index prefix referenced by the ETL files.
 
-`convert_etl` writes `json` or `ndjson` under an allowed output root. The tool result is a summary: path, event count, bytes, missing WPP formats, truncation, and symbol diagnostics. It does not return the trace payload.
+`convert_etl` writes `json` or `ndjson` under an allowed output root. The tool result is a summary: path, event count, bytes, missing WPP formats, truncation, and symbol diagnostics. It does not return the trace payload. When the output file also lies in a root with `Read` access it adds a `download` link (a one-time ticket when `ApiTokens` is set); fetch the file with it instead of an API token.
 
 ## Realtime
 
@@ -104,11 +104,13 @@ Paths are `root:relative\path` (or an absolute path inside a root). Reads need `
 
 `fetch_file` downloads an HTTP(S) URL or copies an ordinary UNC file (not `\\?\` or `\\.\` device paths) into a root as a background job; use `wait_job` and `read_job_output`. Pass `expectedSha256` to reject a wrong file, and `overwrite` to replace an existing one. The size is capped by `Vestigo:Files:MaxUploadBytes`.
 
-`get_upload_url` returns the `PUT` URL for a root-relative path plus ready-to-run `curl.exe` and `Invoke-WebRequest` commands. `delete_file_on_reboot` schedules a deletion with `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)`; the service must run elevated.
+`get_upload_url` returns the `PUT` URL for a root-relative path plus ready-to-run `curl.exe` and `Invoke-WebRequest` commands. `get_download_url` does the same for an existing file in a root with `Read` access. When `ApiTokens` is set, both URLs carry a one-time `ticket` (see below), so the API token never has to be copied into a client command or a chat. `delete_file_on_reboot` schedules a deletion with `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)`; the service must run elevated.
 
 ### HTTP transfer endpoints
 
-Both endpoints use the same authentication as `/mcp`: bearer tokens when `ApiTokens` is set, otherwise anonymous.
+When `ApiTokens` is set, both endpoints accept either `Authorization: Bearer <token>` (permanent access) or a one-time `?ticket=` query parameter. Without `ApiTokens` they are anonymous and no ticket is minted.
+
+Tickets are minted by the MCP tools that prepare a file for transfer: `get_download_url`, `get_upload_url`, `take_screenshot` with `saveTo`, and `convert_etl` when its output also lies in a root with `Read` access. Those results carry a `download` (or `link`) object with `url`, `expiresUtc`, `singleUse`, `curl` and `powershell`. A ticket is bound to one method, one resolved file path and, for uploads, the `overwrite` and `deferToReboot` values chosen when it was issued (the query string cannot change them). It expires after `Vestigo:Files:TicketLifetime` (default 15 minutes) and becomes invalid as soon as one transfer completes successfully. A failed or aborted transfer leaves it usable until it expires. Ticketed downloads stream the whole file and do not support `Range`. Responses are sent with `Cache-Control: no-store`. Tickets live in memory only, so a service restart invalidates them. An unknown, expired, used or mismatched ticket returns 401 `invalid_ticket`.
 
 `PUT /files/{root}/{path}?overwrite=false&deferToReboot=false` streams the request body to a temporary file in the target directory and commits it with an atomic replace. An optional `X-Content-SHA256` header is checked before the commit; a mismatch returns 422 and writes nothing. The response is JSON:
 
@@ -150,7 +152,7 @@ Windows belong to a desktop, so the default `interactive` context starts `Vestig
 
 `take_screenshot` captures a PNG of the console user's desktop. `target` is `desktop` (the default; the virtual screen across all monitors), `display` (one GDI display: `display` is `primary` or `\\.\DISPLAYn` from `list_displays`), `window` (one top-level window), or `region` (`x`, `y`, `width`, `height` in the same physical-pixel coordinates `list_displays` reports; the rectangle is clipped to the virtual screen and an empty overlap fails with `empty_region`). A window is selected with `windowHandle` from `list_windows`, or with `pid` / `processName` / `titleRegex` that must resolve to exactly one visible top-level window (`ambiguous_window` lists the candidates; `window_not_found` and `window_minimized` are the other failures). Do not pass both a handle and the filter fields.
 
-The tool returns a downscaled PNG as MCP image content (longest edge `maxEdge`, default 1920; `0` omits the preview) plus JSON metadata: target, captured bounds, full and preview sizes, DPI, intersecting displays, window handle and title when relevant, and the saved path, size and SHA-256 when `saveTo` is set. `saveTo` is a `root:relative\file.png` in a root with Write access; `overwrite` replaces an existing file. `includeCursor` draws the mouse pointer. The capture always runs in the interactive session through `Vestigo.exe --session-helper capture-screen`; there is no service-session path.
+The tool returns a downscaled PNG as MCP image content (longest edge `maxEdge`, default 1920; `0` omits the preview) plus JSON metadata: target, captured bounds, full and preview sizes, DPI, intersecting displays, window handle and title when relevant, and the saved path, size and SHA-256 when `saveTo` is set, plus a `download` link to the saved file when the Files module is enabled and the path is in a root with `Read` access. With `ApiTokens` configured that link carries a one-time ticket, so fetching the full-resolution PNG does not need the API token. `saveTo` is a `root:relative\file.png` in a root with Write access; `overwrite` replaces an existing file. `includeCursor` draws the mouse pointer. The capture always runs in the interactive session through `Vestigo.exe --session-helper capture-screen`; there is no service-session path.
 
 Known limitations: the lock screen and UAC secure desktop fail with `desktop_unavailable`; DRM or `SetWindowDisplayAffinity` windows, and some GPU or fullscreen-exclusive apps, can render black with `PrintWindow`; protected content is not bypassed. Image bytes and base64 are never logged.
 

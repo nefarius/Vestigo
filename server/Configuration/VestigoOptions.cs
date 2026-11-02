@@ -178,6 +178,11 @@ public sealed class VestigoOptions
         {
             throw new InvalidOperationException("Vestigo:Files:MaxUploadBytes must be positive.");
         }
+        if (Files.TicketLifetime <= TimeSpan.Zero || Files.TicketLifetime > TimeSpan.FromHours(24))
+        {
+            throw new InvalidOperationException("Vestigo:Files:TicketLifetime must be positive and at most 24 hours.");
+        }
+
         Devices.Validate();
         Services.Validate();
         Software.Validate();

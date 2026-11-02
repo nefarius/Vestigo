@@ -18,7 +18,8 @@ public sealed record ConversionSummary(
     int MissingFormatCount,
     bool Truncated,
     int ResolvedSymbolCount,
-    IReadOnlyList<string> Diagnostics);
+    IReadOnlyList<string> Diagnostics,
+    Vestigo.Files.FileLink? Download = null);
 
 /// <summary>Converts ETL files to JSON or NDJSON inside the configured output roots.</summary>
 public sealed class OfflineConversionService(

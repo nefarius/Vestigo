@@ -13,7 +13,7 @@ namespace Vestigo.Desktop;
 
 /// <summary>MCP tools that list Win32 windows and the displays they are rendered on, and capture screenshots.</summary>
 [McpServerToolType]
-public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions options, RootPolicy roots)
+public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions options, RootPolicy roots, FileLinkIssuer? links = null)
 {
     [McpServerTool(Name = "list_windows")]
     [Description(
@@ -72,7 +72,7 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
         + "must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel "
         + "coordinates list_displays reports. Returns a downscaled preview as image content (maxEdge, default 1920; "
         + "0 omits it) plus JSON metadata. saveTo stores the full-resolution PNG in a root with Write access "
-        + "(root:relative\\file.png). Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.")]
+        + "(root:relative\\file.png) and adds a download link (one-time ticket when API tokens are configured). Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.")]
     public async Task<CallToolResult> TakeScreenshot(
         [Description("'desktop' (default), 'display', 'window' or 'region'.")] string target = ScreenCaptureTarget.Desktop,
         [Description("GDI device name such as \\\\.\\DISPLAY2, or 'primary'. Required for target 'display'.")] string? display = null,
@@ -159,10 +159,16 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
         OperationResult<CapturedScreenshot> captured = await inventory
             .CaptureAsync(request, savePath, overwrite, elevated, cancellationToken)
             .ConfigureAwait(false);
-        return captured.Success ? SuccessResult(captured.Value!) : ErrorResult(captured.ErrorCode!, captured.Error!);
+        if (!captured.Success)
+        {
+            return ErrorResult(captured.ErrorCode!, captured.Error!);
+        }
+
+        FileLink? download = captured.Value!.Info.SavedPath is { } saved ? links?.TryCreateDownload(saved) : null;
+        return SuccessResult(captured.Value!, download);
     }
 
-    internal static CallToolResult SuccessResult(CapturedScreenshot capture)
+    internal static CallToolResult SuccessResult(CapturedScreenshot capture, FileLink? download = null)
     {
         List<ContentBlock> content = [];
         if (capture.PreviewPng is { Length: > 0 })
@@ -170,7 +176,15 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
             content.Add(ImageContentBlock.FromBytes(capture.PreviewPng, "image/png"));
         }
 
-        content.Add(new TextContentBlock { Text = JsonSerializer.Serialize(capture.Info, SessionHelper.Json) });
+        string json = JsonSerializer.Serialize(capture.Info, SessionHelper.Json);
+        if (download is not null)
+        {
+            System.Text.Json.Nodes.JsonObject node = (System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(json)!;
+            node["download"] = JsonSerializer.SerializeToNode(download, SessionHelper.Json);
+            json = node.ToJsonString(SessionHelper.Json);
+        }
+
+        content.Add(new TextContentBlock { Text = json });
         return new CallToolResult { Content = content };
     }
 
