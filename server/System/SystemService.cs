@@ -214,8 +214,13 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
             canonical,
             before is null ? null : MapUacLevel(before),
             after is null ? null : MapUacLevel(after),
-            before?.EnableLua != after?.EnableLua));
+            UacRebootRequired(before, after)));
     }
+
+    internal static bool UacRebootRequired(UacSettings? before, UacSettings? after) =>
+        before?.EnableLua is not { } beforeLua ||
+        after?.EnableLua is not { } afterLua ||
+        beforeLua != afterLua;
 
     internal static string MapUacLevel(UacSettings settings)
     {

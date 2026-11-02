@@ -459,6 +459,58 @@ public class SystemToolsTests
     }
 
     [Fact]
+    public void SetUac_ReportsRebootRequiredWhenProbeIsUnknown()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.ReadUacError = new InvalidOperationException("missing");
+
+        UacChange change = service.SetUac("never").Value!;
+
+        Assert.Null(change.Before);
+        Assert.Null(change.After);
+        Assert.True(change.RebootRequired);
+        Assert.Equal(1, platform.WriteUacCalls);
+    }
+
+    [Fact]
+    public void SetUac_ReportsRebootRequiredWhenEnableLuaIsUnknown()
+    {
+        (SystemService service, FakePlatform platform) = Create();
+        platform.Uac = new UacSettings(null, 5, 5, 1);
+
+        UacChange change = service.SetUac("never").Value!;
+
+        Assert.True(change.RebootRequired);
+        Assert.True(platform.Uac.EnableLua);
+    }
+
+    [Theory]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    public void UacRebootRequired_ComparesKnownEnableLua(bool before, bool after, bool expected) =>
+        Assert.Equal(
+            expected,
+            SystemService.UacRebootRequired(
+                new UacSettings(before, 5, 5, 1),
+                new UacSettings(after, 5, 5, 1)));
+
+    [Fact]
+    public void UacRebootRequired_UnknownOrMissingIsConservative()
+    {
+        UacSettings known = new(true, 5, 5, 1);
+        UacSettings unknown = new(null, 5, 5, 1);
+
+        Assert.True(SystemService.UacRebootRequired(null, known));
+        Assert.True(SystemService.UacRebootRequired(known, null));
+        Assert.True(SystemService.UacRebootRequired(null, null));
+        Assert.True(SystemService.UacRebootRequired(unknown, known));
+        Assert.True(SystemService.UacRebootRequired(known, unknown));
+        Assert.True(SystemService.UacRebootRequired(unknown, unknown));
+    }
+
+    [Fact]
     public void SetUac_AcceptsCaseInsensitiveLevel()
     {
         (SystemService service, _) = Create();
@@ -510,4 +562,52 @@ public class SystemToolsTests
     [Fact]
     public void ReadSecureBoot_PositiveOnUefiIsEnabled() =>
         Assert.True(WindowsVersionPlatform.ReadSecureBoot(1, uefi: true));
+
+    [Fact]
+    public void ReadEnableLua_MissingValueIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadEnableLua(null));
+
+    [Fact]
+    public void ReadEnableLua_ZeroIsDisabled() =>
+        Assert.False(WindowsVersionPlatform.ReadEnableLua(0));
+
+    [Fact]
+    public void ReadEnableLua_NonzeroIsEnabled() =>
+        Assert.True(WindowsVersionPlatform.ReadEnableLua(1));
+
+    [Fact]
+    public void ReadEnableLua_NegativeIsEnabled() =>
+        Assert.True(WindowsVersionPlatform.ReadEnableLua(-1));
+
+    [Fact]
+    public void ReadEnableLua_NonNumericIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadEnableLua("abc"));
+
+    [Fact]
+    public void ReadEnableLua_ByteArrayIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadEnableLua(new byte[] { 1 }));
+
+    [Fact]
+    public void ReadDword_MissingValueIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadDword(null));
+
+    [Fact]
+    public void ReadDword_ZeroIsZero() =>
+        Assert.Equal(0, WindowsVersionPlatform.ReadDword(0));
+
+    [Fact]
+    public void ReadDword_NonzeroIsPreserved() =>
+        Assert.Equal(5, WindowsVersionPlatform.ReadDword(5));
+
+    [Fact]
+    public void ReadDword_NegativeIsPreserved() =>
+        Assert.Equal(-1, WindowsVersionPlatform.ReadDword(-1));
+
+    [Fact]
+    public void ReadDword_NonNumericIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadDword("abc"));
+
+    [Fact]
+    public void ReadDword_ByteArrayIsUnknown() =>
+        Assert.Null(WindowsVersionPlatform.ReadDword(new byte[] { 1, 0, 0, 0 }));
 }
