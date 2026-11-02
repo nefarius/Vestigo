@@ -404,3 +404,9 @@ publish-x64/
 
 # Fallout build temp
 .fallout/temp/
+
+# Jekyll local build
+site/_site/
+site/.jekyll-cache/
+site/.jekyll-metadata
+_site/

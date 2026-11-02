@@ -92,6 +92,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 
 ## Documentation
 
+- [Project site](https://nefarius.github.io/Vestigo/)
 - [Architecture](docs/architecture.md)
 - [MCP tools](docs/tools.md)
 - [MCP tool catalog](docs/generated/mcp-tools.md)

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{% if page.title %}{{ page.title }} · {% endif %}{{ site.title }}</title>
+  <meta name="description" content="{{ page.description | default: site.description | escape }}">
+  <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+  <link rel="icon" type="image/png" href="{{ '/assets/NSS-128x128.png' | relative_url }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap brand">
+      <a class="logo" href="{{ '/' | relative_url }}">
+        <img src="{{ '/assets/NSS-128x128.png' | relative_url }}" width="48" height="48" alt="">
+        <span>
+          <strong>{{ site.title }}</strong>
+          <small>MCP server for Windows labs</small>
+        </span>
+      </a>
+    </div>
+    <nav class="wrap nav" aria-label="Booklet">
+      <a href="{{ '/' | relative_url }}"{% if page.url == '/' %} aria-current="page"{% endif %}>Intro</a>
+      <a href="{{ '/features/' | relative_url }}"{% if page.url == '/features/' %} aria-current="page"{% endif %}>Features</a>
+      <a href="{{ '/developers/' | relative_url }}"{% if page.url == '/developers/' %} aria-current="page"{% endif %}>Developers</a>
+      <a href="{{ '/qa/' | relative_url }}"{% if page.url == '/qa/' %} aria-current="page"{% endif %}>QA</a>
+      <a href="{{ '/security/' | relative_url }}"{% if page.url == '/security/' %} aria-current="page"{% endif %}>Security</a>
+    </nav>
+  </header>
+  <main class="wrap content">
+    {{ content }}
+  </main>
+  <footer class="wrap site-footer">
+    <p>Vestigo is a Windows-only MCP server. This booklet is a public introduction; the repository is still private.</p>
+  </footer>
+</body>
+</html>
