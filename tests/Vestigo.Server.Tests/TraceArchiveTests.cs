@@ -60,6 +60,20 @@ public sealed class TraceArchiveTests : IDisposable
     }
 
     [Fact]
+    public void Extract_RejectsDuplicateTargetsUnlessOverwrite()
+    {
+        string zip = Path.Combine(VestigoPaths.TraceDirectory, "dup.zip");
+        CreateZip(zip, ("dup.pdb", "one"), ("dup.pdb", "two"));
+        TraceArchiveExtractor extractor = CreateExtractor();
+
+        Assert.Equal("already_exists", extractor.Extract(zip, VestigoPaths.TraceDirectory, overwrite: false).ErrorCode);
+        Assert.False(File.Exists(Path.Combine(VestigoPaths.TraceDirectory, "dup.pdb")));
+
+        Assert.True(extractor.Extract(zip, VestigoPaths.TraceDirectory, overwrite: true).Success);
+        Assert.Equal("two", File.ReadAllText(Path.Combine(VestigoPaths.TraceDirectory, "dup.pdb")));
+    }
+
+    [Fact]
     public void Extract_HonorsOverwriteAndEntryCap()
     {
         string zip = Path.Combine(VestigoPaths.TraceDirectory, "once.zip");

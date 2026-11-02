@@ -110,12 +110,21 @@ public sealed class TraceArchiveExtractor(VestigoOptions options, PathPolicy pat
                         $"Refusing to write through a link: '{parent}'.");
                 }
 
-                planned.Add((entry, target.FullPath!));
+                string full = target.FullPath!;
+                if (!overwrite &&
+                    planned.Exists(item => string.Equals(item.TargetPath, full, PathComparison())))
+                {
+                    return OperationResult<TraceArchiveExtraction>.Fail(
+                        "already_exists",
+                        $"Output already exists: '{full}'.");
+                }
+
+                planned.Add((entry, full));
             }
 
             foreach ((ZipArchiveEntry entry, string targetPath) in planned)
             {
-                entry.ExtractToFile(targetPath, overwrite: true);
+                entry.ExtractToFile(targetPath, overwrite);
                 extracted.Add(targetPath);
             }
 
@@ -170,4 +179,7 @@ public sealed class TraceArchiveExtractor(VestigoOptions options, PathPolicy pat
             return false;
         }
     }
+
+    private static StringComparison PathComparison() =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 }
