@@ -126,6 +126,7 @@ public static class ModuleRegistry
         bool diagnosticsOnline = diagnostics && options.Diagnostics.AllowOnlineRevocation;
         bool diagnosticsProbes = diagnostics && options.Diagnostics.AllowCaptureProbes;
         bool diagnosticsNetwork = diagnostics && options.Diagnostics.AllowNetworkProbes;
+        bool diagnosticsPlayback = diagnostics && options.Diagnostics.AllowAudioPlayback;
         if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics)
         {
             return null;
@@ -165,7 +166,7 @@ public static class ModuleRegistry
             if (diagnostics)
             {
                 names.Add("Diagnostics");
-                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork));
+                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback));
             }
 
             string named = names.Count == 1
@@ -198,7 +199,7 @@ public static class ModuleRegistry
 
         if (diagnostics)
         {
-            extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork) + " ";
+            extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback) + " ";
         }
 
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
@@ -212,14 +213,14 @@ public static class ModuleRegistry
                "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
 
-    private static string DiagnosticsClause(string reach, bool online, bool probes, bool network) =>
-        $"{reach} can {DiagnosticsDetail(online, probes, network)}";
+    private static string DiagnosticsClause(string reach, bool online, bool probes, bool network, bool playback) =>
+        $"{reach} can {DiagnosticsDetail(online, probes, network, playback)}";
 
-    private static string DiagnosticsDetail(bool online, bool probes, bool network)
+    private static string DiagnosticsDetail(bool online, bool probes, bool network, bool playback)
     {
         string text = online
-            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, and list TCP and UDP bindings owned by a process."
-            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, and list TCP and UDP bindings owned by a process.";
+            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, and check an audio format."
+            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, and check an audio format.";
         if (probes)
         {
             text += " Capture probes may observe whether frames arrive, and they do not return pixels.";
@@ -228,6 +229,11 @@ public static class ModuleRegistry
         if (network)
         {
             text += " Network probes may contact allow-listed destinations, and they do not capture packets.";
+        }
+
+        if (playback)
+        {
+            text += " Audio playback probes may play a synthetic tone on a render endpoint.";
         }
 
         return text;

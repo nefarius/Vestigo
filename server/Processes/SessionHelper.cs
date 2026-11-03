@@ -25,6 +25,8 @@ public static partial class SessionHelper
 
     public const string ProbeCaptureCommand = "probe-capture";
 
+    public const string ProbeAudioFormatCommand = "probe-audio-format";
+
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static bool IsInvocation(string[] args) =>
@@ -35,7 +37,7 @@ public static partial class SessionHelper
     {
         if (args.Length < 2 || args[0] != Flag)
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{ProbeCaptureCommand}> ..." }, Json));
+            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}> ..." }, Json));
             return 2;
         }
 
@@ -48,6 +50,7 @@ public static partial class SessionHelper
             SetDefaultAudioCommand => RunSetDefaultAudio(args),
             CaptureScreenCommand => RunCaptureScreen(args),
             ProbeCaptureCommand => RunProbeCapture(args),
+            ProbeAudioFormatCommand => RunProbeAudioFormat(args),
             _ => Reject($"Unknown session-helper command '{args[1]}'.")
         };
     }

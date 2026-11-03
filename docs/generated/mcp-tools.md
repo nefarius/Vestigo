@@ -448,6 +448,15 @@ Lists Windows audio playback (render) and recording (capture) endpoints with fri
 | `includeSessions` | `bool` | no | `true` | Include per-process audio sessions. Defaults to true. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 
+## `list_camera_formats`
+
+Lists video capture devices, or the advertised media types of one device. Omit device to enumerate names and symbolic links without activating a source. Pass a symbolic link or friendly name to activate that source, read its advertised types, and shut it down. No camera sample is read. Some cameras may indicate activity while the source is open. stage is enumerated or advertised. processedSamples is false.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `device` | `string` | no | `null` | Symbolic link or friendly name. Omit to list devices without formats. |
+| `limit` | `int` | no | `32` | Maximum devices when device is omitted, or maximum formats when one device is selected. Clamped to 1..Vestigo:Diagnostics:MaxCameraFormats. |
+
 ## `list_captures`
 
 Lists captures owned by this Vestigo process.
@@ -603,6 +612,15 @@ Lists Win32 services and kernel/file-system drivers with state, start type, imag
 | `state` | `string` | no | `null` | Only services in this state: stopped, running, paused, start_pending, stop_pending, continue_pending or pause_pending. |
 | `limit` | `int` | no | `200` | Maximum entries to return, 1 to 1000. |
 
+## `list_video_encoders`
+
+Lists video encoders registered with Media Foundation, using MFTEnumEx. backend must be media-foundation. The result is an enumeration: transforms are not activated and no frames are submitted. It is not an inventory of vendor encoder APIs that do not register an MFT. discoverySource is MFTEnumEx, stage is enumerated, activated and processedSamples are false.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `backend` | `string` | no | `media-foundation` | Discovery backend. Only media-foundation is implemented. |
+| `limit` | `int` | no | `100` | Maximum encoders. Clamped to 1..Vestigo:Diagnostics:MaxVideoEncoders. |
+
 ## `list_windows`
 
 Lists Win32 windows on the chosen desktop with owning process, parent and owner, physical-pixel bounds, and the GDI display they are rendered on. Filters combine: pid or processName, narrowed by titleRegex and className. context 'interactive' (default) enumerates the console user's desktop through the session helper.
@@ -646,6 +664,17 @@ Runs 'msvsmon /prepcomputer /private /quiet' as a job: configures the Windows fi
 | `version` | `string` | yes |  | '2022' or '2026'. |
 | `arch` | `string` | no | `x64` | 'x64' (default), 'arm64' or 'x86'. |
 | `context` | `string` | no | `service` | 'service' (default) or 'interactive'. |
+
+## `probe_audio_format`
+
+Checks whether a render or capture endpoint supports a shared-mode PCM format. format is pcm-rate-16-channels, for example pcm-48000-16-2. endpoint is an endpoint id or default-render. The format check does not start the stream and does not emit sound. playback true renders a 440 Hz tone for durationMs, only when Vestigo:Diagnostics:AllowAudioPlayback is true, and only on a render endpoint. The probe runs in the console user's session, uses shared mode, and does not change the default endpoint or record a microphone. A result names the format, duration, backend wasapi, and workload format-check or synthetic-tone. It is not an application performance measurement.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `endpoint` | `string` | yes |  | Endpoint id, or default-render. |
+| `format` | `string` | yes |  | pcm-rate-16-channels. Rate is 8000..192000. Channels are 1 or 2. |
+| `durationMs` | `int` | no | `1000` | Playback length in milliseconds. Ignored unless playback is true. Capped by Vestigo:Diagnostics:MaxAudioProbeDuration. |
+| `playback` | `bool` | no | `false` | Render a synthetic tone. Requires Vestigo:Diagnostics:AllowAudioPlayback. |
 
 ## `probe_capture_support`
 

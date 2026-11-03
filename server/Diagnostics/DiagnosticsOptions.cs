@@ -14,6 +14,9 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>test_endpoint</c>. Destinations must also be listed in <see cref="AllowedProbeDestinations"/>.</summary>
     public bool AllowNetworkProbes { get; set; }
 
+    /// <summary>Allows <c>probe_audio_format</c> to render a synthetic tone. Format checks stay available without it.</summary>
+    public bool AllowAudioPlayback { get; set; }
+
     /// <summary>Hosts, or <c>host:port</c> entries, that <c>test_endpoint</c> may contact. Empty allows none.</summary>
     public string[] AllowedProbeDestinations { get; set; } = [];
 
@@ -34,6 +37,15 @@ public sealed class DiagnosticsOptions
 
     /// <summary>Upper bound for one <c>test_endpoint</c> call.</summary>
     public TimeSpan MaxEndpointProbeDuration { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Upper bound for <c>list_video_encoders</c> <c>limit</c>.</summary>
+    public int MaxVideoEncoders { get; set; } = 200;
+
+    /// <summary>Upper bound for <c>list_camera_formats</c> <c>limit</c>.</summary>
+    public int MaxCameraFormats { get; set; } = 64;
+
+    /// <summary>Upper bound for one audible <c>probe_audio_format</c> call.</summary>
+    public TimeSpan MaxAudioProbeDuration { get; set; } = TimeSpan.FromSeconds(2);
 
     public void Validate()
     {
@@ -65,6 +77,21 @@ public sealed class DiagnosticsOptions
         if (MaxEndpointProbeDuration < TimeSpan.FromMilliseconds(100) || MaxEndpointProbeDuration > TimeSpan.FromSeconds(30))
         {
             throw new InvalidOperationException("Vestigo:Diagnostics:MaxEndpointProbeDuration must be between 00:00:00.100 and 00:00:30.");
+        }
+
+        if (MaxVideoEncoders is < 1 or > 1000)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxVideoEncoders must be between 1 and 1000.");
+        }
+
+        if (MaxCameraFormats is < 1 or > 500)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxCameraFormats must be between 1 and 500.");
+        }
+
+        if (MaxAudioProbeDuration < TimeSpan.FromMilliseconds(100) || MaxAudioProbeDuration > TimeSpan.FromSeconds(5))
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxAudioProbeDuration must be between 00:00:00.100 and 00:00:05.");
         }
 
         if (AllowedProbeDestinations is null || AllowedProbeDestinations.Length > 64)
