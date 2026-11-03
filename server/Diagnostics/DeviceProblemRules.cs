@@ -33,7 +33,12 @@ internal static class DeviceProblemRules
         DeviceDetails device = evidence.Device;
         List<ObservedFact> observed = Facts(evidence);
         uint? code = device.ProblemCode;
-        if (code is null or 0)
+        if (code is null)
+        {
+            return new DeviceProblemReport(device.InstanceId, null, observed, null, [], true);
+        }
+
+        if (code == 0)
         {
             return new DeviceProblemReport(device.InstanceId, code, observed, "No CM_PROB code is set on this device.", [], false);
         }
@@ -167,17 +172,16 @@ internal static class DeviceProblemRules
 
     private static void AddInstall(DeviceProblemEvidence evidence, List<ProblemHypothesis> hypotheses)
     {
-        InstallSection? failed = evidence.InstallHistory?.Sections.LastOrDefault(section =>
-            section.ExitStatus is { } status && !status.StartsWith("SUCCESS", StringComparison.OrdinalIgnoreCase));
-        if (failed?.ExitStatus is not { } exit)
+        InstallSection? latest = evidence.InstallHistory?.Sections.LastOrDefault(section => section.ExitStatus is not null);
+        if (latest?.ExitStatus is not { } exit || exit.StartsWith("SUCCESS", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         hypotheses.Add(new ProblemHypothesis(
             "install-exit",
-            $"The latest matching install section in {failed.SourceFile} ended with {exit}.",
-            [$"setupapi:{failed.SourceFile}"]));
+            $"The latest matching install section in {latest.SourceFile} ended with {exit}.",
+            [$"setupapi:{latest.SourceFile}"]));
     }
 
     private static void AddBoot(DeviceProblemEvidence evidence, List<ProblemHypothesis> hypotheses)

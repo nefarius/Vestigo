@@ -26,6 +26,20 @@ public sealed class DeviceProblemTests
     }
 
     [Fact]
+    public void Rules_TreatsAMissingProblemCodeAsInsufficientEvidence()
+    {
+        DeviceProblemReport missing = DeviceProblemRules.Assess(Evidence(Device(null)));
+
+        Assert.True(missing.InsufficientEvidence);
+        Assert.Null(missing.Explanation);
+        Assert.Empty(missing.Hypotheses);
+
+        DeviceProblemReport clear = DeviceProblemRules.Assess(Evidence(Device(0)));
+        Assert.False(clear.InsufficientEvidence);
+        Assert.Equal("No CM_PROB code is set on this device.", clear.Explanation);
+    }
+
+    [Fact]
     public void Rules_ReportInsufficientEvidenceForAnUnknownCode()
     {
         DeviceProblemReport report = DeviceProblemRules.Assess(Evidence(Device(99)));
@@ -46,6 +60,13 @@ public sealed class DeviceProblemTests
         DeviceProblemReport failedInstall = DeviceProblemRules.Assess(install);
         Assert.Contains(failedInstall.Hypotheses, item => item.Label == "install-exit" && item.Statement.Contains("0xE0000228", StringComparison.Ordinal));
         Assert.DoesNotContain("SECRET-RAW", string.Join('\n', failedInstall.Observed.Select(fact => fact.Fact)), StringComparison.Ordinal);
+
+        InstallSection succeeded = new("title", null, null, "success", [], [], [], "setupapi.dev.log", true, null, false);
+        DeviceProblemEvidence recovered = Evidence(Device(28)) with
+        {
+            InstallHistory = new InstallHistory(Id, false, [failed, succeeded])
+        };
+        Assert.DoesNotContain(DeviceProblemRules.Assess(recovered).Hypotheses, item => item.Label == "install-exit");
 
         DeviceProblemEvidence stopped = Evidence(Device(10, service: "vestigo")) with
         {

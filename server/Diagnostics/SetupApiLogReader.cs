@@ -125,9 +125,17 @@ internal sealed class SetupApiLogReader : ISetupApiLogSource
     {
         using FileStream stream = new(slice.File.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         Encoding encoding = Detect(stream);
-        stream.Position = slice.Skip;
-        List<string> lines = [..ReadLines(stream, slice.Take, encoding)];
-        if (slice.Skip > 0 && lines.Count > 0)
+        long skip = slice.Skip;
+        long take = slice.Take;
+        if (encoding.Equals(Encoding.Unicode) && (skip & 1) != 0)
+        {
+            skip++;
+            take = Math.Max(0, take - 1);
+        }
+
+        stream.Position = skip;
+        List<string> lines = [..ReadLines(stream, take, encoding)];
+        if (skip > 0 && lines.Count > 0)
         {
             lines.RemoveAt(0);
         }
