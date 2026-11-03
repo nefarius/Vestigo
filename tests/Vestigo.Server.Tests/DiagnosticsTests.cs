@@ -17,7 +17,12 @@ public class DiagnosticsTests : IDisposable
 {
     private readonly string _parent = Directory.CreateTempSubdirectory("vestigo-diagnostics").FullName;
 
-    public void Dispose() => Directory.Delete(_parent, recursive: true);
+    public void Dispose()
+    {
+        // Directory.Delete(recursive) returns ERROR_INVALID_PARAMETER on a directory junction.
+        RemoveDirectoryLinks(_parent);
+        Directory.Delete(_parent, recursive: true);
+    }
 
     [Fact]
     public void Inspect_ReportsArchitectureCharacteristicsAndPdbFileName()
@@ -344,6 +349,21 @@ public class DiagnosticsTests : IDisposable
             Diagnostics = { MaxProcessModules = maxModules }
         };
         return new ProcessModuleTools(new RootPolicy(options), source, options, logger ?? new RecordingLogger());
+    }
+
+    private static void RemoveDirectoryLinks(string directory)
+    {
+        foreach (string entry in Directory.EnumerateDirectories(directory))
+        {
+            if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+            {
+                Directory.Delete(entry);
+            }
+            else
+            {
+                RemoveDirectoryLinks(entry);
+            }
+        }
     }
 
     private static void CreateJunction(string link, string target)
