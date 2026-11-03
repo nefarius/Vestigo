@@ -296,7 +296,9 @@ public class DiagnosticsTests : IDisposable
         Assert.Contains("Diagnostics", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("SetupAPI", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("graphics adapters", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.Contains("TCP and UDP bindings", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("Capture probes", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.DoesNotContain("Network probes", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("online revocation", ModuleRegistry.GetPrivilegedModuleWarning(online));
         Assert.DoesNotContain("online revocation", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         VestigoOptions probes = new()
@@ -305,6 +307,12 @@ public class DiagnosticsTests : IDisposable
             Diagnostics = { AllowCaptureProbes = true }
         };
         Assert.Contains("Capture probes", ModuleRegistry.GetPrivilegedModuleWarning(probes));
+        VestigoOptions network = new()
+        {
+            Modules = { ["Diagnostics"] = new ModuleSettings { Enabled = true } },
+            Diagnostics = { AllowNetworkProbes = true }
+        };
+        Assert.Contains("Network probes", ModuleRegistry.GetPrivilegedModuleWarning(network));
         Assert.False(ModuleSelection.Defaults()["Diagnostics"]);
         Assert.Null(ModuleSelection.Find("Diagnostics")!.Parent);
     }

@@ -24,10 +24,14 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Devices:NefconPath` | `null` |
 | `Devices:NefconTimeout` | `00:02:00` |
 | `Diagnostics:AllowCaptureProbes` | `false` |
+| `Diagnostics:AllowNetworkProbes` | `false` |
 | `Diagnostics:AllowOnlineRevocation` | `false` |
+| `Diagnostics:AllowedProbeDestinations` | `empty` |
+| `Diagnostics:MaxEndpointProbeDuration` | `00:00:05` |
 | `Diagnostics:MaxInspectBytes` | `268435456` |
 | `Diagnostics:MaxInstallHistoryBytes` | `16777216` |
 | `Diagnostics:MaxProbeDuration` | `00:00:05` |
+| `Diagnostics:MaxProcessConnections` | `500` |
 | `Diagnostics:MaxProcessModules` | `500` |
 | `Environment:ProtectedNames` | `COMSPEC, SystemRoot, windir` |
 | `EventLog:MaxEvents` | `500` |
