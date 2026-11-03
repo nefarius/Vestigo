@@ -23,8 +23,10 @@ internal static class WerReportParser
     {
         string text = Decode(bytes);
         Dictionary<string, string> fields = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<int, string> names = [];
-        Dictionary<int, string> values = [];
+        Dictionary<int, string> staticNames = [];
+        Dictionary<int, string> staticValues = [];
+        Dictionary<int, string> dynamicNames = [];
+        Dictionary<int, string> dynamicValues = [];
         foreach (string raw in text.Split('\n'))
         {
             string line = raw.TrimEnd('\r');
@@ -41,11 +43,14 @@ internal static class WerReportParser
 
             string key = line[..split].Trim();
             string value = Cap(line[(split + 1)..].Trim(), 512) ?? "";
-            if (TrySignature(key, out int index, out bool name))
+            if (TrySignature(key, out int index, out bool dynamic, out bool name))
             {
                 if (index is >= 0 and < 64)
                 {
-                    (name ? names : values)[index] = name ? Cap(value, 128) ?? "" : value;
+                    Dictionary<int, string> target = name
+                        ? dynamic ? dynamicNames : staticNames
+                        : dynamic ? dynamicValues : staticValues;
+                    target[index] = name ? Cap(value, 128) ?? "" : value;
                 }
 
                 continue;
@@ -55,22 +60,8 @@ internal static class WerReportParser
         }
 
         List<CrashSignature> signatures = [];
-        foreach (int index in names.Keys.Union(values.Keys).OrderBy(item => item))
-        {
-            if (signatures.Count == MaxSignatures)
-            {
-                break;
-            }
-
-            names.TryGetValue(index, out string? signatureName);
-            values.TryGetValue(index, out string? signatureValue);
-            if (string.IsNullOrEmpty(signatureName) && string.IsNullOrEmpty(signatureValue))
-            {
-                continue;
-            }
-
-            signatures.Add(new CrashSignature(signatureName ?? "", signatureValue ?? ""));
-        }
+        AppendSignatures(signatures, staticNames, staticValues);
+        AppendSignatures(signatures, dynamicNames, dynamicValues);
 
         return new ParsedWerReport(
             Cap(First(fields, "EventType"), 64),
@@ -108,14 +99,45 @@ internal static class WerReportParser
         return zeros >= 8 ? Encoding.Unicode.GetString(bytes) : Encoding.UTF8.GetString(bytes);
     }
 
-    private static bool TrySignature(string key, out int index, out bool name)
+    private static void AppendSignatures(
+        List<CrashSignature> signatures,
+        Dictionary<int, string> names,
+        Dictionary<int, string> values)
+    {
+        foreach (int index in names.Keys.Union(values.Keys).OrderBy(item => item))
+        {
+            if (signatures.Count == MaxSignatures)
+            {
+                return;
+            }
+
+            names.TryGetValue(index, out string? signatureName);
+            values.TryGetValue(index, out string? signatureValue);
+            if (string.IsNullOrEmpty(signatureName) && string.IsNullOrEmpty(signatureValue))
+            {
+                continue;
+            }
+
+            signatures.Add(new CrashSignature(signatureName ?? "", signatureValue ?? ""));
+        }
+    }
+
+    private static bool TrySignature(string key, out int index, out bool dynamic, out bool name)
     {
         index = 0;
+        dynamic = false;
         name = false;
-        string prefix = key.StartsWith("DynamicSig[", StringComparison.OrdinalIgnoreCase) ? "DynamicSig["
-            : key.StartsWith("Sig[", StringComparison.OrdinalIgnoreCase) ? "Sig["
-            : "";
-        if (prefix.Length == 0)
+        string prefix;
+        if (key.StartsWith("DynamicSig[", StringComparison.OrdinalIgnoreCase))
+        {
+            prefix = "DynamicSig[";
+            dynamic = true;
+        }
+        else if (key.StartsWith("Sig[", StringComparison.OrdinalIgnoreCase))
+        {
+            prefix = "Sig[";
+        }
+        else
         {
             return false;
         }

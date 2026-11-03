@@ -132,16 +132,39 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
                 | MiniDumpWithUnloadedModules
                 | MiniDumpWithProcessThreadData
                 | MiniDumpIgnoreInaccessibleMemory;
-        bool wrote = MiniDumpWriteDump(
-            owned.DangerousGetHandle(),
-            (uint)request.Pid,
-            file.DangerousGetHandle(),
-            flags,
-            IntPtr.Zero,
-            IntPtr.Zero,
-            IntPtr.Zero);
-        GC.KeepAlive(owned);
-        GC.KeepAlive(file);
+        DumpLimit limit = new(file, request.MaxBytes, cancellationToken);
+        MiniDumpCallback callback = OnDumpCallback;
+        GCHandle state = GCHandle.Alloc(limit);
+        bool wrote;
+        try
+        {
+            wrote = WriteDump(owned, (uint)request.Pid, file, flags, new MiniDumpCallbackInformation
+            {
+                CallbackRoutine = Marshal.GetFunctionPointerForDelegate(callback),
+                CallbackParam = GCHandle.ToIntPtr(state)
+            });
+        }
+        finally
+        {
+            state.Free();
+            GC.KeepAlive(callback);
+            GC.KeepAlive(owned);
+            GC.KeepAlive(file);
+        }
+
+        if (limit.TooLarge || limit.Cancelled || limit.LengthFailed)
+        {
+            Delete(request.FullPath);
+            if (limit.TooLarge)
+            {
+                return OperationResult<long>.Fail("dump_too_large", "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes and was deleted.");
+            }
+
+            return limit.Cancelled
+                ? OperationResult<long>.Fail("cancelled", "The dump was cancelled and the file was deleted.")
+                : OperationResult<long>.Fail("dump_failed", "The dump length could not be read. The file was deleted.");
+        }
+
         if (!wrote)
         {
             int error = Marshal.GetLastPInvokeError();
@@ -154,9 +177,9 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         long length;
         try
         {
-            length = new FileInfo(request.FullPath).Length;
+            length = RandomAccess.GetLength(file);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             Delete(request.FullPath);
             return OperationResult<long>.Fail("dump_failed", "The dump length could not be read. The file was deleted.");
@@ -203,7 +226,7 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
     {
         SafeFileHandle handle = PInvoke.CreateFile(
             path,
-            (uint)FILE_ACCESS_RIGHTS.FILE_GENERIC_WRITE,
+            (uint)(FILE_ACCESS_RIGHTS.FILE_GENERIC_WRITE | FILE_ACCESS_RIGHTS.FILE_READ_ATTRIBUTES),
             FILE_SHARE_MODE.FILE_SHARE_READ | FILE_SHARE_MODE.FILE_SHARE_DELETE,
             null,
             FILE_CREATION_DISPOSITION.CREATE_NEW,
@@ -212,6 +235,78 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         error = handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0;
         return handle;
     }
+
+    private const int CancelCallback = 6;
+    private static readonly int CallbackTypeOffset = IntPtr.Size == 8 ? 16 : 8;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MiniDumpCallbackInformation
+    {
+        public IntPtr CallbackRoutine;
+        public IntPtr CallbackParam;
+    }
+
+    private sealed class DumpLimit(SafeFileHandle file, long maxBytes, CancellationToken cancellation)
+    {
+        public bool TooLarge { get; private set; }
+
+        public bool Cancelled { get; private set; }
+
+        public bool LengthFailed { get; private set; }
+
+        public bool Stop => TooLarge || Cancelled || LengthFailed;
+
+        public void Observe()
+        {
+            if (Stop)
+            {
+                return;
+            }
+
+            try
+            {
+                if (RandomAccess.GetLength(file) > maxBytes)
+                {
+                    TooLarge = true;
+                }
+                else if (cancellation.IsCancellationRequested)
+                {
+                    Cancelled = true;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or ObjectDisposedException)
+            {
+                LengthFailed = true;
+            }
+        }
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int MiniDumpCallback(IntPtr parameter, IntPtr input, IntPtr output);
+
+    private static int OnDumpCallback(IntPtr parameter, IntPtr input, IntPtr output)
+    {
+        if (GCHandle.FromIntPtr(parameter).Target is DumpLimit limit)
+        {
+            limit.Observe();
+            if (limit.Stop && input != IntPtr.Zero && output != IntPtr.Zero && Marshal.ReadInt32(input, CallbackTypeOffset) == CancelCallback)
+            {
+                Marshal.WriteInt32(output, 4, 1);
+            }
+        }
+
+        return 1;
+    }
+
+    private static unsafe bool WriteDump(SafeFileHandle process, uint pid, SafeFileHandle file, uint flags, MiniDumpCallbackInformation information) =>
+        MiniDumpWriteDump(
+            process.DangerousGetHandle(),
+            pid,
+            file.DangerousGetHandle(),
+            flags,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            (IntPtr)(&information));
 
     private const uint MiniDumpWithFullMemory = 0x00000002;
     private const uint MiniDumpWithUnloadedModules = 0x00000020;

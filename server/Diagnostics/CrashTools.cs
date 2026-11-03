@@ -30,7 +30,7 @@ public sealed class CrashTools(
         + "This is a metadata snapshot and does not explain the crash.")]
     public OperationResult<CrashReportList> ListCrashReports(
         [Description("machine, user, or all.")] string scope = "all",
-        [Description("Drop reports at or before this time, and reports with no event time.")] DateTimeOffset? since = null,
+        [Description("Drop reports earlier than this time, and reports with no event time.")] DateTimeOffset? since = null,
         [Description("Maximum reports. Clamped to 1..Vestigo:Diagnostics:MaxCrashReports.")] int limit = 50)
     {
         if (!TryScope(scope, out string parsed))

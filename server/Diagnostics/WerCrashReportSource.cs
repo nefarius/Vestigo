@@ -30,7 +30,7 @@ internal sealed class WerCrashReportSource : ICrashReportSource
         bool partial = false;
         int skipped = 0;
         int visited = 0;
-        int maxBytes = (int)Math.Min(_options.MaxCrashReportFileBytes, int.MaxValue);
+        byte[] buffer = new byte[(int)Math.Min(_options.MaxCrashReportFileBytes, int.MaxValue)];
         foreach (WerStore store in _stores())
         {
             if (!store.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) && !scope.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -71,7 +71,7 @@ internal sealed class WerCrashReportSource : ICrashReportSource
 
                 try
                 {
-                    if (!TryRead(store, folder, maxBytes, since, out CrashReport? report, out bool unreadable))
+                    if (!TryRead(store, folder, buffer, since, out CrashReport? report, out bool unreadable))
                     {
                         if (unreadable)
                         {
@@ -111,7 +111,7 @@ internal sealed class WerCrashReportSource : ICrashReportSource
             page));
     }
 
-    private static bool TryRead(WerStore store, string folder, int maxBytes, DateTimeOffset? since, out CrashReport? report, out bool unreadable)
+    private static bool TryRead(WerStore store, string folder, byte[] buffer, DateTimeOffset? since, out CrashReport? report, out bool unreadable)
     {
         report = null;
         unreadable = false;
@@ -127,7 +127,6 @@ internal sealed class WerCrashReportSource : ICrashReportSource
             return false;
         }
 
-        byte[] buffer = new byte[maxBytes];
         int read;
         bool fileTruncated;
         try

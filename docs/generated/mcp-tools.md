@@ -482,7 +482,7 @@ Lists Windows Error Reporting ReportArchive and ReportQueue metadata from the fi
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `scope` | `string` | no | `all` | machine, user, or all. |
-| `since` | `DateTimeOffset?` | no | `null` | Drop reports at or before this time, and reports with no event time. |
+| `since` | `DateTimeOffset?` | no | `null` | Drop reports earlier than this time, and reports with no event time. |
 | `limit` | `int` | no | `50` | Maximum reports. Clamped to 1..Vestigo:Diagnostics:MaxCrashReports. |
 
 ## `list_debug_captures`

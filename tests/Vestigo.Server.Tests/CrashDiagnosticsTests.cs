@@ -54,6 +54,17 @@ public class CrashDiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void Parser_KeepsStaticAndDynamicSignaturesWithTheSameIndex()
+    {
+        ParsedWerReport parsed = WerReportParser.Parse(
+            "DynamicSig[1].Name=OS Version\nDynamicSig[1].Value=dynamic\nSig[1].Name=Application Name\nSig[1].Value=static\n"u8,
+            truncated: false);
+
+        Assert.Equal(["Application Name", "OS Version"], parsed.Signatures.Select(signature => signature.Name));
+        Assert.Equal(["static", "dynamic"], parsed.Signatures.Select(signature => signature.Value));
+    }
+
+    [Fact]
     public void Parser_RejectsAnOutOfRangeEventTime()
     {
         ParsedWerReport parsed = WerReportParser.Parse("EventType=APPCRASH\nEventTime=9999999999999999999\n"u8, truncated: true);
@@ -77,7 +88,14 @@ public class CrashDiagnosticsTests : IDisposable
         string outside = Path.Combine(_root, "outside");
         Directory.CreateDirectory(outside);
         File.WriteAllText(Path.Combine(outside, "Report.wer"), "EventType=LINKED\nAppName=UNIQUE-OUTSIDE\n");
-        Directory.CreateSymbolicLink(Path.Combine(archive, "linked"), outside);
+        try
+        {
+            Directory.CreateSymbolicLink(Path.Combine(archive, "linked"), outside);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("Symbolic links are not available.");
+        }
         string user = Path.Combine(_root, "user");
         Directory.CreateDirectory(Path.Combine(user, "AppCrash_user"));
         File.WriteAllText(Path.Combine(user, "AppCrash_user", "Report.wer"), $"EventType=APPCRASH\nEventTime={fileTime + 1}\nAppName=user.exe\n");
