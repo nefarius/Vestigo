@@ -12,6 +12,11 @@ public sealed class SystemOptions
     /// </summary>
     public bool AllowBootConfigurationChanges { get; set; }
 
+    /// <summary>
+    ///     Enables <c>set_uac</c>. Reads work regardless.
+    /// </summary>
+    public bool AllowUacChanges { get; set; }
+
     public void Validate()
     {
     }
