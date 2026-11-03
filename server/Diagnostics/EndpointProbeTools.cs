@@ -16,7 +16,9 @@ public sealed class EndpointProbeTools(IEndpointProbe probe, VestigoOptions opti
     [Description(
         "Observes one destination from Vestigo's own network context, which can differ from an application's routing, proxy, or credentials. "
         + "protocol 'dns' resolves the host, 'tcp' also connects, and 'tls' also performs a TLS handshake with certificate name and chain validation. "
-        + "The call contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. "
+        + "The direct probe connection contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. "
+        + "TLS chain building may also contact Authority Information Access issuer servers. "
+        + "Revocation checks may contact revocation servers when Vestigo:Diagnostics:AllowOnlineRevocation is enabled. "
         + "timeoutMs is capped by Vestigo:Diagnostics:MaxEndpointProbeDuration. includeResolvedAddress reports the addresses used. "
         + "A TCP result is not a measure of media quality, jitter, or loss. No payloads, headers, or credentials are read. "
         + "Requires Vestigo:Diagnostics:AllowNetworkProbes.")]
