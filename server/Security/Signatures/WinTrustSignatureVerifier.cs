@@ -87,33 +87,35 @@ public sealed class WinTrustSignatureVerifier : ISignatureVerifier
 
     private static (CatalogLookup Lookup, string? CatalogPath) FindCatalog(string path, RevocationMode revocation)
     {
-        int lastFailure = SignatureOutcomeMap.TrustEProviderUnknown;
-        bool sawNotFound = false;
-        foreach (Guid subsystem in new[] { GenericVerifyV2, DriverActionVerify })
+        foreach (string algorithm in new[] { "SHA256", "SHA1" })
         {
-            CatalogSearch search = SearchCatalog(path, subsystem, revocation);
-            if (search.Lookup.Kind == CatalogLookupKind.Found)
+            CatalogSearch generic = SearchCatalog(path, GenericVerifyV2, algorithm, revocation);
+            if (generic.Lookup.Kind == CatalogLookupKind.Found)
             {
-                return (search.Lookup, search.CatalogPath);
+                return (generic.Lookup, generic.CatalogPath);
             }
 
-            if (search.Lookup.Kind == CatalogLookupKind.NotFound)
+            CatalogSearch driver = SearchCatalog(path, DriverActionVerify, algorithm, revocation);
+            if (driver.Lookup.Kind == CatalogLookupKind.Found)
             {
-                sawNotFound = true;
+                return (driver.Lookup, driver.CatalogPath);
+            }
+
+            if (generic.Lookup.Kind == CatalogLookupKind.NotFound && driver.Lookup.Kind == CatalogLookupKind.NotFound)
+            {
                 continue;
             }
 
-            lastFailure = search.Lookup.HResult;
+            CatalogLookup failure = driver.Lookup.Kind == CatalogLookupKind.Unavailable ? driver.Lookup : generic.Lookup;
+            return (failure, null);
         }
 
-        return sawNotFound
-            ? (new CatalogLookup(CatalogLookupKind.NotFound, 0), null)
-            : (new CatalogLookup(CatalogLookupKind.Unavailable, lastFailure), null);
+        return (new CatalogLookup(CatalogLookupKind.NotFound, 0), null);
     }
 
-    private static unsafe CatalogSearch SearchCatalog(string path, Guid subsystem, RevocationMode revocation)
+    private static unsafe CatalogSearch SearchCatalog(string path, Guid subsystem, string algorithm, RevocationMode revocation)
     {
-        if (!PInvoke.CryptCATAdminAcquireContext2(out nint admin, subsystem, "SHA256", null))
+        if (!PInvoke.CryptCATAdminAcquireContext2(out nint admin, subsystem, algorithm, null))
         {
             return CatalogSearch.Failed(HresultFromWin32(MarshalGetLastError()));
         }

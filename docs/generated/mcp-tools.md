@@ -1026,7 +1026,7 @@ Checks the embedded Authenticode signature and, when the file has none, the Wind
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
 | `revocation` | `string` | no | `cacheOnly` | none, cacheOnly (default), or online. |
-| `includeSigner` | `bool` | no | `false` | Include signer subject, issuer, thumbprint, and timestamp. |
+| `includeSigner` | `bool` | no | `false` | Include signer subject, issuer, and thumbprint. |
 
 ## `wait_job`
 

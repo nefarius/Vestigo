@@ -127,16 +127,6 @@ Paths are `root:relative\path` (or an absolute path inside a root). Reads need `
 
 `list_roots` returns each root with its access flags and free space. `list_directory` lists a directory (`maxEntries` up to 5000, `Truncated` tells you more exist). `stat_path` returns size and times, an optional SHA-256, and for `.exe`, `.dll` and `.sys` files the version resource plus Authenticode status (`Signed`, `Unsigned`, `Invalid`, `Untrusted`, or `Unavailable`) and `source` (`embedded`, `catalog`, or `none`). Verification uses cache-only revocation and does not contact the network. A catalog-signed Windows file is `Signed` with `source: catalog`. `Unavailable` means the check could not be completed; it is not `Unsigned`.
 
-## Diagnostics
-
-The `Diagnostics` module is disabled by default (`Vestigo:Modules:Diagnostics:Enabled`). It inspects PE files inside a root with `Read` access and lists modules loaded in a process. A valid Authenticode signature does not mean Windows will load the file as a kernel driver. Read [security.md](security.md#diagnostics) first.
-
-`inspect_binary` reads one PE through [PeNet](https://github.com/secana/PeNet): architecture (`x86`, `x64`, `arm64`, `armnt`, `arm64ec`, `arm64x`), `PE32` or `PE32+`, subsystem, selected DLL characteristics, timestamp, whether a CLR header is present, the CodeView PDB file name (never a directory), file and product version, size, and SHA-256. A file that is not a PE fails with `not_pe`. A broken PE fails with `malformed_pe`. Files larger than `Vestigo:Diagnostics:MaxInspectBytes` fail with `file_too_large`. Every field comes from one open of the file. This tool does not verify a signature.
-
-`verify_file_signature` checks the embedded Authenticode signature and, when the file has none, the Windows catalog. `outcome` is `unsigned`, `valid`, `invalid`, `untrusted`, or `unavailable`. `source` is `embedded`, `catalog`, or `none`. `revocation` is `none`, `cacheOnly` (the default; no network), or `online`. `online` fails with `revocation_not_allowed` unless `Vestigo:Diagnostics:AllowOnlineRevocation` is set, and it may contact revocation servers. Signer subject, issuer, thumbprint, and timestamp are returned only when `includeSigner` is true. The timestamp is null when the countersignature was not read.
-
-`list_process_modules` returns a best-effort snapshot: name, size, architecture, and version. `baseAddress` is omitted when process memory is not readable. `includePaths` returns `root:relative` aliases for modules inside a root with `Read` access. Modules outside those roots have `path: null` and `pathOutsideRoots: true`. Absolute paths are never returned. Hashing and signature checks are separate calls to `inspect_binary` or `verify_file_signature`. Pass `expectedStartTime` from `list_processes` to reject a reused pid (`process_identity_mismatch`). `partial` means some modules were skipped. Protected processes fail with `access_denied`.
-
 `copy_path`, `move_path`, `delete_path` (non-empty directories need `recursive`) and `make_directory` do what they say. Directory copies skip links.
 
 `fetch_file` downloads an HTTP(S) URL or copies an ordinary UNC file (not `\\?\` or `\\.\` device paths) into a root as a background job; use `wait_job` and `read_job_output`. Pass `expectedSha256` to reject a wrong file, and `overwrite` to replace an existing one. The size is capped by `Vestigo:Files:MaxUploadBytes`.
@@ -158,6 +148,16 @@ Tickets are minted by the MCP tools that prepare a file for transfer: `get_downl
 If the target is locked, for example a loaded driver or running executable, the old file is renamed to `<name>.vestigo-old-<guid>`, the new file takes its place, and the old one is deleted or scheduled for deletion at reboot (`asideCleanup`). With `deferToReboot=true` the new file instead becomes a pending replace through `MoveFileEx(DELAY_UNTIL_REBOOT | REPLACE_EXISTING)` and `rebootRequired` is `true`. If the file cannot be renamed either, the call fails with 423 and suggests `deferToReboot`. Status codes: 400 invalid path, 403 root lacks `Write`, 404 unknown root, 409 exists without `overwrite`, 413 over `MaxUploadBytes`, 422 hash mismatch.
 
 `GET /files/{root}/{path}` streams a file from a root with `Read` access and supports `Range` requests.
+
+## Diagnostics
+
+The `Diagnostics` module is disabled by default (`Vestigo:Modules:Diagnostics:Enabled`). It inspects PE files inside a root with `Read` access and lists modules loaded in a process. A valid Authenticode signature does not mean Windows will load the file as a kernel driver. Read [security.md](security.md#diagnostics) first.
+
+`inspect_binary` reads one PE through [PeNet](https://github.com/secana/PeNet): architecture (`x86`, `x64`, `arm64`, `armnt`, `arm64ec`, `arm64x`), `PE32` or `PE32+`, subsystem, selected DLL characteristics, timestamp, whether a CLR header is present, the CodeView PDB file name (never a directory), file and product version, size, and SHA-256. A file that is not a PE fails with `not_pe`. A broken PE fails with `malformed_pe`. Files larger than `Vestigo:Diagnostics:MaxInspectBytes` fail with `file_too_large`. Every field comes from one open of the file. This tool does not verify a signature.
+
+`verify_file_signature` checks the embedded Authenticode signature and, when the file has none, the Windows catalog. `outcome` is `unsigned`, `valid`, `invalid`, `untrusted`, or `unavailable`. `source` is `embedded`, `catalog`, or `none`. `revocation` is `none`, `cacheOnly` (the default; no network), or `online`. `online` fails with `revocation_not_allowed` unless `Vestigo:Diagnostics:AllowOnlineRevocation` is set, and it may contact revocation servers. Signer subject, issuer, and thumbprint are returned only when `includeSigner` is true.
+
+`list_process_modules` returns a best-effort snapshot: name, size, architecture, and version. `baseAddress` is omitted when process memory is not readable. `includePaths` returns `root:relative` aliases for modules inside a root with `Read` access. Modules outside those roots have `path: null` and `pathOutsideRoots: true`. Absolute paths are never returned. Hashing and signature checks are separate calls to `inspect_binary` or `verify_file_signature`. Pass `expectedStartTime` from `list_processes` to reject a reused pid (`process_identity_mismatch`). `partial` means some modules were skipped. Protected processes fail with `access_denied`.
 
 ## Processes
 

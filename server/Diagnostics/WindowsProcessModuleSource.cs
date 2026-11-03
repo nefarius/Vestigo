@@ -38,7 +38,8 @@ public sealed class WindowsProcessModuleSource : IProcessModuleSource
             HANDLE rawSnapshot = PInvoke.CreateToolhelp32Snapshot(
                 CREATE_TOOLHELP_SNAPSHOT_FLAGS.TH32CS_SNAPMODULE | CREATE_TOOLHELP_SNAPSHOT_FLAGS.TH32CS_SNAPMODULE32,
                 (uint)pid);
-            if (rawSnapshot.IsNull)
+            IntPtr snapshotPointer = rawSnapshot;
+            if (snapshotPointer == IntPtr.Zero || snapshotPointer == new IntPtr(-1))
             {
                 int error = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
                 if (error == 299)

@@ -33,7 +33,7 @@ public sealed class BinaryTools(RootPolicy roots, IPeInspector inspector, ISigna
     public OperationResult<SignatureVerification> VerifyFileSignature(
         [Description("File as root:relative\\path or an absolute path inside a root with Read access.")] string path,
         [Description("none, cacheOnly (default), or online.")] string revocation = "cacheOnly",
-        [Description("Include signer subject, issuer, thumbprint, and timestamp.")] bool includeSigner = false)
+        [Description("Include signer subject, issuer, and thumbprint.")] bool includeSigner = false)
     {
         if (!RevocationModes.TryParse(revocation, out RevocationMode mode))
         {
