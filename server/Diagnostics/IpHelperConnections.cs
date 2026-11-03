@@ -34,12 +34,6 @@ internal static class IpHelperConnections
         (bool Tcp, bool Ipv6)[] families = [(true, false), (true, true), (false, false), (false, true)];
         foreach ((bool tcp, bool ipv6) in families)
         {
-            if (rows.Count >= limit)
-            {
-                truncated = true;
-                break;
-            }
-
             (bool ok, string? code, List<ConnectionRecord> found, bool cut) = ReadFamily(pid, limit - rows.Count, tcp, ipv6);
             if (!ok)
             {
@@ -54,7 +48,11 @@ internal static class IpHelperConnections
 
             any = true;
             rows.AddRange(found);
-            truncated |= cut;
+            if (cut)
+            {
+                truncated = true;
+                break;
+            }
         }
 
         return TableRead.Ok(partial, truncated, rows);
@@ -140,7 +138,7 @@ internal static class IpHelperConnections
 
     private static unsafe void ReadTcp4(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
-        if (buffer.Length < sizeof(MIB_TCPTABLE_OWNER_PID) || room <= 0)
+        if (buffer.Length < sizeof(MIB_TCPTABLE_OWNER_PID))
         {
             return;
         }
@@ -178,7 +176,7 @@ internal static class IpHelperConnections
 
     private static unsafe void ReadTcp6(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
-        if (buffer.Length < sizeof(MIB_TCP6TABLE_OWNER_PID) || room <= 0)
+        if (buffer.Length < sizeof(MIB_TCP6TABLE_OWNER_PID))
         {
             return;
         }
@@ -216,7 +214,7 @@ internal static class IpHelperConnections
 
     private static unsafe void ReadUdp4(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
-        if (buffer.Length < sizeof(MIB_UDPTABLE_OWNER_PID) || room <= 0)
+        if (buffer.Length < sizeof(MIB_UDPTABLE_OWNER_PID))
         {
             return;
         }
@@ -246,7 +244,7 @@ internal static class IpHelperConnections
 
     private static unsafe void ReadUdp6(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
-        if (buffer.Length < sizeof(MIB_UDP6TABLE_OWNER_PID) || room <= 0)
+        if (buffer.Length < sizeof(MIB_UDP6TABLE_OWNER_PID))
         {
             return;
         }
@@ -284,6 +282,31 @@ internal static class IpHelperConnections
 
         int room = (length - header) / rowSize;
         return (int)Math.Min(reported, (uint)room);
+    }
+
+    internal static unsafe byte[] SampleTcp4Table(int pid, int count)
+    {
+        byte[] buffer = new byte[MIB_TCPTABLE_OWNER_PID.SizeOf(count)];
+        fixed (byte* pointer = buffer)
+        {
+            ref MIB_TCPTABLE_OWNER_PID table = ref *(MIB_TCPTABLE_OWNER_PID*)pointer;
+            table.dwNumEntries = (uint)count;
+            for (int index = 0; index < count; index++)
+            {
+                table.table[index].dwOwningPid = (uint)pid;
+                table.table[index].dwState = MIB_TCP_STATE.MIB_TCP_STATE_ESTAB;
+            }
+        }
+
+        return buffer;
+    }
+
+    internal static (IReadOnlyList<ConnectionRecord> Rows, bool Truncated) ParseTcp4(byte[] buffer, int pid, int room)
+    {
+        List<ConnectionRecord> rows = [];
+        bool truncated = false;
+        ReadTcp4(buffer, pid, room, rows, ref truncated);
+        return (rows, truncated);
     }
 
     internal static int? Port(uint networkOrder)

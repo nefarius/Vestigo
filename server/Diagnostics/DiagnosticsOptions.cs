@@ -5,7 +5,7 @@ public sealed class DiagnosticsOptions
 {
     public const string SectionName = "Diagnostics";
 
-    /// <summary>Allows <c>verify_file_signature</c> to use <c>revocation: online</c>, which may contact the network.</summary>
+    /// <summary>Allows online revocation for <c>verify_file_signature</c> and for <c>test_endpoint</c> TLS.</summary>
     public bool AllowOnlineRevocation { get; set; }
 
     /// <summary>Allows <c>probe_capture_support</c>. The tool stays disabled until this is true.</summary>

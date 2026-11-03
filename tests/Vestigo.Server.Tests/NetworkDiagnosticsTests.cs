@@ -79,6 +79,24 @@ public class NetworkDiagnosticsTests
     }
 
     [Fact]
+    public void Tcp4Parse_ExactLimitIsNotTruncated()
+    {
+        const int pid = 42;
+        (IReadOnlyList<ConnectionRecord> rows, bool truncated) = IpHelperConnections.ParseTcp4(IpHelperConnections.SampleTcp4Table(pid, 2), pid, 2);
+        Assert.Equal(2, rows.Count);
+        Assert.False(truncated);
+        Assert.All(rows, row => Assert.Equal(pid, row.OwningPid));
+
+        (IReadOnlyList<ConnectionRecord> full, bool cut) = IpHelperConnections.ParseTcp4(IpHelperConnections.SampleTcp4Table(pid, 2), pid, 0);
+        Assert.Empty(full);
+        Assert.True(cut);
+
+        (IReadOnlyList<ConnectionRecord> extra, bool overflow) = IpHelperConnections.ParseTcp4(IpHelperConnections.SampleTcp4Table(pid, 3), pid, 2);
+        Assert.Equal(2, extra.Count);
+        Assert.True(overflow);
+    }
+
+    [Fact]
     public async Task TestEndpoint_StaysOffUntilTheGateAndAllowListBothMatch()
     {
         FakeProbe probe = new();
@@ -134,7 +152,7 @@ public class NetworkDiagnosticsTests
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
         Task accepted = AcceptAsync(listener);
-        SocketEndpointProbe probe = new();
+        SocketEndpointProbe probe = new(new VestigoOptions());
 
         EndpointProbeResult tcp = await probe.ProbeAsync("127.0.0.1", port, "tcp", TimeSpan.FromSeconds(3), includeResolvedAddress: true, CancellationToken.None);
         await accepted;

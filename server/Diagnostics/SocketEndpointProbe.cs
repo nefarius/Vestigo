@@ -4,10 +4,12 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 
+using Vestigo.Configuration;
+
 namespace Vestigo.Diagnostics;
 
 /// <summary>DNS, TCP, and TLS observations using the process that hosts Vestigo. Certificate validation is not bypassed.</summary>
-public sealed class SocketEndpointProbe : IEndpointProbe
+public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
 {
     public const int MaxAnswers = 8;
 
@@ -53,6 +55,7 @@ public sealed class SocketEndpointProbe : IEndpointProbe
                 protocol,
                 address,
                 includeResolvedAddress,
+                options.Diagnostics.AllowOnlineRevocation,
                 token,
                 cancellationToken).ConfigureAwait(false);
             attempts.Add(tcp);
@@ -103,6 +106,7 @@ public sealed class SocketEndpointProbe : IEndpointProbe
         string protocol,
         IPAddress address,
         bool includeResolvedAddress,
+        bool allowOnlineRevocation,
         CancellationToken token,
         CancellationToken caller)
     {
@@ -126,11 +130,16 @@ public sealed class SocketEndpointProbe : IEndpointProbe
             return (new TcpObservation(shown, true, null), null, false);
         }
 
-        (TlsObservation tls, bool timedOut) = await Handshake(client, host, token, caller).ConfigureAwait(false);
+        (TlsObservation tls, bool timedOut) = await Handshake(client, host, allowOnlineRevocation, token, caller).ConfigureAwait(false);
         return (new TcpObservation(shown, true, null), tls, timedOut);
     }
 
-    private static async Task<(TlsObservation Observation, bool TimedOut)> Handshake(TcpClient client, string host, CancellationToken token, CancellationToken caller)
+    private static async Task<(TlsObservation Observation, bool TimedOut)> Handshake(
+        TcpClient client,
+        string host,
+        bool allowOnlineRevocation,
+        CancellationToken token,
+        CancellationToken caller)
     {
         string? subject = null;
         string? thumbprint = null;
@@ -138,7 +147,7 @@ public sealed class SocketEndpointProbe : IEndpointProbe
         SslClientAuthenticationOptions authentication = new()
         {
             TargetHost = host,
-            CertificateRevocationCheckMode = X509RevocationMode.Online,
+            CertificateRevocationCheckMode = allowOnlineRevocation ? X509RevocationMode.Online : X509RevocationMode.NoCheck,
             RemoteCertificateValidationCallback = (_, certificate, built, errors) =>
             {
                 subject = certificate?.Subject;

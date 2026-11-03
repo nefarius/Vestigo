@@ -26,7 +26,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `DebugOutput:MaxOutputBytes` | `536870912` | Maximum bytes written to one debug-output spool. |
 | `DebugOutput:MaxFilterPatterns` | `16` | Maximum capture-time include and exclude patterns combined. |
 | `DebugOutput:MaxPatternLength` | `256` | Maximum characters in one capture-time filter pattern. |
-| `Diagnostics:AllowOnlineRevocation` | `false` | Allows `verify_file_signature` with `revocation: online`, which may contact revocation servers. `none` and `cacheOnly` never use the network. |
+| `Diagnostics:AllowOnlineRevocation` | `false` | Allows `verify_file_signature` with `revocation: online`, and online TLS revocation in `test_endpoint`. Both may contact revocation servers. Signature modes `none` and `cacheOnly` never use the network. A TLS chain can still download a missing issuer certificate from an Authority Information Access URL. |
 | `Diagnostics:AllowCaptureProbes` | `false` | Enables `probe_capture_support`. The tool is registered with Diagnostics but returns `probes_disabled` until this is true. The MSI exposes it as an unchecked child of Diagnostics. |
 | `Diagnostics:AllowNetworkProbes` | `false` | Enables `test_endpoint`. The tool returns `network_probes_disabled` until this is true. The destination must also be listed in `AllowedProbeDestinations`. The MSI exposes the gate as an unchecked child of Diagnostics. |
 | `Diagnostics:AllowedProbeDestinations` | empty | Hosts, or `host:port` entries, that `test_endpoint` may contact. Empty allows none. Wildcards and ranges are rejected. The installer does not own this list, so a hand-written value survives repair. |
