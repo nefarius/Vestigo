@@ -32,7 +32,7 @@ A fresh MSI install binds every interface and writes a generated bearer token. `
    ```
 
    `--architecture x64` matters on Windows 11 ARM64, because a native ARM64 runtime does not satisfy the MSI. `dotnet run` does not need this step, because the .NET 10 SDK already includes both runtimes.
-2. Install the MSI, or run `dotnet run --project server` with the .NET 10 SDK.
+2. [Install the MSI](https://buildbot.nefarius.at/builds/Vestigo/latest), or run `dotnet run --project server` with the .NET 10 SDK.
 3. Open `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. After a default MSI install this file contains a generated `ApiTokens` entry; copy that token. `dotnet run` stays anonymous until you add tokens.
 4. Point an MCP client at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is non-empty, send `Authorization: Bearer <token>`. Opening `http://127.0.0.1:5098/` in a browser shows the same connection instructions.
 
