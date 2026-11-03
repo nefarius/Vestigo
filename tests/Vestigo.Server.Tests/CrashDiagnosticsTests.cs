@@ -259,6 +259,12 @@ public class CrashDiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void DumpFileBinder_NameCollisionIsFileExists()
+    {
+        Assert.Equal(80, DumpFileBinder.ErrorForStatus(unchecked((int)0xC0000035)));
+    }
+
+    [Fact]
     public void ReadBounded_FillsTheBufferAcrossShortReads()
     {
         byte[] data = "EventType=APPCRASH\nExtra=1\n"u8.ToArray();

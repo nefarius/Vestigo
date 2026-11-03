@@ -8,8 +8,8 @@ using Windows.Win32.Storage.FileSystem;
 
 namespace Vestigo.Diagnostics;
 
-/// <summary>Opens a WER directory without following a reparse point and checks its final path.</summary>
-internal static class WerDirectory
+/// <summary>Opens each path component from the volume root without following a reparse point.</summary>
+internal static partial class WerDirectory
 {
     internal enum OpenStatus
     {
@@ -39,53 +39,6 @@ internal static class WerDirectory
 
     private static readonly FILE_FLAGS_AND_ATTRIBUTES NoFollow =
         FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_OPEN_REPARSE_POINT;
-
-    internal static OpenStatus Open(string path, out OpenedDirectory opened)
-    {
-        opened = default;
-        uint access = (uint)FILE_ACCESS_RIGHTS.FILE_LIST_DIRECTORY | (uint)FILE_ACCESS_RIGHTS.FILE_READ_ATTRIBUTES;
-        SafeFileHandle handle = PInvoke.CreateFile(
-            path,
-            access,
-            FILE_SHARE_MODE.FILE_SHARE_READ | FILE_SHARE_MODE.FILE_SHARE_WRITE | FILE_SHARE_MODE.FILE_SHARE_DELETE,
-            null,
-            FILE_CREATION_DISPOSITION.OPEN_EXISTING,
-            NoFollow,
-            null);
-        if (handle.IsInvalid)
-        {
-            int error = Marshal.GetLastPInvokeError();
-            handle.Dispose();
-            return error is ErrorFileNotFound or ErrorPathNotFound ? OpenStatus.Missing : OpenStatus.Failed;
-        }
-
-        bool owned = true;
-        try
-        {
-            if (IsReparse(handle))
-            {
-                return OpenStatus.Reparse;
-            }
-
-            if ((Attributes(handle) & FileAttributeDirectory) == 0
-                || !TryFinalPath(handle, out string? final)
-                || string.IsNullOrEmpty(final))
-            {
-                return OpenStatus.Failed;
-            }
-
-            opened = new OpenedDirectory(handle, final);
-            owned = false;
-            return OpenStatus.Opened;
-        }
-        finally
-        {
-            if (owned)
-            {
-                handle.Dispose();
-            }
-        }
-    }
 
     internal static SafeFileHandle OpenChild(SafeFileHandle directory, long fileId)
     {
@@ -173,7 +126,7 @@ internal static class WerDirectory
 
     internal static bool IsReparse(SafeFileHandle handle) => (Attributes(handle) & FileAttributeReparsePoint) != 0;
 
-    /// <summary>Final path of <paramref name="path" /> opened without following its own reparse point.</summary>
+    /// <summary>Repeats the no-follow walk and returns the verified final path.</summary>
     internal static bool TryResolve(string path, out string finalPath)
     {
         finalPath = "";

@@ -45,7 +45,7 @@ internal static class DumpFileBinder
             GC.KeepAlive(directory);
             if (status < 0)
             {
-                error = (int)RtlNtStatusToDosError(status);
+                error = ErrorForStatus(status);
                 return new SafeFileHandle(IntPtr.Zero, false);
             }
 
@@ -53,6 +53,10 @@ internal static class DumpFileBinder
             return new SafeFileHandle(created, ownsHandle: true);
         }
     }
+
+    /// <summary><c>STATUS_OBJECT_NAME_COLLISION</c> is <c>ERROR_FILE_EXISTS</c> (80), which the dump writer reports as <c>already_exists</c>.</summary>
+    internal static int ErrorForStatus(int status) =>
+        status == unchecked((int)0xC0000035) ? 80 : (int)RtlNtStatusToDosError(status);
 
     internal static unsafe bool TryDelete(SafeFileHandle file)
     {
