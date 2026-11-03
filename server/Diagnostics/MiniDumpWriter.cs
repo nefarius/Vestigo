@@ -237,7 +237,9 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
     }
 
     private const int CancelCallback = 6;
-    private static readonly int CallbackTypeOffset = IntPtr.Size == 8 ? 16 : 8;
+
+    /// <summary><c>MINIDUMP_CALLBACK_INPUT</c> is packed to 4 bytes: <c>ProcessId</c>, then <c>HANDLE</c>, then <c>CallbackType</c>.</summary>
+    private static readonly int CallbackTypeOffset = 4 + IntPtr.Size;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MiniDumpCallbackInformation

@@ -43,52 +43,49 @@ internal sealed class WerCrashReportSource : ICrashReportSource
                 continue;
             }
 
-            IEnumerable<string> folders;
             try
             {
-                folders = Directory.EnumerateDirectories(store.Directory);
+                foreach (string folder in Directory.EnumerateDirectories(store.Directory))
+                {
+                    if (visited >= MaxFolders)
+                    {
+                        truncated = true;
+                        break;
+                    }
+
+                    visited++;
+                    if (IsReparse(folder))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (!TryRead(store, folder, buffer, since, out CrashReport? report, out bool unreadable))
+                        {
+                            if (unreadable)
+                            {
+                                partial = true;
+                                skipped++;
+                            }
+
+                            continue;
+                        }
+
+                        matches.Add(report!);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        partial = true;
+                        skipped++;
+                    }
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 partial = true;
                 skipped++;
                 continue;
-            }
-
-            foreach (string folder in folders)
-            {
-                if (visited >= MaxFolders)
-                {
-                    truncated = true;
-                    break;
-                }
-
-                visited++;
-                if (IsReparse(folder))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    if (!TryRead(store, folder, buffer, since, out CrashReport? report, out bool unreadable))
-                    {
-                        if (unreadable)
-                        {
-                            partial = true;
-                            skipped++;
-                        }
-
-                        continue;
-                    }
-
-                    matches.Add(report!);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    partial = true;
-                    skipped++;
-                }
             }
 
             if (truncated)
@@ -132,8 +129,7 @@ internal sealed class WerCrashReportSource : ICrashReportSource
         try
         {
             using FileStream stream = new(wer, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            read = stream.Read(buffer, 0, buffer.Length);
-            fileTruncated = stream.ReadByte() >= 0;
+            (read, fileTruncated) = ReadBounded(stream, buffer);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -166,45 +162,60 @@ internal sealed class WerCrashReportSource : ICrashReportSource
     private static IReadOnlyList<CrashDumpFile> DumpFiles(string folder)
     {
         List<CrashDumpFile> files = [];
-        IEnumerable<string> entries;
         try
         {
-            entries = Directory.EnumerateFiles(folder);
+            foreach (string entry in Directory.EnumerateFiles(folder))
+            {
+                if (files.Count == 8 || IsReparse(entry))
+                {
+                    continue;
+                }
+
+                string extension = Path.GetExtension(entry);
+                if (!extension.Equals(".dmp", StringComparison.OrdinalIgnoreCase)
+                    && !extension.Equals(".mdmp", StringComparison.OrdinalIgnoreCase)
+                    && !extension.Equals(".hdmp", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                long length;
+                try
+                {
+                    length = new FileInfo(entry).Length;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    continue;
+                }
+
+                files.Add(new CrashDumpFile(Cap(Path.GetFileName(entry), 240), length));
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return files;
         }
 
-        foreach (string entry in entries)
+        return files;
+    }
+
+    /// <summary>Fills <paramref name="buffer" /> until it is full or the stream ends. <c>Truncated</c> means another byte remained.</summary>
+    internal static (int Read, bool Truncated) ReadBounded(Stream stream, byte[] buffer)
+    {
+        int read = 0;
+        while (read < buffer.Length)
         {
-            if (files.Count == 8 || IsReparse(entry))
+            int count = stream.Read(buffer, read, buffer.Length - read);
+            if (count == 0)
             {
-                continue;
+                return (read, false);
             }
 
-            string extension = Path.GetExtension(entry);
-            if (!extension.Equals(".dmp", StringComparison.OrdinalIgnoreCase)
-                && !extension.Equals(".mdmp", StringComparison.OrdinalIgnoreCase)
-                && !extension.Equals(".hdmp", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            long length;
-            try
-            {
-                length = new FileInfo(entry).Length;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                continue;
-            }
-
-            files.Add(new CrashDumpFile(Cap(Path.GetFileName(entry), 240), length));
+            read += count;
         }
 
-        return files;
+        return (read, stream.ReadByte() >= 0);
     }
 
     private static bool IsReparse(string path)

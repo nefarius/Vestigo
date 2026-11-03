@@ -26,6 +26,11 @@ internal sealed class DriveVolumeSpace : IVolumeSpace
 
     private static long? WindowsFreeBytes(string directory)
     {
+        if (!Path.EndsInDirectorySeparator(directory))
+        {
+            directory += Path.DirectorySeparatorChar;
+        }
+
         if (!GetDiskFreeSpaceEx(directory, out ulong available, out _, out _))
         {
             return null;

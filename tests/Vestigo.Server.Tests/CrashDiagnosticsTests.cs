@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -199,6 +200,65 @@ public class CrashDiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void ReadBounded_FillsTheBufferAcrossShortReads()
+    {
+        byte[] data = "EventType=APPCRASH\nExtra=1\n"u8.ToArray();
+        byte[] buffer = new byte[12];
+
+        (int read, bool truncated) = WerCrashReportSource.ReadBounded(new OneByteStream(data), buffer);
+
+        Assert.Equal(12, read);
+        Assert.True(truncated);
+        Assert.Equal(data.AsSpan(0, 12).ToArray(), buffer[..read]);
+        (int full, bool more) = WerCrashReportSource.ReadBounded(new OneByteStream(data), new byte[data.Length]);
+        Assert.Equal(data.Length, full);
+        Assert.False(more);
+    }
+
+    [Fact]
+    public async Task MiniDumpWriter_VerySmallLimitReturnsDumpTooLarge()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Process dumps require Windows.");
+        }
+
+        using Process child = new();
+        child.StartInfo = new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = "/d /c ping 127.0.0.1 -n 30",
+            CreateNoWindow = true,
+            UseShellExecute = false
+        };
+        Assert.True(child.Start());
+        try
+        {
+            string path = Path.Combine(_root, "tiny.dmp");
+            OperationResult<long> result = await new MiniDumpWriter().WriteAsync(
+                new ProcessDumpRequest(child.Id, child.StartTime, path, "mini", 1),
+                CancellationToken.None);
+
+            Assert.Equal("dump_too_large", result.ErrorCode);
+            long size = File.Exists(path) ? new FileInfo(path).Length : 0;
+            Assert.True(size <= 64 * 1024);
+        }
+        finally
+        {
+            try
+            {
+                if (!child.HasExited)
+                {
+                    child.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+            }
+        }
+    }
+
+    [Fact]
     public void MiniDumpWriter_RequiresWindowsOffWindows()
     {
         if (OperatingSystem.IsWindows())
@@ -257,6 +317,12 @@ public class CrashDiagnosticsTests : IDisposable
             File.WriteAllText(request.FullPath, "VESTIGO-DUMP-SECRET");
             return Task.FromResult(OperationResult<long>.Ok(new FileInfo(request.FullPath).Length));
         }
+    }
+
+    private sealed class OneByteStream(byte[] data) : MemoryStream(data)
+    {
+        public override int Read(byte[] buffer, int offset, int count) =>
+            base.Read(buffer, offset, count > 1 ? 1 : count);
     }
 
     private sealed class FakeSpace(long? free) : IVolumeSpace
