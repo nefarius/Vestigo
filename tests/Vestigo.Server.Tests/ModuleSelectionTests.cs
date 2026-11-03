@@ -32,6 +32,8 @@ public class ModuleSelectionTests
         Assert.Equal("Audio", ModuleSelection.Find(ModuleSelection.AudioSetDefault)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.BootConfigurationChanges]);
         Assert.Equal("System", ModuleSelection.Find(ModuleSelection.BootConfigurationChanges)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.UacChanges]);
+        Assert.Equal("System", ModuleSelection.Find(ModuleSelection.UacChanges)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.DesktopScreenshots]);
         Assert.Equal("Desktop", ModuleSelection.Find(ModuleSelection.DesktopScreenshots)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SelfUpdate]);
@@ -73,6 +75,7 @@ public class ModuleSelectionTests
             ["Audio"] = true,
             ["AudioSetDefault"] = true,
             ["BootConfigurationChanges"] = true,
+            ["UacChanges"] = true,
             ["Desktop"] = true,
             ["DesktopScreenshots"] = true,
             ["Updates"] = true,
@@ -88,6 +91,7 @@ public class ModuleSelectionTests
         Assert.True(read["Audio"]);
         Assert.True(read["AudioSetDefault"]);
         Assert.True(read["BootConfigurationChanges"]);
+        Assert.True(read["UacChanges"]);
         Assert.True(read["Desktop"]);
         Assert.True(read["DesktopScreenshots"]);
         Assert.True(read["Updates"]);
@@ -98,6 +102,7 @@ public class ModuleSelectionTests
         Assert.Contains("\"ApiTokens\": []", merged);
         Assert.Contains("\"AllowSetDefault\": true", merged);
         Assert.Contains("\"AllowBootConfigurationChanges\": true", merged);
+        Assert.Contains("\"AllowUacChanges\": true", merged);
         Assert.Contains("\"AllowScreenshots\": true", merged);
         Assert.Contains("\"AllowSelfUpdate\": true", merged);
     }
@@ -149,13 +154,14 @@ public class ModuleSelectionTests
         Assert.Empty(ModuleSelection.ReadExisting("""{ "Vestigo": { "ListenPort": 1 } }"""));
 
         IDictionary<string, bool> read = ModuleSelection.ReadExisting(
-            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "Audio": { "AllowSetDefault": true }, "System": { "AllowBootConfigurationChanges": true }, "Desktop": { "AllowScreenshots": true } } }""");
+            """{ "Vestigo": { "Modules": { "devices": { "Enabled": true }, "Bogus": { "Enabled": true } }, "Software": { "AllowUninstall": false }, "Audio": { "AllowSetDefault": true }, "System": { "AllowBootConfigurationChanges": true, "AllowUacChanges": true }, "Desktop": { "AllowScreenshots": true } } }""");
 
-        Assert.Equal(5, read.Count);
+        Assert.Equal(6, read.Count);
         Assert.True(read["Devices"]);
         Assert.False(read["SoftwareUninstall"]);
         Assert.True(read["AudioSetDefault"]);
         Assert.True(read["BootConfigurationChanges"]);
+        Assert.True(read["UacChanges"]);
         Assert.True(read["DesktopScreenshots"]);
     }
 

@@ -1,5 +1,12 @@
 namespace Vestigo.SystemInfo;
 
+/// <summary>Registry values under <c>HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System</c>.</summary>
+public sealed record UacSettings(
+    bool? EnableLua,
+    int? ConsentPromptBehaviorAdmin,
+    int? ConsentPromptBehaviorUser,
+    int? PromptOnSecureDesktop);
+
 /// <summary>
 ///     Host OS and boot-security probes. Tests replace the Windows implementation.
 /// </summary>
@@ -50,4 +57,8 @@ public interface ISystemPlatform
     void SetTestSigning(bool enabled);
 
     void SetWhqlDeveloperTestMode(bool enabled);
+
+    UacSettings ReadUac();
+
+    void WriteUac(UacSettings settings);
 }

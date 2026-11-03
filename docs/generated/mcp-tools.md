@@ -329,6 +329,12 @@ Returns the effective Trace roots, the traces named root, symbol cache and serve
 
 No parameters.
 
+## `get_uac`
+
+Returns the host UAC policy: enabled (EnableLUA), the slider level (always, default, noDim, never, disabled, or custom), ConsentPromptBehaviorAdmin, ConsentPromptBehaviorUser, PromptOnSecureDesktop, and notes. Group Policy can override these values. EnableLUA changes apply after a reboot.
+
+No parameters.
+
 ## `get_upload_url`
 
 Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-WebRequest examples. Uploads need Write access to the root. When API tokens are configured the URL carries a one-time ticket bound to this path and these flags that expires and stops working after one successful upload, so the API token never has to be shared.
@@ -791,6 +797,14 @@ Sets BCDE_LIBRARY_TYPE_ALLOW_PRERELEASE_SIGNATURES on the default boot entry. Re
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `enabled` | `bool` | yes |  | true to enable test signing, false to disable it. |
+
+## `set_uac`
+
+Sets the UAC slider level: always, default, noDim, never, or disabled. Requires Vestigo:System:AllowUacChanges. custom is not accepted. disabled writes only EnableLUA and needs a reboot; it also breaks UWP and Store apps until UAC is turned back on. Slider-only changes keep EnableLUA on. Does not reboot. Never logs secrets.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `level` | `string` | yes |  | UAC level: always, default, noDim, never, or disabled. |
 
 ## `set_whql_developer_test_mode`
 
