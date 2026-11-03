@@ -175,7 +175,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
             chain.Add("timeout");
             return (new TlsObservation(false, null, subject, thumbprint, chain), true);
         }
-        catch (AuthenticationException)
+        catch (Exception ex) when (ex is AuthenticationException or IOException)
         {
             return (new TlsObservation(false, null, subject, thumbprint, chain), false);
         }
