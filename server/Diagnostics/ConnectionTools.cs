@@ -36,12 +36,9 @@ public sealed class ConnectionTools(IProcessConnectionSource source, VestigoOpti
             return Fail(pid, query.ErrorCode!, query.Error!);
         }
 
-        if (expectedStartTime is { } expected)
+        if (expectedStartTime is { } expected && !WindowsProcessModuleSource.StartUnchanged(expected, query.StartTime))
         {
-            if (query.StartTime is not { } actual || (expected.UtcDateTime - actual.UtcDateTime).Duration() > TimeSpan.FromSeconds(1))
-            {
-                return Fail(pid, "process_identity_mismatch", "The process start time does not match expectedStartTime. The pid may have been reused.");
-            }
+            return Fail(pid, "process_identity_mismatch", "The process start time does not match expectedStartTime. The pid may have been reused.");
         }
 
         List<ProcessConnection> connections = [];

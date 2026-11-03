@@ -51,6 +51,10 @@ public class NetworkDiagnosticsTests
         ConnectionTools tools = new(source, new VestigoOptions(), NullLogger<ConnectionTools>.Instance);
 
         Assert.Equal("process_identity_mismatch", tools.ListProcessConnections(7, expectedStartTime: start.AddMinutes(1)).ErrorCode);
+        Assert.Equal("process_identity_mismatch", tools.ListProcessConnections(7, expectedStartTime: start.AddSeconds(1)).ErrorCode);
+        Assert.True(tools.ListProcessConnections(7, expectedStartTime: start).Success);
+        source.Result = ConnectionQuery.Ok(null, false, false, []);
+        Assert.Equal("process_identity_mismatch", tools.ListProcessConnections(7, expectedStartTime: start).ErrorCode);
         source.Result = ConnectionQuery.Fail("process_not_found", "The process is not running.");
         OperationResult<ProcessConnectionList> missing = tools.ListProcessConnections(7);
         Assert.Equal("process_not_found", missing.ErrorCode);
