@@ -18,7 +18,7 @@ Test-signing allows test-signed drivers to load; it does not allow unsigned driv
 
 ## Inspect the binary
 
-1. Enable Diagnostics. Put the file in a named root that has `Read` access.
+1. Enable Diagnostics and Jobs. Diagnostics needs Jobs. Put the file in a named root that has `Read` access.
 2. `inspect_binary` reports architecture, version, and the PDB file name. `verify_file_signature` checks the embedded or catalog Authenticode signature. A valid signature is not permission to load a kernel driver. Online revocation stays off until `Diagnostics:AllowOnlineRevocation` is true.
 3. When a device shows a problem code, `explain_device_problem` cites the documented meaning and the observed evidence. `get_device_install_history` lists the matching SetupAPI sections. Neither tool ranks drivers.
 
