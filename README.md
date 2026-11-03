@@ -14,7 +14,7 @@ It is remote-capable. A fresh MSI install binds every interface and writes a gen
 Installed MSI:
 
 - Windows 10 or later (x64). Windows 11 on ARM64 is supported through x64 emulation.
-- The x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (any 10.0.x patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this). On ARM64, install the x64 runtimes (they live under `%ProgramFiles%\dotnet\x64`); a native ARM64 runtime does not satisfy the MSI.
+- The x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this). On ARM64, install the x64 runtimes (they live under `%ProgramFiles%\dotnet\x64`); a native ARM64 runtime does not satisfy the MSI.
 - An elevated service account for realtime ETW sessions and most mutating tools
 
 Source / `dotnet run`:

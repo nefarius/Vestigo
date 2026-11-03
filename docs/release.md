@@ -49,7 +49,7 @@ The manifest's release version is the MSI `ProductVersion`. When the updater fea
 
 ## Update smoke test
 
-On a Windows machine with the x64 ASP.NET Core Runtime 10.0:
+On a Windows machine with the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0, or the ASP.NET Core 10.0 Hosting Bundle:
 
 - Install an older signed Vestigo MSI with the updater selected (the default), then confirm `Nefarius_Vestigo_Updater.exe --install --silent --override-success-code 0` exits 0 and creates the current user's logon autostart entry and daily scheduled task.
 - Launch the updater and confirm it offers the newer Buildbot release, shows the MSI summary, and requests elevation.
