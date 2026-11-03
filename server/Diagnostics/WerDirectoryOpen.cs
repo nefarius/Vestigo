@@ -13,6 +13,7 @@ internal static partial class WerDirectory
     private const int StatusObjectPathNotFound = unchecked((int)0xC000003A);
     private const uint FileOpen = 1;
     private const uint FileDirectoryFile = 0x00000001;
+    private const uint FileSynchronousIoNonAlert = 0x00000020;
     private const uint FileOpenReparsePoint = 0x00200000;
 
     internal static OpenStatus Open(string path, out OpenedDirectory opened)
@@ -157,7 +158,8 @@ internal static partial class WerDirectory
             IoStatusBlock statusBlock;
             uint access = (uint)FILE_ACCESS_RIGHTS.FILE_LIST_DIRECTORY
                 | (uint)FILE_ACCESS_RIGHTS.FILE_READ_ATTRIBUTES
-                | (uint)FILE_ACCESS_RIGHTS.FILE_TRAVERSE;
+                | (uint)FILE_ACCESS_RIGHTS.FILE_TRAVERSE
+                | (uint)FILE_ACCESS_RIGHTS.SYNCHRONIZE;
             int status = NtCreateFile(
                 out IntPtr created,
                 access,
@@ -167,7 +169,7 @@ internal static partial class WerDirectory
                 0,
                 (uint)(FILE_SHARE_MODE.FILE_SHARE_READ | FILE_SHARE_MODE.FILE_SHARE_WRITE | FILE_SHARE_MODE.FILE_SHARE_DELETE),
                 FileOpen,
-                FileDirectoryFile | FileOpenReparsePoint,
+                FileDirectoryFile | FileOpenReparsePoint | FileSynchronousIoNonAlert,
                 IntPtr.Zero,
                 0);
             GC.KeepAlive(parent);
