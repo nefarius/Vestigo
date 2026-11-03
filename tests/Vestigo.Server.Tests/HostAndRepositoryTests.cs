@@ -196,8 +196,10 @@ public class RepositoryBoundaryTests
                      "DebugOutput:MaxDuration", "DebugOutput:MaxMessages", "DebugOutput:MaxOutputBytes",
                      "DebugOutput:MaxFilterPatterns", "DebugOutput:MaxPatternLength",
                      "Diagnostics:AllowOnlineRevocation", "Diagnostics:AllowCaptureProbes",
+                     "Diagnostics:AllowNetworkProbes", "Diagnostics:AllowedProbeDestinations",
                      "Diagnostics:MaxProcessModules", "Diagnostics:MaxInstallHistoryBytes",
                      "Diagnostics:MaxProbeDuration", "Diagnostics:MaxInspectBytes",
+                     "Diagnostics:MaxProcessConnections", "Diagnostics:MaxEndpointProbeDuration",
                      "Audio:AllowSetDefault", "Audio:MeterSampleMilliseconds",
                      "Desktop:AllowScreenshots", "Desktop:MaxScreenshotBytes"
                  })

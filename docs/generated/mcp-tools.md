@@ -540,6 +540,17 @@ Lists background jobs owned by this Vestigo process, newest first.
 
 No parameters.
 
+## `list_process_connections`
+
+Lists TCP endpoints and UDP bindings owned by one process. Each row has protocol, family, TCP state when known, and the local address and port. includeRemoteAddresses adds the remote address and port; otherwise those fields are null. A UDP row is a local binding and does not prove that the peer is reachable. No packet payloads, headers, or credentials are read. expectedStartTime, from list_processes, rejects a reused pid. The list is a best-effort snapshot.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `pid` | `int` | yes |  | Process id. |
+| `limit` | `int` | no | `200` | Maximum rows to return. Clamped to 1..Vestigo:Diagnostics:MaxProcessConnections. |
+| `includeRemoteAddresses` | `bool` | no | `false` | Include remote address and port. Local bindings are always returned. |
+| `expectedStartTime` | `DateTimeOffset?` | no | `null` | Start time from list_processes. When set, a different process start time fails with process_identity_mismatch. |
+
 ## `list_process_modules`
 
 Lists modules loaded in a process: name, size, architecture, and version. baseAddress is omitted when process memory is not readable. includePaths returns root:relative aliases for modules inside a Read root; other modules have path null and pathOutsideRoots true. Absolute paths are never returned. Hashing and signature checks are separate calls. expectedStartTime, from list_processes, rejects a reused pid. The list is a best-effort snapshot and can be partial.
@@ -1015,6 +1026,18 @@ Captures a PNG of the console user's desktop. target 'desktop' (default) is the 
 | `saveTo` | `string` | no | `null` | Optional destination as root:relative\file.png. Needs Write access. |
 | `overwrite` | `bool` | no | `false` | Replace an existing saveTo file. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when capturing as the console user. |
+
+## `test_endpoint`
+
+Observes one destination from Vestigo's own network context, which can differ from an application's routing, proxy, or credentials. protocol 'dns' resolves the host, 'tcp' also connects, and 'tls' also performs a TLS handshake with certificate name and chain validation. The call contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. timeoutMs is capped by Vestigo:Diagnostics:MaxEndpointProbeDuration. includeResolvedAddress reports the addresses used. A TCP result is not a measure of media quality, jitter, or loss. No payloads, headers, or credentials are read. Requires Vestigo:Diagnostics:AllowNetworkProbes.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `host` | `string` | yes |  | Host name or IP address. Not a URL. |
+| `port` | `int` | yes |  | TCP port, 1-65535. Ignored for protocol 'dns' except for the allow-list match. |
+| `protocol` | `string` | no | `tcp` | 'dns', 'tcp', or 'tls'. |
+| `timeoutMs` | `int` | no | `5000` | Budget in milliseconds. Capped by Vestigo:Diagnostics:MaxEndpointProbeDuration. |
+| `includeResolvedAddress` | `bool` | no | `false` | Include resolved addresses in the result. |
 
 ## `uninstall_driver`
 
