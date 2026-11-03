@@ -184,6 +184,52 @@ internal static class MinimalPe
         return pe;
     }
 
+    public static byte[] WithVersion() => WithVersionResource(0x1060, 0x200);
+
+    public static byte[] WithVersionPastEnd() => WithVersionResource(0x11000, 0x20000);
+
+    private static byte[] WithVersionResource(int dataRva, int virtualSize)
+    {
+        byte[] pe = new byte[0x400];
+        WritePe32Plus(pe, debugRva: 0, debugSize: 0);
+        const int section = 0x98 + 0xF0;
+        BitConverter.GetBytes(virtualSize).CopyTo(pe, section + 8);
+        BitConverter.GetBytes(0x1000).CopyTo(pe, 0x98 + 112 + (2 * 8));
+        BitConverter.GetBytes(0x200).CopyTo(pe, 0x98 + 112 + (2 * 8) + 4);
+
+        const int root = 0x200;
+        WriteResourceDirectory(pe, root, id: 16, child: 0x18, directory: true);
+        WriteResourceDirectory(pe, root + 0x18, id: 1, child: 0x30, directory: true);
+        WriteResourceDirectory(pe, root + 0x30, id: 0x0409, child: 0x50, directory: false);
+        BitConverter.GetBytes(dataRva).CopyTo(pe, root + 0x50);
+        BitConverter.GetBytes(92).CopyTo(pe, root + 0x54);
+
+        if (dataRva != 0x1060)
+        {
+            return pe;
+        }
+
+        const int version = 0x260;
+        BitConverter.GetBytes((ushort)92).CopyTo(pe, version);
+        BitConverter.GetBytes((ushort)52).CopyTo(pe, version + 2);
+        Encoding.Unicode.GetBytes("VS_VERSION_INFO").CopyTo(pe, version + 6);
+        const int info = 0x288;
+        BitConverter.GetBytes(0xFEEF04BD).CopyTo(pe, info);
+        BitConverter.GetBytes((uint)((1 << 16) | 2)).CopyTo(pe, info + 8);
+        BitConverter.GetBytes((uint)((3 << 16) | 4)).CopyTo(pe, info + 12);
+        BitConverter.GetBytes((uint)((5 << 16) | 6)).CopyTo(pe, info + 16);
+        BitConverter.GetBytes((uint)((7 << 16) | 8)).CopyTo(pe, info + 20);
+        return pe;
+    }
+
+    private static void WriteResourceDirectory(byte[] pe, int offset, int id, int child, bool directory)
+    {
+        BitConverter.GetBytes((ushort)1).CopyTo(pe, offset + 14);
+        BitConverter.GetBytes(id).CopyTo(pe, offset + 16);
+        int pointed = directory ? child | unchecked((int)0x80000000) : child;
+        BitConverter.GetBytes(pointed).CopyTo(pe, offset + 20);
+    }
+
     private static void WritePe32Plus(byte[] pe, int debugRva, int debugSize)
     {
         pe[0] = (byte)'M';

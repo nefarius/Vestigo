@@ -62,6 +62,24 @@ public class DiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void Inspect_ReadsVersionWhenTheResourceFits()
+    {
+        BinaryInspection image = Inspect(MinimalPe.WithVersion());
+
+        Assert.Equal("1.2.3.4", image.FileVersion);
+        Assert.Equal("5.6.7.8", image.ProductVersion);
+    }
+
+    [Fact]
+    public void Inspect_SkipsVersionWhenTheResourceExtendsPastTheFile()
+    {
+        BinaryInspection image = Inspect(MinimalPe.WithVersionPastEnd());
+
+        Assert.Null(image.FileVersion);
+        Assert.Null(image.ProductVersion);
+    }
+
+    [Fact]
     public void SignatureDecision_KeepsUnavailableDistinctFromUnsigned()
     {
         AssertOutcome(0, null, "valid", "embedded");

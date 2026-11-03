@@ -1,5 +1,7 @@
 using PeNet;
+using PeNet.FileParser;
 using PeNet.Header.Pe;
+using PeNet.Header.Resource;
 
 namespace Vestigo.Diagnostics;
 
@@ -126,6 +128,12 @@ internal static class PeImage
     {
         try
         {
+            // VsFixedFileInfo reads SzKey until a UTF-16 NUL and does not stop at the resource size.
+            if (!VersionResourceFits(pe))
+            {
+                return (null, null);
+            }
+
             var info = pe.Resources?.VsVersionInfo?.VsFixedFileInfo;
             if (info is null || info.DwSignature != 0xFEEF04BD)
             {
@@ -134,10 +142,82 @@ internal static class PeImage
 
             return (Quad(info.DwFileVersionMS, info.DwFileVersionLS), Quad(info.DwProductVersionMS, info.DwProductVersionLS));
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException or NullReferenceException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException or NullReferenceException or IOException)
         {
             return (null, null);
         }
+    }
+
+    private static bool VersionResourceFits(PeFile pe)
+    {
+        const int minimumBytes = 92;
+        ImageResourceDirectory? root = pe.ImageResourceDirectory;
+        ImageSectionHeader[]? sections = pe.ImageSectionHeaders;
+        if (root?.DirectoryEntries is null || sections is null)
+        {
+            return false;
+        }
+
+        foreach (ImageResourceDirectoryEntry? typeEntry in root.DirectoryEntries)
+        {
+            if (typeEntry is null || typeEntry.ID != (uint)ResourceGroupIdType.Version)
+            {
+                continue;
+            }
+
+            foreach (ImageResourceDirectoryEntry? nameEntry in typeEntry.ResourceDirectory?.DirectoryEntries ?? [])
+            {
+                if (nameEntry?.ResourceDirectory?.DirectoryEntries is not { } languages)
+                {
+                    continue;
+                }
+
+                foreach (ImageResourceDirectoryEntry? languageEntry in languages)
+                {
+                    ImageResourceDataEntry? data = languageEntry?.ResourceDataEntry;
+                    if (data is null || !data.OffsetToData.TryRvaToOffset(sections, out uint offset))
+                    {
+                        continue;
+                    }
+
+                    return ResourceFits(pe.RawFile, offset, data.Size1, minimumBytes);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ResourceFits(IRawFile file, uint offset, uint size, int minimumBytes)
+    {
+        if (size < minimumBytes || (ulong)offset + size > (ulong)file.Length)
+        {
+            return false;
+        }
+
+        ushort length = file.ReadUShort(offset);
+        ushort valueLength = file.ReadUShort(offset + 2);
+        if (length < minimumBytes || length > size || valueLength < 52 || valueLength > length)
+        {
+            return false;
+        }
+
+        int scan = Math.Min(64, length - 6);
+        long key = offset + 6;
+        if (scan < 2 || key > file.Length - scan)
+        {
+            return false;
+        }
+
+        for (int index = 0; index + 1 < scan; index += 2)
+        {
+            if (file.ReadUShort(key + index) == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string Quad(uint high, uint low) =>
