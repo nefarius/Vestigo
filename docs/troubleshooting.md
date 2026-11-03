@@ -4,6 +4,15 @@
 
 The MSI is framework-dependent and needs the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch). The ASP.NET Core 10.0 Hosting Bundle also satisfies this. A later major (11 or newer) does not. Install them from https://dotnet.microsoft.com/download/dotnet/10.0 and run the installer again. In a silent install the same message is written to the MSI log.
 
+From an elevated prompt:
+
+```powershell
+winget install --id Microsoft.DotNet.Runtime.10 --architecture x64
+winget install --id Microsoft.DotNet.AspNetCore.10 --architecture x64
+```
+
+`--architecture x64` matters on Windows 11 ARM64, because a native ARM64 runtime does not satisfy the MSI.
+
 On Windows 11 ARM64, the native `dotnet` command lists ARM64 runtimes under `%ProgramFiles%\dotnet`. The x64 runtimes are a separate install and appear under `%ProgramFiles%\dotnet\x64`. Confirm them with:
 
 ```powershell

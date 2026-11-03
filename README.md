@@ -27,9 +27,17 @@ Reading an existing ETL file does not by itself require elevation. Creating a re
 
 ## Quick start
 
-1. Install the MSI, or run `dotnet run --project server` with the SDK.
-2. Open `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. After a default MSI install this file contains a generated `ApiTokens` entry; copy that token. `dotnet run` stays anonymous until you add tokens.
-3. Point an MCP client at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is non-empty, send `Authorization: Bearer <token>`. Opening `http://127.0.0.1:5098/` in a browser shows the same connection instructions.
+1. Install the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0. The MSI refuses to continue without them. Either install the ASP.NET Core 10.0 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/10.0, which includes both, or run these from an elevated prompt:
+
+   ```powershell
+   winget install --id Microsoft.DotNet.Runtime.10 --architecture x64
+   winget install --id Microsoft.DotNet.AspNetCore.10 --architecture x64
+   ```
+
+   `--architecture x64` matters on Windows 11 ARM64, because a native ARM64 runtime does not satisfy the MSI. `dotnet run` does not need this step, because the .NET 10 SDK already includes both runtimes.
+2. Install the MSI, or run `dotnet run --project server` with the SDK.
+3. Open `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. After a default MSI install this file contains a generated `ApiTokens` entry; copy that token. `dotnet run` stays anonymous until you add tokens.
+4. Point an MCP client at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is non-empty, send `Authorization: Bearer <token>`. Opening `http://127.0.0.1:5098/` in a browser shows the same connection instructions.
 
 The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopback still works on the same machine. `/` is an anonymous informational page. `/health` is always anonymous. `/mcp` and `/files` are anonymous only while `ApiTokens` is empty. File-transfer tools return short-lived, single-use `/files` URLs, so clients never need the API token to fetch a screenshot or converted trace. Binding beyond loopback without tokens logs a startup warning.
 
