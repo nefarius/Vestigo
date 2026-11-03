@@ -127,20 +127,35 @@ internal sealed class SetupApiLogReader : ISetupApiLogSource
         Encoding encoding = Detect(stream);
         long skip = slice.Skip;
         long take = slice.Take;
+        bool dropPartialLine = skip > 0;
         if (encoding.Equals(Encoding.Unicode) && (skip & 1) != 0)
         {
             skip++;
             take = Math.Max(0, take - 1);
+            dropPartialLine = !IsUnicodeLineStart(stream, skip);
         }
 
         stream.Position = skip;
         List<string> lines = [..ReadLines(stream, take, encoding)];
-        if (skip > 0 && lines.Count > 0)
+        if (dropPartialLine && lines.Count > 0)
         {
             lines.RemoveAt(0);
         }
 
         return SetupApiSectionParser.Parse(lines, slice.File.Name, instanceId, includeRaw);
+    }
+
+    private static bool IsUnicodeLineStart(Stream stream, long offset)
+    {
+        if (offset < 2)
+        {
+            return false;
+        }
+
+        stream.Position = offset - 2;
+        int first = stream.ReadByte();
+        int second = stream.ReadByte();
+        return second == 0 && first is '\n' or '\r';
     }
 
     private readonly record struct LogSlice(FileInfo File, long Skip, long Take);

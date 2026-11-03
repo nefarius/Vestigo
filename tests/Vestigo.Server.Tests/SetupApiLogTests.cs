@@ -117,6 +117,19 @@ public sealed class SetupApiLogTests : IDisposable
     }
 
     [Fact]
+    public void Reader_KeepsAHeaderThatStartsOnTheAlignedUtf16Boundary()
+    {
+        string path = Path.Combine(_directory, "setupapi.dev.log");
+        File.WriteAllText(path, "pad\n" + Section(Id, "2024/03/01 12:00:00.000", "SUCCESS", "BOUNDARY"), Encoding.Unicode);
+        long length = new FileInfo(path).Length;
+
+        OperationResult<InstallHistory> history = new SetupApiLogReader(_directory).Read(Id, null, 20, false, length - 9);
+
+        Assert.True(history.Success, history.Error);
+        Assert.Contains(history.Value!.Sections, section => section.InfLines.Any(line => line.Contains("BOUNDARY", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Reader_StopsAGrowingStreamAtTheCapturedByteCount()
     {
         IReadOnlyList<string> lines = SetupApiLogReader.ReadLines(new EndlessStream(), maxBytes: 16, Encoding.UTF8);
