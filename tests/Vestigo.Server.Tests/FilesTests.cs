@@ -12,6 +12,7 @@ using Vestigo.Configuration;
 using Vestigo.Files;
 using Vestigo.Jobs;
 using Vestigo.Security;
+using Vestigo.Security.Signatures;
 
 namespace Vestigo.Server.Tests;
 
@@ -349,7 +350,7 @@ public class FileToolTests : IDisposable
         Directory.Delete(_jobs, recursive: true);
     }
 
-    private FileTools Tools(Func<HttpRequestMessage, HttpResponseMessage>? handler = null)
+    private FileTools Tools(Func<HttpRequestMessage, HttpResponseMessage>? handler = null, ISignatureVerifier? signatures = null)
     {
         RootPolicy policy = new(_options);
         return new(
@@ -359,7 +360,8 @@ public class FileToolTests : IDisposable
             _scheduler,
             _jobManager,
             new StubClientFactory(handler ?? (_ => new HttpResponseMessage(HttpStatusCode.NotFound))),
-            new FileLinkIssuer(_options, policy, new FileTicketStore(_options)));
+            new FileLinkIssuer(_options, policy, new FileTicketStore(_options)),
+            signatures ?? new WinTrustSignatureVerifier());
     }
 
     [Fact]
@@ -403,12 +405,18 @@ public class FileToolTests : IDisposable
         Assert.Null(text.Value.Signature);
         Assert.NotNull(pe.Value!.Version);
         Assert.NotNull(pe.Value.Signature);
-        Assert.Contains(pe.Value.Signature.Status, new[] { "Signed", "Unsigned", "Invalid" });
+        Assert.Contains(pe.Value.Signature.Status, new[] { "Signed", "Unsigned", "Invalid", "Untrusted", "Unavailable" });
+        Assert.Contains(pe.Value.Signature.Source, new[] { "embedded", "catalog", "none" });
     }
 
     [Fact]
     public void StatPath_ReportsUnsignedForPlainPe()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("WinVerifyTrust requires Windows.");
+        }
+
         string exe = Path.Combine(_root, "unsigned.dll");
         byte[] bytes = new byte[512];
         bytes[0] = (byte)'M';
@@ -418,6 +426,24 @@ public class FileToolTests : IDisposable
         SignatureInfo signature = AuthenticodeVerifier.Verify(exe);
 
         Assert.NotEqual("Signed", signature.Status);
+    }
+
+    [Fact]
+    public void StatPath_UsesSharedVerifierOutcomeAndSource()
+    {
+        string exe = Path.Combine(_root, "sample.dll");
+        File.WriteAllBytes(exe, MinimalPe.WithoutCodeView());
+        RecordingVerifier verifier = new(new SignatureVerification(
+            "unavailable", "none", "0x80092013", "cacheOnly", DateTimeOffset.UnixEpoch, null));
+
+        OperationResult<PathInfo> result = Tools(signatures: verifier).StatPath("work:sample.dll");
+
+        Assert.Equal("Unavailable", result.Value!.Signature!.Status);
+        Assert.Equal("none", result.Value.Signature.Source);
+        Assert.Equal("0x80092013", result.Value.Signature.HResult);
+        Assert.Equal("Signature verification could not be completed.", result.Value.Signature.Message);
+        Assert.Equal(RevocationMode.CacheOnly, verifier.Mode);
+        Assert.True(verifier.IncludeSigner);
     }
 
     [Fact]
@@ -655,6 +681,23 @@ public class FileToolTests : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(handler(request));
+    }
+
+    private sealed class RecordingVerifier(SignatureVerification result) : ISignatureVerifier
+    {
+        public RevocationMode Mode { get; private set; }
+
+        public bool IncludeSigner { get; private set; }
+
+        public int Calls { get; private set; }
+
+        public SignatureVerification Verify(string path, RevocationMode revocation, bool includeSigner)
+        {
+            Calls++;
+            Mode = revocation;
+            IncludeSigner = includeSigner;
+            return result;
+        }
     }
 }
 

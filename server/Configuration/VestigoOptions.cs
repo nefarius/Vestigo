@@ -5,6 +5,7 @@ using Vestigo.Audio;
 using Vestigo.DebugOutput;
 using Vestigo.Desktop;
 using Vestigo.Devices;
+using Vestigo.Diagnostics;
 using Vestigo.ScheduledTasks;
 using Vestigo.Services;
 using Vestigo.Software;
@@ -116,6 +117,8 @@ public sealed class VestigoOptions
     public AudioOptions Audio { get; set; } = new();
 
     public DesktopOptions Desktop { get; set; } = new();
+
+    public DiagnosticsOptions Diagnostics { get; set; } = new();
 
     public bool AuthenticationEnabled => ApiTokens.Count > 0;
 
@@ -315,6 +318,7 @@ public sealed class VestigoOptions
         DebugOutput.Validate();
         Audio.Validate();
         Desktop.Validate();
+        Diagnostics.Validate();
 
         if (MaxReadWait < TimeSpan.Zero || MaxReadWait > TimeSpan.FromMinutes(2))
         {

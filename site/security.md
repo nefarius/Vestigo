@@ -24,7 +24,7 @@ Vestigo is meant to give an agent administrator-equivalent reach on a lab PC. Th
 
 ## Modules that stay off
 
-These stay disabled until you enable the module: **Processes**, **Devices**, **RemoteDebugger**, **Desktop**, **Audio**, and **DebugOutput**. Processes and RemoteDebugger also need Jobs. Enabling the powerful ones without tokens is allowed and logs a startup warning.
+These stay disabled until you enable the module: **Processes**, **Devices**, **RemoteDebugger**, **Desktop**, **Audio**, **DebugOutput**, and **Diagnostics**. Processes and RemoteDebugger also need Jobs. Enabling the powerful ones without tokens is allowed and logs a startup warning. Online Authenticode revocation (`Diagnostics:AllowOnlineRevocation`) stays off even after Diagnostics is enabled.
 
 ## Separate gates
 

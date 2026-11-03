@@ -125,6 +125,42 @@ public sealed partial class RootPolicy(VestigoOptions options, VolumeRootSource?
             : PathCheck.Fail("not_found", $"Path does not exist: '{check.FullPath}'.");
     }
 
+    /// <summary>
+    ///     Describes a canonical path for disclosure. An alias is returned only when the resolved path lies in a
+    ///     root with <see cref="RootAccess.Read" />. Paths outside every such root produce a null alias and
+    ///     <c>outsideRoots: true</c>. A path that cannot be canonicalized produces neither.
+    /// </summary>
+    public (string? Alias, bool OutsideRoots) DescribeRead(string fullPath)
+    {
+        if (string.IsNullOrWhiteSpace(fullPath) || !PathPolicy.TryCanonicalize(fullPath, out string canonical))
+        {
+            return (null, false);
+        }
+
+        foreach (RootDefinition root in Roots)
+        {
+            if (!root.Access.HasFlag(RootAccess.Read) || !PathPolicy.TryCanonicalize(root.Path, out string rootPath))
+            {
+                continue;
+            }
+
+            if (!PathPolicy.IsInsideRoot(canonical, rootPath))
+            {
+                continue;
+            }
+
+            string relative = Path.GetRelativePath(rootPath, canonical);
+            if (relative == ".")
+            {
+                relative = "";
+            }
+
+            return ($"{root.Name}:{relative}", false);
+        }
+
+        return (null, true);
+    }
+
     [GeneratedRegex(@"^(?<name>[A-Za-z][A-Za-z0-9_-]+):(?<rest>.*)$", RegexOptions.CultureInvariant | RegexOptions.Singleline)]
     private static partial Regex NamedRoot();
 }

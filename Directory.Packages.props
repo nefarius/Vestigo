@@ -13,6 +13,7 @@
     <PackageVersion Include="MinVer" Version="8.0.0" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <PackageVersion Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageVersion Include="PeNet" Version="6.1.2" />
     <PackageVersion Include="Nefarius.Utilities.DeviceManagement" Version="6.2.0" />
     <PackageVersion Include="Nefarius.Utilities.ETW" Version="2.20.0" />
     <PackageVersion Include="Nefarius.Utilities.WindowsVersion" Version="2.5.0" />

@@ -27,6 +27,7 @@ public static class ModuleRegistry
         new DesktopModule(),
         new AudioModule(),
         new DebugOutputModule(),
+        new DiagnosticsModule(),
         new UpdatesModule()
     ];
 
@@ -121,7 +122,9 @@ public static class ModuleRegistry
         bool desktopScreenshots = desktop && options.Desktop.AllowScreenshots;
         bool audio = enabled.Any(module => module.Name == "Audio");
         bool audioSetDefault = audio && options.Audio.AllowSetDefault;
-        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio)
+        bool diagnostics = enabled.Any(module => module.Name == "Diagnostics");
+        bool diagnosticsOnline = diagnostics && options.Diagnostics.AllowOnlineRevocation;
+        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics)
         {
             return null;
         }
@@ -157,6 +160,12 @@ public static class ModuleRegistry
                 clauses.Add($"{reach} can read OutputDebugString messages from every session.");
             }
 
+            if (diagnostics)
+            {
+                names.Add("Diagnostics");
+                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline));
+            }
+
             string named = names.Count == 1
                 ? $"the {names[0]} module is enabled"
                 : $"the {string.Join(" and ", names)} modules are enabled";
@@ -185,6 +194,13 @@ public static class ModuleRegistry
             extras += "The DebugOutput module is also enabled, so the same clients can read OutputDebugString messages from every session. ";
         }
 
+        if (diagnostics)
+        {
+            extras += diagnosticsOnline
+                ? "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures including online revocation checks, and list loaded modules of running processes. "
+                : "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures, and list loaded modules of running processes. ";
+        }
+
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
         {
             extras += "The Updates module can also install the latest signed Vestigo release and restart the service. ";
@@ -195,4 +211,8 @@ public static class ModuleRegistry
                extras +
                "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
+
+    private static string DiagnosticsClause(string reach, bool online) => online
+        ? $"{reach} can inspect binaries inside configured roots, verify signatures including online revocation checks, and list loaded modules of running processes."
+        : $"{reach} can inspect binaries inside configured roots, verify signatures, and list loaded modules of running processes.";
 }

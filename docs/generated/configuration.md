@@ -23,6 +23,12 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Desktop:MaxScreenshotBytes` | `134217728` |
 | `Devices:NefconPath` | `null` |
 | `Devices:NefconTimeout` | `00:02:00` |
+| `Diagnostics:AllowCaptureProbes` | `false` |
+| `Diagnostics:AllowOnlineRevocation` | `false` |
+| `Diagnostics:MaxInspectBytes` | `268435456` |
+| `Diagnostics:MaxInstallHistoryBytes` | `16777216` |
+| `Diagnostics:MaxProbeDuration` | `00:00:05` |
+| `Diagnostics:MaxProcessModules` | `500` |
 | `Environment:ProtectedNames` | `COMSPEC, SystemRoot, windir` |
 | `EventLog:MaxEvents` | `500` |
 | `EventLog:MaxScannedEvents` | `20000` |
