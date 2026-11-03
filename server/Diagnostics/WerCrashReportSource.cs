@@ -1,3 +1,7 @@
+using System.ComponentModel;
+
+using Microsoft.Win32.SafeHandles;
+
 namespace Vestigo.Diagnostics;
 
 /// <summary>One fixed WER store. <see cref="Profile" /> is an account label, not a directory.</summary>
@@ -38,57 +42,18 @@ internal sealed class WerCrashReportSource : ICrashReportSource
                 continue;
             }
 
-            if (!Directory.Exists(store.Directory))
-            {
-                continue;
-            }
-
             try
             {
-                foreach (string folder in Directory.EnumerateDirectories(store.Directory))
+                if (OperatingSystem.IsWindows())
                 {
-                    if (visited >= MaxFolders)
-                    {
-                        truncated = true;
-                        break;
-                    }
-
-                    visited++;
-                    if (!TryReparse(folder, out bool reparse))
-                    {
-                        partial = true;
-                        skipped++;
-                        continue;
-                    }
-
-                    if (reparse)
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        if (!TryRead(store, folder, buffer, since, out CrashReport? report, out bool unreadable))
-                        {
-                            if (unreadable)
-                            {
-                                partial = true;
-                                skipped++;
-                            }
-
-                            continue;
-                        }
-
-                        matches.Add(report!);
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        partial = true;
-                        skipped++;
-                    }
+                    ReadWindows(store, buffer, since, matches, ref truncated, ref partial, ref skipped, ref visited);
+                }
+                else
+                {
+                    ReadPortable(store, buffer, since, matches, ref truncated, ref partial, ref skipped, ref visited);
                 }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
             {
                 partial = true;
                 skipped++;
@@ -113,6 +78,245 @@ internal sealed class WerCrashReportSource : ICrashReportSource
             partial,
             skipped,
             page));
+    }
+
+    private static void ReadWindows(
+        WerStore store,
+        byte[] buffer,
+        DateTimeOffset? since,
+        List<CrashReport> matches,
+        ref bool truncated,
+        ref bool partial,
+        ref int skipped,
+        ref int visited)
+    {
+        switch (WerDirectory.Open(store.Directory, out WerDirectory.OpenedDirectory opened))
+        {
+            case WerDirectory.OpenStatus.Missing:
+                return;
+            case WerDirectory.OpenStatus.Failed or WerDirectory.OpenStatus.Reparse:
+                partial = true;
+                skipped++;
+                return;
+        }
+
+        using (opened)
+        {
+            if (!WerDirectory.SamePath(opened.FinalPath, store.Directory))
+            {
+                partial = true;
+                skipped++;
+                return;
+            }
+
+            foreach (WerDirectory.Entry folder in WerDirectory.Children(opened.Handle))
+            {
+                if (!folder.Directory)
+                {
+                    continue;
+                }
+
+                if (visited >= MaxFolders)
+                {
+                    truncated = true;
+                    return;
+                }
+
+                visited++;
+                if (folder.Reparse)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    using SafeFileHandle handle = WerDirectory.OpenChild(opened.Handle, folder.FileId);
+                    if (WerDirectory.IsReparse(handle))
+                    {
+                        continue;
+                    }
+
+                    if (!WerDirectory.TryFinalPath(handle, out string? final) || final is null || !WerDirectory.IsUnder(final, opened.FinalPath))
+                    {
+                        partial = true;
+                        skipped++;
+                        continue;
+                    }
+
+                    if (!TryRead(store, handle, final, folder.Name, buffer, since, out CrashReport? report, out bool unreadable))
+                    {
+                        if (unreadable)
+                        {
+                            partial = true;
+                            skipped++;
+                        }
+
+                        continue;
+                    }
+
+                    matches.Add(report!);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+                {
+                    partial = true;
+                    skipped++;
+                }
+            }
+        }
+    }
+
+    private static void ReadPortable(
+        WerStore store,
+        byte[] buffer,
+        DateTimeOffset? since,
+        List<CrashReport> matches,
+        ref bool truncated,
+        ref bool partial,
+        ref int skipped,
+        ref int visited)
+    {
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(store.Directory);
+            if (attributes.HasFlag(FileAttributes.ReparsePoint) || !attributes.HasFlag(FileAttributes.Directory))
+            {
+                partial = true;
+                skipped++;
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException)
+        {
+            return;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            partial = true;
+            skipped++;
+            return;
+        }
+
+        try
+        {
+            foreach (string folder in Directory.EnumerateDirectories(store.Directory))
+            {
+                if (visited >= MaxFolders)
+                {
+                    truncated = true;
+                    return;
+                }
+
+                visited++;
+                if (!TryReparse(folder, out bool reparse))
+                {
+                    partial = true;
+                    skipped++;
+                    continue;
+                }
+
+                if (reparse)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (!TryRead(store, folder, buffer, since, out CrashReport? report, out bool unreadable))
+                    {
+                        if (unreadable)
+                        {
+                            partial = true;
+                            skipped++;
+                        }
+
+                        continue;
+                    }
+
+                    matches.Add(report!);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    partial = true;
+                    skipped++;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            partial = true;
+            skipped++;
+        }
+    }
+
+    private static bool TryRead(
+        WerStore store,
+        SafeFileHandle folder,
+        string folderFinal,
+        string folderName,
+        byte[] buffer,
+        DateTimeOffset? since,
+        out CrashReport? report,
+        out bool unreadable)
+    {
+        report = null;
+        unreadable = false;
+        WerDirectory.Entry? reportEntry = null;
+        List<CrashDumpFile> dumps = [];
+        foreach (WerDirectory.Entry entry in WerDirectory.Children(folder))
+        {
+            if (entry.Name.Equals("Report.wer", StringComparison.OrdinalIgnoreCase))
+            {
+                reportEntry = entry;
+                continue;
+            }
+
+            if (entry.Directory || entry.Reparse || dumps.Count == 8 || entry.EndOfFile < 0 || !IsDumpName(entry.Name))
+            {
+                continue;
+            }
+
+            dumps.Add(new CrashDumpFile(Cap(entry.Name, 240), entry.EndOfFile));
+        }
+
+        if (reportEntry is not { } wer)
+        {
+            return false;
+        }
+
+        if (wer.Directory)
+        {
+            unreadable = true;
+            return false;
+        }
+
+        if (wer.Reparse)
+        {
+            return false;
+        }
+
+        try
+        {
+            using SafeFileHandle file = WerDirectory.OpenChild(folder, wer.FileId);
+            if (WerDirectory.IsReparse(file))
+            {
+                return false;
+            }
+
+            if (!WerDirectory.TryFinalPath(file, out string? final) || final is null || !WerDirectory.IsUnder(final, folderFinal))
+            {
+                unreadable = true;
+                return false;
+            }
+
+            using Stream stream = WerDirectory.Read(file);
+            (int read, bool fileTruncated) = ReadBounded(stream, buffer);
+            return Finish(store, folderName, buffer, read, fileTruncated, dumps, since, out report);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            unreadable = true;
+            return false;
+        }
     }
 
     private static bool TryRead(WerStore store, string folder, byte[] buffer, DateTimeOffset? since, out CrashReport? report, out bool unreadable)
@@ -144,6 +348,20 @@ internal sealed class WerCrashReportSource : ICrashReportSource
             return false;
         }
 
+        return Finish(store, Path.GetFileName(folder), buffer, read, fileTruncated, DumpFiles(folder), since, out report);
+    }
+
+    private static bool Finish(
+        WerStore store,
+        string folderName,
+        byte[] buffer,
+        int read,
+        bool fileTruncated,
+        IReadOnlyList<CrashDumpFile> dumps,
+        DateTimeOffset? since,
+        out CrashReport? report)
+    {
+        report = null;
         ParsedWerReport parsed = WerReportParser.Parse(buffer.AsSpan(0, read), fileTruncated);
         if (since is { } earliest && (parsed.EventTime is null || parsed.EventTime < earliest))
         {
@@ -154,7 +372,7 @@ internal sealed class WerCrashReportSource : ICrashReportSource
             store.Scope,
             store.Store,
             store.Profile,
-            Cap(Path.GetFileName(folder), 240),
+            Cap(folderName, 240),
             parsed.EventType,
             parsed.EventTime,
             parsed.AppName,
@@ -162,8 +380,16 @@ internal sealed class WerCrashReportSource : ICrashReportSource
             parsed.ReportId,
             parsed.Truncated,
             parsed.Signatures,
-            DumpFiles(folder));
+            dumps);
         return true;
+    }
+
+    private static bool IsDumpName(string name)
+    {
+        string extension = Path.GetExtension(name);
+        return extension.Equals(".dmp", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".mdmp", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".hdmp", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyList<CrashDumpFile> DumpFiles(string folder)

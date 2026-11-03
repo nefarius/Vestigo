@@ -129,6 +129,65 @@ public class CrashDiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void List_MissingStoreIsQuietAndRejectedStoresArePartial()
+    {
+        string missing = Path.Combine(_root, "missing-store");
+        WerCrashReportSource quiet = new(() => [new WerStore("machine", "archive", missing, null)], new DiagnosticsOptions());
+        OperationResult<CrashReportList> missingResult = quiet.List("all", 10, null);
+        Assert.False(missingResult.Value!.Partial);
+        Assert.Equal(0, missingResult.Value.Skipped);
+        Assert.Equal(0, missingResult.Value.Count);
+
+        string file = Path.Combine(_root, "not-a-directory");
+        File.WriteAllText(file, "x");
+        OperationResult<CrashReportList> blocked = new WerCrashReportSource(
+            () => [new WerStore("machine", "archive", file, null)],
+            new DiagnosticsOptions()).List("all", 10, null);
+        Assert.True(blocked.Value!.Partial);
+        Assert.True(blocked.Value.Skipped >= 1);
+        Assert.Equal(0, blocked.Value.Count);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            string locked = Path.Combine(_root, "locked-store");
+            Directory.CreateDirectory(locked);
+            File.SetUnixFileMode(locked, UnixFileMode.None);
+            try
+            {
+                OperationResult<CrashReportList> denied = new WerCrashReportSource(
+                    () => [new WerStore("machine", "archive", locked, null)],
+                    new DiagnosticsOptions()).List("all", 10, null);
+                Assert.True(denied.Value!.Partial);
+                Assert.Equal(0, denied.Value.Count);
+            }
+            finally
+            {
+                File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
+
+        string outside = Path.Combine(_root, "linked-target");
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "Report.wer"), "EventType=APPCRASH\nAppName=UNIQUE-LINKED-STORE\n");
+        string link = Path.Combine(_root, "linked-store");
+        try
+        {
+            Directory.CreateSymbolicLink(link, outside);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        OperationResult<CrashReportList> linked = new WerCrashReportSource(
+            () => [new WerStore("machine", "archive", link, null)],
+            new DiagnosticsOptions()).List("all", 10, null);
+        Assert.True(linked.Value!.Partial);
+        Assert.Equal(0, linked.Value.Count);
+        Assert.DoesNotContain("UNIQUE-LINKED-STORE", JsonSerializer.Serialize(linked.Value));
+    }
+
+    [Fact]
     public void Capture_RefusesUntilTheGateIsOnAndDoesNotCallTheWriter()
     {
         FakeDumps dumps = new();
