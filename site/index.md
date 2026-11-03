@@ -30,4 +30,4 @@ A fresh MSI install binds every interface and writes a generated bearer token. `
 
 The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopback still works on the same machine. Binding beyond loopback without tokens logs a startup warning. Traffic is plain HTTP; use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine.
 
-Installed MSI needs Windows 10 or later (x64), the x64 ASP.NET Core Runtime 10.0 (any 10.0.x patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this), and an elevated service account for realtime ETW sessions and most mutating tools.
+Installed MSI needs Windows 10 or later (x64; Windows 11 ARM64 through x64 emulation), the x64 ASP.NET Core Runtime 10.0 (any 10.0.x patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this; on ARM64 this is the x64 runtime under `%ProgramFiles%\dotnet\x64`), and an elevated service account for realtime ETW sessions and most mutating tools.

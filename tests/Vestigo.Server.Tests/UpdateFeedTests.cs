@@ -113,6 +113,7 @@ public class UpdateFeedTests
         UpdateFeed.RequireBuildbotResources(configuration.RootElement);
 
         string installer = File.ReadAllText(Path.Combine(root, "installer", "Program.cs")).Replace("\r\n", "\n");
+        Assert.Contains("using WixSharp.CommonTasks;", installer, StringComparison.Ordinal);
         Assert.Contains("internal const string UpdaterFeature = \"Updater\"", installer, StringComparison.Ordinal);
         Assert.Contains("feature.Add(updaterFeature)", installer, StringComparison.Ordinal);
         Assert.Contains("new WixSharp.File(updaterFeature, options.UpdaterExe)", installer, StringComparison.Ordinal);
@@ -194,6 +195,7 @@ public class UpdateFeedTests
         Assert.Contains("gitleaks dir .", workflow, StringComparison.Ordinal);
         Assert.Contains("semgrep scan --config p/csharp", workflow, StringComparison.Ordinal);
         Assert.Contains("semgrep/semgrep@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0", workflow, StringComparison.Ordinal);
+        Assert.Contains("wix extension add -g WixToolset.Util.wixext/5.0.2", workflow, StringComparison.Ordinal);
         Assert.Contains("Vestigo.Installer.Actions/Vestigo.Installer.Actions.csproj", workflow, StringComparison.Ordinal);
         Assert.Contains("installer/Vestigo.Installer.Actions/packages.lock.json", workflow, StringComparison.Ordinal);
         Assert.Contains("ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6", workflow, StringComparison.Ordinal);

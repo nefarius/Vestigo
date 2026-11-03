@@ -14,7 +14,7 @@ namespace Vestigo.Installer;
 static class ListenPage
 {
     const string WixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
-    const string BinaryId = "VestigoActionsBin";
+    internal const string BinaryId = "VestigoActionsBin";
     const string FirewallComponentId = "VestigoFirewallRule";
     const string AccessDialogId = "VestigoAccessDlg";
     const string AuthDialogId = "VestigoAuthDlg";
