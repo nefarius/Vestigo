@@ -159,21 +159,14 @@ public sealed class WinTrustSignatureVerifier : ISignatureVerifier
             {
                 for (int count = 0; count < 32; count++)
                 {
-                    nint previous = cursor;
-                    nint info = PInvoke.CryptCATAdminEnumCatalogFromHash(admin, hash, ref cursor);
-                    if (info == 0)
+                    cursor = PInvoke.CryptCATAdminEnumCatalogFromHash(admin, hash, ref cursor);
+                    if (cursor == 0)
                     {
                         break;
                     }
 
-                    if (previous != 0)
-                    {
-                        PInvoke.CryptCATAdminReleaseCatalogContext(admin, previous, 0);
-                    }
-
-                    cursor = info;
                     CATALOG_INFO catalogInfo = new() { cbStruct = (uint)sizeof(CATALOG_INFO) };
-                    if (!PInvoke.CryptCATCatalogInfoFromContext(info, ref catalogInfo, 0))
+                    if (!PInvoke.CryptCATCatalogInfoFromContext(cursor, ref catalogInfo, 0))
                     {
                         unread ??= HresultFromWin32(MarshalGetLastError());
                         continue;
