@@ -27,24 +27,24 @@ internal static class DisplaySignalReader
     {
         int? width = null;
         int? height = null;
-        uint sourceIndex = path.sourceInfo.modeInfoIdx;
-        if (sourceIndex < (uint)modes.Length &&
-            modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
+        uint targetIndex = path.targetInfo.modeInfoIdx;
+        if (targetIndex < (uint)modes.Length &&
+            modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
         {
-            DISPLAYCONFIG_SOURCE_MODE source = modes[sourceIndex].sourceMode;
-            width = Count(source.width);
-            height = Count(source.height);
+            DISPLAYCONFIG_2DREGION active = modes[targetIndex].targetMode.targetVideoSignalInfo.activeSize;
+            width = Count(active.cx);
+            height = Count(active.cy);
         }
 
         if (width is null || height is null)
         {
-            uint targetIndex = path.targetInfo.modeInfoIdx;
-            if (targetIndex < (uint)modes.Length &&
-                modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
+            uint sourceIndex = path.sourceInfo.modeInfoIdx;
+            if (sourceIndex < (uint)modes.Length &&
+                modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
             {
-                DISPLAYCONFIG_2DREGION active = modes[targetIndex].targetMode.targetVideoSignalInfo.activeSize;
-                width ??= Count(active.cx);
-                height ??= Count(active.cy);
+                DISPLAYCONFIG_SOURCE_MODE source = modes[sourceIndex].sourceMode;
+                width ??= Count(source.width);
+                height ??= Count(source.height);
             }
         }
 

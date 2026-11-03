@@ -92,7 +92,7 @@ Serilog writes console output and daily files under the settings `logs` director
 
 `AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, zip, and conversion-output paths used by the Trace tools. When both lists are empty, Vestigo also registers a named root `traces` (Read, Write) at that folder so `get_upload_url traces:driver.pdb` works in every `VolumeRoots` mode. A configured root already named `traces` wins and a startup warning is logged. Named `Roots` and any `VolumeRoots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, binaries for `resolve_binary_symbols`, and the `/files` endpoints.
 
-The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Desktop:AllowScreenshots`, and `Updates:AllowSelfUpdate` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
+The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Desktop:AllowScreenshots`, `Diagnostics:AllowCaptureProbes`, and `Updates:AllowSelfUpdate` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
 
 ## Examples
 

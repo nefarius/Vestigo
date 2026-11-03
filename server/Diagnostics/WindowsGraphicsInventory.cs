@@ -6,7 +6,6 @@ using Vestigo.Devices;
 
 using Windows.Win32;
 using Windows.Win32.Foundation;
-using Windows.Win32.Graphics.Direct3D11;
 using Windows.Win32.Graphics.Dxgi;
 
 namespace Vestigo.Diagnostics;
@@ -126,7 +125,7 @@ internal sealed class WindowsGraphicsInventory(IDeviceControl devices) : IGraphi
     {
         try
         {
-            adapter->CheckInterfaceSupport(typeof(ID3D11Device).GUID, out long version);
+            adapter->CheckInterfaceSupport(typeof(IDXGIDevice).GUID, out long version);
             return GraphicsAdapterMatcher.DriverVersion(version);
         }
         catch (Exception)

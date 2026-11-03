@@ -165,6 +165,7 @@ CreateDXGIFactory2
 IDXGIFactory6
 IDXGIAdapter4
 IDXGIAdapter
+IDXGIDevice
 IDXGIOutput
 IDXGIOutput1
 IDXGIOutputDuplication
