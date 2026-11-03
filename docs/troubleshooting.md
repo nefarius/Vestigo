@@ -2,7 +2,7 @@
 
 ## Installer says .NET Runtime 10 and ASP.NET Core 10 are required
 
-The MSI is framework-dependent and needs the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch). The ASP.NET Core 10.0 Hosting Bundle also satisfies this. A later major (11 or newer) does not. Install them from https://dotnet.microsoft.com/download/dotnet/10.0 and run the installer again. In a silent install the same message is written to the MSI log.
+The MSI is framework-dependent and needs the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch). The ASP.NET Core 10.0 Hosting Bundle also satisfies this. A later major (11 or newer) does not. Install them from [https://dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0) and run the installer again. In a silent install the same message is written to the MSI log.
 
 From an elevated prompt:
 
@@ -29,7 +29,7 @@ The MSI installed, but `Vestigo.exe` could not find `Microsoft.NETCore.App` 10.0
 & "$env:ProgramFiles\dotnet\x64\dotnet.exe" --list-runtimes
 ```
 
-Install the x64 .NET Runtime 10.0 (or the Hosting Bundle) from https://dotnet.microsoft.com/download/dotnet/10.0 and start the service again.
+Install the x64 .NET Runtime 10.0 (or the Hosting Bundle) from [https://dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0) and start the service again.
 
 ## `/mcp` returns 401
 

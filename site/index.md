@@ -24,7 +24,7 @@ A fresh MSI install binds every interface and writes a generated bearer token. `
 
 ## Quick start
 
-1. Install the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0. The MSI refuses to continue without them. Either install the ASP.NET Core 10.0 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/10.0, which includes both, or run these from an elevated prompt:
+1. Install the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0. The MSI refuses to continue without them. Either install the ASP.NET Core 10.0 Hosting Bundle from [https://dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0), which includes both, or run these from an elevated prompt:
 
    ```powershell
    winget install --id Microsoft.DotNet.Runtime.10 --architecture x64
