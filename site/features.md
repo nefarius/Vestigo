@@ -59,6 +59,12 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p>The service context does not see user audio sessions. Per-app overrides are not shown or changed.</p>
   </article>
   <article class="card">
+    <p class="pills"><span class="pill on">On by default</span></p>
+    <h2>Environment variables</h2>
+    <p>Read and set machine, console-user, and process variables. Machine and user values come from the registry and are returned unexpanded. User scope needs someone logged on at the console.</p>
+    <p>Names in <code>Environment:ProtectedNames</code> cannot be set or unset. Values are not written to the Vestigo log.</p>
+  </article>
+  <article class="card">
     <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">BCD writes gated</span> <span class="pill gated">UAC writes gated</span></p>
     <h2>System and boot security</h2>
     <p><code>get_system_info</code> reports Windows edition, display version, bitness, and UAC state. <code>get_boot_security</code> reports UEFI, Secure Boot, test-signing, and WHQL developer test mode. <code>get_uac</code> reports the slider level and EnableLUA.</p>
@@ -73,8 +79,32 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Online revocation gated</span></p>
     <h2>Diagnostics</h2>
-    <p><code>inspect_binary</code> reads architecture, characteristics, version, and the CodeView PDB file name. <code>verify_file_signature</code> checks an embedded or catalog Authenticode signature. <code>list_process_modules</code> lists modules loaded in a process and returns root aliases only. <code>get_device_install_history</code> reads the fixed SetupAPI dev logs. <code>explain_device_problem</code> states the documented CM_PROB meaning and cites observed evidence. <code>list_graphics_adapters</code> lists DXGI adapters and the outputs attached to them. <code>probe_capture_support</code> observes whether frames arrive. <code>list_crash_reports</code> lists Windows Error Reporting metadata. <code>capture_process_dump</code> writes a minidump when that gate is on.</p>
-    <p>A valid signature is not permission to load a kernel driver. Online revocation stays off until <code>Diagnostics:AllowOnlineRevocation</code> is true. Capture probes stay off until <code>Diagnostics:AllowCaptureProbes</code> is true and never return pixels. Network probes stay off until <code>Diagnostics:AllowNetworkProbes</code> is true and the destination is allow-listed. They do not capture packets. Audible audio probes stay off until <code>Diagnostics:AllowAudioPlayback</code> is true. Format checks do not emit sound, and camera format listing does not read samples. <code>list_crash_reports</code> returns Windows Error Reporting metadata and does not return dump bytes. <code>capture_process_dump</code> stays off until <code>Diagnostics:AllowProcessDumps</code> is true, refuses protected processes, and does not upload the dump. Windows Graphics Capture is unsupported. Absolute module paths are never returned. Install history does not rank drivers.</p>
+    <p><code>inspect_binary</code> reads architecture, characteristics, version, and the CodeView PDB file name. <code>verify_file_signature</code> checks an embedded or catalog Authenticode signature. <code>list_process_modules</code> lists modules loaded in a process and returns root aliases only. <code>get_device_install_history</code> reads the fixed SetupAPI dev logs. <code>explain_device_problem</code> states the documented CM_PROB meaning and cites observed evidence.</p>
+    <p>A valid signature is not permission to load a kernel driver. Online revocation stays off until <code>Diagnostics:AllowOnlineRevocation</code> is true. Absolute module paths are never returned. Install history does not rank drivers. Graphics, network, media, and crash tools below are part of this same module.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Capture probes gated</span></p>
+    <h2>Graphics</h2>
+    <p><code>list_graphics_adapters</code> lists DXGI adapters and the outputs attached to them, including software and remote adapters. <code>probe_capture_support</code> observes whether frames arrive for the primary display or a GDI device name.</p>
+    <p>Capture probes stay off until <code>Diagnostics:AllowCaptureProbes</code> is true and never return pixels. Windows Graphics Capture is unsupported. A console user must be logged on.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Network probes gated</span></p>
+    <h2>Network checks</h2>
+    <p><code>list_process_connections</code> lists the TCP endpoints and UDP bindings owned by one process. Remote addresses stay omitted unless you ask for them. <code>test_endpoint</code> resolves a host, opens TCP, or completes a TLS handshake from Vestigo's own network context.</p>
+    <p>The probe stays off until <code>Diagnostics:AllowNetworkProbes</code> is true and the host, or host and port, is listed in <code>Diagnostics:AllowedProbeDestinations</code>. It does not capture packets. Online TLS revocation uses the same revocation gate as signature checks.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Playback gated</span></p>
+    <h2>Media checks</h2>
+    <p><code>list_video_encoders</code> enumerates Media Foundation video encoders and does not activate them. <code>list_camera_formats</code> lists cameras and, for one device, the formats it advertises. <code>probe_audio_format</code> checks a shared-mode PCM format on an endpoint.</p>
+    <p>A format check does not emit sound. A synthetic tone plays only when <code>Diagnostics:AllowAudioPlayback</code> is true. Camera listing does not read samples. Encoder enumeration is not proof that a frame can be encoded.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Dumps gated</span></p>
+    <h2>Crash reports and dumps</h2>
+    <p><code>list_crash_reports</code> reads Windows Error Reporting metadata from the machine and user stores: application, event type, and signature values. A dump beside a report is a file name and length only.</p>
+    <p><code>capture_process_dump</code> stays off until <code>Diagnostics:AllowProcessDumps</code> is true. It writes a minidump into a write root, refuses protected processes and processes on the fixed refusal list, and does not upload the file or create a download ticket. A full dump can contain process memory.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
@@ -85,7 +115,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>Jobs</h2>
-    <p>Long work (process launch, silent uninstall, file fetch, remote-debugger install) returns a job id. <code>wait_job</code>, <code>read_job_output</code>, and <code>cancel_job</code> page the output and stop the tree if needed.</p>
+    <p>Long work (process launch, silent uninstall, file fetch, remote-debugger install, process dumps) returns a job id. <code>wait_job</code>, <code>read_job_output</code>, and <code>cancel_job</code> page the output and stop the tree if needed.</p>
     <p>Finished jobs are kept for a bounded retention period, then discarded.</p>
   </article>
   <article class="card">

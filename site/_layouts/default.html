@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex">
   <title>{% if page.title %}{{ page.title }} · {% endif %}{{ site.title }}</title>
   <meta name="description" content="{{ page.description | default: site.description | escape }}">
   <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
@@ -32,7 +31,7 @@
     {{ content }}
   </main>
   <footer class="wrap site-footer">
-    <p>Vestigo is a Windows-only MCP server. This booklet is a public introduction; the repository is still private.</p>
+    <p>Vestigo is a Windows-only MCP server. The repository is public: <a href="https://github.com/nefarius/Vestigo">github.com/nefarius/Vestigo</a>.</p>
   </footer>
 </body>
 </html>
