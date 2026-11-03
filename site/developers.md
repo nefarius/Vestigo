@@ -5,7 +5,7 @@ description: Driver and application workflows on a Vestigo lab PC.
 
 # Developer workflows
 
-Point an MCP client at a lab PC and let the agent do the install, capture, and attach loop. Enable [Devices](features.md), [Debug output](features.md), [Processes](features.md), and [Remote debugger](features.md) on that machine, and keep a token on `/mcp`. The [security model](security.md) is the other half of this page.
+Point an MCP client at a lab PC and let the agent do the install, capture, and attach loop. Enable [Devices](features.md), [Diagnostics](features.md), [Debug output](features.md), [Processes](features.md), and [Remote debugger](features.md) on that machine, and keep a token on `/mcp`. The [security model](security.md) is the other half of this page.
 
 ## Install a driver
 
@@ -15,6 +15,12 @@ Point an MCP client at a lab PC and let the agent do the install, capture, and a
 4. Iterate by installing again with `noDuplicates`, then restarting the device. Tear down with `uninstall_driver`, `remove_device_node`, and `remove_driver_store_package` so old packages do not accumulate.
 
 Test-signing allows test-signed drivers to load; it does not allow unsigned drivers. `get_boot_security` shows the BCD value and the running kernel state. `set_test_signing` writes the default boot entry only when `System:AllowBootConfigurationChanges` is true, and it is refused while Secure Boot is on. Restart the PC after `set_test_signing` and before installing or loading the driver.
+
+## Inspect the binary
+
+1. Enable Diagnostics. Put the file in a named root that has `Read` access.
+2. `inspect_binary` reports architecture, version, and the PDB file name. `verify_file_signature` checks the embedded or catalog Authenticode signature. A valid signature is not permission to load a kernel driver. Online revocation stays off until `Diagnostics:AllowOnlineRevocation` is true.
+3. When a device shows a problem code, `explain_device_problem` cites the documented meaning and the observed evidence. `get_device_install_history` lists the matching SetupAPI sections. Neither tool ranks drivers.
 
 ## Capture WPP live
 

@@ -24,11 +24,11 @@ Vestigo is meant to give an agent administrator-equivalent reach on a lab PC. Th
 
 ## Modules that stay off
 
-These stay disabled until you enable the module: **Processes**, **Devices**, **RemoteDebugger**, **Desktop**, **Audio**, **DebugOutput**, and **Diagnostics**. Processes, RemoteDebugger, and Diagnostics also need Jobs. Enabling the powerful ones without tokens is allowed and logs a startup warning. Online Authenticode revocation (`Diagnostics:AllowOnlineRevocation`), capture probes (`Diagnostics:AllowCaptureProbes`), network probes (`Diagnostics:AllowNetworkProbes`), audible audio probes (`Diagnostics:AllowAudioPlayback`), and process dumps (`Diagnostics:AllowProcessDumps`) stay off even after Diagnostics is enabled. Network probes also require `Diagnostics:AllowedProbeDestinations`. SetupAPI install history reads only the fixed system logs and does not rank drivers. Capture probes report frame arrival only and do not return pixels. Network probes contact one allow-listed destination and do not capture packets. Crash reports are metadata only. Process dumps are not uploaded.
+These stay disabled until you enable the module: **Processes**, **Devices**, **RemoteDebugger**, **Desktop**, **Audio**, **DebugOutput**, and **Diagnostics**. Processes, RemoteDebugger, and Diagnostics also need Jobs. Enabling the powerful ones without tokens is allowed and logs a startup warning. With Diagnostics on, that warning also names process connections, Media Foundation encoders and camera formats, audio format checks, and Windows Error Reporting metadata. Online Authenticode revocation (`Diagnostics:AllowOnlineRevocation`), capture probes (`Diagnostics:AllowCaptureProbes`), network probes (`Diagnostics:AllowNetworkProbes`), audible audio probes (`Diagnostics:AllowAudioPlayback`), and process dumps (`Diagnostics:AllowProcessDumps`) stay off even after Diagnostics is enabled. Network probes also require `Diagnostics:AllowedProbeDestinations`. SetupAPI install history reads only the fixed system logs and does not rank drivers. Capture probes report frame arrival only and do not return pixels. Network probes contact one allow-listed destination and do not capture packets. Crash reports are metadata only. Process dumps are not uploaded.
 
 ## Separate gates
 
-Even after a module is on, these writes stay off until their own setting is true:
+Even after a module is on, these actions stay off until their own setting is true:
 
 - `Software:AllowUninstall`
 - `ScheduledTasks:AllowChanges`
@@ -37,6 +37,10 @@ Even after a module is on, these writes stay off until their own setting is true
 - `System:AllowBootConfigurationChanges`
 - `System:AllowUacChanges`
 - `Updates:AllowSelfUpdate`
+- `Diagnostics:AllowOnlineRevocation`
+- `Diagnostics:AllowCaptureProbes`
+- `Diagnostics:AllowNetworkProbes` (also needs `Diagnostics:AllowedProbeDestinations`)
+- `Diagnostics:AllowAudioPlayback`
 - `Diagnostics:AllowProcessDumps`
 
 Attaching to someone else's ETW session stays off until you list the session name in `AttachableSessions`.

@@ -7,12 +7,12 @@ description: Vestigo is a Windows MCP server for driver and application developm
 
 Vestigo is a Windows MCP server for driver and application development. It runs as a Windows service and hosts a stateless Streamable HTTP endpoint at `/mcp`. A remote agent uses that endpoint to convert WPP traces, capture ETW live, move files, inspect the machine, and change the things a driver or QA lab actually needs changed.
 
-This booklet is for developers and QA personnel who will point an MCP client at a lab PC. [Features](features.md) is the catalogue. [Developers](developers.md) and [QA](qa.md) are the two common workflows. [Security](security.md) is the short model you should read before binding anything beyond loopback.
+This booklet is for developers and QA personnel who will point an MCP client at a lab PC. The source repository is public. [Features](features.md) is the catalogue. [Developers](developers.md) and [QA](qa.md) are the two common workflows. [Security](security.md) is the short model you should read before binding anything beyond loopback.
 
 ## Who it is for
 
-- **Driver and application developers** who want an agent to install a build, start a WPP session, resolve PDBs, read `OutputDebugString`, and attach Visual Studio's remote debugger.
-- **QA and test-rig operators** who want the same agent to install or uninstall a build, toggle devices, take a screenshot, query event logs, switch an audio endpoint, and pull logs and traces back as artifacts.
+- **Driver and application developers** who want an agent to install a build, start a WPP session, resolve PDBs, inspect a binary, read `OutputDebugString`, and attach Visual Studio's remote debugger.
+- **QA and test-rig operators** who want the same agent to install or uninstall a build, toggle devices, take a screenshot, query event logs, switch an audio endpoint, collect crash-report metadata, and pull logs and traces back as artifacts.
 
 It is Windows only. There is no management UI: opening `/` in a browser shows connection instructions, and `/health` is an anonymous probe.
 

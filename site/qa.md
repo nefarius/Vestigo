@@ -44,6 +44,17 @@ The Security channel follows Windows ACLs for the service account.
 
 The service context does not see user-session audio. Per-app overrides in Settings are not changed.
 
+## Read a crash and take a dump
+
+1. Enable Diagnostics. `list_crash_reports` returns Windows Error Reporting metadata for the machine, a user, or both. Dump bytes and the raw report file are not included.
+2. `capture_process_dump` stays off until `Diagnostics:AllowProcessDumps` is true. Pass `expectedStartTime` from `list_processes` (Processes is opt-in) and a new `.dmp` path in a write root. The dump is not uploaded and no download ticket is created. Protected and critical processes are refused.
+
+## Check a lab endpoint
+
+1. Enable Diagnostics and set `Diagnostics:AllowNetworkProbes` to true.
+2. Add the host, or the host and port, to `Diagnostics:AllowedProbeDestinations`. The installer does not write that list.
+3. `test_endpoint` with `dns`, `tcp`, or `tls`. The probe uses Vestigo's own network context and does not capture packets.
+
 ## Collect logs and traces
 
 1. `tail_text_file` or `read_text_file_since` for a growing log under a read root.

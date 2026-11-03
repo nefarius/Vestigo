@@ -151,7 +151,7 @@ If the target is locked, for example a loaded driver or running executable, the 
 
 ## Diagnostics
 
-The `Diagnostics` module is disabled by default (`Vestigo:Modules:Diagnostics:Enabled`). It inspects PE files inside a root with `Read` access and lists modules loaded in a process. A valid Authenticode signature does not mean Windows will load the file as a kernel driver. Read [security.md](security.md#diagnostics) first.
+The `Diagnostics` module is disabled by default (`Vestigo:Modules:Diagnostics:Enabled`). It inspects PE files inside a root with `Read` access, lists modules loaded in a process, reads SetupAPI history, explains a device problem code, and inventories graphics adapters, process connections, media capabilities, and Windows Error Reporting metadata. Capture probes, network probes, audible audio probes, and process dumps stay off until their own gates are on. A valid Authenticode signature does not mean Windows will load the file as a kernel driver. Read [security.md](security.md#diagnostics) first.
 
 `inspect_binary` reads one PE through [PeNet](https://github.com/secana/PeNet): architecture (`x86`, `x64`, `arm64`, `armnt`, `arm64ec`, `arm64x`), `PE32` or `PE32+`, subsystem, selected DLL characteristics, timestamp, whether a CLR header is present, the CodeView PDB file name (never a directory), file and product version, size, and SHA-256. A file that is not a PE fails with `not_pe`. A broken PE fails with `malformed_pe`. Files larger than `Vestigo:Diagnostics:MaxInspectBytes` fail with `file_too_large`. Every field comes from one open of the file. This tool does not verify a signature.
 
