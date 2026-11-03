@@ -92,6 +92,12 @@ public sealed class CrashTools(
         }
 
         string full = located.FullPath!;
+        string? rootPath = ContainingRoot(full);
+        if (rootPath is null)
+        {
+            return Fail("invalid_path", "The output directory is not inside the Write root.");
+        }
+
         string? directory = Path.GetDirectoryName(full);
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
         {
@@ -129,7 +135,7 @@ public sealed class CrashTools(
         }
 
         DumpOutcome outcome = new();
-        ProcessDumpRequest request = new(pid, expectedStartTime, full, parsedType, options.Diagnostics.MaxDumpBytes);
+        ProcessDumpRequest request = new(pid, expectedStartTime, full, parsedType, options.Diagnostics.MaxDumpBytes, rootPath);
         OperationResult<JobInfo> started = jobs.Start(
             "process-dump",
             $"{parsedType} pid {pid}",
@@ -187,6 +193,24 @@ public sealed class CrashTools(
         outcome.Bytes = written.Value;
         output.WriteLine("bytes " + written.Value);
         return 0;
+    }
+
+    private string? ContainingRoot(string full)
+    {
+        foreach (RootDefinition root in roots.Roots)
+        {
+            if (!root.Access.HasFlag(RootAccess.Write)
+                || !PathPolicy.TryCanonicalize(root.Path, out string canonicalRoot)
+                || !PathPolicy.TryCanonicalize(full, out string canonical)
+                || !PathPolicy.IsInsideRoot(canonical, canonicalRoot))
+            {
+                continue;
+            }
+
+            return root.Path;
+        }
+
+        return null;
     }
 
     private string? SpaceProblem(string directory)

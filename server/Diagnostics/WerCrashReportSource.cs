@@ -102,7 +102,8 @@ internal sealed class WerCrashReportSource : ICrashReportSource
 
         using (opened)
         {
-            if (!WerDirectory.SamePath(opened.FinalPath, store.Directory))
+            if (!WerDirectory.TryResolve(store.Directory, out string resolved)
+                || !WerDirectory.SamePath(opened.FinalPath, resolved))
             {
                 partial = true;
                 skipped++;

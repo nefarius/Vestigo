@@ -173,6 +173,22 @@ internal static class WerDirectory
 
     internal static bool IsReparse(SafeFileHandle handle) => (Attributes(handle) & FileAttributeReparsePoint) != 0;
 
+    /// <summary>Final path of <paramref name="path" /> opened without following its own reparse point.</summary>
+    internal static bool TryResolve(string path, out string finalPath)
+    {
+        finalPath = "";
+        if (Open(path, out OpenedDirectory opened) != OpenStatus.Opened)
+        {
+            return false;
+        }
+
+        using (opened)
+        {
+            finalPath = opened.FinalPath;
+            return true;
+        }
+    }
+
     internal static bool SamePath(string finalPath, string configured) =>
         string.Equals(Normalize(finalPath), Normalize(configured), StringComparison.OrdinalIgnoreCase);
 

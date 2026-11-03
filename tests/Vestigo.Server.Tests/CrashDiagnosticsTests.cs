@@ -295,7 +295,7 @@ public class CrashDiagnosticsTests : IDisposable
         {
             string path = Path.Combine(_root, "tiny.dmp");
             OperationResult<long> result = await new MiniDumpWriter().WriteAsync(
-                new ProcessDumpRequest(child.Id, child.StartTime, path, "mini", 1),
+                new ProcessDumpRequest(child.Id, child.StartTime, path, "mini", 1, _root),
                 CancellationToken.None);
 
             Assert.Equal("dump_too_large", result.ErrorCode);

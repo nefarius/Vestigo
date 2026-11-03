@@ -123,7 +123,12 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
             return OperationResult<long>.Fail("process_identity_mismatch", "The process start time does not match expectedStartTime. The pid may have been reused.");
         }
 
-        using SafeFileHandle file = CreateDump(request.FullPath, out int createError);
+        using SafeFileHandle file = CreateDump(request, out string? confine, out int createError);
+        if (confine is not null)
+        {
+            return OperationResult<long>.Fail("invalid_path", confine);
+        }
+
         if (file.IsInvalid)
         {
             return OperationResult<long>.Fail(createError == 80 ? "already_exists" : "dump_failed", createError == 80
@@ -163,7 +168,7 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
             if (limit.TooLarge)
             {
                 return FailAndRemove(
-                    request.FullPath,
+                    file,
                     "dump_too_large",
                     "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes and was deleted.",
                     "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes. " + PartialFileRemains);
@@ -171,12 +176,12 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
 
             return limit.Cancelled
                 ? FailAndRemove(
-                    request.FullPath,
+                    file,
                     "cancelled",
                     "The dump was cancelled and the file was deleted.",
                     "The dump was cancelled. " + PartialFileRemains)
                 : FailAndRemove(
-                    request.FullPath,
+                    file,
                     "dump_failed",
                     "The dump length could not be read. The file was deleted.",
                     "The dump length could not be read. " + PartialFileRemains);
@@ -187,12 +192,12 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
             int error = Marshal.GetLastPInvokeError();
             return error == 299
                 ? FailAndRemove(
-                    request.FullPath,
+                    file,
                     "partial_copy",
                     "The process memory could not be read completely. The partial file was deleted.",
                     "The process memory could not be read completely. " + PartialFileRemains)
                 : FailAndRemove(
-                    request.FullPath,
+                    file,
                     CodeFor(error),
                     $"The dump could not be written ({error}).",
                     $"The dump could not be written ({error}). " + PartialFileRemains);
@@ -206,7 +211,7 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return FailAndRemove(
-                request.FullPath,
+                file,
                 "dump_failed",
                 "The dump length could not be read. The file was deleted.",
                 "The dump length could not be read. " + PartialFileRemains);
@@ -215,7 +220,7 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         if (length > request.MaxBytes)
         {
             return FailAndRemove(
-                request.FullPath,
+                file,
                 "dump_too_large",
                 "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes and was deleted.",
                 "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes. " + PartialFileRemains);
@@ -224,7 +229,7 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         if (cancellationToken.IsCancellationRequested)
         {
             return FailAndRemove(
-                request.FullPath,
+                file,
                 "cancelled",
                 "The dump was cancelled and the file was deleted.",
                 "The dump was cancelled. " + PartialFileRemains);
@@ -255,18 +260,47 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         return information.ProtectionLevel != PROCESS_PROTECTION_LEVEL.PROTECTION_LEVEL_NONE;
     }
 
-    private static unsafe SafeFileHandle CreateDump(string path, out int error)
+    private static SafeFileHandle CreateDump(ProcessDumpRequest request, out string? confine, out int error)
     {
-        SafeFileHandle handle = PInvoke.CreateFile(
-            path,
-            (uint)(FILE_ACCESS_RIGHTS.FILE_GENERIC_WRITE | FILE_ACCESS_RIGHTS.FILE_READ_ATTRIBUTES),
-            FILE_SHARE_MODE.FILE_SHARE_READ | FILE_SHARE_MODE.FILE_SHARE_DELETE,
-            null,
-            FILE_CREATION_DISPOSITION.CREATE_NEW,
-            FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_NORMAL,
-            null);
-        error = handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0;
-        return handle;
+        confine = null;
+        error = 0;
+        string? directory = Path.GetDirectoryName(request.FullPath);
+        string name = Path.GetFileName(request.FullPath);
+        if (string.IsNullOrEmpty(directory) || string.IsNullOrEmpty(name) || name.Contains('\\') || name.Contains('/'))
+        {
+            confine = "The output directory is not inside the Write root.";
+            return new SafeFileHandle(IntPtr.Zero, false);
+        }
+
+        if (WerDirectory.Open(request.RootPath, out WerDirectory.OpenedDirectory root) != WerDirectory.OpenStatus.Opened)
+        {
+            confine = "The output directory is not inside the Write root.";
+            return new SafeFileHandle(IntPtr.Zero, false);
+        }
+
+        using (root)
+        {
+            switch (WerDirectory.Open(directory, out WerDirectory.OpenedDirectory opened))
+            {
+                case WerDirectory.OpenStatus.Missing:
+                    confine = "The output directory does not exist.";
+                    return new SafeFileHandle(IntPtr.Zero, false);
+                case WerDirectory.OpenStatus.Failed or WerDirectory.OpenStatus.Reparse:
+                    confine = "The output directory is not inside the Write root.";
+                    return new SafeFileHandle(IntPtr.Zero, false);
+            }
+
+            using (opened)
+            {
+                if (!WerDirectory.SamePath(opened.FinalPath, root.FinalPath) && !WerDirectory.IsUnder(opened.FinalPath, root.FinalPath))
+                {
+                    confine = "The output directory is not inside the Write root.";
+                    return new SafeFileHandle(IntPtr.Zero, false);
+                }
+
+                return DumpFileBinder.Create(opened.Handle, name, out error);
+            }
+        }
     }
 
     private const int CancelCallback = 6;
@@ -371,23 +405,10 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
     /// <summary>Sentence added when the partial dump is still on disk. Job output reports <c>cleanup_failed</c> beside the original code.</summary>
     internal const string PartialFileRemains = "The partial file could not be deleted.";
 
-    private static OperationResult<long> FailAndRemove(string path, string code, string deleted, string remained) =>
-        TryDelete(path)
+    private static OperationResult<long> FailAndRemove(SafeFileHandle file, string code, string deleted, string remained) =>
+        DumpFileBinder.TryDelete(file)
             ? OperationResult<long>.Fail(code, deleted)
             : OperationResult<long>.Fail(code, remained);
-
-    private static bool TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]

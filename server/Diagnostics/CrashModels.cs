@@ -35,8 +35,14 @@ public interface ICrashReportSource
 /// <summary>A process that might be dumped. <see cref="Protected" /> means the dump must be refused.</summary>
 public sealed record ProcessDumpTarget(int Pid, string Name, DateTimeOffset? StartTime, bool Protected);
 
-/// <summary>Arguments for one dump write. The path is already confined to a Write root.</summary>
-public sealed record ProcessDumpRequest(int Pid, DateTimeOffset ExpectedStart, string FullPath, string DumpType, long MaxBytes);
+/// <summary>Arguments for one dump write. <see cref="RootPath" /> is the Write root the file must stay inside.</summary>
+public sealed record ProcessDumpRequest(
+    int Pid,
+    DateTimeOffset ExpectedStart,
+    string FullPath,
+    string DumpType,
+    long MaxBytes,
+    string RootPath);
 
 /// <summary>Writes a minidump. Tests replace it. The implementation never uploads the file.</summary>
 public interface IProcessDumpWriter
