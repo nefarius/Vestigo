@@ -127,6 +127,7 @@ public static class ModuleRegistry
         bool diagnosticsProbes = diagnostics && options.Diagnostics.AllowCaptureProbes;
         bool diagnosticsNetwork = diagnostics && options.Diagnostics.AllowNetworkProbes;
         bool diagnosticsPlayback = diagnostics && options.Diagnostics.AllowAudioPlayback;
+        bool diagnosticsDumps = diagnostics && options.Diagnostics.AllowProcessDumps;
         if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics)
         {
             return null;
@@ -166,7 +167,7 @@ public static class ModuleRegistry
             if (diagnostics)
             {
                 names.Add("Diagnostics");
-                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback));
+                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps));
             }
 
             string named = names.Count == 1
@@ -199,7 +200,7 @@ public static class ModuleRegistry
 
         if (diagnostics)
         {
-            extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback) + " ";
+            extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps) + " ";
         }
 
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
@@ -213,14 +214,14 @@ public static class ModuleRegistry
                "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
 
-    private static string DiagnosticsClause(string reach, bool online, bool probes, bool network, bool playback) =>
-        $"{reach} can {DiagnosticsDetail(online, probes, network, playback)}";
+    private static string DiagnosticsClause(string reach, bool online, bool probes, bool network, bool playback, bool dumps) =>
+        $"{reach} can {DiagnosticsDetail(online, probes, network, playback, dumps)}";
 
-    private static string DiagnosticsDetail(bool online, bool probes, bool network, bool playback)
+    private static string DiagnosticsDetail(bool online, bool probes, bool network, bool playback, bool dumps)
     {
         string text = online
-            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, and check an audio format."
-            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, and check an audio format.";
+            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, and list Windows Error Reporting report metadata."
+            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, and list Windows Error Reporting report metadata.";
         if (probes)
         {
             text += " Capture probes may observe whether frames arrive, and they do not return pixels.";
@@ -234,6 +235,11 @@ public static class ModuleRegistry
         if (playback)
         {
             text += " Audio playback probes may play a synthetic tone on a render endpoint.";
+        }
+
+        if (dumps)
+        {
+            text += " Process dumps may write a minidump of a running process into a Write root.";
         }
 
         return text;

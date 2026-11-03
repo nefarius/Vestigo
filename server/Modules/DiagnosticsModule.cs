@@ -12,19 +12,22 @@ using Vestigo.SystemInfo;
 
 namespace Vestigo.Modules;
 
-/// <summary>Read-only binary, module, and later device and graphics diagnostics. Opt-in.</summary>
+/// <summary>Opt-in diagnostics. Process dumps are a job and need the Jobs module.</summary>
 public sealed class DiagnosticsModule : VestigoModule
 {
     public override string Name => "Diagnostics";
 
     public override string Description =>
-        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, explain a device problem code, list graphics adapters, list process connections, and list media capabilities. Opt-in. Capture probes, network probes, and audible audio probes are separate gates. A valid Authenticode signature is not permission to load a kernel driver.";
+        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, explain a device problem code, list graphics adapters, list process connections, list media capabilities, and list Windows Error Reporting report metadata. Opt-in. Needs Jobs. Capture probes, network probes, audible audio probes, and process dumps are separate gates. A valid Authenticode signature is not permission to load a kernel driver.";
 
-    /// <summary>Module lists, signature subjects, and SetupAPI logs are information disclosure, so the module is opt-in.</summary>
+    /// <summary>Module lists, signature subjects, SetupAPI logs, and crash metadata are information disclosure, so the module is opt-in.</summary>
     public override bool EnabledByDefault => false;
 
+    /// <summary><c>capture_process_dump</c> runs as a job, so the module requires Jobs.</summary>
+    public override IReadOnlyList<string> Dependencies { get; } = ["Jobs"];
+
     public override IReadOnlyList<Type> ToolTypes { get; } =
-        [typeof(BinaryTools), typeof(ProcessModuleTools), typeof(InstallHistoryTools), typeof(DeviceProblemTools), typeof(GraphicsTools), typeof(CaptureProbeTools), typeof(ConnectionTools), typeof(EndpointProbeTools), typeof(MediaTools)];
+        [typeof(BinaryTools), typeof(ProcessModuleTools), typeof(InstallHistoryTools), typeof(DeviceProblemTools), typeof(GraphicsTools), typeof(CaptureProbeTools), typeof(ConnectionTools), typeof(EndpointProbeTools), typeof(MediaTools), typeof(CrashTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
@@ -42,6 +45,9 @@ public sealed class DiagnosticsModule : VestigoModule
         services.AddSingleton<IVideoEncoderSource, MediaFoundationVideoEncoders>();
         services.AddSingleton<ICameraFormatSource, MediaFoundationCameras>();
         services.AddSingleton<IAudioFormatProbe, SessionAudioFormatProbe>();
+        services.AddSingleton<ICrashReportSource, WerCrashReportSource>();
+        services.AddSingleton<IProcessDumpWriter, MiniDumpWriter>();
+        services.AddSingleton<IVolumeSpace, DriveVolumeSpace>();
         services.AddSingleton<IDeviceProblemSource>(provider => new DeviceEvidenceGatherer(
             provider.GetRequiredService<IDeviceControl>(),
             provider.GetRequiredService<ISetupApiLogSource>(),
