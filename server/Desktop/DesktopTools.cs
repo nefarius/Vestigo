@@ -51,9 +51,11 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
     [McpServerTool(Name = "list_displays")]
     [Description(
         "Lists GDI displays (\\\\.\\DISPLAYn) with bounds, work area, DPI, and the physical monitors currently "
-        + "driven by each source, including cloned outputs. context 'interactive' (default) uses the console user's session.")]
+        + "driven by each source, including cloned outputs. includeModes adds refresh, active mode, rotation, scaling, "
+        + "the adapter LUID, and advanced-color state when Windows reports them. context 'interactive' (default) uses the console user's session.")]
     public Task<OperationResult<DisplayListResult>> ListDisplays(
         [Description("'interactive' (default) or 'service'.")] string context = "interactive",
+        [Description("Include refresh, active mode, rotation, scaling, adapter LUID, and advanced color.")] bool includeModes = false,
         CancellationToken cancellationToken = default)
     {
         if (!ProcessTools.TryParseContext(context, out LaunchContext launchContext))
@@ -61,7 +63,7 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
             return Task.FromResult(OperationResult<DisplayListResult>.Fail("invalid_request", "context must be 'service' or 'interactive'."));
         }
 
-        return inventory.ListDisplaysAsync(launchContext, elevated: false, cancellationToken);
+        return inventory.ListDisplaysAsync(launchContext, elevated: false, cancellationToken, includeModes);
     }
 
     [McpServerTool(Name = "take_screenshot")]

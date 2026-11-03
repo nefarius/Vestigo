@@ -471,11 +471,12 @@ Lists the entries of a directory inside a root with Read access.
 
 ## `list_displays`
 
-Lists GDI displays (\\.\DISPLAYn) with bounds, work area, DPI, and the physical monitors currently driven by each source, including cloned outputs. context 'interactive' (default) uses the console user's session.
+Lists GDI displays (\\.\DISPLAYn) with bounds, work area, DPI, and the physical monitors currently driven by each source, including cloned outputs. includeModes adds refresh, active mode, rotation, scaling, the adapter LUID, and advanced-color state when Windows reports them. context 'interactive' (default) uses the console user's session.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+| `includeModes` | `bool` | no | `false` | Include refresh, active mode, rotation, scaling, adapter LUID, and advanced color. |
 
 ## `list_driver_store`
 
@@ -513,6 +514,12 @@ Lists Windows event log channels with record count and enabled state. Channels t
 | --- | --- | --- | --- | --- |
 | `nameContains` | `string` | no | `null` | Only channels whose name contains this text (case-insensitive). |
 | `includeCounts` | `bool` | no | `true` | Include record counts. Disable for a faster listing. |
+
+## `list_graphics_adapters`
+
+Lists DXGI adapters in the service process, including software and remote adapters. Each adapter includes vendor, device, subsystem, and revision when they are non-zero, the LUID, video memory, the user-mode driver version when CheckInterfaceSupport returns one, and outputs with the adapter LUID they are attached to. A Display-class device node is matched by PCI ids and reported as matchConfidence exact, subsystem, device, or ambiguous. Unknown numbers are null. This does not rank drivers.
+
+No parameters.
 
 ## `list_installed_software`
 
@@ -628,6 +635,16 @@ Runs 'msvsmon /prepcomputer /private /quiet' as a job: configures the Windows fi
 | `version` | `string` | yes |  | '2022' or '2026'. |
 | `arch` | `string` | no | `x64` | 'x64' (default), 'arm64' or 'x86'. |
 | `context` | `string` | no | `service` | 'service' (default) or 'interactive'. |
+
+## `probe_capture_support`
+
+Observes whether frames arrive for one display in the console user's session. backend 'dxgi' uses Desktop Duplication through the session helper. backend 'wgc' is unsupported in this build. durationMs is capped by Vestigo:Diagnostics:MaxProbeDuration. The result reports the session, desktop name, what the API advertised, how many frames arrived, first-frame latency, and the final HRESULT. Frame arrival is an observation and proves no cause. No pixel data is returned. Requires Vestigo:Diagnostics:AllowCaptureProbes. Fails with user_not_available when nobody is logged on.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `target` | `string` | no | `primary` | 'primary' or a GDI device name such as \\.\DISPLAY1. |
+| `backend` | `string` | no | `dxgi` | 'dxgi' or 'wgc'. Only dxgi is implemented. |
+| `durationMs` | `int` | no | `1000` | How long to wait for frames, in milliseconds. Capped by Vestigo:Diagnostics:MaxProbeDuration. |
 
 ## `query_event_log`
 

@@ -124,6 +124,7 @@ public static class ModuleRegistry
         bool audioSetDefault = audio && options.Audio.AllowSetDefault;
         bool diagnostics = enabled.Any(module => module.Name == "Diagnostics");
         bool diagnosticsOnline = diagnostics && options.Diagnostics.AllowOnlineRevocation;
+        bool diagnosticsProbes = diagnostics && options.Diagnostics.AllowCaptureProbes;
         if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics)
         {
             return null;
@@ -163,7 +164,7 @@ public static class ModuleRegistry
             if (diagnostics)
             {
                 names.Add("Diagnostics");
-                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline));
+                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes));
             }
 
             string named = names.Count == 1
@@ -196,9 +197,7 @@ public static class ModuleRegistry
 
         if (diagnostics)
         {
-            extras += diagnosticsOnline
-                ? "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code. "
-                : "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code. ";
+            extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes) + " ";
         }
 
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
@@ -212,7 +211,16 @@ public static class ModuleRegistry
                "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
 
-    private static string DiagnosticsClause(string reach, bool online) => online
-        ? $"{reach} can inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code."
-        : $"{reach} can inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code.";
+    private static string DiagnosticsClause(string reach, bool online, bool probes) =>
+        $"{reach} can {DiagnosticsDetail(online, probes)}";
+
+    private static string DiagnosticsDetail(bool online, bool probes)
+    {
+        string text = online
+            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, and list graphics adapters."
+            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, and list graphics adapters.";
+        return probes
+            ? text + " Capture probes may observe whether frames arrive, and they do not return pixels."
+            : text;
+    }
 }

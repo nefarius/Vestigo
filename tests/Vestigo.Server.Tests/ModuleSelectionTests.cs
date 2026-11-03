@@ -36,6 +36,8 @@ public class ModuleSelectionTests
         Assert.Equal("System", ModuleSelection.Find(ModuleSelection.UacChanges)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.DesktopScreenshots]);
         Assert.Equal("Desktop", ModuleSelection.Find(ModuleSelection.DesktopScreenshots)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.DiagnosticsCaptureProbes]);
+        Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsCaptureProbes)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SelfUpdate]);
         Assert.Equal("Updates", ModuleSelection.Find(ModuleSelection.SelfUpdate)?.Parent);
         Assert.True(ModuleSelection.Defaults()["Updates"]);

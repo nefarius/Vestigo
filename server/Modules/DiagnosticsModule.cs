@@ -5,6 +5,7 @@ using Vestigo.Configuration;
 using Vestigo.Devices;
 using Vestigo.Diagnostics;
 using Vestigo.EventLogs;
+using Vestigo.Processes;
 using Vestigo.Security.Signatures;
 using Vestigo.Services;
 using Vestigo.SystemInfo;
@@ -17,13 +18,13 @@ public sealed class DiagnosticsModule : VestigoModule
     public override string Name => "Diagnostics";
 
     public override string Description =>
-        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, and explain a device problem code. Opt-in. A valid Authenticode signature is not permission to load a kernel driver.";
+        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, explain a device problem code, and list graphics adapters. Opt-in. Capture probes are a separate gate. A valid Authenticode signature is not permission to load a kernel driver.";
 
     /// <summary>Module lists, signature subjects, and SetupAPI logs are information disclosure, so the module is opt-in.</summary>
     public override bool EnabledByDefault => false;
 
     public override IReadOnlyList<Type> ToolTypes { get; } =
-        [typeof(BinaryTools), typeof(ProcessModuleTools), typeof(InstallHistoryTools), typeof(DeviceProblemTools)];
+        [typeof(BinaryTools), typeof(ProcessModuleTools), typeof(InstallHistoryTools), typeof(DeviceProblemTools), typeof(GraphicsTools), typeof(CaptureProbeTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
@@ -32,6 +33,10 @@ public sealed class DiagnosticsModule : VestigoModule
         services.TryAddSingleton<IProcessModuleSource, WindowsProcessModuleSource>();
         services.TryAddSingleton<IDeviceControl, DeviceControl>();
         services.AddSingleton<ISetupApiLogSource, SetupApiLogReader>();
+        services.AddSingleton<IGraphicsInventory, WindowsGraphicsInventory>();
+        services.TryAddSingleton<IProcessLauncher, ProcessLauncher>();
+        services.TryAddSingleton<SessionHelperClient>();
+        services.AddSingleton<ICaptureProbe, SessionCaptureProbe>();
         services.AddSingleton<IDeviceProblemSource>(provider => new DeviceEvidenceGatherer(
             provider.GetRequiredService<IDeviceControl>(),
             provider.GetRequiredService<ISetupApiLogSource>(),
