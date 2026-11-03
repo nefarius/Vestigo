@@ -68,7 +68,7 @@ Window closing, desktop enumeration, screenshots, and audio endpoint access need
 
 ### Diagnostics
 
-`DiagnosticsModule` is opt-in and has no module dependency. `inspect_binary` reads PE metadata through [PeNet](https://github.com/secana/PeNet) behind `IPeInspector`. `verify_file_signature` and `stat_path` share `ISignatureVerifier` (`WinTrustSignatureVerifier`): embedded `WinVerifyTrust`, then a catalog lookup when the file has no embedded signature. `none` and `cacheOnly` set `WTD_CACHE_ONLY_URL_RETRIEVAL`. `list_process_modules` uses Toolhelp behind `IProcessModuleSource` and aliases paths through `RootPolicy.DescribeRead` after link following. The remote-debugger Authenticode check stays a separate Microsoft signer verification.
+`DiagnosticsModule` is opt-in and has no module dependency. `inspect_binary` reads PE metadata through [PeNet](https://github.com/secana/PeNet) behind `IPeInspector`. `verify_file_signature` and `stat_path` share `ISignatureVerifier` (`WinTrustSignatureVerifier`): embedded `WinVerifyTrust`, then a catalog lookup when the file has no embedded signature. `none` and `cacheOnly` set `WTD_CACHE_ONLY_URL_RETRIEVAL`. `list_process_modules` uses Toolhelp behind `IProcessModuleSource` and aliases paths through `RootPolicy.DescribeRead` after link following. `get_device_install_history` reads the fixed SetupAPI dev logs through `ISetupApiLogSource`. `explain_device_problem` uses `IDeviceControl` registered with `TryAdd`, so device queries work while the Devices module is off, and it consults service, boot-security, and event-log services only when those modules are enabled. The remote-debugger Authenticode check stays a separate Microsoft signer verification.
 
 ## Devices infrastructure
 

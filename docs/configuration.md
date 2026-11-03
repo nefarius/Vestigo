@@ -29,7 +29,7 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Diagnostics:AllowOnlineRevocation` | `false` | Allows `verify_file_signature` with `revocation: online`, which may contact revocation servers. `none` and `cacheOnly` never use the network. |
 | `Diagnostics:AllowCaptureProbes` | `false` | Reserved for capture probes. No probe tool is registered until that package is enabled. |
 | `Diagnostics:MaxProcessModules` | `500` | Upper bound for `list_process_modules` `limit`. Minimum `1`, maximum `5000`. |
-| `Diagnostics:MaxInstallHistoryBytes` | `16777216` | Maximum SetupAPI log bytes read for one install-history request. Minimum `65536`, maximum `268435456`. |
+| `Diagnostics:MaxInstallHistoryBytes` | `16777216` | Maximum SetupAPI log bytes read for one `get_device_install_history` or `explain_device_problem` request. Newer bytes are kept. Minimum `65536`, maximum `268435456`. |
 | `Diagnostics:MaxProbeDuration` | `00:00:05` | Upper bound for one capture probe. Minimum `00:00:00.100`, maximum `00:00:30`. |
 | `Diagnostics:MaxInspectBytes` | `268435456` | Maximum file size accepted by `inspect_binary`. Minimum `1048576`, maximum `2147483648`. |
 | `Services:ProtectedNames` | `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs` | Service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |

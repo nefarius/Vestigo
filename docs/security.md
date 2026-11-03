@@ -112,6 +112,8 @@ The Diagnostics module reads PE metadata and Authenticode results for files insi
 
 `list_process_modules` enumerates with Toolhelp. `includePaths` returns a `root:relative` alias only after the path is canonicalized, so a symlink or junction that leaves a Read root is `path: null` and `pathOutsideRoots: true`. Absolute paths are not returned in results, errors, or logs. The CodeView PDB path from `inspect_binary` is reduced to a file name. The module list is a best-effort snapshot, not an atomic identity with a later file inspection.
 
+`get_device_install_history` reads the fixed SetupAPI dev logs under `%windir%\INF`. Callers cannot name a file, and `RootPolicy` does not apply. The log can quote system INF paths and driver-version lines. `includeRaw` is false by default; with it false, section text is not returned and is not written to the Vestigo log. `explain_device_problem` repeats the structured facts (exit status, file name, codes) and does not attach raw section text. Device-node queries use the same read-only device interface as the Devices module and do not restart, enable, or disable devices.
+
 ## Debug output
 
 `start_debug_capture` reads every `OutputDebugString` message that reaches the session `DBWIN_BUFFER` (and, outside session 0, the Global buffer). That includes messages from other users' processes. The capture runs as the service account. Treat a token that can call these tools as able to observe debug output from the whole machine. The module is off by default (`Vestigo:Modules:DebugOutput:Enabled`). Enabling it without `ApiTokens` is allowed and logs a startup `SECURITY WARNING` that names DebugOutput separately from administrator-equivalent modules.

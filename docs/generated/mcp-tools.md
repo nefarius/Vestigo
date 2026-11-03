@@ -159,6 +159,14 @@ Enables a task. Requires Vestigo:ScheduledTasks:AllowChanges.
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
 
+## `explain_device_problem`
+
+Explains the CM_PROB code of one device from observed evidence: device node, class filters, service state, boot security for code 52, Kernel-PnP configuration events, and the latest SetupAPI install sections. observed lists facts. explanation is the documented meaning of a covered code. hypotheses are labeled and cite that evidence. An uncovered code returns insufficientEvidence instead of a guess. This does not rank drivers.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `instanceId` | `string` | yes |  | Device instance ID. |
+
 ## `extract_trace_archive`
 
 Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.
@@ -249,6 +257,17 @@ Returns details of one device by instance ID: hardware and compatible IDs, class
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `instanceId` | `string` | yes |  | Device instance ID, for example ROOT\SYSTEM\0001. |
+
+## `get_device_install_history`
+
+Reads %windir%\INF\setupapi.dev.log and rotated setupapi.dev.*.log files for sections whose header token equals instanceId (case-insensitive, whole token, not a substring or hardware ID). Returns title, start and end, exit status, original numeric codes, INF and driver-version lines, and the log file name. complete is false when a section is truncated. includeRaw adds the section text, capped per section; otherwise raw lines are omitted. The read stops at Vestigo:Diagnostics:MaxInstallHistoryBytes and prefers newer bytes, setting truncated when older text was skipped. This does not rank drivers.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `instanceId` | `string` | yes |  | Device instance ID, matched exactly against the section-header token. |
+| `since` | `string` | no | `null` | ISO 8601 timestamp. Sections that end before this time are omitted. |
+| `limit` | `int` | no | `20` | Maximum sections to return, newest kept, oldest first. 1 to 200. |
+| `includeRaw` | `bool` | no | `false` | Include the section text. Defaults to false. |
 
 ## `get_download_url`
 
