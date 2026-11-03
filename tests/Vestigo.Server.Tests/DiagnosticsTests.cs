@@ -274,6 +274,35 @@ public class DiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void StartUnchanged_SkipsMissingOpenedTimeAndRejectsADifferentProcess()
+    {
+        DateTimeOffset start = DateTimeOffset.Parse("2026-04-05T06:07:08Z");
+
+        Assert.True(WindowsProcessModuleSource.StartUnchanged(null, null));
+        Assert.True(WindowsProcessModuleSource.StartUnchanged(null, start));
+        Assert.True(WindowsProcessModuleSource.StartUnchanged(start, start));
+        Assert.False(WindowsProcessModuleSource.StartUnchanged(start, null));
+        Assert.False(WindowsProcessModuleSource.StartUnchanged(start, start.AddSeconds(2)));
+    }
+
+    [Fact]
+    public void BoundedReadStream_StopsAtTheCapturedLength()
+    {
+        using MemoryStream inner = new([1, 2, 3, 4, 5]);
+        using BoundedReadStream view = new(inner, 3);
+        byte[] buffer = new byte[5];
+
+        Assert.Equal(3, view.Length);
+        Assert.Equal(3, view.Read(buffer, 0, 5));
+        Assert.Equal(new byte[] { 1, 2, 3, 0, 0 }, buffer);
+        Assert.Throws<IOException>(() => view.Seek(4, SeekOrigin.Begin));
+        Assert.Equal(1, view.Seek(-2, SeekOrigin.End));
+        Assert.Equal(2, view.Read(buffer));
+        Assert.Equal(2, buffer[0]);
+        Assert.Equal(3, buffer[1]);
+    }
+
+    [Fact]
     public void DiagnosticsOptions_RejectsOutOfRangeBounds()
     {
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Diagnostics = { MaxProcessModules = 0 } }.Validate());

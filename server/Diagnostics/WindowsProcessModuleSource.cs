@@ -44,7 +44,7 @@ public sealed class WindowsProcessModuleSource : IProcessModuleSource
                 int error = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
                 if (error == 299)
                 {
-                    return ProcessModuleQuery.Ok(opened.StartTime, partial: true, truncated: false, skipped: 0, []);
+                    return Complete(pid, opened, partial: true, truncated: false, skipped: 0, []);
                 }
 
                 return error == 5
@@ -61,7 +61,7 @@ public sealed class WindowsProcessModuleSource : IProcessModuleSource
                 int error = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
                 if (error is 18 or 299)
                 {
-                    return ProcessModuleQuery.Ok(opened.StartTime, partial: error == 299, truncated: false, skipped: 0, []);
+                    return Complete(pid, opened, partial: error == 299, truncated: false, skipped: 0, []);
                 }
 
                 return error == 5
@@ -94,7 +94,52 @@ public sealed class WindowsProcessModuleSource : IProcessModuleSource
             return ProcessModuleQuery.Fail("access_denied", "The process modules could not be read.");
         }
 
+        return Complete(pid, opened, partial, truncated, skipped, modules);
+    }
+
+    private static ProcessModuleQuery Complete(
+        int pid,
+        ProcessQuery opened,
+        bool partial,
+        bool truncated,
+        int skipped,
+        IReadOnlyList<LoadedModuleRecord> modules)
+    {
+        if (opened.StartTime is { } started && !StillSameProcess(pid, started))
+        {
+            return ProcessModuleQuery.Fail("process_exited", "The process exited while its modules were being read.");
+        }
+
         return ProcessModuleQuery.Ok(opened.StartTime, partial, truncated, skipped, modules);
+    }
+
+    /// <summary>
+    ///     A null opened start time skips the check. A later read that fails or names a different process does not.
+    /// </summary>
+    internal static bool StartUnchanged(DateTimeOffset? opened, DateTimeOffset? current) =>
+        opened is null || (current is { } observed && observed.UtcDateTime == opened.Value.UtcDateTime);
+
+    private static bool StillSameProcess(int pid, DateTimeOffset openedStart)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(pid);
+            DateTimeOffset? current;
+            try
+            {
+                current = process.StartTime;
+            }
+            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
+            {
+                current = null;
+            }
+
+            return StartUnchanged(openedStart, current);
+        }
+        catch (Exception ex) when (ex is ArgumentException or Win32Exception or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static unsafe bool Next(SafeFileHandle snapshot, ref MODULEENTRY32 entry, ref bool partial, ref int skipped)

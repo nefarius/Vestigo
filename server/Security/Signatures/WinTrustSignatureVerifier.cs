@@ -152,34 +152,65 @@ public sealed class WinTrustSignatureVerifier : ISignatureVerifier
                 return CatalogSearch.Failed(HresultFromWin32(MarshalGetLastError()), contextOpened: true);
             }
 
-            nint previous = 0;
-            nint info = PInvoke.CryptCATAdminEnumCatalogFromHash(admin, hash, ref previous);
-            if (info == 0)
-            {
-                return new CatalogSearch(new CatalogLookup(CatalogLookupKind.NotFound, 0), null, true);
-            }
-
+            nint cursor = 0;
+            CatalogSearch? failedVerification = null;
+            int? unread = null;
             try
             {
-                CATALOG_INFO catalogInfo = new() { cbStruct = (uint)sizeof(CATALOG_INFO) };
-                if (!PInvoke.CryptCATCatalogInfoFromContext(info, ref catalogInfo, 0))
+                for (int count = 0; count < 32; count++)
                 {
-                    return CatalogSearch.Failed(HresultFromWin32(MarshalGetLastError()), contextOpened: true);
-                }
+                    nint previous = cursor;
+                    nint info = PInvoke.CryptCATAdminEnumCatalogFromHash(admin, hash, ref cursor);
+                    if (info == 0)
+                    {
+                        break;
+                    }
 
-                string catalogPath = catalogInfo.wszCatalogFile.ToString().TrimEnd('\0');
-                if (string.IsNullOrWhiteSpace(catalogPath))
-                {
-                    return CatalogSearch.Failed(SignatureOutcomeMap.TrustEProviderUnknown, contextOpened: true);
-                }
+                    if (previous != 0)
+                    {
+                        PInvoke.CryptCATAdminReleaseCatalogContext(admin, previous, 0);
+                    }
 
-                int status = VerifyCatalog(path, catalogPath, admin, hash, revocation);
-                return new CatalogSearch(new CatalogLookup(CatalogLookupKind.Found, status), catalogPath, true);
+                    cursor = info;
+                    CATALOG_INFO catalogInfo = new() { cbStruct = (uint)sizeof(CATALOG_INFO) };
+                    if (!PInvoke.CryptCATCatalogInfoFromContext(info, ref catalogInfo, 0))
+                    {
+                        unread ??= HresultFromWin32(MarshalGetLastError());
+                        continue;
+                    }
+
+                    string catalogPath = catalogInfo.wszCatalogFile.ToString().TrimEnd('\0');
+                    if (string.IsNullOrWhiteSpace(catalogPath))
+                    {
+                        unread ??= SignatureOutcomeMap.TrustEProviderUnknown;
+                        continue;
+                    }
+
+                    int status = VerifyCatalog(path, catalogPath, admin, hash, revocation);
+                    if (status == 0)
+                    {
+                        return new CatalogSearch(new CatalogLookup(CatalogLookupKind.Found, 0), catalogPath, true);
+                    }
+
+                    failedVerification ??= new CatalogSearch(new CatalogLookup(CatalogLookupKind.Found, status), catalogPath, true);
+                }
             }
             finally
             {
-                PInvoke.CryptCATAdminReleaseCatalogContext(admin, info, 0);
+                if (cursor != 0)
+                {
+                    PInvoke.CryptCATAdminReleaseCatalogContext(admin, cursor, 0);
+                }
             }
+
+            if (failedVerification is { } failed)
+            {
+                return failed;
+            }
+
+            return unread is { } hresult
+                ? CatalogSearch.Failed(hresult, contextOpened: true)
+                : new CatalogSearch(new CatalogLookup(CatalogLookupKind.NotFound, 0), null, true);
         }
         finally
         {
