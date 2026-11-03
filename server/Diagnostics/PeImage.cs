@@ -213,6 +213,15 @@ internal static class PeImage
         {
             if (file.ReadUShort(key + index) == 0)
             {
+                // PeNet 6.1.2 places VS_FIXEDFILEINFO at offset + 6 + keyBytes + ((that sum) % 4).
+                long keyEnd = offset + 6L + index + 2;
+                uint fixedInfo = (uint)(keyEnd + ((uint)keyEnd % 4));
+                ulong spanEnd = (ulong)fixedInfo + 52;
+                if (fixedInfo < offset || spanEnd > (ulong)offset + size || spanEnd > (ulong)file.Length)
+                {
+                    return false;
+                }
+
                 return true;
             }
         }

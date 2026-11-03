@@ -80,6 +80,15 @@ public class DiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void Inspect_SkipsVersionWhenFixedInfoExtendsPastTheResource()
+    {
+        BinaryInspection image = Inspect(MinimalPe.WithVersionKeyPastFixedInfo());
+
+        Assert.Null(image.FileVersion);
+        Assert.Null(image.ProductVersion);
+    }
+
+    [Fact]
     public void SignatureDecision_KeepsUnavailableDistinctFromUnsigned()
     {
         AssertOutcome(0, null, "valid", "embedded");

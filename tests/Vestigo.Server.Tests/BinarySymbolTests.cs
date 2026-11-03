@@ -188,6 +188,13 @@ internal static class MinimalPe
 
     public static byte[] WithVersionPastEnd() => WithVersionResource(0x11000, 0x20000);
 
+    public static byte[] WithVersionKeyPastFixedInfo()
+    {
+        byte[] pe = WithVersion();
+        Encoding.Unicode.GetBytes(new string('A', 30)).CopyTo(pe, 0x266);
+        return pe;
+    }
+
     private static byte[] WithVersionResource(int dataRva, int virtualSize)
     {
         byte[] pe = new byte[0x400];
