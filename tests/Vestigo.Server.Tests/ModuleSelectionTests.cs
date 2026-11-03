@@ -40,6 +40,8 @@ public class ModuleSelectionTests
         Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsCaptureProbes)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.DiagnosticsNetworkProbes]);
         Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsNetworkProbes)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.DiagnosticsAudioPlayback]);
+        Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsAudioPlayback)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SelfUpdate]);
         Assert.Equal("Updates", ModuleSelection.Find(ModuleSelection.SelfUpdate)?.Parent);
         Assert.True(ModuleSelection.Defaults()["Updates"]);

@@ -29,12 +29,16 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Diagnostics:AllowOnlineRevocation` | `false` | Allows `verify_file_signature` with `revocation: online`, and online TLS revocation in `test_endpoint`. Both may contact revocation servers. Signature modes `none` and `cacheOnly` never use the network. A TLS chain can still download a missing issuer certificate from an Authority Information Access URL. |
 | `Diagnostics:AllowCaptureProbes` | `false` | Enables `probe_capture_support`. The tool is registered with Diagnostics but returns `probes_disabled` until this is true. The MSI exposes it as an unchecked child of Diagnostics. |
 | `Diagnostics:AllowNetworkProbes` | `false` | Enables `test_endpoint`. The tool returns `network_probes_disabled` until this is true. The destination must also be listed in `AllowedProbeDestinations`. The MSI exposes the gate as an unchecked child of Diagnostics. |
+| `Diagnostics:AllowAudioPlayback` | `false` | Allows `probe_audio_format` with `playback: true` to render a synthetic tone. Format checks do not use this gate and do not emit sound. The MSI exposes it as an unchecked child of Diagnostics. |
 | `Diagnostics:AllowedProbeDestinations` | empty | Hosts, or `host:port` entries, that `test_endpoint` may contact. Empty allows none. Wildcards and ranges are rejected. The installer does not own this list, so a hand-written value survives repair. |
 | `Diagnostics:MaxProcessModules` | `500` | Upper bound for `list_process_modules` `limit`. Minimum `1`, maximum `5000`. |
 | `Diagnostics:MaxInstallHistoryBytes` | `16777216` | Maximum SetupAPI log bytes read for one `get_device_install_history` or `explain_device_problem` request. Newer bytes are kept. Minimum `65536`, maximum `268435456`. |
 | `Diagnostics:MaxProbeDuration` | `00:00:05` | Upper bound for one capture probe. Minimum `00:00:00.100`, maximum `00:00:30`. |
 | `Diagnostics:MaxProcessConnections` | `500` | Upper bound for `list_process_connections` `limit`. Minimum `1`, maximum `5000`. |
 | `Diagnostics:MaxEndpointProbeDuration` | `00:00:05` | Upper bound for one `test_endpoint` call. Minimum `00:00:00.100`, maximum `00:00:30`. |
+| `Diagnostics:MaxVideoEncoders` | `200` | Upper bound for `list_video_encoders` `limit`. Minimum `1`, maximum `1000`. |
+| `Diagnostics:MaxCameraFormats` | `64` | Upper bound for `list_camera_formats` `limit`. Minimum `1`, maximum `500`. |
+| `Diagnostics:MaxAudioProbeDuration` | `00:00:02` | Upper bound for one audible `probe_audio_format` call. Minimum `00:00:00.100`, maximum `00:00:05`. |
 | `Diagnostics:MaxInspectBytes` | `268435456` | Maximum file size accepted by `inspect_binary`. Minimum `1048576`, maximum `2147483648`. |
 | `Services:ProtectedNames` | `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs` | Service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
 | `Desktop:AllowScreenshots` | `false` | Enables `take_screenshot`. Window and display listing remains available when the Desktop module is enabled. |
