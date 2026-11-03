@@ -17,6 +17,9 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>probe_audio_format</c> to render a synthetic tone. Format checks stay available without it.</summary>
     public bool AllowAudioPlayback { get; set; }
 
+    /// <summary>Allows <c>capture_process_dump</c>. The tool stays disabled until this is true.</summary>
+    public bool AllowProcessDumps { get; set; }
+
     /// <summary>Hosts, or <c>host:port</c> entries, that <c>test_endpoint</c> may contact. Empty allows none.</summary>
     public string[] AllowedProbeDestinations { get; set; } = [];
 
@@ -46,6 +49,18 @@ public sealed class DiagnosticsOptions
 
     /// <summary>Upper bound for one audible <c>probe_audio_format</c> call.</summary>
     public TimeSpan MaxAudioProbeDuration { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>Upper bound for <c>list_crash_reports</c> <c>limit</c>.</summary>
+    public int MaxCrashReports { get; set; } = 200;
+
+    /// <summary>Maximum bytes read from one <c>Report.wer</c>.</summary>
+    public long MaxCrashReportFileBytes { get; set; } = 256 * 1024;
+
+    /// <summary>Maximum dump file size. A larger file is deleted.</summary>
+    public long MaxDumpBytes { get; set; } = 512L * 1024 * 1024;
+
+    /// <summary>Free bytes that must remain on the output volume after reserving <see cref="MaxDumpBytes"/>.</summary>
+    public long MinDumpFreeBytes { get; set; } = 1024L * 1024 * 1024;
 
     public void Validate()
     {
@@ -92,6 +107,26 @@ public sealed class DiagnosticsOptions
         if (MaxAudioProbeDuration < TimeSpan.FromMilliseconds(100) || MaxAudioProbeDuration > TimeSpan.FromSeconds(5))
         {
             throw new InvalidOperationException("Vestigo:Diagnostics:MaxAudioProbeDuration must be between 00:00:00.100 and 00:00:05.");
+        }
+
+        if (MaxCrashReports is < 1 or > 2000)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxCrashReports must be between 1 and 2000.");
+        }
+
+        if (MaxCrashReportFileBytes is < 4096 or > 1_048_576)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxCrashReportFileBytes must be between 4096 and 1048576.");
+        }
+
+        if (MaxDumpBytes is < 16L * 1024 * 1024 or > 4L * 1024 * 1024 * 1024)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxDumpBytes must be between 16777216 and 4294967296.");
+        }
+
+        if (MinDumpFreeBytes is < 64L * 1024 * 1024 or > 16L * 1024 * 1024 * 1024)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MinDumpFreeBytes must be between 67108864 and 17179869184.");
         }
 
         if (AllowedProbeDestinations is null || AllowedProbeDestinations.Length > 64)

@@ -31,6 +31,18 @@ Requests cancellation of a running job. Process jobs kill their process tree.
 | --- | --- | --- | --- | --- |
 | `jobId` | `string` | yes |  | Job identifier. |
 
+## `capture_process_dump`
+
+Writes a minidump of one process as a job. Requires Vestigo:Diagnostics:AllowProcessDumps. output is a new .dmp file in a root with Write access. expectedStartTime, from list_processes, is required and is checked again immediately before the write. dumpType mini writes a small snapshot. dumpType full writes process memory and can contain credentials that were in the process. The dump runs as the Vestigo service. Protected processes and a fixed refusal list are rejected. The output volume must keep Vestigo:Diagnostics:MinDumpFreeBytes free after reserving Vestigo:Diagnostics:MaxDumpBytes. A dump over that cap is deleted. Vestigo does not upload the file and does not create a download ticket. wait > 0 waits that many seconds. The job output is a status line, never dump bytes.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `pid` | `int` | yes |  | Process id. |
+| `output` | `string` | yes |  | New .dmp path in a root with Write access. |
+| `expectedStartTime` | `DateTimeOffset` | yes |  | Start time from list_processes. A different process fails with process_identity_mismatch. |
+| `dumpType` | `string` | no | `mini` | mini or full. full includes process memory. |
+| `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns the job immediately. |
+
 ## `check_for_updates`
 
 Fetches the signed Buildbot updates.json, verifies updates.json.minisig with the Nefarius minisign public key, and compares the newest release to the installed Vestigo version (HKLM Version when the updater feature is installed, otherwise the entry assembly). Also reports whether the packaged updater is present, whether self-update is allowed, and the last start_self_update attempt.
@@ -462,6 +474,16 @@ Lists video capture devices, or the advertised media types of one device. Omit d
 Lists captures owned by this Vestigo process.
 
 No parameters.
+
+## `list_crash_reports`
+
+Lists Windows Error Reporting ReportArchive and ReportQueue metadata from the fixed machine and user stores. Each row has the store, profile label, folder name, event type, event time, application name and path, report id, and signature values. Dump files beside a report are named with their length only. Dump bytes and raw Report.wer text are not returned. scope is machine, user, or all. since drops reports whose event time is missing or earlier. This is a metadata snapshot and does not explain the crash.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `scope` | `string` | no | `all` | machine, user, or all. |
+| `since` | `DateTimeOffset?` | no | `null` | Drop reports at or before this time, and reports with no event time. |
+| `limit` | `int` | no | `50` | Maximum reports. Clamped to 1..Vestigo:Diagnostics:MaxCrashReports. |
 
 ## `list_debug_captures`
 

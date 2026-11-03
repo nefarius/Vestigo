@@ -233,3 +233,9 @@ MIB_UDP6TABLE_OWNER_PID
 TCP_TABLE_CLASS
 UDP_TABLE_CLASS
 MIB_TCP_STATE
+
+// Diagnostics: process protection query. MiniDumpWriteDump is declared locally because CsWin32 will not generate it for AnyCPU.
+GetProcessInformation
+PROCESS_INFORMATION_CLASS
+PROCESS_PROTECTION_LEVEL_INFORMATION
+PROCESS_PROTECTION_LEVEL

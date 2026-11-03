@@ -90,6 +90,8 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Diagnostics:AllowAudioPlayback</c>.</summary>
         public const string DiagnosticsAudioPlayback = "DiagnosticsAudioPlayback";
 
+        public const string DiagnosticsProcessDumps = "DiagnosticsProcessDumps";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Updates:AllowSelfUpdate</c>.</summary>
         public const string SelfUpdate = "SelfUpdate";
 
@@ -104,6 +106,7 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(DiagnosticsCaptureProbes, "Diagnostics", "AllowCaptureProbes"),
             new OptionToggle(DiagnosticsNetworkProbes, "Diagnostics", "AllowNetworkProbes"),
             new OptionToggle(DiagnosticsAudioPlayback, "Diagnostics", "AllowAudioPlayback"),
+            new OptionToggle(DiagnosticsProcessDumps, "Diagnostics", "AllowProcessDumps"),
             new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate")
         };
 
@@ -120,15 +123,16 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Audio", "Audio", "List audio playback and recording endpoints, volumes, sessions, and defaults. Optionally switch the default device.", false, null),
             new ModuleDefinition(AudioSetDefault, "Set default audio device", "Allow changing the default, multimedia, and communications audio devices (Vestigo:Audio:AllowSetDefault).", false, "Audio"),
             new ModuleDefinition("DebugOutput", "Debug output", "Capture and filter Win32 OutputDebugString messages through DebugViewConsole. Reads debug output from every session.", false, null),
-            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, and list media capabilities. A valid Authenticode signature is not permission to load a kernel driver.", false, null),
-            new ModuleDefinition(DiagnosticsCaptureProbes, "Capture probes", "Allow probe_capture_support to observe whether frames arrive (Vestigo:Diagnostics:AllowCaptureProbes). No pixel data is returned.", false, "Diagnostics"),
-            new ModuleDefinition(DiagnosticsNetworkProbes, "Network probes", "Allow test_endpoint to contact destinations listed in Vestigo:Diagnostics:AllowedProbeDestinations (Vestigo:Diagnostics:AllowNetworkProbes). The probe runs as the service and does not capture packets.", false, "Diagnostics"),
-            new ModuleDefinition(DiagnosticsAudioPlayback, "Audio playback probes", "Allow probe_audio_format to play a synthetic tone on a render endpoint (Vestigo:Diagnostics:AllowAudioPlayback). Format checks do not emit sound.", false, "Diagnostics"),
             new ModuleDefinition("Services", "Services", "List, start, stop, and configure Windows services and kernel drivers.", true, null),
             new ModuleDefinition("ScheduledTasks", "Scheduled tasks", "List and inspect scheduled tasks and their run history.", true, null),
             new ModuleDefinition(ScheduledTaskChanges, "Run and delete tasks", "Allow running, stopping, enabling, disabling, and deleting scheduled tasks (Vestigo:ScheduledTasks:AllowChanges). Tasks run as their own principal, often SYSTEM. Administrator-equivalent.", false, "ScheduledTasks"),
             new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, and device state via nefcon. Runs code with kernel privilege.", false, null),
-            new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes and Software.", true, null),
+            new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes, Software, and Diagnostics.", true, null),
+            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, list media capabilities, and list Windows Error Reporting report metadata. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
+            new ModuleDefinition(DiagnosticsCaptureProbes, "Capture probes", "Allow probe_capture_support to observe whether frames arrive (Vestigo:Diagnostics:AllowCaptureProbes). No pixel data is returned.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsNetworkProbes, "Network probes", "Allow test_endpoint to contact destinations listed in Vestigo:Diagnostics:AllowedProbeDestinations (Vestigo:Diagnostics:AllowNetworkProbes). The probe runs as the service and does not capture packets.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsAudioPlayback, "Audio playback probes", "Allow probe_audio_format to play a synthetic tone on a render endpoint (Vestigo:Diagnostics:AllowAudioPlayback). Format checks do not emit sound.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsProcessDumps, "Process dumps", "Allow capture_process_dump to write a minidump into a Write root (Vestigo:Diagnostics:AllowProcessDumps). Dumps are not uploaded and no download ticket is created.", false, "Diagnostics"),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),

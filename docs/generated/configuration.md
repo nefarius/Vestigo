@@ -27,9 +27,13 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Diagnostics:AllowCaptureProbes` | `false` |
 | `Diagnostics:AllowNetworkProbes` | `false` |
 | `Diagnostics:AllowOnlineRevocation` | `false` |
+| `Diagnostics:AllowProcessDumps` | `false` |
 | `Diagnostics:AllowedProbeDestinations` | `empty` |
 | `Diagnostics:MaxAudioProbeDuration` | `00:00:02` |
 | `Diagnostics:MaxCameraFormats` | `64` |
+| `Diagnostics:MaxCrashReportFileBytes` | `262144` |
+| `Diagnostics:MaxCrashReports` | `200` |
+| `Diagnostics:MaxDumpBytes` | `536870912` |
 | `Diagnostics:MaxEndpointProbeDuration` | `00:00:05` |
 | `Diagnostics:MaxInspectBytes` | `268435456` |
 | `Diagnostics:MaxInstallHistoryBytes` | `16777216` |
@@ -37,6 +41,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Diagnostics:MaxProcessConnections` | `500` |
 | `Diagnostics:MaxProcessModules` | `500` |
 | `Diagnostics:MaxVideoEncoders` | `200` |
+| `Diagnostics:MinDumpFreeBytes` | `1073741824` |
 | `Environment:ProtectedNames` | `COMSPEC, SystemRoot, windir` |
 | `EventLog:MaxEvents` | `500` |
 | `EventLog:MaxScannedEvents` | `20000` |

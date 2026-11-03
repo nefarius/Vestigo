@@ -298,6 +298,8 @@ public class DiagnosticsTests : IDisposable
         Assert.Contains("graphics adapters", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("TCP and UDP bindings", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("Media Foundation video encoders", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.Contains("Windows Error Reporting", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.DoesNotContain("Process dumps", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("Capture probes", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("Network probes", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("synthetic tone", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
@@ -321,8 +323,15 @@ public class DiagnosticsTests : IDisposable
             Diagnostics = { AllowAudioPlayback = true }
         };
         Assert.Contains("synthetic tone", ModuleRegistry.GetPrivilegedModuleWarning(playback));
+        VestigoOptions dumps = new()
+        {
+            Modules = { ["Diagnostics"] = new ModuleSettings { Enabled = true } },
+            Diagnostics = { AllowProcessDumps = true }
+        };
+        Assert.Contains("Process dumps", ModuleRegistry.GetPrivilegedModuleWarning(dumps));
         Assert.False(ModuleSelection.Defaults()["Diagnostics"]);
-        Assert.Null(ModuleSelection.Find("Diagnostics")!.Parent);
+        Assert.Equal("Jobs", ModuleSelection.Find("Diagnostics")!.Parent);
+        Assert.Equal(["Jobs"], new DiagnosticsModule().Dependencies);
     }
 
     [Fact]
@@ -359,6 +368,7 @@ public class DiagnosticsTests : IDisposable
     {
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Diagnostics = { MaxProcessModules = 0 } }.Validate());
         Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Diagnostics = { MaxInspectBytes = 10 } }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Diagnostics = { MaxDumpBytes = 10 } }.Validate());
         new VestigoOptions().Validate();
     }
 
