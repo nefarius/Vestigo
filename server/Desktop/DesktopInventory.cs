@@ -72,7 +72,8 @@ public sealed class DesktopInventory(
     public async Task<OperationResult<DisplayListResult>> ListDisplaysAsync(
         LaunchContext context,
         bool elevated,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeModes = false)
     {
         if (context == LaunchContext.Service)
         {
@@ -82,7 +83,7 @@ public sealed class DesktopInventory(
             }
 
             return OperationResult<DisplayListResult>.Ok(
-                await Task.Run(DisplayTopology.List, cancellationToken).ConfigureAwait(false));
+                await Task.Run(() => DisplayTopology.List(includeModes), cancellationToken).ConfigureAwait(false));
         }
 
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
@@ -92,7 +93,7 @@ public sealed class DesktopInventory(
         }
 
         return await helper.RunAsync<DisplayListResult>(
-            SessionHelper.BuildListDisplaysArguments(),
+            SessionHelper.BuildListDisplaysArguments(includeModes),
             elevated,
             HelperTimeout,
             HelperMaxOutputBytes,

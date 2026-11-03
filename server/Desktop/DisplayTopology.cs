@@ -17,16 +17,16 @@ namespace Vestigo.Desktop;
 /// </summary>
 public static class DisplayTopology
 {
-    public static DisplayListResult List() =>
-        new(Enumerate(), Process.GetCurrentProcess().SessionId);
+    public static DisplayListResult List(bool includeModes = false) =>
+        new(Enumerate(includeModes), Process.GetCurrentProcess().SessionId);
 
-    public static IReadOnlyList<DisplayInfo> Enumerate()
+    public static IReadOnlyList<DisplayInfo> Enumerate(bool includeModes = false)
     {
         nint previousDpi = WindowEnumerator.SetDpiAware();
         try
         {
             List<GdiMonitor> monitors = EnumerateGdiMonitors();
-            IReadOnlyDictionary<string, DisplayExtras> extras = TryQueryDisplayConfig()
+            IReadOnlyDictionary<string, DisplayExtras> extras = TryQueryDisplayConfig(includeModes)
                 ?? EnumerateDisplayDevices();
 
             return monitors
@@ -132,7 +132,7 @@ public static class DisplayTopology
     [SupportedOSPlatformGuard("windows8.1")]
     private static bool HasMonitorDpiApi() => OperatingSystem.IsWindowsVersionAtLeast(6, 3);
 
-    private static unsafe IReadOnlyDictionary<string, DisplayExtras>? TryQueryDisplayConfig()
+    private static unsafe IReadOnlyDictionary<string, DisplayExtras>? TryQueryDisplayConfig(bool includeModes)
     {
         try
         {
@@ -216,7 +216,8 @@ public static class DisplayTopology
                     DecodeManufacturer(target.edidManufactureId),
                     target.edidProductCodeId == 0 ? null : "0x" + target.edidProductCodeId.ToString("X4"),
                     FormatOutputTechnology(target.outputTechnology.ToString()),
-                    target.connectorInstance));
+                    target.connectorInstance,
+                    includeModes ? DisplaySignalReader.Read(path, modes) : null));
             }
 
             return monitors.Keys

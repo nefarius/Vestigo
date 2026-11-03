@@ -8,7 +8,7 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>verify_file_signature</c> to use <c>revocation: online</c>, which may contact the network.</summary>
     public bool AllowOnlineRevocation { get; set; }
 
-    /// <summary>Allows <c>probe_capture_support</c>. The tool is absent until graphics probes are registered.</summary>
+    /// <summary>Allows <c>probe_capture_support</c>. The tool stays disabled until this is true.</summary>
     public bool AllowCaptureProbes { get; set; }
 
     /// <summary>Upper bound for <c>list_process_modules</c> <c>limit</c>.</summary>

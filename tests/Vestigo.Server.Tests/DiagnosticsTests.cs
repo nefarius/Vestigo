@@ -295,8 +295,16 @@ public class DiagnosticsTests : IDisposable
         Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "Diagnostics");
         Assert.Contains("Diagnostics", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("SetupAPI", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.Contains("graphics adapters", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.DoesNotContain("Capture probes", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("online revocation", ModuleRegistry.GetPrivilegedModuleWarning(online));
         Assert.DoesNotContain("online revocation", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        VestigoOptions probes = new()
+        {
+            Modules = { ["Diagnostics"] = new ModuleSettings { Enabled = true } },
+            Diagnostics = { AllowCaptureProbes = true }
+        };
+        Assert.Contains("Capture probes", ModuleRegistry.GetPrivilegedModuleWarning(probes));
         Assert.False(ModuleSelection.Defaults()["Diagnostics"]);
         Assert.Null(ModuleSelection.Find("Diagnostics")!.Parent);
     }

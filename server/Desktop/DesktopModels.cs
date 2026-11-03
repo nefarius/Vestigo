@@ -29,6 +29,18 @@ public sealed record DesktopRect(int X, int Y, int Width, int Height)
 /// <summary>Width and height in physical pixels.</summary>
 public sealed record DesktopSize(int Width, int Height);
 
+/// <summary>Active signal and color state for one target. Present only when <c>includeModes</c> is true. Unknown numbers are null.</summary>
+public sealed record DisplaySignal(
+    string? AdapterLuid,
+    double? RefreshHz,
+    int? Width,
+    int? Height,
+    string? Rotation,
+    string? Scaling,
+    bool? AdvancedColorSupported,
+    bool? AdvancedColorEnabled,
+    int? BitsPerColor);
+
 /// <summary>One physical display target attached to a GDI device, including cloned outputs.</summary>
 public sealed record PhysicalMonitor(
     string? FriendlyName,
@@ -36,7 +48,8 @@ public sealed record PhysicalMonitor(
     string? ManufacturerId,
     string? ProductCode,
     string? OutputTechnology,
-    uint ConnectorInstance);
+    uint ConnectorInstance,
+    DisplaySignal? Signal = null);
 
 /// <summary>A GDI display device and the physical monitors currently driven by it.</summary>
 public sealed record DisplayInfo(

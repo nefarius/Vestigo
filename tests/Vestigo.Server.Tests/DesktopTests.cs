@@ -51,10 +51,14 @@ public class DesktopTests
         string[] args = SessionHelper.BuildListDisplaysArguments().ToArray();
 
         Assert.True(SessionHelper.IsInvocation(args));
-        Assert.True(SessionHelper.TryParseListDisplays(args, out string? error));
+        Assert.True(SessionHelper.TryParseListDisplays(args, out bool includeModes, out string? error));
+        Assert.False(includeModes);
         Assert.Null(error);
-        Assert.False(SessionHelper.TryParseListDisplays([SessionHelper.Flag, SessionHelper.ListDisplaysCommand, "--extra", "1"], out _));
-        Assert.False(SessionHelper.TryParseListDisplays([SessionHelper.Flag, "other"], out _));
+        string[] modes = SessionHelper.BuildListDisplaysArguments(includeModes: true).ToArray();
+        Assert.True(SessionHelper.TryParseListDisplays(modes, out includeModes, out _));
+        Assert.True(includeModes);
+        Assert.False(SessionHelper.TryParseListDisplays([SessionHelper.Flag, SessionHelper.ListDisplaysCommand, "--extra", "1"], out _, out _));
+        Assert.False(SessionHelper.TryParseListDisplays([SessionHelper.Flag, "other"], out _, out _));
     }
 
     [Fact]
