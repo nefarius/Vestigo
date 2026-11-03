@@ -13,7 +13,8 @@ namespace Vestigo.Diagnostics;
 
 /// <summary>
 ///     Writes a minidump with <c>MiniDumpWriteDump</c> in the service process. A full dump contains process memory.
-///     The file is deleted when the write fails, is cancelled, or exceeds the byte cap. Nothing is uploaded.
+///     The file is deleted when the write fails, is cancelled, or exceeds the byte cap.
+///     A delete that fails keeps the original dump error and says the partial file remains. Nothing is uploaded.
 /// </summary>
 internal sealed class MiniDumpWriter : IProcessDumpWriter
 {
@@ -117,6 +118,11 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         }
 
         using SafeFileHandle owned = new(process, ownsHandle: true);
+        if (!CreationMatches(owned, request.ExpectedStart))
+        {
+            return OperationResult<long>.Fail("process_identity_mismatch", "The process start time does not match expectedStartTime. The pid may have been reused.");
+        }
+
         using SafeFileHandle file = CreateDump(request.FullPath, out int createError);
         if (file.IsInvalid)
         {
@@ -154,24 +160,42 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
 
         if (limit.TooLarge || limit.Cancelled || limit.LengthFailed)
         {
-            Delete(request.FullPath);
             if (limit.TooLarge)
             {
-                return OperationResult<long>.Fail("dump_too_large", "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes and was deleted.");
+                return FailAndRemove(
+                    request.FullPath,
+                    "dump_too_large",
+                    "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes and was deleted.",
+                    "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes. " + PartialFileRemains);
             }
 
             return limit.Cancelled
-                ? OperationResult<long>.Fail("cancelled", "The dump was cancelled and the file was deleted.")
-                : OperationResult<long>.Fail("dump_failed", "The dump length could not be read. The file was deleted.");
+                ? FailAndRemove(
+                    request.FullPath,
+                    "cancelled",
+                    "The dump was cancelled and the file was deleted.",
+                    "The dump was cancelled. " + PartialFileRemains)
+                : FailAndRemove(
+                    request.FullPath,
+                    "dump_failed",
+                    "The dump length could not be read. The file was deleted.",
+                    "The dump length could not be read. " + PartialFileRemains);
         }
 
         if (!wrote)
         {
             int error = Marshal.GetLastPInvokeError();
-            Delete(request.FullPath);
-            return OperationResult<long>.Fail(CodeFor(error), error == 299
-                ? "The process memory could not be read completely. The partial file was deleted."
-                : $"The dump could not be written ({error}).");
+            return error == 299
+                ? FailAndRemove(
+                    request.FullPath,
+                    "partial_copy",
+                    "The process memory could not be read completely. The partial file was deleted.",
+                    "The process memory could not be read completely. " + PartialFileRemains)
+                : FailAndRemove(
+                    request.FullPath,
+                    CodeFor(error),
+                    $"The dump could not be written ({error}).",
+                    $"The dump could not be written ({error}). " + PartialFileRemains);
         }
 
         long length;
@@ -181,20 +205,29 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            Delete(request.FullPath);
-            return OperationResult<long>.Fail("dump_failed", "The dump length could not be read. The file was deleted.");
+            return FailAndRemove(
+                request.FullPath,
+                "dump_failed",
+                "The dump length could not be read. The file was deleted.",
+                "The dump length could not be read. " + PartialFileRemains);
         }
 
         if (length > request.MaxBytes)
         {
-            Delete(request.FullPath);
-            return OperationResult<long>.Fail("dump_too_large", "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes and was deleted.");
+            return FailAndRemove(
+                request.FullPath,
+                "dump_too_large",
+                "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes and was deleted.",
+                "The dump exceeded Vestigo:Diagnostics:MaxDumpBytes. " + PartialFileRemains);
         }
 
         if (cancellationToken.IsCancellationRequested)
         {
-            Delete(request.FullPath);
-            return OperationResult<long>.Fail("cancelled", "The dump was cancelled and the file was deleted.");
+            return FailAndRemove(
+                request.FullPath,
+                "cancelled",
+                "The dump was cancelled and the file was deleted.",
+                "The dump was cancelled. " + PartialFileRemains);
         }
 
         return OperationResult<long>.Ok(length);
@@ -335,15 +368,47 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
         _ => "dump_failed"
     };
 
-    private static void Delete(string path)
+    /// <summary>Sentence added when the partial dump is still on disk. Job output reports <c>cleanup_failed</c> beside the original code.</summary>
+    internal const string PartialFileRemains = "The partial file could not be deleted.";
+
+    private static OperationResult<long> FailAndRemove(string path, string code, string deleted, string remained) =>
+        TryDelete(path)
+            ? OperationResult<long>.Fail(code, deleted)
+            : OperationResult<long>.Fail(code, remained);
+
+    private static bool TryDelete(string path)
     {
         try
         {
             File.Delete(path);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // The caller still reports the dump failure. The partial file is left only when delete itself fails.
+            return false;
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern bool GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
+
+    private static bool CreationMatches(SafeFileHandle process, DateTimeOffset expected)
+    {
+        if (!GetProcessTimes(process.DangerousGetHandle(), out long creation, out _, out _, out _))
+        {
+            return WindowsProcessModuleSource.StartUnchanged(expected, null);
+        }
+
+        GC.KeepAlive(process);
+        try
+        {
+            DateTimeOffset started = new(DateTime.FromFileTimeUtc(creation), TimeSpan.Zero);
+            return WindowsProcessModuleSource.StartUnchanged(expected, started);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
         }
     }
 

@@ -176,6 +176,11 @@ public sealed class CrashTools(
         if (!written.Success)
         {
             output.WriteLine(written.ErrorCode!);
+            if (written.Error?.Contains(MiniDumpWriter.PartialFileRemains, StringComparison.Ordinal) == true)
+            {
+                output.WriteLine("cleanup_failed");
+            }
+
             return 1;
         }
 

@@ -54,7 +54,14 @@ internal sealed class WerCrashReportSource : ICrashReportSource
                     }
 
                     visited++;
-                    if (IsReparse(folder))
+                    if (!TryReparse(folder, out bool reparse))
+                    {
+                        partial = true;
+                        skipped++;
+                        continue;
+                    }
+
+                    if (reparse)
                     {
                         continue;
                     }
@@ -218,15 +225,20 @@ internal sealed class WerCrashReportSource : ICrashReportSource
         return (read, stream.ReadByte() >= 0);
     }
 
-    private static bool IsReparse(string path)
+    private static bool IsReparse(string path) => !TryReparse(path, out bool reparse) || reparse;
+
+    /// <summary>False when the attributes cannot be read. A true result distinguishes a confirmed reparse point.</summary>
+    private static bool TryReparse(string path, out bool reparse)
     {
         try
         {
-            return File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+            reparse = File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            return true;
+            reparse = false;
+            return false;
         }
     }
 

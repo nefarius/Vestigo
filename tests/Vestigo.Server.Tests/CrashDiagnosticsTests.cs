@@ -240,8 +240,7 @@ public class CrashDiagnosticsTests : IDisposable
                 CancellationToken.None);
 
             Assert.Equal("dump_too_large", result.ErrorCode);
-            long size = File.Exists(path) ? new FileInfo(path).Length : 0;
-            Assert.True(size <= 64 * 1024);
+            Assert.False(File.Exists(path));
         }
         finally
         {

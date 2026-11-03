@@ -235,6 +235,7 @@ UDP_TABLE_CLASS
 MIB_TCP_STATE
 
 // Diagnostics: process protection query. MiniDumpWriteDump is declared locally because CsWin32 will not generate it for AnyCPU.
+// GetProcessTimes is declared locally because the generated FILETIME is not public.
 GetProcessInformation
 PROCESS_INFORMATION_CLASS
 PROCESS_PROTECTION_LEVEL_INFORMATION
