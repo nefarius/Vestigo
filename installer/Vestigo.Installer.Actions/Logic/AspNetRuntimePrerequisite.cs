@@ -5,9 +5,11 @@ using System.Collections.Generic;
 namespace Vestigo.Installer.Actions.Logic
 {
     /// <summary>
-    ///     MSI launch-condition pieces for the x64 ASP.NET Core 10 runtime. Native x64 uses
+    ///     MSI launch-condition pieces for the x64 .NET Runtime 10 and ASP.NET Core 10. Native x64 uses
     ///     WiX <c>DotNetCompatibilityCheck</c>. Windows 11 ARM64 also accepts Microsoft's official
-    ///     x64 shared-framework registry marker when that hostfxr check misses the side-by-side layout.
+    ///     x64 shared-framework registry markers when that hostfxr check misses the side-by-side layout.
+    ///     Both <c>Microsoft.AspNetCore.App</c> 10.0.x and <c>Microsoft.NETCore.App</c> 10.0.x are required,
+    ///     and the highest NETCore patch must be at least the highest ASP.NET Core patch.
     /// </summary>
     public static class AspNetRuntimePrerequisite
     {
@@ -38,8 +40,22 @@ namespace Vestigo.Installer.Actions.Logic
         public const string RegistryPath =
             @"SOFTWARE\WOW6432Node\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.AspNetCore.App";
 
+        /// <summary>
+        ///     32-bit-view key whose value names are installed x64 .NET Runtime versions. Combined with
+        ///     <c>RegistryView.Registry32</c> this is the official marker at <see cref="NetCoreRegistryPath" />.
+        /// </summary>
+        public const string NetCoreRegistryKey =
+            @"SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.NETCore.App";
+
+        /// <summary>
+        ///     Documented hive path, including <c>WOW6432Node</c>, written by the x64 .NET Runtime
+        ///     and Hosting Bundle installers.
+        /// </summary>
+        public const string NetCoreRegistryPath =
+            @"SOFTWARE\WOW6432Node\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.NETCore.App";
+
         public const string MissingMessage =
-            "Vestigo requires the ASP.NET Core Runtime 10.0 (x64). Install the ASP.NET Core 10.0 Hosting Bundle or the x64 ASP.NET Core Runtime 10.0 from https://dotnet.microsoft.com/download/dotnet/10.0, then run this installer again.";
+            "Vestigo requires the .NET Runtime 10.0 (x64) and the ASP.NET Core Runtime 10.0 (x64). Install both, or the ASP.NET Core 10.0 Hosting Bundle (which includes both), from https://dotnet.microsoft.com/download/dotnet/10.0, then run this installer again.";
 
         public static string LaunchCondition =>
             "Installed OR " + CheckProperty + " = 0 OR (WIX_NATIVE_MACHINE = " + NativeArm64Machine + " AND " +
@@ -106,6 +122,54 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             return true;
+        }
+
+        /// <summary>
+        ///     True when both lists have a <c>10.0.x</c> name and the highest
+        ///     <c>Microsoft.NETCore.App</c> 10.0 patch is at least the highest
+        ///     <c>Microsoft.AspNetCore.App</c> 10.0 patch.
+        /// </summary>
+        public static bool HasCompatibleRuntimes(IEnumerable<string>? aspNetNames, IEnumerable<string>? netCoreNames)
+        {
+            int? aspNetPatch = MaxCompatiblePatch(aspNetNames);
+            int? netCorePatch = MaxCompatiblePatch(netCoreNames);
+            return aspNetPatch.HasValue && netCorePatch.HasValue && netCorePatch.Value >= aspNetPatch.Value;
+        }
+
+        static int? MaxCompatiblePatch(IEnumerable<string>? valueNames)
+        {
+            if (valueNames is null)
+            {
+                return null;
+            }
+
+            int? max = null;
+            foreach (string name in valueNames)
+            {
+                if (!TryGetCompatiblePatch(name, out int patch))
+                {
+                    continue;
+                }
+
+                if (max is null || patch > max.Value)
+                {
+                    max = patch;
+                }
+            }
+
+            return max;
+        }
+
+        static bool TryGetCompatiblePatch(string? name, out int patch)
+        {
+            patch = 0;
+            if (!IsCompatibleValueName(name) || name is null)
+            {
+                return false;
+            }
+
+            string[] actual = name.Split('.');
+            return int.TryParse(actual[2], out patch);
         }
     }
 }

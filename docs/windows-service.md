@@ -1,6 +1,6 @@
 # Windows service
 
-The MSI installs an x64, per-machine, framework-dependent service. It requires the x64 ASP.NET Core Runtime 10.0 (any 10.0.x patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this) and replaces an earlier Vestigo installation that uses the same upgrade code. Windows 11 on ARM64 is supported through x64 emulation; the native ARM64 ASP.NET runtime does not satisfy the check, and the x64 runtime lives under `%ProgramFiles%\dotnet\x64`. The installer stops with a message when no matching runtime is present. A later major (11 or newer) does not count. In a silent install the same message is written to the MSI log.
+The MSI installs an x64, per-machine, framework-dependent service. It requires the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this) and replaces an earlier Vestigo installation that uses the same upgrade code. Windows 11 on ARM64 is supported through x64 emulation; a native ARM64 runtime does not satisfy the check, and the x64 runtimes live under `%ProgramFiles%\dotnet\x64`. The installer stops with a message when no matching pair is present. A later major (11 or newer) does not count. In a silent install the same message is written to the MSI log.
 
 - Service name: `Vestigo`
 - Display name: `Vestigo MCP Server`

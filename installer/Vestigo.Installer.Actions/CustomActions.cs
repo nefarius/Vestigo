@@ -40,17 +40,24 @@ namespace Vestigo.Installer.Actions
         private const string ProductFolder = "Vestigo";
 
         /// <summary>
-        ///     Immediate, before LaunchConditions. Sets VESTIGO_X64_ASPNET10 when the 32-bit-view x64 sharedfx
-        ///     key has a 10.0.x value name. Never fails the install.
+        ///     Immediate, before LaunchConditions. Sets VESTIGO_X64_ASPNET10 when the 32-bit-view x64
+        ///     AspNetCore.App and NETCore.App sharedfx keys both have a 10.0.x value name and the
+        ///     highest NETCore patch is at least the highest ASP.NET Core patch. Never fails the install.
         /// </summary>
         [CustomAction]
         public static ActionResult VestigoDetectX64AspNet10(Session session)
         {
             try
             {
-                if (AspNetRuntimePrerequisite.HasCompatibleRuntime(ReadX64AspNetValueNames()))
+                string[] aspNetNames = ReadX64SharedFxValueNames(AspNetRuntimePrerequisite.RegistryKey);
+                string[] netCoreNames = ReadX64SharedFxValueNames(AspNetRuntimePrerequisite.NetCoreRegistryKey);
+                if (AspNetRuntimePrerequisite.HasCompatibleRuntimes(aspNetNames, netCoreNames))
                 {
                     session[AspNetRuntimePrerequisite.RegistryProperty] = "1";
+                }
+                else
+                {
+                    LogMissingRuntimes(session, aspNetNames, netCoreNames);
                 }
             }
             catch (Exception ex)
@@ -61,12 +68,33 @@ namespace Vestigo.Installer.Actions
             return ActionResult.Success;
         }
 
-        private static string[] ReadX64AspNetValueNames()
+        private static void LogMissingRuntimes(Session session, string[] aspNetNames, string[] netCoreNames)
+        {
+            bool aspNetPresent = AspNetRuntimePrerequisite.HasCompatibleRuntime(aspNetNames);
+            bool netCorePresent = AspNetRuntimePrerequisite.HasCompatibleRuntime(netCoreNames);
+            if (!aspNetPresent)
+            {
+                session.Log("x64 Microsoft.AspNetCore.App 10.0.x is not installed.");
+            }
+
+            if (!netCorePresent)
+            {
+                session.Log("x64 Microsoft.NETCore.App 10.0.x is not installed.");
+            }
+
+            if (aspNetPresent && netCorePresent)
+            {
+                session.Log(
+                    "x64 Microsoft.NETCore.App 10.0.x is older than Microsoft.AspNetCore.App 10.0.x.");
+            }
+        }
+
+        private static string[] ReadX64SharedFxValueNames(string key)
         {
             using (RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32))
-            using (RegistryKey key = baseKey.OpenSubKey(AspNetRuntimePrerequisite.RegistryKey))
+            using (RegistryKey opened = baseKey.OpenSubKey(key))
             {
-                return key == null ? Array.Empty<string>() : key.GetValueNames();
+                return opened == null ? Array.Empty<string>() : opened.GetValueNames();
             }
         }
 

@@ -1,16 +1,26 @@
 # Troubleshooting
 
-## Installer says ASP.NET Core 10 runtime is required
+## Installer says .NET Runtime 10 and ASP.NET Core 10 are required
 
-The MSI is framework-dependent and needs the x64 ASP.NET Core Runtime 10.0 (any 10.0.x patch). The ASP.NET Core 10.0 Hosting Bundle also satisfies this. A later major (11 or newer) does not. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 and run the installer again. In a silent install the same message is written to the MSI log.
+The MSI is framework-dependent and needs the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch). The ASP.NET Core 10.0 Hosting Bundle also satisfies this. A later major (11 or newer) does not. Install them from https://dotnet.microsoft.com/download/dotnet/10.0 and run the installer again. In a silent install the same message is written to the MSI log.
 
-On Windows 11 ARM64, the native `dotnet` command lists ARM64 runtimes under `%ProgramFiles%\dotnet`. The x64 runtime is a separate install and appears under `%ProgramFiles%\dotnet\x64`. Confirm it with:
+On Windows 11 ARM64, the native `dotnet` command lists ARM64 runtimes under `%ProgramFiles%\dotnet`. The x64 runtimes are a separate install and appear under `%ProgramFiles%\dotnet\x64`. Confirm them with:
 
 ```powershell
 & "$env:ProgramFiles\dotnet\x64\dotnet.exe" --list-runtimes
 ```
 
-The MSI first asks WiX to load the x64 hostfxr. When that check misses the side-by-side x64 layout, Windows 11 ARM64 is still accepted when Microsoft's x64 ASP.NET 10 shared-framework registry marker is present. A native ARM64 ASP.NET 10 runtime alone does not satisfy the installer.
+The MSI first asks WiX to load the x64 hostfxr. When that check misses the side-by-side x64 layout, Windows 11 ARM64 is still accepted when Microsoft's x64 ASP.NET 10 and .NET Runtime 10 shared-framework registry markers are both present, and the highest NETCore 10.0 patch is at least the highest ASP.NET 10.0 patch. A native ARM64 runtime alone does not satisfy the installer.
+
+## Service fails to start with error 1920 and "You must install or update .NET"
+
+The MSI installed, but `Vestigo.exe` could not find `Microsoft.NETCore.App` 10.0 (x64). On Windows 11 ARM64 this happens when only the x64 ASP.NET Core Runtime is present. Confirm both runtimes with:
+
+```powershell
+& "$env:ProgramFiles\dotnet\x64\dotnet.exe" --list-runtimes
+```
+
+Install the x64 .NET Runtime 10.0 (or the Hosting Bundle) from https://dotnet.microsoft.com/download/dotnet/10.0 and start the service again.
 
 ## `/mcp` returns 401
 

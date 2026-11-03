@@ -7,8 +7,9 @@ using WixSharp;
 namespace Vestigo.Installer;
 
 /// <summary>
-///     Adds the x64 ASP.NET Core 10 launch condition: WiX hostfxr compatibility on every machine,
-///     plus Microsoft's official x64 sharedfx registry marker on native ARM64 only.
+///     Adds the x64 .NET Runtime 10 and ASP.NET Core 10 launch condition: WiX hostfxr
+///     compatibility on every machine, plus Microsoft's official x64 sharedfx registry
+///     markers on native ARM64 only.
 /// </summary>
 static class AspNetRuntimeCheck
 {
