@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using Vestigo.Configuration;
 using Vestigo.Modules;
 using Vestigo.Security;
+using Vestigo.Security.Signatures;
 
 namespace Vestigo.Files;
 
@@ -17,6 +19,7 @@ public sealed class FilesModule : VestigoModule
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
+        services.TryAddSingleton<ISignatureVerifier, WinTrustSignatureVerifier>();
         services.AddHttpContextAccessor();
         services.AddHttpClient("files", client => client.Timeout = Timeout.InfiniteTimeSpan);
         services.AddSingleton<IRebootScheduler, Win32RebootScheduler>();

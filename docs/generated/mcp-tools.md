@@ -361,6 +361,15 @@ Runs the [DefaultUninstall] section of an INF inside a readable root (nefcon --i
 | --- | --- | --- | --- | --- |
 | `infPath` | `string` | yes |  | INF path inside an allowed root. |
 
+## `inspect_binary`
+
+Reads one PE file inside a root with Read access: architecture (x86, x64, arm64, armnt, arm64ec, arm64x), PE32 or PE32+, subsystem, selected DLL characteristics, timestamp, managed flag, CodeView PDB file name, version, size, and SHA-256. Non-PE input fails with not_pe; a broken PE fails with malformed_pe. Fields come from one open of the file. This does not verify a signature.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
+| `computeSha256` | `bool` | no | `true` | Compute SHA-256. Defaults to true. |
+
 ## `inspect_wpp_pdb`
 
 Reads WPP control GUIDs, names, and flag names from a PDB inside an allowed input root. See get_trace_settings for allowed roots.
@@ -504,6 +513,17 @@ Lists installed programs from the Uninstall registry keys (machine 64/32-bit and
 Lists background jobs owned by this Vestigo process, newest first.
 
 No parameters.
+
+## `list_process_modules`
+
+Lists modules loaded in a process: name, size, architecture, and version. baseAddress is omitted when process memory is not readable. includePaths returns root:relative aliases for modules inside a Read root; other modules have path null and pathOutsideRoots true. Absolute paths are never returned. Hashing and signature checks are separate calls. expectedStartTime, from list_processes, rejects a reused pid. The list is a best-effort snapshot and can be partial.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `pid` | `int` | yes |  | Process id. |
+| `limit` | `int` | no | `200` | Maximum modules to return. Clamped to 1..Vestigo:Diagnostics:MaxProcessModules. |
+| `includePaths` | `bool` | no | `false` | Return root aliases for modules inside a Read root. |
+| `expectedStartTime` | `DateTimeOffset?` | no | `null` | Start time from list_processes. When set, a different process start time fails with process_identity_mismatch. |
 
 ## `list_processes`
 
@@ -877,7 +897,7 @@ Starts a service or driver and waits until it is running. Starting an unsigned d
 
 ## `stat_path`
 
-Returns metadata for a file or directory: size, times, optional SHA-256, PE version info and Authenticode status for exe/dll/sys files.
+Returns metadata for a file or directory: size, times, optional SHA-256, PE version info and Authenticode status for exe/dll/sys files. Signature status is Signed, Unsigned, Invalid, Untrusted, or Unavailable, with source embedded, catalog, or none. Catalog-signed files are not reported as Unsigned. Verification uses cache-only revocation and does not contact the network.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -997,6 +1017,16 @@ Loads PDB and TMF files and reports whether they can decode WPP messages. See ge
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `symbolPaths` | `string[]` | yes |  | PDB and TMF paths inside an allowed input root. |
+
+## `verify_file_signature`
+
+Checks the embedded Authenticode signature and, when the file has none, the Windows catalog signature. outcome is unsigned, valid, invalid, untrusted, or unavailable. source is embedded, catalog, or none. unavailable is not the same as unsigned. revocation is none, cacheOnly (default, no network), or online. online requires Vestigo:Diagnostics:AllowOnlineRevocation and may contact revocation servers. Signer fields are omitted unless includeSigner is true. A valid signature does not mean Windows will load the file as a kernel driver.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
+| `revocation` | `string` | no | `cacheOnly` | none, cacheOnly (default), or online. |
+| `includeSigner` | `bool` | no | `false` | Include signer subject, issuer, and thumbprint. |
 
 ## `wait_job`
 

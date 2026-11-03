@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Audio, DebugOutput, and gated extras are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Audio, DebugOutput, Diagnostics, and gated extras are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -108,6 +108,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Audio", "Audio", "List audio playback and recording endpoints, volumes, sessions, and defaults. Optionally switch the default device.", false, null),
             new ModuleDefinition(AudioSetDefault, "Set default audio device", "Allow changing the default, multimedia, and communications audio devices (Vestigo:Audio:AllowSetDefault).", false, "Audio"),
             new ModuleDefinition("DebugOutput", "Debug output", "Capture and filter Win32 OutputDebugString messages through DebugViewConsole. Reads debug output from every session.", false, null),
+            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, and list loaded modules. A valid Authenticode signature is not permission to load a kernel driver.", false, null),
             new ModuleDefinition("Services", "Services", "List, start, stop, and configure Windows services and kernel drivers.", true, null),
             new ModuleDefinition("ScheduledTasks", "Scheduled tasks", "List and inspect scheduled tasks and their run history.", true, null),
             new ModuleDefinition(ScheduledTaskChanges, "Run and delete tasks", "Allow running, stopping, enabling, disabling, and deleting scheduled tasks (Vestigo:ScheduledTasks:AllowChanges). Tasks run as their own principal, often SYSTEM. Administrator-equivalent.", false, "ScheduledTasks"),

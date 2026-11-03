@@ -29,6 +29,8 @@
     </PackageReference>
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <PackageReference Include="NAudio.Wasapi" />
+    <PackageReference Include="PeNet" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="minisign-net" />
     <PackageReference Include="Nefarius.Utilities.DeviceManagement" />
     <PackageReference Include="Nefarius.Utilities.ETW" />

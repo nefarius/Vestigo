@@ -71,6 +71,12 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p>Windows allows only one <code>DBWIN_BUFFER</code> reader. A debugger-attached process sends output to the debugger instead. Kernel <code>DbgPrint</code> is not captured.</p>
   </article>
   <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Online revocation gated</span></p>
+    <h2>Diagnostics</h2>
+    <p><code>inspect_binary</code> reads architecture, characteristics, version, and the CodeView PDB file name. <code>verify_file_signature</code> checks an embedded or catalog Authenticode signature. <code>list_process_modules</code> lists modules loaded in a process and returns root aliases only.</p>
+    <p>A valid signature is not permission to load a kernel driver. Online revocation stays off until <code>Diagnostics:AllowOnlineRevocation</code> is true. Absolute module paths are never returned.</p>
+  </article>
+  <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>Event logs</h2>
     <p>List channels and query a live log or an <code>.evtx</code> file under a read root. Filter by provider, level, event id, time range, or a raw XPath. Results are newest first and capped.</p>

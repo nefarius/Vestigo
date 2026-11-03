@@ -64,6 +64,20 @@ FILE_ID_DESCRIPTOR
 WinVerifyTrust
 WINTRUST_DATA
 WINTRUST_FILE_INFO
+WINTRUST_CATALOG_INFO
+
+// Diagnostics: catalog signatures and loaded-module snapshots
+CryptCATAdminAcquireContext2
+CryptCATAdminCalcHashFromFileHandle2
+CryptCATAdminEnumCatalogFromHash
+CryptCATAdminReleaseCatalogContext
+CryptCATAdminReleaseContext
+CryptCATCatalogInfoFromContext
+CATALOG_INFO
+CreateToolhelp32Snapshot
+Module32First
+Module32Next
+MODULEENTRY32W
 
 // Desktop module: window tree, bounds, DPI, GDI monitors, DisplayConfig
 GetAncestor

@@ -250,6 +250,16 @@ public sealed class PathPolicy(VestigoOptions options, RootPolicy? roots = null)
         return PathCheck.Fail("outside_root", $"Path is outside the allowed {rootKind} roots.");
     }
 
+    internal static bool TryCanonicalize(string path, out string resolved) => TryResolvePath(path, out resolved);
+
+    internal static bool IsInsideRoot(string canonicalPath, string canonicalRoot)
+    {
+        string prefix = canonicalRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        + Path.DirectorySeparatorChar;
+        return canonicalPath.Equals(canonicalRoot, PathComparison()) ||
+               canonicalPath.StartsWith(prefix, PathComparison());
+    }
+
     private static bool TryResolvePath(string path, out string resolved)
     {
         resolved = "";

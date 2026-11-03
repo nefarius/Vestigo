@@ -195,6 +195,9 @@ public class RepositoryBoundaryTests
                      "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256",
                      "DebugOutput:MaxDuration", "DebugOutput:MaxMessages", "DebugOutput:MaxOutputBytes",
                      "DebugOutput:MaxFilterPatterns", "DebugOutput:MaxPatternLength",
+                     "Diagnostics:AllowOnlineRevocation", "Diagnostics:AllowCaptureProbes",
+                     "Diagnostics:MaxProcessModules", "Diagnostics:MaxInstallHistoryBytes",
+                     "Diagnostics:MaxProbeDuration", "Diagnostics:MaxInspectBytes",
                      "Audio:AllowSetDefault", "Audio:MeterSampleMilliseconds",
                      "Desktop:AllowScreenshots", "Desktop:MaxScreenshotBytes"
                  })

@@ -6,6 +6,7 @@ using ModelContextProtocol.Server;
 using Vestigo.Configuration;
 using Vestigo.Jobs;
 using Vestigo.Security;
+using Vestigo.Security.Signatures;
 
 namespace Vestigo.Files;
 
@@ -60,7 +61,8 @@ public sealed class FileTools(
     IRebootScheduler scheduler,
     JobManager jobs,
     IHttpClientFactory httpClients,
-    FileLinkIssuer links)
+    FileLinkIssuer links,
+    ISignatureVerifier signatures)
 {
     private static readonly string[] PeExtensions = [".exe", ".dll", ".sys"];
 
@@ -132,7 +134,7 @@ public sealed class FileTools(
     }
 
     [McpServerTool(Name = "stat_path")]
-    [Description("Returns metadata for a file or directory: size, times, optional SHA-256, PE version info and Authenticode status for exe/dll/sys files.")]
+    [Description("Returns metadata for a file or directory: size, times, optional SHA-256, PE version info and Authenticode status for exe/dll/sys files. Signature status is Signed, Unsigned, Invalid, Untrusted, or Unavailable, with source embedded, catalog, or none. Catalog-signed files are not reported as Unsigned. Verification uses cache-only revocation and does not contact the network.")]
     public OperationResult<PathInfo> StatPath(
         [Description("Path as root:relative\\path or an absolute path inside a root with Read access.")] string path,
         [Description("Compute the SHA-256 of a file.")] bool computeSha256 = false,
@@ -171,7 +173,7 @@ public sealed class FileTools(
                 version = new VersionDetails(
                     info.FileVersion, info.ProductVersion, info.ProductName, info.CompanyName,
                     info.FileDescription, info.OriginalFilename);
-                signature = AuthenticodeVerifier.Verify(full);
+                signature = AuthenticodeVerifier.ToSignatureInfo(signatures.Verify(full, RevocationMode.CacheOnly, includeSigner: true));
             }
 
             return OperationResult<PathInfo>.Ok(new PathInfo(
