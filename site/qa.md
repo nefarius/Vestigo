@@ -46,8 +46,9 @@ The service context does not see user-session audio. Per-app overrides in Settin
 
 ## Read a crash and take a dump
 
-1. Enable Diagnostics. `list_crash_reports` returns Windows Error Reporting metadata for the machine, a user, or both. Dump bytes and the raw report file are not included.
-2. `capture_process_dump` stays off until `Diagnostics:AllowProcessDumps` is true. Pass `expectedStartTime` from `list_processes` (Processes is opt-in) and a new `.dmp` path in a write root. The dump is not uploaded and no download ticket is created. Protected and critical processes are refused.
+1. Enable Diagnostics, Processes, and Jobs. Processes is opt-in and needs Jobs; Diagnostics needs Jobs too. `list_crash_reports` returns Windows Error Reporting metadata for the machine, a user, or both. Dump bytes and the raw report file are not included.
+2. `list_processes` and keep the start time of the process you will dump.
+3. `capture_process_dump` stays off until `Diagnostics:AllowProcessDumps` is true. Pass that `expectedStartTime` and a new `.dmp` path in a write root. The dump is not uploaded and no download ticket is created. Protected and critical processes are refused.
 
 ## Check a lab endpoint
 
