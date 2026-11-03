@@ -44,7 +44,10 @@ static class AspNetRuntimeCheck
                 new XAttribute("RollForward", AspNetRuntimePrerequisite.RollForward),
                 new XAttribute("Platform", AspNetRuntimePrerequisite.Platform)),
             new XElement(Util + "QueryNativeMachine"),
-            new XElement(Wix + "Property", new XAttribute("Id", AspNetRuntimePrerequisite.RegistryProperty)),
+            new XElement(
+                Wix + "Property",
+                new XAttribute("Id", AspNetRuntimePrerequisite.RegistryProperty),
+                new XAttribute("Secure", "yes")),
             new XElement(
                 Wix + "CustomAction",
                 new XAttribute("Id", AspNetRuntimePrerequisite.DetectAction),
@@ -63,7 +66,7 @@ static class AspNetRuntimeCheck
     static XElement RuntimeSequence(string name) =>
         new(
             Wix + name,
-            Sequence(QueryNativeMachineAction, "After", "AppSearch"),
+            Sequence("override " + QueryNativeMachineAction, "After", "AppSearch"),
             Sequence(AspNetRuntimePrerequisite.DetectAction, "After", QueryNativeMachineAction, NotInstalled),
             new XElement(
                 Wix + "LaunchConditions",

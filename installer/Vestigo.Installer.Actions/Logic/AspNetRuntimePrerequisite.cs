@@ -80,13 +80,13 @@ namespace Vestigo.Installer.Actions.Logic
 
         public static bool IsCompatibleValueName(string? name)
         {
-            if (string.IsNullOrEmpty(name))
+            if (name is not { Length: > 0 } value)
             {
                 return false;
             }
 
             string[] expected = RuntimeVersion.Split('.');
-            string[] actual = name.Split('.');
+            string[] actual = value.Split('.');
             if (expected.Length < 2 || actual.Length != 3 || actual[2].Length == 0)
             {
                 return false;

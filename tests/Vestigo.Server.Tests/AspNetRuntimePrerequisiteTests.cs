@@ -88,6 +88,8 @@ public class AspNetRuntimePrerequisiteTests
         Assert.DoesNotContain("RegistryValueName", helper, StringComparison.Ordinal);
         Assert.Contains("AspNetRuntimePrerequisite.DetectAction", helper, StringComparison.Ordinal);
         Assert.Contains("Wix4QueryNativeMachine_X64", helper, StringComparison.Ordinal);
+        Assert.Contains("override \" + QueryNativeMachineAction", helper, StringComparison.Ordinal);
+        Assert.Contains("Secure", helper, StringComparison.Ordinal);
         Assert.Contains("After\", \"AppSearch\"", helper, StringComparison.Ordinal);
         Assert.Contains("After\", QueryNativeMachineAction", helper, StringComparison.Ordinal);
         Assert.Contains("Wix + \"LaunchConditions\"", helper, StringComparison.Ordinal);
