@@ -25,6 +25,12 @@ public class AspNetRuntimePrerequisiteTests
         Assert.Equal(
             @"SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.AspNetCore.App",
             AspNetRuntimePrerequisite.RegistryKey);
+        Assert.Equal(
+            @"SOFTWARE\WOW6432Node\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.NETCore.App",
+            AspNetRuntimePrerequisite.NetCoreRegistryPath);
+        Assert.Equal(
+            @"SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.NETCore.App",
+            AspNetRuntimePrerequisite.NetCoreRegistryKey);
         Assert.Equal("10.0.0", AspNetRuntimePrerequisite.RuntimeVersion);
         Assert.Equal("minor", AspNetRuntimePrerequisite.RollForward);
         Assert.Equal("aspnet", AspNetRuntimePrerequisite.RuntimeType);
@@ -52,6 +58,25 @@ public class AspNetRuntimePrerequisiteTests
         Assert.True(AspNetRuntimePrerequisite.HasCompatibleRuntime(["8.0.33", "10.0.14", "9.0.13"]));
         Assert.False(AspNetRuntimePrerequisite.HasCompatibleRuntime(["8.0.33", "9.0.13"]));
         Assert.False(AspNetRuntimePrerequisite.HasCompatibleRuntime(null));
+    }
+
+    [Theory]
+    [InlineData("8.0.24,10.0.14,9.0.13", "8.0.24,9.0.13", false)]
+    [InlineData("10.0.14", "10.0.14", true)]
+    [InlineData("10.0.14", "10.0.15", true)]
+    [InlineData("10.0.14", "10.0.10", false)]
+    [InlineData(null, "10.0.14", false)]
+    [InlineData("10.0.14", null, false)]
+    [InlineData("", "10.0.14", false)]
+    [InlineData("10.0.14", "", false)]
+    public void HasCompatibleRuntimes_RequiresMatchingNetCorePatch(
+        string? aspNetNames,
+        string? netCoreNames,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AspNetRuntimePrerequisite.HasCompatibleRuntimes(SplitNames(aspNetNames), SplitNames(netCoreNames)));
     }
 
     [Theory]
@@ -100,9 +125,11 @@ public class AspNetRuntimePrerequisiteTests
         Assert.Contains("WixExtension.NetFx", helper, StringComparison.Ordinal);
         Assert.Contains("PreferredVersion = \"5.0.2\"", helper, StringComparison.Ordinal);
         Assert.Contains("AspNetRuntimePrerequisite.LaunchCondition", helper, StringComparison.Ordinal);
-        Assert.Contains("HasCompatibleRuntime(ReadX64AspNetValueNames())", actions, StringComparison.Ordinal);
+        Assert.Contains("HasCompatibleRuntimes(aspNetNames, netCoreNames)", actions, StringComparison.Ordinal);
+        Assert.Contains("ReadX64SharedFxValueNames", actions, StringComparison.Ordinal);
         Assert.Contains("RegistryView.Registry32", actions, StringComparison.Ordinal);
         Assert.Contains("AspNetRuntimePrerequisite.RegistryKey", actions, StringComparison.Ordinal);
+        Assert.Contains("AspNetRuntimePrerequisite.NetCoreRegistryKey", actions, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()
@@ -115,5 +142,15 @@ public class AspNetRuntimePrerequisiteTests
 
         Assert.NotNull(directory);
         return directory.FullName;
+    }
+
+    private static IEnumerable<string>? SplitNames(string? names)
+    {
+        if (names is null)
+        {
+            return null;
+        }
+
+        return names.Length == 0 ? [] : names.Split(',');
     }
 }
