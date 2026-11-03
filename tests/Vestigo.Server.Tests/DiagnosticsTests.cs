@@ -294,6 +294,7 @@ public class DiagnosticsTests : IDisposable
         Assert.False(new DiagnosticsModule().EnabledByDefault);
         Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "Diagnostics");
         Assert.Contains("Diagnostics", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.Contains("SetupAPI", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("online revocation", ModuleRegistry.GetPrivilegedModuleWarning(online));
         Assert.DoesNotContain("online revocation", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.False(ModuleSelection.Defaults()["Diagnostics"]);

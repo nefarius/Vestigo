@@ -197,8 +197,8 @@ public static class ModuleRegistry
         if (diagnostics)
         {
             extras += diagnosticsOnline
-                ? "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures including online revocation checks, and list loaded modules of running processes. "
-                : "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures, and list loaded modules of running processes. ";
+                ? "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code. "
+                : "The Diagnostics module is also enabled, so the same clients can inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code. ";
         }
 
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
@@ -213,6 +213,6 @@ public static class ModuleRegistry
     }
 
     private static string DiagnosticsClause(string reach, bool online) => online
-        ? $"{reach} can inspect binaries inside configured roots, verify signatures including online revocation checks, and list loaded modules of running processes."
-        : $"{reach} can inspect binaries inside configured roots, verify signatures, and list loaded modules of running processes.";
+        ? $"{reach} can inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code."
+        : $"{reach} can inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, and explain a device problem code.";
 }
