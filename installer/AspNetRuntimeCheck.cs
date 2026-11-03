@@ -14,6 +14,7 @@ static class AspNetRuntimeCheck
 {
     const string WixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
     const string NotInstalled = "NOT Installed";
+    const string QueryNativeMachineAction = "Wix4QueryNativeMachine_X64";
 
     static readonly XNamespace Wix = WixNamespace;
     static readonly XNamespace NetFx = WixExtension.NetFxNamespace;
@@ -56,19 +57,29 @@ static class AspNetRuntimeCheck
                 new XAttribute("Condition", AspNetRuntimePrerequisite.LaunchCondition),
                 new XAttribute("Message", AspNetRuntimePrerequisite.MissingMessage)));
 
-        package.Add(
-            new XElement(
-                Wix + "InstallExecuteSequence",
-                Sequence(AspNetRuntimePrerequisite.DetectAction, "Before", "LaunchConditions", NotInstalled)),
-            new XElement(
-                Wix + "InstallUISequence",
-                Sequence(AspNetRuntimePrerequisite.DetectAction, "Before", "LaunchConditions", NotInstalled)));
+        package.Add(RuntimeSequence("InstallExecuteSequence"), RuntimeSequence("InstallUISequence"));
     }
 
-    static XElement Sequence(string action, string placement, string anchor, string condition) =>
+    static XElement RuntimeSequence(string name) =>
         new(
+            Wix + name,
+            Sequence(QueryNativeMachineAction, "After", "AppSearch"),
+            Sequence(AspNetRuntimePrerequisite.DetectAction, "After", QueryNativeMachineAction, NotInstalled),
+            new XElement(
+                Wix + "LaunchConditions",
+                new XAttribute("After", AspNetRuntimePrerequisite.DetectAction)));
+
+    static XElement Sequence(string action, string placement, string anchor, string? condition = null)
+    {
+        XElement custom = new(
             Wix + "Custom",
             new XAttribute("Action", action),
-            new XAttribute(placement, anchor),
-            new XAttribute("Condition", condition));
+            new XAttribute(placement, anchor));
+        if (condition is not null)
+        {
+            custom.Add(new XAttribute("Condition", condition));
+        }
+
+        return custom;
+    }
 }

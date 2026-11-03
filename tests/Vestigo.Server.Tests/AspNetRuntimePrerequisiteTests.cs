@@ -87,7 +87,13 @@ public class AspNetRuntimePrerequisiteTests
         Assert.DoesNotContain("RegistrySearch", helper, StringComparison.Ordinal);
         Assert.DoesNotContain("RegistryValueName", helper, StringComparison.Ordinal);
         Assert.Contains("AspNetRuntimePrerequisite.DetectAction", helper, StringComparison.Ordinal);
-        Assert.Contains("LaunchConditions", helper, StringComparison.Ordinal);
+        Assert.Contains("Wix4QueryNativeMachine_X64", helper, StringComparison.Ordinal);
+        Assert.Contains("After\", \"AppSearch\"", helper, StringComparison.Ordinal);
+        Assert.Contains("After\", QueryNativeMachineAction", helper, StringComparison.Ordinal);
+        Assert.Contains("Wix + \"LaunchConditions\"", helper, StringComparison.Ordinal);
+        Assert.Contains("After\", AspNetRuntimePrerequisite.DetectAction", helper, StringComparison.Ordinal);
+        Assert.Contains("NotInstalled", helper, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Before\"", helper, StringComparison.Ordinal);
         Assert.Contains("WixExtension.Util", helper, StringComparison.Ordinal);
         Assert.Contains("WixExtension.NetFx", helper, StringComparison.Ordinal);
         Assert.Contains("PreferredVersion = \"5.0.2\"", helper, StringComparison.Ordinal);
