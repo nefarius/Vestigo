@@ -142,6 +142,13 @@ static class Program
                         DisplayName = "Vestigo MCP Server",
                         Description = "Windows MCP server for driver and application development.",
                         Start = SvcStartType.auto,
+                        // Recovery: restart after the first two crashes, then leave the service stopped
+                        // so a crash loop is visible; the failure counter resets after a day.
+                        FirstFailureActionType = FailureActionType.restart,
+                        SecondFailureActionType = FailureActionType.restart,
+                        ThirdFailureActionType = FailureActionType.none,
+                        RestartServiceDelayInSeconds = 5,
+                        ResetPeriodInDays = 1,
                         StartOn = SvcEvent.Install,
                         StopOn = SvcEvent.InstallUninstall_Wait,
                         RemoveOn = SvcEvent.Uninstall_Wait

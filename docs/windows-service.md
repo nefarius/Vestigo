@@ -6,6 +6,7 @@ The MSI installs an x64, per-machine, framework-dependent service. It requires t
 - Display name: `Vestigo MCP Server`
 - Description: `Windows MCP server for driver and application development.`
 - Start: automatic, including on install
+- Recovery: restart after the first and second unexpected exit (5 second delay), no action after the third; the failure count resets after one day
 - Stop and remove: uninstall
 
 Binaries go to `%ProgramFiles%\Nefarius Software Solutions\Vestigo`. Settings and spools go to `%ProgramData%\Nefarius Software Solutions\Vestigo`. The MSI creates that directory and its `logs`, `spool`, `symcache` and `traces` subdirectories with a protected ACL (inheritance disabled) that allows only SYSTEM and Administrators, and fails the install if any of them is a link or junction. Upgrades re-apply the ACL.
