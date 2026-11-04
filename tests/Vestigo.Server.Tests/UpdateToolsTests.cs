@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 
 using Minisign;
 
@@ -75,6 +76,19 @@ public class UpdateToolsTests : IDisposable
         Assert.Equal(42, result.Value.ManifestVersion);
         Assert.Equal(UpdateFeed.PackageUrl("9.8.7.6"), result.Value.DownloadUrl);
         Assert.Equal(3_960_832, result.Value.DownloadSize);
+    }
+
+    [Fact]
+    public void Server_DeclaresTheFeedModelRuntimeDependencies()
+    {
+        // The feed models carry [JsonSchemaType]; the Abstractions package itself must declare that
+        // assembly so the published payload does not depend on extra references in the build project.
+        string depsFile = Path.Combine(AppContext.BaseDirectory, "Vestigo.Server.Tests.deps.json");
+        using JsonDocument deps = JsonDocument.Parse(File.ReadAllText(depsFile));
+        JsonProperty package = deps.RootElement.GetProperty("targets").EnumerateObject()
+            .SelectMany(target => target.Value.EnumerateObject())
+            .First(entry => entry.Name.StartsWith("Nefarius.Vicius.Abstractions/", StringComparison.Ordinal));
+        Assert.True(package.Value.GetProperty("dependencies").TryGetProperty("NJsonSchema.Annotations", out _));
     }
 
     [Fact]

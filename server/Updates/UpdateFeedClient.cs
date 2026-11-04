@@ -99,6 +99,10 @@ public sealed class UpdateFeedClient : IUpdateFeedClient
             {
                 return Fail("manifest_invalid", "The update feed could not be parsed: " + ex.Message);
             }
+            catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or TypeLoadException)
+            {
+                return Fail("manifest_invalid", "This build cannot read the update feed models: " + ex.Message);
+            }
 
             if (response?.Releases is null || response.Releases.Count == 0)
             {

@@ -142,6 +142,13 @@ static class Program
                         DisplayName = "Vestigo MCP Server",
                         Description = "Windows MCP server for driver and application development.",
                         Start = SvcStartType.auto,
+                        // Recovery: restart after the first two crashes, then leave the service stopped
+                        // so a crash loop is visible; the failure counter resets after a day.
+                        FirstFailureActionType = FailureActionType.restart,
+                        SecondFailureActionType = FailureActionType.restart,
+                        ThirdFailureActionType = FailureActionType.none,
+                        RestartServiceDelayInSeconds = 5,
+                        ResetPeriodInDays = 1,
                         StartOn = SvcEvent.Install,
                         StopOn = SvcEvent.InstallUninstall_Wait,
                         RemoveOn = SvcEvent.Uninstall_Wait
@@ -409,6 +416,13 @@ static class Program
             if (!System.IO.File.Exists(Path.Combine(ServerPublishDir, "Vestigo.exe")))
             {
                 throw new FileNotFoundException($"Expected Vestigo.exe under {ServerPublishDir}");
+            }
+
+            // The update feed models need this assembly at runtime (System.Text.Json loads it for
+            // [JsonSchemaType]); the installer job consumes a prebuilt payload, so check it here too.
+            if (!System.IO.File.Exists(Path.Combine(ServerPublishDir, "NJsonSchema.Annotations.dll")))
+            {
+                throw new FileNotFoundException($"Expected NJsonSchema.Annotations.dll under {ServerPublishDir}");
             }
 
             if (!System.IO.File.Exists(UpdaterExe))
