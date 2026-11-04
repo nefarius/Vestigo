@@ -418,6 +418,13 @@ static class Program
                 throw new FileNotFoundException($"Expected Vestigo.exe under {ServerPublishDir}");
             }
 
+            // The update feed models need this assembly at runtime (System.Text.Json loads it for
+            // [JsonSchemaType]); the installer job consumes a prebuilt payload, so check it here too.
+            if (!System.IO.File.Exists(Path.Combine(ServerPublishDir, "NJsonSchema.Annotations.dll")))
+            {
+                throw new FileNotFoundException($"Expected NJsonSchema.Annotations.dll under {ServerPublishDir}");
+            }
+
             if (!System.IO.File.Exists(UpdaterExe))
             {
                 throw new FileNotFoundException($"Updater executable not found: {UpdaterExe}");
