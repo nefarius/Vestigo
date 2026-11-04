@@ -14,13 +14,6 @@
     <PackageReference Include="JetBrains.Annotations" />
     <PackageReference Include="minisign-net" />
     <PackageReference Include="Nefarius.Vicius.Abstractions" />
-    <!--
-      Abstractions compiles [JsonSchemaType] against NJsonSchema.Annotations 11.6.1 and
-      keeps that package private. System.Text.Json still loads the attribute assembly while
-      writing updates.json. Fallout.Common may bring an older NJsonSchema.Annotations, which
-      the loader will not use for that 11.6.1.0 reference.
-    -->
-    <PackageReference Include="NJsonSchema.Annotations" />
     <PackageReference Include="Fallout.Common" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="System.Security.Cryptography.Xml" />

@@ -77,6 +77,15 @@ class Build : FalloutBuild
         .Executes(() =>
         {
             PublishProject(Solution.GetAllProjects("Vestigo.Server").Single(), PublishServerDir);
+
+            // The update feed models carry [JsonSchemaType]; System.Text.Json loads this assembly at
+            // runtime, so a payload without it breaks check_for_updates.
+            string annotations = Path.Combine(PublishServerDir, "NJsonSchema.Annotations.dll");
+            if (!File.Exists(annotations))
+            {
+                throw new InvalidOperationException(
+                    "The server publish payload is missing NJsonSchema.Annotations.dll, which the update feed models need at runtime.");
+            }
         });
 
     [UsedImplicitly]
