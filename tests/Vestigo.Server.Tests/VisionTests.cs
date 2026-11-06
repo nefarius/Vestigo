@@ -83,6 +83,30 @@ public class VisionTests
     }
 
     [Fact]
+    public void ElementMerger_KeepsPriorityOcrHiddenByAShorterName()
+    {
+        ScreenElement button = Uia("button", "Download", new DesktopRect(0, 0, 200, 40));
+        ScreenElement line = Ocr("Download the nightly build", new DesktopRect(10, 8, 160, 16));
+
+        MergeResult plain = ElementMerger.Merge([button], [line], [], maxElements: 10);
+        Assert.DoesNotContain(plain.Elements, item => item.Text == "Download the nightly build");
+
+        MergeResult searched = ElementMerger.Merge(
+            [button],
+            [line],
+            [],
+            maxElements: 10,
+            priority: item => Matches(item, "nightly"));
+        Assert.Contains(searched.Elements, item => item.Text == "Download the nightly build");
+        Assert.Contains(searched.Elements, item => item.Name == "Download");
+        Assert.Equal(0, searched.Omitted.Total);
+
+        MergeResult both = ElementMerger.Merge([button], [line], [], maxElements: 10, priority: MatchesDownload);
+        Assert.Contains(both.Elements, item => item.Name == "Download");
+        Assert.DoesNotContain(both.Elements, item => item.Source == ElementSource.Ocr);
+    }
+
+    [Fact]
     public void ElementMerger_KeepsRecognizedTextWhenUiAutomationFillsTheCap()
     {
         List<ScreenElement> controls = Enumerable.Range(0, 200)
@@ -372,9 +396,11 @@ public class VisionTests
         return new PerceptionTools(service, options, new RootPolicy(options));
     }
 
-    private static bool MatchesDownload(ScreenElement element) =>
-        (element.Name?.Contains("download", StringComparison.OrdinalIgnoreCase) ?? false)
-        || (element.Text?.Contains("download", StringComparison.OrdinalIgnoreCase) ?? false);
+    private static bool MatchesDownload(ScreenElement element) => Matches(element, "download");
+
+    private static bool Matches(ScreenElement element, string text) =>
+        (element.Name?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (element.Text?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
 
     private static ScreenElement Uia(string role, string name, DesktopRect box) => new(0, ElementSource.Uia, role, name, null, box);
 

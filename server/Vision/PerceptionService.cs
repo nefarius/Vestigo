@@ -42,6 +42,7 @@ public sealed class PerceptionService(
 
     public CaptureCache Cache { get; } = cache;
 
+    /// <summary>Captures the screen, merges UI Automation and OCR, and caches the numbered elements.</summary>
     /// <param name="extraElements">
     ///     Optional extra elements (for example template matches) computed from the analyzed image. They are added
     ///     after merging, so they get ids that follow the merged list. Boxes are physical pixels.

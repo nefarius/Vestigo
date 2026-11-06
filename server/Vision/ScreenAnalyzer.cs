@@ -29,6 +29,7 @@ public static class ScreenAnalyzer
 
     public const int MaxTemplateMatches = 5;
 
+    /// <summary>Downscales the capture, merges the element lists, and draws the annotated or grid image.</summary>
     public static AnalysisResult Analyze(
         byte[] fullPng,
         DesktopRect bounds,

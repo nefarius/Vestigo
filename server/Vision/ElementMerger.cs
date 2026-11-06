@@ -5,6 +5,7 @@ namespace Vestigo.Vision;
 /// <summary>How many elements a source contributed. <see cref="Total" /> is the sum.</summary>
 public sealed record SourceCounts(int Uia, int Ocr, int Cv)
 {
+    /// <summary>The sum of the three source counts.</summary>
     public int Total => Uia + Ocr + Cv;
 }
 
@@ -24,7 +25,7 @@ public static class ElementMerger
 {
     public const int MaxElements = 150;
 
-    /// <summary>OCR lines covered this much by a named UI Automation element are dropped when the texts agree.</summary>
+    /// <summary>OCR lines covered this much are compared with the covering element's name.</summary>
     private const double OcrCoverage = 0.6;
 
     /// <summary>CV regions covered this much by any UI Automation or OCR candidate are dropped.</summary>
@@ -35,6 +36,8 @@ public static class ElementMerger
     ///     <paramref name="priority" /> matches are kept first, in reading order. The remaining room is split evenly
     ///     between UI Automation and OCR, and a source that needs less passes its share to the other. Contour regions
     ///     fill whatever is left. Within a source, the elements that do not fit are the lowest on the screen.
+    ///     An OCR line covered by a named UI Automation element is dropped when the texts agree, unless
+    ///     <paramref name="priority" /> matches the line and not that element.
     /// </summary>
     public static MergeResult Merge(
         IEnumerable<ScreenElement> uia,
@@ -57,7 +60,7 @@ public static class ElementMerger
         List<ScreenElement> ocrCandidates = [];
         foreach (ScreenElement line in ocr)
         {
-            if (named.Any(item => Coverage(line.Box, item.Box) >= OcrCoverage && TextsAgree(line.Text, item.Name)))
+            if (IsCoveredByPreferredUia(line, named, priority))
             {
                 continue;
             }
@@ -129,6 +132,32 @@ public static class ElementMerger
             priorityOrdered.Count - priorityKept);
     }
 
+    /// <summary>
+    ///     True when a named UI Automation element covers <paramref name="line" /> and their texts agree.
+    ///     That element only wins over a priority match when it matches <paramref name="priority" /> too.
+    /// </summary>
+    private static bool IsCoveredByPreferredUia(
+        ScreenElement line,
+        List<ScreenElement> named,
+        Func<ScreenElement, bool>? priority)
+    {
+        bool lineMatches = priority?.Invoke(line) == true;
+        foreach (ScreenElement item in named)
+        {
+            if (Coverage(line.Box, item.Box) < OcrCoverage || !TextsAgree(line.Text, item.Name))
+            {
+                continue;
+            }
+
+            if (!lineMatches || priority!(item))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>The share of <paramref name="inner" /> that lies inside <paramref name="outer" />, 0 to 1.</summary>
     public static double Coverage(DesktopRect inner, DesktopRect outer)
     {
@@ -142,6 +171,7 @@ public static class ElementMerger
         return area <= 0 ? 0 : (double)overlap.Width * overlap.Height / area;
     }
 
+    /// <summary>Overlap of the two boxes divided by the area of their union, 0 to 1.</summary>
     public static double IntersectionOverUnion(DesktopRect left, DesktopRect right)
     {
         DesktopRect? overlap = left.Intersection(right);
@@ -155,6 +185,7 @@ public static class ElementMerger
         return union <= 0 ? 0 : intersection / union;
     }
 
+    /// <summary>Moves elements that match <paramref name="priority" /> into <paramref name="matches" /> and the rest into <paramref name="rest" />.</summary>
     private static void Divide(
         List<ScreenElement> source,
         Func<ScreenElement, bool>? priority,
@@ -191,6 +222,7 @@ public static class ElementMerger
         return a.Contains(b, StringComparison.OrdinalIgnoreCase) || b.Contains(a, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Collapses whitespace so comparison ignores line breaks and repeated spaces.</summary>
     private static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

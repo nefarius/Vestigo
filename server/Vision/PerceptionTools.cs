@@ -351,6 +351,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         }
     }
 
+    /// <summary>True when <paramref name="text" /> occurs in the element's name or OCR text.</summary>
     private static bool MatchesText(ScreenElement element, string text) =>
         (element.Name?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
         || (element.Text?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
@@ -381,6 +382,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         return node;
     }
 
+    /// <summary>Builds the JSON result for an inspection, including whether the element cap left anything out.</summary>
     internal static CallToolResult Describe(PerceptionOutcome outcome, string imageMode, JsonObject? extra, bool includeElements = true)
     {
         CaptureRecord record = outcome.Record;
@@ -437,6 +439,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         return new CallToolResult { Content = content };
     }
 
+    /// <summary>Per-source counts for the inspection JSON.</summary>
     private static JsonObject SourceCountsNode(SourceCounts counts) => new()
     {
         ["uia"] = counts.Uia,
