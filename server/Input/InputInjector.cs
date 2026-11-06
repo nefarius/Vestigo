@@ -38,7 +38,7 @@ public static class InputInjector
         nint previousDpi = WindowEnumerator.SetDpiAware();
         try
         {
-            if (!ScreenCapture.IsInputDesktopAvailable(out string? desktopError))
+            if (!ScreenCapture.IsInputDesktopAvailable(out string? desktopError, requireDesktopNames: true))
             {
                 return OperationResult<InputResult>.Fail("secure_desktop_active", desktopError!);
             }

@@ -22,17 +22,19 @@ public static partial class SessionHelper
         return arguments;
     }
 
+    /// <summary>Parses <c>inspect-screen</c> helper arguments into a capture request and the UIA/OCR switches.</summary>
     public static bool TryParseInspect(string[] args, out ScreenCaptureRequest request, out bool uia, out bool ocr, out string? error)
     {
         uia = true;
         ocr = true;
         List<string> capture = [];
-        for (int index = 0; index < args.Length; index++)
+        capture.AddRange(args.Take(2));
+        for (int index = 2; index < args.Length; index += 2)
         {
-            if (index >= 2 && args[index] is "--uia" or "--ocr" && index + 1 < args.Length)
+            // Options come in name/value pairs; a value such as "--ocr" must never be read as a switch.
+            if (index + 1 < args.Length && args[index] is "--uia" or "--ocr")
             {
-                bool ok = TryParseFlag(args[index + 1], out bool flag);
-                if (!ok)
+                if (!TryParseFlag(args[index + 1], out bool flag))
                 {
                     request = ScreenCaptureRequest.DesktopPreview;
                     error = $"Option '{args[index]}' needs true or false.";
@@ -48,11 +50,14 @@ public static partial class SessionHelper
                     ocr = flag;
                 }
 
-                index++;
                 continue;
             }
 
             capture.Add(args[index]);
+            if (index + 1 < args.Length)
+            {
+                capture.Add(args[index + 1]);
+            }
         }
 
         if (capture.Count >= 2 && capture[1] == InspectScreenCommand)

@@ -85,7 +85,10 @@ public sealed class InputTools(
             return DesktopTools.ErrorResult(available.ErrorCode!, available.Error!);
         }
 
-        TimeSpan timeout = TimeSpan.FromSeconds(30) + TimeSpan.FromMilliseconds(options.Input.MaxWaitMilliseconds);
+        // Helper startup allowance plus the time every planned step takes, including waits and drag pauses.
+        double stepMilliseconds = plan.Value!.Steps.Sum(step =>
+            250d + step.Milliseconds + step.Count * 100d + (step.Text?.Length ?? 0) * 5d + (step.Kind == InputKinds.Drag ? 2000d : 0d));
+        TimeSpan timeout = TimeSpan.FromSeconds(30) + TimeSpan.FromMilliseconds(stepMilliseconds);
         OperationResult<InputResult> sent = await helper
             .RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken)
             .ConfigureAwait(false);

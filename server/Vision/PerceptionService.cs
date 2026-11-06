@@ -117,7 +117,10 @@ public sealed class PerceptionService(
         }
         catch (Exception ex) when (ex is ArgumentException or OpenCvSharp.OpenCVException or DllNotFoundException or BadImageFormatException)
         {
-            return OperationResult<PerceptionOutcome>.Fail("vision_failed", "Image analysis failed: " + ex.Message);
+            string hint = ex is DllNotFoundException or BadImageFormatException
+                ? " The OpenCV runtime could not be loaded. On Windows N and KN editions install the Media Feature Pack, then restart the service."
+                : string.Empty;
+            return OperationResult<PerceptionOutcome>.Fail("vision_failed", "Image analysis failed: " + ex.Message + hint);
         }
 
         IReadOnlyList<ScreenElement> elements = analysis.Elements;

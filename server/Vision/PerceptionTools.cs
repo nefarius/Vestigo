@@ -27,6 +27,8 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
 
     private const long MaxTemplateBytes = 8 * 1024 * 1024;
 
+    private const long MaxTemplatePixels = 16_000_000;
+
     [McpServerTool(Name = "inspect_screen", ReadOnly = true, Destructive = false)]
     [Description(
         "Looks at the console user's screen and describes it for an agent. Returns an annotated image with numbered boxes plus a JSON element list "
@@ -314,7 +316,16 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
                 return OperationResult<byte[]>.Fail("invalid_request", $"The template must be between 1 byte and {MaxTemplateBytes} bytes.");
             }
 
-            return OperationResult<byte[]>.Ok(File.ReadAllBytes(file.FullName));
+            byte[] bytes = File.ReadAllBytes(file.FullName);
+            if (!ImageHeader.TryReadSize(bytes, out int pixelWidth, out int pixelHeight) ||
+                (long)pixelWidth * pixelHeight > MaxTemplatePixels)
+            {
+                return OperationResult<byte[]>.Fail(
+                    "invalid_request",
+                    $"The template must be a PNG, JPEG or BMP image of at most {MaxTemplatePixels / 1_000_000} megapixels.");
+            }
+
+            return OperationResult<byte[]>.Ok(bytes);
         }
         catch (IOException ex)
         {

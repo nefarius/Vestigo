@@ -220,12 +220,15 @@ public static unsafe class UiaWalker
             return;
         }
 
-        DesktopRect box = new(rect.left, rect.top, width, height);
-        if (!box.Intersects(bounds))
+        DesktopRect? clipped = new DesktopRect(rect.left, rect.top, width, height).Intersection(bounds);
+        if (clipped is null)
         {
             return;
         }
 
+        DesktopRect box = clipped;
+        width = box.Width;
+        height = box.Height;
         int centerX = box.X + width / 2;
         int centerY = box.Y + height / 2;
         if (covers.Any(cover => centerX >= cover.X && centerX < cover.X + cover.Width && centerY >= cover.Y && centerY < cover.Y + cover.Height))
