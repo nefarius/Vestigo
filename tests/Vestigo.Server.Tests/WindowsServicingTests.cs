@@ -314,10 +314,38 @@ public sealed class WindowsServicingTests : IDisposable
     public async Task NativeSmoke_OfflineApplicabilityInventory()
     {
         if (Environment.GetEnvironmentVariable("VESTIGO_SERVICING_SCAN_SMOKE") != "1") return;
-        OperationResult<UpdateInventory> result = await new NativeDiagnosticWorker().Run(
-            () => new WindowsUpdateAgent().Inventory("pending", true, false, 5), TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+        foreach (string state in new[] { "pending", "installed" })
+        {
+            OperationResult<UpdateInventory> result = await new NativeDiagnosticWorker().Run(
+                () => new WindowsUpdateAgent().Inventory(state, true, false, 5), TimeSpan.FromMinutes(2), TestContext.Current.CancellationToken);
+            Assert.True(result.Success, result.Error);
+            Assert.InRange(result.Value!.Updates.Items.Count, 0, 5);
+            Assert.InRange(result.Value.ResultCode, 2, 5);
+            Assert.All(result.Value.Updates.Items, item => Assert.True(Guid.TryParse(item.Id, out _)));
+        }
+    }
+
+    [Fact]
+    public void DismFallback_PackageLayoutMatchesNativeAbi()
+    {
+        Type package = typeof(ServicingPackageSource).GetNestedType("Package", BindingFlags.NonPublic)!;
+        Assert.Equal(IntPtr.Size == 8 ? 32 : 28, Marshal.SizeOf(package));
+        Assert.Equal(0, Marshal.OffsetOf(package, "Name").ToInt32());
+        Assert.Equal(IntPtr.Size, Marshal.OffsetOf(package, "State").ToInt32());
+        Assert.Equal(IntPtr.Size + 4, Marshal.OffsetOf(package, "ReleaseType").ToInt32());
+        Assert.Equal(IntPtr.Size + 8, Marshal.OffsetOf(package, "InstallTime").ToInt32());
+    }
+
+    [Fact]
+    public async Task NativeSmoke_WuaRecoversAfterExceptionDuringOwnedComWork()
+    {
+        if (Environment.GetEnvironmentVariable("VESTIGO_SERVICING_SMOKE") != "1") return;
+        OperationResult<WuaStatus> result = await new NativeDiagnosticWorker().Run(() =>
+        {
+            WindowsUpdateAgent agent = new();
+            Assert.Throws<ArgumentException>(() => agent.Inventory("invalid", true, false, 5));
+            return agent.Status();
+        }, TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         Assert.True(result.Success, result.Error);
-        Assert.InRange(result.Value!.Updates.Items.Count, 0, 5);
-        Assert.InRange(result.Value.ResultCode, 2, 5);
     }
 }

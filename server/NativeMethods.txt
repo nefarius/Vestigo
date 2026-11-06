@@ -240,3 +240,30 @@ GetProcessInformation
 PROCESS_INFORMATION_CLASS
 PROCESS_PROTECTION_LEVEL_INFORMATION
 PROCESS_PROTECTION_LEVEL
+
+// Windows servicing: Restart Manager
+RmStartSession
+RmRegisterResources
+RmGetList
+RmEndSession
+CCH_RM_SESSION_KEY
+WIN32_ERROR
+
+// Windows servicing: typed WUA COM interfaces
+IUpdateSession
+IUpdateSearcher
+IUpdate2
+ISystemInformation
+IUpdateHistoryEntry
+IUpdateServiceManager
+IUpdateService2
+SysAllocString
+SysFreeString
+
+// DISM's API-specific metadata is unavailable; use generated shared Windows types.
+SYSTEMTIME
+
+// WUA activation uses generated coclass CLSIDs, with no ProgID registry lookup.
+UpdateSession
+SystemInformation
+UpdateServiceManager

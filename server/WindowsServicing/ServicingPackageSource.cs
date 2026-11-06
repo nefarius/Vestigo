@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 
+using Windows.Win32.Foundation;
+
 namespace Vestigo.WindowsServicing;
 
 public interface IServicingPackageSource
@@ -12,21 +14,21 @@ public sealed class ServicingPackageSource : IServicingPackageSource
 {
     public BoundedList<ServicingPackage> List(int limit)
     {
-        Marshal.ThrowExceptionForHR(DismInitialize(0, null, null));
+        DismInitialize(0, null, null).ThrowOnFailure();
         uint session = 0;
         bool opened = false;
         nint buffer = 0;
         try
         {
-            Marshal.ThrowExceptionForHR(DismOpenSession("DISM_{53BFAE52-B167-4E2F-A258-0A37B57FF845}", null, null, out session));
+            DismOpenSession("DISM_{53BFAE52-B167-4E2F-A258-0A37B57FF845}", null, null, out session).ThrowOnFailure();
             opened = true;
-            Marshal.ThrowExceptionForHR(DismGetPackages(session, out buffer, out uint count));
+            DismGetPackages(session, out buffer, out uint count).ThrowOnFailure();
             List<ServicingPackage> packages = [];
             int size = Marshal.SizeOf<Package>();
             for (int i = 0; i < Math.Min(count, (uint)limit); i++)
             {
                 Package package = Marshal.PtrToStructure<Package>(buffer + i * size);
-                packages.Add(new(Marshal.PtrToStringUni(package.Name) ?? "", StateName(package.State), package.State, package.ReleaseType));
+                packages.Add(new(package.Name.ToString() ?? "", StateName(package.State), package.State, package.ReleaseType));
             }
             return new(packages, checked((int)count), count > packages.Count);
         }
@@ -45,31 +47,39 @@ public sealed class ServicingPackageSource : IServicingPackageSource
         7 => "partiallyInstalled", _ => "unknown"
     };
 
+    // CsWin32 0.3.367 with this project's pinned metadata reports PInvoke001 for
+    // DismInitialize, DismOpenSession, DismGetPackages, DismDelete, DismCloseSession,
+    // DismShutdown, DismPackage, DismPackageFeatureState, DismReleaseType, DismLogLevel
+    // and DISM_ONLINE_IMAGE. Retain only these DISM-specific ABI declarations here.
+    // DismSession is UINT; DismPackage contains a borrowed PCWSTR, two 32-bit enums and
+    // SYSTEMTIME. DismDelete releases the returned array and its package names;
+    // close the image session before DismShutdown. Shared Windows types are generated.
+    // Metadata coverage: https://github.com/microsoft/win32metadata/issues/2265
     [StructLayout(LayoutKind.Sequential)]
     private struct Package
     {
-        public nint Name;
+        public PCWSTR Name;
         public int State;
         public int ReleaseType;
-        public ushort Year, Month, DayOfWeek, Day, Hour, Minute, Second, Milliseconds;
+        public SYSTEMTIME InstallTime;
     }
 
     [DllImport("DismApi.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int DismInitialize(int level, string? logPath, string? scratchDirectory);
+    private static extern HRESULT DismInitialize(int level, string? logPath, string? scratchDirectory);
     [DllImport("DismApi.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int DismOpenSession(string imagePath, string? windowsDirectory, string? systemDrive, out uint session);
+    private static extern HRESULT DismOpenSession(string imagePath, string? windowsDirectory, string? systemDrive, out uint session);
     [DllImport("DismApi.dll", ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int DismGetPackages(uint session, out nint packages, out uint count);
+    private static extern HRESULT DismGetPackages(uint session, out nint packages, out uint count);
     [DllImport("DismApi.dll", ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int DismDelete(nint value);
+    private static extern HRESULT DismDelete(nint value);
     [DllImport("DismApi.dll", ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int DismCloseSession(uint session);
+    private static extern HRESULT DismCloseSession(uint session);
     [DllImport("DismApi.dll", ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int DismShutdown();
+    private static extern HRESULT DismShutdown();
 }

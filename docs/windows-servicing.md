@@ -53,7 +53,7 @@ this registry metadata disclosure, not arbitrary filesystem content access.
 
 ## Windows Update Agent
 
-`list_windows_updates` starts a background job using WUA COM automation with
+`list_windows_updates` starts a background job using CsWin32-generated WUA COM interfaces with
 `Online=false`. It supports pending or installed applicability results, hidden
 and driver inclusion, and a bounded return count. It returns identity, revision,
 title, KB references, type, installed/downloaded/hidden/reboot flags and WUA search
@@ -74,7 +74,7 @@ registered update services/default/managed flags, and wuauserv, BITS, UsoSvc,
 WaaSMedicSvc, TrustedInstaller and DoSvc states. A stopped demand/trigger-start
 service is not proof of a blocker. An unavailable source is an explicit error.
 
-All COM objects are acquired, used and released on one MTA worker per call.
+All COM interfaces are acquired, used and released on one MTA worker per call. COM initialization is explicitly balanced; generated BSTR safe handles own input strings and every returned BSTR is freed after conversion. Activation uses generated coclass CLSIDs. No ProgID registry lookup, late-bound dynamic dispatch or handwritten WUA interfaces remain.
 WUA, DISM and Restart Manager share one native-call slot, with no waiting queue.
 Busy calls fail with `servicing_busy`. `NativeCallTimeout` bounds how long a caller
 waits, not the underlying Windows operation. Timeout or cancellation retains the
@@ -99,7 +99,7 @@ running Windows image. It returns bounded package identities, raw state/release
 codes and state names, including installed, installPending, uninstallPending,
 staged, removed, superseded and partiallyInstalled. Native DISM enumeration itself
 is not limited by the return cap. Elevation is normally required. The API may
-write its own DISM log. Native buffers and sessions are released in finally
+write its own DISM log. The pinned CsWin32 generator lacks DISM API-specific metadata (PInvoke001); this is documented beside the minimal manual DISM declarations. Shared HRESULT, PCWSTR and SYSTEMTIME types still use generated bindings. Native buffers and sessions are released in finally
 blocks; no localized command output is parsed and no arbitrary arguments run.
 
 ## Failure evidence and logs
@@ -140,7 +140,7 @@ or WinSxS allocation estimate: hard links make directory sums misleading.
 Restart Manager. It returns application/service names, PID, process start time,
 session ID and reboot-reason flags. It retries list changes at most three times
 and caps native list allocation at 4,096 processes. An unstable or oversized list
-is explicitly truncated. Restart Manager sessions always end; no shutdown or
+is explicitly truncated. Restart Manager APIs, process structures, session-key sizing and Windows error constants use CsWin32-generated bindings with System32-restricted imports. Restart Manager sessions always end; no shutdown or
 restart API is imported. Results do not enumerate all kernel references,
 minifilter activity, or every cause of a failed replacement. Empty results never
 guarantee that a file can be replaced.
