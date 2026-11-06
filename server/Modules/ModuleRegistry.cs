@@ -28,6 +28,7 @@ public static class ModuleRegistry
         new AudioModule(),
         new DebugOutputModule(),
         new DiagnosticsModule(),
+        new WindowsServicingModule(),
         new UpdatesModule()
     ];
 
@@ -122,13 +123,15 @@ public static class ModuleRegistry
         bool desktopScreenshots = desktop && options.Desktop.AllowScreenshots;
         bool audio = enabled.Any(module => module.Name == "Audio");
         bool audioSetDefault = audio && options.Audio.AllowSetDefault;
+        bool servicing = enabled.Any(module => module.Name == "WindowsServicing");
+
         bool diagnostics = enabled.Any(module => module.Name == "Diagnostics");
         bool diagnosticsOnline = diagnostics && options.Diagnostics.AllowOnlineRevocation;
         bool diagnosticsProbes = diagnostics && options.Diagnostics.AllowCaptureProbes;
         bool diagnosticsNetwork = diagnostics && options.Diagnostics.AllowNetworkProbes;
         bool diagnosticsPlayback = diagnostics && options.Diagnostics.AllowAudioPlayback;
         bool diagnosticsDumps = diagnostics && options.Diagnostics.AllowProcessDumps;
-        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics)
+        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics && !servicing)
         {
             return null;
         }
@@ -139,7 +142,9 @@ public static class ModuleRegistry
         if (capabilities.Count == 0)
         {
             List<string> names = [];
+            if (servicing) names.Add("WindowsServicing");
             List<string> clauses = [];
+            if (servicing) clauses.Add($"{reach} can read reboot queue paths, update history, CBS package metadata and root-confined servicing logs.");
             if (desktop)
             {
                 names.Add("Desktop");
@@ -178,7 +183,7 @@ public static class ModuleRegistry
                    "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
         }
 
-        string extras = "";
+        string extras = servicing ? "The WindowsServicing module can also disclose reboot queue paths, update history, CBS package metadata and root-confined servicing logs. " : "";
         if (desktop)
         {
             extras += desktopScreenshots

@@ -298,6 +298,15 @@ Reads one environment variable. Machine scope reads the Session Manager registry
 | `scope` | `string` | yes |  | Scope: machine, user, or process. |
 | `name` | `string` | yes |  | Variable name. |
 
+## `get_file_lockers`
+
+Best-effort Restart Manager query for one existing file in a Read root. Returns process identities/start times, application/service names and reboot-reason flags. Never shuts down/restarts processes. Not a complete kernel handle or minifilter inventory; an empty list does not prove a file can be replaced.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | File path in a configured Read root, absolute or root:relative. |
+| `limit` | `int` | no | `100` | Maximum processes, clamped to WindowsServicing:MaxResults. |
+
 ## `get_installed_software`
 
 Returns one entry by id (from list_installed_software) with the silent uninstall command Vestigo would run, or the reason none is available.
@@ -313,6 +322,12 @@ Returns state, exit code, and output size for one job.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `jobId` | `string` | yes |  | Job identifier. |
+
+## `get_reboot_pending`
+
+Collects independent 64-bit registry and WUA reboot signals. Returns pending, notPending, or unknown; unreadable sources are never treated as clear. Installer and CBS session presence are advisory activity signals. Does not reboot or change the queue.
+
+No parameters.
 
 ## `get_remote_debugger_status`
 
@@ -348,6 +363,20 @@ Returns state, start type, binary path, type (including KERNEL_DRIVER), error co
 | --- | --- | --- | --- | --- |
 | `name` | `string` | yes |  | Service name (not the display name). |
 
+## `get_servicing_logs`
+
+Returns bounded tails of the fixed CBS.log and DISM dism.log, using existing Read roots and text-tail decoding. Each source has its own error/truncation. Does not decompress rotated CBS archives or convert Windows Update ETLs. Raw logs may contain sensitive machine/user data. Optional literal filtering applies only within the tail window, not the whole file.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `contains` | `string` | no | `null` | Literal case-insensitive text, KB, update id or HRESULT; at most 128 characters. |
+
+## `get_servicing_status`
+
+Fast CBS registry snapshot plus pending.xml/reboot.xml metadata. No XML content is parsed and no DISM/SFC health scan or repair is invoked. Missing pending files do not establish component-store health.
+
+No parameters.
+
 ## `get_system_info`
 
 Returns the host Windows name, edition, display version (for example 24H2), version string, major/minor/build/UBR, whether it is Windows 11 or Server, whether the install was in-place upgraded, OS and processor bitness, ARM64, UAC disabled, and the machine name. One failed probe becomes a null field.
@@ -366,6 +395,32 @@ Returns the host UAC policy: enabled (EnableLUA), the slider level (always, defa
 
 No parameters.
 
+## `get_update_failure_details`
+
+Collects evidence from a bounded newest WUA history window, four update/servicing/download event channels, and root-confined CBS/DISM log tails. since defaults to 24 hours ago; event/history timestamps are filtered, log tails are not time-parsed. contains is a literal KB/id/HRESULT/text filter. Source failures remain explicit. Empty results do not prove absence; no causal diagnosis is inferred from matching text.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `contains` | `string` | no | `null` | Literal KB, update id, HRESULT or text, at most 128 characters. |
+| `since` | `DateTimeOffset?` | no | `null` | Earliest event/history time; defaults to 24 hours ago. Log lines retain raw timestamps. |
+| `limit` | `int` | no | `50` | Maximum entries examined/returned per evidence source, clamped to WindowsServicing:MaxResults. |
+
+## `get_update_history`
+
+Queries a bounded newest-first WUA history window. Result codes 3, 4, 5 mean succeeded-with-errors, failed, aborted. failuresOnly filters within the examined window; advance offset by Examined, not returned count. HRESULTs retain unsigned hexadecimal form. History may have been reset and is not proof of installed-package state.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `offset` | `int` | no | `0` | Number of newest-first history entries to skip. |
+| `limit` | `int` | no | `100` | Maximum entries examined; clamped to WindowsServicing:MaxResults. |
+| `failuresOnly` | `bool` | no | `false` | Return only results with errors, failure or abortion in this window. |
+
+## `get_update_storage_status`
+
+Reports available space on the Windows volume and metadata for fixed update database/log/pending files. Does not recurse through caches, calculate WinSxS directory size, determine reserved storage, or perform cleanup. Free space is an observation, not a prediction of update space requirements.
+
+No parameters.
+
 ## `get_upload_url`
 
 Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-WebRequest examples. Uploads need Write access to the root. When API tokens are configured the URL carries a one-time ticket bound to this path and these flags that expires and stops working after one successful upload, so the API token never has to be shared.
@@ -375,6 +430,12 @@ Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-
 | `path` | `string` | yes |  | Destination as root:relative\path. |
 | `overwrite` | `bool` | no | `false` | Replace an existing file. |
 | `deferToReboot` | `bool` | no | `false` | Replace a locked file at the next reboot instead of renaming it aside. |
+
+## `get_windows_update_status`
+
+Snapshots WUA reboot requirement, installer busy flag, registered update services and six Windows service states. Unavailable WUA data remains an explicit source error. Stopped demand/trigger-start services are not identified as blockers. Does not infer USO activity or trigger a scan.
+
+No parameters.
 
 ## `inf_default_install`
 
@@ -571,6 +632,14 @@ Lists background jobs owned by this Vestigo process, newest first.
 
 No parameters.
 
+## `list_pending_file_operations`
+
+Reads both Session Manager REG_MULTI_SZ rename/delete queues. Preserves raw paths, pair index and replacement marker; normalizes recognized NT DOS/UNC paths without accessing them. An unpaired source is malformed, never assumed deleted. Paths may disclose software/user names even outside configured roots; the module is opt-in. No files are opened or changed.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | `int` | no | `100` | Maximum pairs across both queues; clamped to WindowsServicing:MaxResults. |
+
 ## `list_process_connections`
 
 Lists TCP endpoints and UDP bindings owned by one process. Each row has protocol, family, TCP state when known, and the local address and port. includeRemoteAddresses adds the remote address and port; otherwise those fields are null. A UDP row is a local binding and does not prove that the peer is reachable. No packet payloads, headers, or credentials are read. expectedStartTime, from list_processes, rejects a reused pid. The list is a best-effort snapshot.
@@ -634,6 +703,14 @@ Lists Win32 services and kernel/file-system drivers with state, start type, imag
 | `state` | `string` | no | `null` | Only services in this state: stopped, running, paused, start_pending, stop_pending, continue_pending or pause_pending. |
 | `limit` | `int` | no | `200` | Maximum entries to return, 1 to 1000. |
 
+## `list_servicing_packages`
+
+Starts a read-only DISM API package inventory job against the running Windows image. read_job_output returns JSON with package names, documented state names/raw codes and release types. Usually requires elevation. No localized text parsing, arbitrary DISM arguments, health scan or repair. DISM may write its own log. Shares the single native-call slot with WUA.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | `int` | no | `200` | Maximum returned packages; clamped to WindowsServicing:MaxResults. Truncation is explicit. |
+
 ## `list_video_encoders`
 
 Lists video encoders registered with Media Foundation, using MFTEnumEx. backend must be media-foundation. The result is an enumeration: transforms are not activated and no frames are submitted. It is not an inventory of vendor encoder APIs that do not register an MFT. discoverySource is MFTEnumEx, stage is enumerated, activated and processedSamples are false.
@@ -658,6 +735,17 @@ Lists Win32 windows on the chosen desktop with owning process, parent and owner,
 | `limit` | `int` | no | `500` | Maximum windows to return, 1 to 5000. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when enumerating as the console user. |
+
+## `list_windows_updates`
+
+Starts an offline-only WUA applicability inventory job. Returns a Jobs id; read_job_output returns a JSON OperationResult with update identity/revision, title, KBs and states. WUA may perform expensive local work and write its own diagnostic/cache data. No download, install or online scan is requested. Cancellation/timeout stop waiting, not the native call. One native servicing call runs at a time.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `state` | `string` | no | `pending` | pending or installed. Installed WUA results are not a complete CBS package inventory. |
+| `includeDrivers` | `bool` | no | `true` | Include driver/firmware updates. |
+| `includeHidden` | `bool` | no | `false` | Include hidden updates. |
+| `limit` | `int` | no | `100` | Maximum returned updates; clamped to WindowsServicing:MaxResults. |
 
 ## `make_directory`
 

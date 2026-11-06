@@ -5,7 +5,7 @@
 ![Windows only](https://img.shields.io/badge/Windows-10%2B-red)
 [![Assisted by Cursor AI](https://img.shields.io/badge/Assisted%20by-Cursor%20AI-8B5CF6?style=flat)](https://cursor.com/)
 
-Vestigo is a Windows MCP server for driver and application development. It hosts a stateless Streamable HTTP endpoint at `/mcp` and runs as a Windows service. Besides offline WPP conversion and realtime ETW capture, it can transfer files, inspect and control processes and services, list, inspect, and run scheduled tasks, inventory and uninstall software, manage devices and drivers, list windows and displays and take gated screenshots, list audio endpoints and switch the default device, inspect Windows version, boot-security, and UAC state with gated test-signing, WHQL developer-mode, and UAC changes, capture Win32 debug output, inspect PE files and Authenticode signatures, list loaded process modules, read SetupAPI device-install history, explain a device problem code, list graphics adapters, probe capture support, list process connections, probe an allow-listed endpoint, list Media Foundation video encoders and camera formats, probe an audio format, list Windows Error Reporting reports, write a gated process dump, read and set environment variables, tail and regex-search text logs on the machine, query event logs, run background jobs, install the Visual Studio remote debugger, and check for or apply a signed self-update.
+Vestigo is a Windows MCP server for driver and application development. It hosts a stateless Streamable HTTP endpoint at `/mcp` and runs as a Windows service. Besides offline WPP conversion and realtime ETW capture, it can transfer files, inspect and control processes and services, list, inspect, and run scheduled tasks, inventory and uninstall software, manage devices and drivers, list windows and displays and take gated screenshots, list audio endpoints and switch the default device, inspect Windows version, boot-security, and UAC state with gated test-signing, WHQL developer-mode, and UAC changes, capture Win32 debug output, inspect PE files and Authenticode signatures, list loaded process modules, read SetupAPI device-install history, explain a device problem code, list graphics adapters, probe capture support, list process connections, probe an allow-listed endpoint, list Media Foundation video encoders and camera formats, probe an audio format, list Windows Error Reporting reports, write a gated process dump, read and set environment variables, tail and regex-search text logs on the machine, query event logs, inspect Windows Update and servicing state through an opt-in read-only module, run background jobs, install the Visual Studio remote debugger, and check for or apply a signed self-update.
 
 It is remote-capable. A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` uses the repository `appsettings.json`, which defaults to loopback without tokens. WPP decoding uses [Nefarius.Utilities.ETW](https://github.com/nefarius/Nefarius.Utilities.ETW) with PDB or TMF files. A remote agent can resolve those PDBs from an installed binary, the local cache, a configured symbol server, or a file uploaded into the built-in `traces` folder.
 
@@ -54,7 +54,7 @@ The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopba
 - Tokens are compared by SHA-256 digest and are never written to logs.
 - Trace ETL, PDB, TMF, zip, and conversion-output paths stay inside `AllowedInputRoots` or `AllowedOutputRoots`, which default to the protected `<settings>\traces` folder. Remote agents can resolve PDBs from installed binaries or upload them to the `traces` named root.
 - File, log, process, and device paths use named `Vestigo:Roots` (and optional `VolumeRoots`) with `Read`, `Write`, and `Execute`.
-- `Processes`, `Devices`, `RemoteDebugger`, `Desktop`, `Audio`, `DebugOutput`, and `Diagnostics` stay off until their module is enabled. Silent uninstall, scheduled-task changes, screenshots, default-audio switching, boot-configuration writes, UAC changes, silent self-update, online signature revocation, capture probes, network probes, audible audio probes, and process dumps have separate gates (`Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Desktop:AllowScreenshots`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Updates:AllowSelfUpdate`, `Diagnostics:AllowOnlineRevocation`, `Diagnostics:AllowCaptureProbes`, `Diagnostics:AllowNetworkProbes`, `Diagnostics:AllowAudioPlayback`, `Diagnostics:AllowProcessDumps`). Network probes also require `Diagnostics:AllowedProbeDestinations`. Enabling those without tokens is allowed and logs a startup `SECURITY WARNING`.
+- `Processes`, `Devices`, `RemoteDebugger`, `Desktop`, `Audio`, `DebugOutput`, `Diagnostics`, and `WindowsServicing` stay off until their module is enabled. Silent uninstall, scheduled-task changes, screenshots, default-audio switching, boot-configuration writes, UAC changes, silent self-update, online signature revocation, capture probes, network probes, audible audio probes, and process dumps have separate gates (`Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Desktop:AllowScreenshots`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Updates:AllowSelfUpdate`, `Diagnostics:AllowOnlineRevocation`, `Diagnostics:AllowCaptureProbes`, `Diagnostics:AllowNetworkProbes`, `Diagnostics:AllowAudioPlayback`, `Diagnostics:AllowProcessDumps`). Network probes also require `Diagnostics:AllowedProbeDestinations`. Enabling those without tokens is allowed and logs a startup `SECURITY WARNING`.
 - Output files are not overwritten unless the tool argument says so.
 - Event count, input size, output size, capture duration, job output, and spool retention are bounded.
 
@@ -85,6 +85,9 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 
 ## Limitations
 
+- Windows servicing diagnostics do not install updates, repair Windows, clear queues or reboot. WUA searches are offline-only; native timeout/cancellation stops waiting without terminating Windows work. Log tails require Read roots; DISM package inventory generally requires elevation. See [Windows servicing diagnostics](docs/windows-servicing.md).
+
+
 - Windows only. The NT Kernel Logger and kernel-mode realtime providers are not supported.
 - Vestigo decodes events; it does not record a raw ETL file.
 - There is no server push. Follow a live capture by long-polling `read_capture` or `read_debug_output` with `waitSeconds`; external sessions can be read with `attach_etw_session` once allowed by `Vestigo:AttachableSessions`.
@@ -107,6 +110,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - [Project site](https://nefarius.github.io/Vestigo/)
 - [Architecture](docs/architecture.md)
 - [MCP tools](docs/tools.md)
+- [Windows servicing diagnostics](docs/windows-servicing.md)
 - [MCP tool catalog](docs/generated/mcp-tools.md)
 - [Configuration](docs/configuration.md)
 - [Configuration defaults](docs/generated/configuration.md)

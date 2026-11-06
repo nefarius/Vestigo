@@ -63,6 +63,8 @@ public sealed class VestigoOptions
 
     public UpdatesOptions Updates { get; set; } = new();
 
+    public Vestigo.WindowsServicing.WindowsServicingOptions WindowsServicing { get; set; } = new();
+
     public int MaxConcurrentJobs { get; set; } = 8;
 
     public long MaxJobOutputBytes { get; set; } = 64L * 1024 * 1024;
@@ -312,6 +314,7 @@ public sealed class VestigoOptions
         }
 
         Environment.Validate();
+        WindowsServicing.Validate();
         Logs.Validate();
         EventLog.Validate();
         RemoteDebugger.Validate();

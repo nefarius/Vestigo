@@ -119,3 +119,22 @@ Messages from a process that has a debugger attached go to the debugger, not to 
 ## Decoded text is missing
 
 `MissingFormatCount` counts WPP events whose message format was not in the loaded PDB or TMF sources. Point `binaryPaths` at the installed binary, add the matching PDB or TMF under `traces`, or enable symbol resolution for offline ETL. Enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` stay numeric. `symbol_auth_failed` means the configured symbol server rejected the request.
+
+
+## Windows servicing diagnostics
+
+- `servicing_busy`: a WUA, DISM or Restart Manager diagnostic still owns the
+  single native-call slot. Wait for it to finish before retrying.
+- `servicing_timeout`: the caller stopped waiting; native Windows work may still
+  run and retain the slot. Repeated retries do not start additional workers.
+- `native_diagnostic_failed`: inspect the preserved hexadecimal HRESULT and,
+  when available, Win32 error number. `0x800702E4` means elevation is required;
+  DISM online package enumeration normally needs an elevated service token.
+- `invalid_request`: check state, offset and literal-filter limits in the tool
+  catalog. WUA inventory accepts only pending or installed, with no arbitrary
+  search expressions or online switch.
+
+Per-source unknown/errors are not a clean bill of health. Log tails need Read
+roots covering the fixed CBS/DISM paths; missing/disabled event channels can
+return source errors. Failure evidence is bounded and does not prove causation.
+See [Windows servicing diagnostics](windows-servicing.md) for the exact limits.

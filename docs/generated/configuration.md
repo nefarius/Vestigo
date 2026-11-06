@@ -96,4 +96,8 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Updates:AllowSelfUpdate` | `false` |
 | `VolumeRootAccess` | `Read, Write, Execute` |
 | `VolumeRoots` | `None` |
+| `WindowsServicing:MaxLogBytes` | `262144` |
+| `WindowsServicing:MaxLogLines` | `200` |
+| `WindowsServicing:MaxResults` | `200` |
+| `WindowsServicing:NativeCallTimeout` | `00:02:00` |
 
