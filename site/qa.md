@@ -56,6 +56,49 @@ The service context does not see user-session audio. Per-app overrides in Settin
 2. Add the host, or the host and port, to `Diagnostics:AllowedProbeDestinations`. The installer does not write that list.
 3. `test_endpoint` with `dns`, `tcp`, or `tls`. The probe uses Vestigo's own network context and does not capture packets.
 
+## Investigate Windows Update and servicing
+
+1. Enable WindowsServicing and Jobs in the installer feature tree or configuration:
+
+   ```json
+   {
+     "Vestigo": {
+       "Modules": {
+         "WindowsServicing": { "Enabled": true },
+         "Jobs": { "Enabled": true }
+       }
+     }
+   }
+   ```
+
+   Restart the Vestigo service after configuration changes, and use a token for
+   remote access. This module is separate from Vestigo's Updates self-updater.
+2. Call `get_reboot_pending` and `list_pending_file_operations`. Keep the source
+   states and malformed-pair warnings: unknown is not the same as no reboot pending.
+3. Use `get_windows_update_status` and `get_update_history` for WUA status and
+   recent outcomes. `get_update_failure_details` accepts a literal KB, update ID,
+   HRESULT or text filter and an earliest time. It collects a bounded history
+   window, warning/error events and CBS/DISM log tails. Matching text does not
+   prove causation; log timestamps are not parsed by the time filter.
+4. `list_windows_updates` starts an offline inventory job. `list_servicing_packages`
+   starts a DISM package inventory job; it normally needs elevation. Use
+   `wait_job` and paged `read_job_output` to read their JSON results. WUA history
+   may have been reset and is not a complete installed-package inventory.
+5. `get_servicing_status` shows CBS and pending-file metadata without an integrity
+   check. `get_update_storage_status` shows volume space and fixed-file metadata,
+   without recursive cache totals or a WinSxS allocation estimate.
+
+`get_servicing_logs` needs a Read root covering the fixed logs under
+`%windir%\Logs`; no root is granted automatically. `get_file_lockers` needs the
+selected file in a Read root and returns best-effort Restart Manager results,
+without stopping processes. Raw registry queue paths can be returned outside
+Read roots, but queued files are not opened. Read [Security](security.md) first.
+
+The module does not install updates, repair Windows, clear queues or reboot.
+Offline applicability work can still update WUA's cache or logs. Timeout or job
+cancellation stops waiting rather than aborting native Windows work, and its
+concurrency slot stays occupied until that work finishes.
+
 ## Collect logs and traces
 
 1. `tail_text_file` or `read_text_file_since` for a growing log under a read root.

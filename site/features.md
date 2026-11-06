@@ -113,14 +113,24 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p>The Security channel follows Windows ACLs for the service account. Rendered messages are null when the publisher is not installed.</p>
   </article>
   <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill">Read-only</span> <span class="pill">Needs Jobs</span></p>
+    <h2>Windows Update and servicing</h2>
+    <p><code>get_reboot_pending</code> combines registry and WUA signals as pending, not pending, or unknown. <code>list_pending_file_operations</code> reads both Session Manager rename/delete queues, preserving raw paths and malformed-pair warnings without opening or changing queued files.</p>
+    <p><code>list_windows_updates</code> starts an offline WUA inventory job. <code>get_update_history</code> returns bounded history with HRESULTs, and <code>get_windows_update_status</code> snapshots WUA and relevant service states. A stopped trigger-start service is not automatically a blocker.</p>
+    <p><code>get_servicing_status</code> reports CBS and pending-file metadata without an integrity scan. <code>list_servicing_packages</code> starts a DISM package inventory job, normally requiring elevation.</p>
+    <p><code>get_update_failure_details</code> collects bounded history, events and log evidence. <code>get_servicing_logs</code> tails fixed CBS/DISM logs through Read roots. <code>get_update_storage_status</code> reports Windows-volume space and fixed-file metadata. <code>get_file_lockers</code> uses Restart Manager for one file in a Read root without stopping processes.</p>
+    <p>This is separate from Vestigo self-updates. No Windows update install, repair, online scan, cache reset, queue edit or reboot is exposed. Evidence is bounded and does not establish causation. Native timeout or cancellation stops waiting; the concurrency slot remains held until Windows returns.</p>
+    <p><a href="https://github.com/nefarius/Vestigo/blob/master/docs/windows-servicing.md">Full tool contracts and limitations</a></p>
+  </article>
+  <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>Jobs</h2>
-    <p>Long work (process launch, silent uninstall, file fetch, remote-debugger install, process dumps) returns a job id. <code>wait_job</code>, <code>read_job_output</code>, and <code>cancel_job</code> page the output and stop the tree if needed.</p>
+    <p>Long work (process launch, silent uninstall, file fetch, remote-debugger install, process dumps, Windows update inventory and servicing-package inventory) returns a job id. <code>wait_job</code>, <code>read_job_output</code>, and <code>cancel_job</code> page the output inspect or cancel the job. Process jobs can stop their process tree; native servicing calls are not forcibly terminated.</p>
     <p>Finished jobs are kept for a bounded retention period, then discarded.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">Install gated</span></p>
-    <h2>Updates</h2>
+    <h2>Vestigo self-updates</h2>
     <p><code>check_for_updates</code> fetches the signed Buildbot feed, verifies the minisign sidecar, and compares it to the installed version. The check is available whenever the Updates module is on.</p>
     <p><code>start_self_update</code> stays off until <code>Updates:AllowSelfUpdate</code> is true and the Automatic updates feature is installed. It launches the packaged Vicius updater silently; the MSI restarts the service.</p>
   </article>
