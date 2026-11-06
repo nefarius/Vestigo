@@ -286,3 +286,33 @@ Bring up a root-enumerated driver:
 Iterate on a new build: `install_driver` again with the same hardware ID and `noDuplicates`, then `restart_device`.
 
 Tear down: `uninstall_filter_driver` (with `infPath` to purge its package) or `remove_class_filter`, then `uninstall_driver`, `remove_device_node`, and finally `remove_driver_store_package` with the INF name so old packages do not accumulate in the driver store.
+
+
+## Windows servicing
+
+The opt-in `WindowsServicing` module requires Jobs and is separate from Vestigo's
+`Updates` self-updater. All eleven tools advertise read-only, non-destructive metadata.
+
+`get_reboot_pending` combines registry and WUA signals as pending, notPending or
+unknown. `list_pending_file_operations` reads both Session Manager queues with raw
+paths, normalized DOS/UNC paths where recognized, replacement markers and malformed
+pair warnings; it never opens or changes the queued files.
+
+`list_windows_updates` starts an offline-only WUA applicability job;
+`get_update_history` returns a bounded newest-first history window with HRESULTs;
+`get_windows_update_status` snapshots WUA state and relevant services. Stopped
+trigger-start services are not automatically blockers. `get_servicing_status`
+reads CBS/pending-file metadata without a health scan; `list_servicing_packages`
+starts a DISM API inventory job. Read job output as paged JSON using Jobs tools.
+
+`get_update_failure_details` collects bounded history, events and log evidence;
+`get_servicing_logs` tails fixed CBS/DISM logs through Read roots.
+`get_update_storage_status` reports Windows-volume space and fixed-file metadata,
+without recursive cache totals or a WinSxS allocation estimate. `get_file_lockers`
+uses Restart Manager for one file inside a Read root without stopping processes.
+
+Native diagnostics share one concurrency slot. Timeout or cancellation stops
+waiting, and the slot remains held until Windows returns. See
+[Windows servicing diagnostics](windows-servicing.md) for exact sources, caps,
+job semantics, data disclosure and limitations. No install, repair, online scan,
+queue cancellation, cache reset or reboot operations are exposed.

@@ -1,0 +1,23 @@
+---
+description: Prefer CsWin32-generated Windows APIs and types over handwritten interop
+alwaysApply: true
+---
+
+# Windows native interop
+
+- Prefer the repository's Microsoft.Windows.CsWin32 generator for Windows APIs,
+  COM interfaces, native structs, enums and constants. Add only required symbols
+  to `server/NativeMethods.txt` and use the generated `Windows.Win32` bindings.
+- Before adding or retaining handwritten DllImport/LibraryImport, ComImport,
+  vtables, StructLayout declarations or numeric Windows constants, check whether
+  the pinned generator and metadata can supply them with NativeMethods.json's
+  current settings and the project's target framework and architecture.
+- Do not change global generator settings or package versions just to avoid
+  investigating an existing generated overload or type.
+- Handwritten interop is a fallback only for a demonstrated generator/metadata
+  gap or a documented compatibility requirement. Record the missing symbol or
+  exact generation failure beside the fallback, including ABI and ownership.
+- Preserve DLL loading restrictions, lifetime cleanup, buffer bounds and native
+  error codes during refactors. Build and run applicable tests/native smoke checks.
+- When touching native adapters, audit related new files for duplicate interop;
+  do not assume another API is unsupported merely because one symbol is missing.

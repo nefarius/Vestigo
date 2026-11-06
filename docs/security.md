@@ -127,3 +127,26 @@ The Diagnostics module reads PE metadata and Authenticode results for files insi
 `start_debug_capture` reads every `OutputDebugString` message that reaches the session `DBWIN_BUFFER` (and, outside session 0, the Global buffer). That includes messages from other users' processes. The capture runs as the service account. Treat a token that can call these tools as able to observe debug output from the whole machine. The module is off by default (`Vestigo:Modules:DebugOutput:Enabled`). Enabling it without `ApiTokens` is allowed and logs a startup `SECURITY WARNING` that names DebugOutput separately from administrator-equivalent modules.
 
 DebugViewConsole is bundled, not downloaded at run time. The build pins the DebugView++ 1.30.0.0 `DebugViewConsole.exe` asset by URL and SHA-256 (`build/DebugViewPin.cs`). The file is not Authenticode-signed by Nefarius, so Vestigo re-checks the hash before every launch (unless `Vestigo:DebugOutput:ExpectedSha256` is empty for an administrator-overridden path). Arguments are a fixed list with no shell; filter values that are empty, start with `-`, or contain control characters are rejected. Only one capture runs at a time. On startup Vestigo kills only a recorded orphan whose image path still matches the owned `DebugViewConsole.exe`.
+
+
+## Windows servicing
+
+`WindowsServicing` is disabled by default, requires Jobs, and warns at startup
+when enabled without API tokens. It exposes update history, package identities,
+service/process names, Windows-volume space and fixed servicing-file metadata.
+Raw pending-file queue paths can contain user/software names and are returned
+even outside configured roots; queue inspection never opens those files.
+
+CBS/DISM log content and caller-selected file-locker queries require existing
+Read roots. No additional roots are granted automatically. Logs can contain
+sensitive machine/user data. Event evidence uses bounded existing event-log
+queries. Native DLL imports are restricted to System32 and COM objects are
+released on the MTA that acquired them.
+
+Offline WUA applicability queries can perform local work and update WUA caches
+or logs; DISM enumeration can write its own logs. No installation, repair,
+online scan, restart, queue edit or process shutdown is requested. Jobs use the
+existing retention/output caps. Timeout/cancellation does not terminate native
+Windows work; its concurrency slot remains held until completion. A stuck call
+requires operator investigation. Restart Manager results are best-effort and
+are not permission to replace a file. See [Windows servicing diagnostics](windows-servicing.md).
