@@ -16,6 +16,23 @@ Point an MCP client at a lab PC and let the agent do the install, capture, and a
 
 Test-signing allows test-signed drivers to load; it does not allow unsigned drivers. `get_boot_security` shows the BCD value and the running kernel state. `set_test_signing` writes the default boot entry only when `System:AllowBootConfigurationChanges` is true, and it is refused while Secure Boot is on. Restart the PC after `set_test_signing` and before installing or loading the driver.
 
+## Investigate a queued driver replacement
+
+Enable WindowsServicing and Jobs for read-only servicing diagnostics. Start with
+`get_reboot_pending` and `list_pending_file_operations` before repeatedly
+reinstalling a driver: a file replacement may already be queued for reboot.
+The queue preserves raw paths and malformed entries; it never edits the queue
+or opens those files. Unknown signals do not establish that the machine is clear.
+
+For a file in a Read root, `get_file_lockers` reports best-effort Restart Manager
+process identities without shutting them down. It cannot enumerate every kernel
+reference or guarantee the file can be replaced. `get_servicing_status` and the
+`list_servicing_packages` job can reveal pending servicing metadata and package
+states; neither performs a component-store integrity scan or repair.
+
+Follow [the QA servicing workflow](qa.md#investigate-windows-update-and-servicing)
+for WUA inventory/history, bounded failure evidence, log access and job limits.
+
 ## Inspect the binary
 
 1. Enable Diagnostics and Jobs. Diagnostics needs Jobs. Put the file in a named root that has `Read` access.

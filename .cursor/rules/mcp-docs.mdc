@@ -26,6 +26,7 @@ Do the tool list above, then:
 - `docs/security.md`: a dedicated section when the module is opt-in or gated.
 - `README.md` intro, Security opt-in and gates bullet, and Limitations.
 - `server/Hosting/LandingPage.html` capability sentence.
+- `site/` GitHub Pages booklet: update Features, Security, Intro and relevant QA/developer workflows for new public capabilities. Ensure the Pages build passes and verify deployment after merge.
 - Installer module metadata (`ModuleSelection` / feature parent) so MSI pages stay aligned.
 
 Do not treat the generated tool catalog as a substitute for the narrative docs. Update `server/README.md` only when `/`, `/mcp`, `/files`, or `/health` changes.
