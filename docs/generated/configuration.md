@@ -48,6 +48,10 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Files:MaxUploadBytes` | `4294967296` |
 | `Files:TicketLifetime` | `00:15:00` |
 | `FlushTimerSeconds` | `1` |
+| `Input:AllowInput` | `false` |
+| `Input:MaxActions` | `50` |
+| `Input:MaxTypedCharacters` | `2000` |
+| `Input:MaxWaitMilliseconds` | `10000` |
 | `JobRetention` | `1.00:00:00` |
 | `ListenAddress` | `127.0.0.1` |
 | `ListenPort` | `5098` |

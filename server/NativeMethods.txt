@@ -160,6 +160,34 @@ DISPLAYCONFIG_SOURCE_MODE
 DISPLAYCONFIG_TARGET_MODE
 DISPLAYCONFIG_VIDEO_SIGNAL_INFO
 
+// Input module: SendInput injection and foreground handling
+SendInput
+INPUT
+MOUSEINPUT
+KEYBDINPUT
+MOUSE_EVENT_FLAGS
+KEYBD_EVENT_FLAGS
+VIRTUAL_KEY
+SetForegroundWindow
+GetForegroundWindow
+ShowWindow
+SHOW_WINDOW_CMD
+SM_XVIRTUALSCREEN
+SM_YVIRTUALSCREEN
+SM_CXVIRTUALSCREEN
+SM_CYVIRTUALSCREEN
+
+// Desktop module: UI Automation element walk (CsWin32 COM interop, no UI Automation wrapper package: a wrapper would add the WindowsDesktop runtime requirement)
+CUIAutomation
+IUIAutomation
+IUIAutomationElement
+IUIAutomationElementArray
+IUIAutomationCacheRequest
+IUIAutomationCondition
+TreeScope
+UIA_PROPERTY_ID
+UIA_CONTROLTYPE_ID
+
 // Diagnostics: DXGI adapter inventory and desktop duplication
 CreateDXGIFactory2
 IDXGIFactory6

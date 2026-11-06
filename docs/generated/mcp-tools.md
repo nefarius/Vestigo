@@ -232,6 +232,34 @@ Finds devices that expose a device interface GUID and returns their instance IDs
 | `interfaceGuid` | `string` | yes |  | Device interface GUID. |
 | `presentOnly` | `bool` | no | `true` | Only currently present devices. False also returns phantom devices. |
 
+## `find_on_screen`
+
+Finds things on the console user's screen. text matches UI Automation names and OCR text (case-insensitive substring). template matches an image with multi-scale OpenCV template matching, from a PNG or JPEG at root:relative\file.png (needs Read access) or from a crop of an earlier capture (templateCaptureId with templateX, templateY, templateWidth, templateHeight in that capture's image pixels). Give text, a template, or both. Returns matches with boxes in image pixels and an elementId on the new captureId, so send_input can click a match. Template matches carry a confidence from 0 to 1. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `text` | `string` | no | `null` | Text to find in element names or OCR text. |
+| `template` | `string` | no | `null` | Template image as root:relative\file.png. |
+| `templateCaptureId` | `string` | no | `null` | Earlier captureId to crop the template from. |
+| `templateX` | `int?` | no | `null` | Crop left in the earlier capture's image pixels. |
+| `templateY` | `int?` | no | `null` | Crop top. |
+| `templateWidth` | `int?` | no | `null` | Crop width. |
+| `templateHeight` | `int?` | no | `null` | Crop height. |
+| `minConfidence` | `double` | no | `0.8` | Minimum template confidence 0.5 to 0.99. Default 0.8. |
+| `target` | `string` | no | `desktop` | 'desktop' (default), 'display', 'window' or 'region'. |
+| `display` | `string` | no | `null` | GDI device name such as \\.\DISPLAY2, or 'primary'. Required for target 'display'. |
+| `windowHandle` | `string` | no | `null` | Hex window handle from list_windows (0x...). |
+| `pid` | `int?` | no | `null` | Process id of the window to search. |
+| `processName` | `string` | no | `null` | Process name, with or without .exe. |
+| `titleRegex` | `string` | no | `null` | .NET regular expression matched against window titles (case-insensitive). |
+| `x` | `int?` | no | `null` | Region left, virtual-screen physical pixels. |
+| `y` | `int?` | no | `null` | Region top, virtual-screen physical pixels. |
+| `width` | `int?` | no | `null` | Region width in physical pixels. |
+| `height` | `int?` | no | `null` | Region height in physical pixels. |
+| `imageMode` | `string` | no | `annotated` | 'annotated' (default), 'raw' or 'none'. |
+| `maxEdge` | `int` | no | `1280` | Longest edge of the returned image in pixels, 320 to 3840. Default 1280. |
+| `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
+
 ## `get_boot_security`
 
 Returns UEFI vs legacy BIOS, Secure Boot, BCD test-signing (configured, takes effect at next boot), the running kernel test-signing state, WHQL developer test mode, and rebootPending when the BCD value and the running state differ. Notes cover Secure Boot, a pending reboot, and that BCD changes apply only to the default boot entry.
@@ -461,6 +489,31 @@ Reads one PE file inside a root with Read access: architecture (x86, x64, arm64,
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
 | `computeSha256` | `bool` | no | `true` | Compute SHA-256. Defaults to true. |
+
+## `inspect_screen`
+
+Looks at the console user's screen and describes it for an agent. Returns an annotated image with numbered boxes plus a JSON element list (id, source uia|ocr|cv, role, name or text, box in image pixels) that works without seeing the image. Elements come from UI Automation, Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId (same target and maxEdge) and lists the regions that changed. imageMode 'annotated' (default), 'raw' or 'none' controls the image. grid:true draws a labelled coordinate grid instead of boxes. Takes the same targets as take_screenshot. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `target` | `string` | no | `desktop` | 'desktop' (default), 'display', 'window' or 'region'. |
+| `display` | `string` | no | `null` | GDI device name such as \\.\DISPLAY2, or 'primary'. Required for target 'display'. |
+| `windowHandle` | `string` | no | `null` | Hex window handle from list_windows (0x...). |
+| `pid` | `int?` | no | `null` | Process id of the window to inspect. |
+| `processName` | `string` | no | `null` | Process name, with or without .exe. |
+| `titleRegex` | `string` | no | `null` | .NET regular expression matched against window titles (case-insensitive). |
+| `x` | `int?` | no | `null` | Region left, virtual-screen physical pixels. |
+| `y` | `int?` | no | `null` | Region top, virtual-screen physical pixels. |
+| `width` | `int?` | no | `null` | Region width in physical pixels. |
+| `height` | `int?` | no | `null` | Region height in physical pixels. |
+| `imageMode` | `string` | no | `annotated` | 'annotated' (default), 'raw' or 'none'. |
+| `maxEdge` | `int` | no | `1280` | Longest edge of the returned image in pixels, 320 to 3840. Default 1280. |
+| `grid` | `bool` | no | `false` | Draw a coordinate grid instead of numbered boxes. |
+| `uia` | `bool` | no | `true` | Read UI Automation elements (names and roles; edit values are never read). Default true. |
+| `ocr` | `bool` | no | `true` | Recognize text with Windows OCR. Default true. |
+| `includeCursor` | `bool` | no | `false` | Draw the mouse cursor on the capture. |
+| `diffAgainst` | `string` | no | `null` | captureId of an earlier inspection to diff against. |
+| `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
 
 ## `inspect_wpp_pdb`
 
@@ -964,6 +1017,22 @@ Searches a text file, or every file under a directory, inside a root with Read a
 | `contextAfter` | `int` | no | `0` | Lines of context to return after each match. Clamped to Vestigo:Logs:MaxSearchContextLines. |
 | `maxMatchesPerFile` | `int?` | no | `null` | Stop searching each file after this many matching lines. |
 | `globs` | `string[]` | no | `null` | Optional file-name globs applied below a directory, for example *.log or !*.old.log. A leading ! excludes. Matched case-insensitively against the path. |
+
+## `send_input`
+
+Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), drag (x,y to toX,toY), type (text as Unicode characters), key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). A point is elementId from inspect_screen or find_on_screen, or x and y: in the pixels of the returned image when captureId is set, otherwise absolute virtual-screen physical pixels. focusWindow (hex handle from list_windows) is brought to the foreground first. observe:true waits observeDelayMs, then returns a fresh inspect_screen result, so one call does act and look; it needs Vestigo:Desktop:AllowScreenshots. Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot reach elevated windows unless elevated=true. Requires Vestigo:Input:AllowInput. Interactive session only.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `actions` | `List<InputActionSpec>` | yes |  | Actions to perform in order. |
+| `captureId` | `string` | no | `null` | captureId that element ids and x,y refer to. |
+| `focusWindow` | `string` | no | `null` | Hex window handle from list_windows to focus first. |
+| `observe` | `bool` | no | `false` | Return a fresh inspect_screen result after the actions. |
+| `observeDelayMs` | `int` | no | `300` | Milliseconds to wait before observing, 0 to 5000. Default 300. |
+| `observeWindowHandle` | `string` | no | `null` | Observe only: window handle to inspect instead of the whole desktop. |
+| `imageMode` | `string` | no | `annotated` | Observe only: 'annotated' (default), 'raw' or 'none'. |
+| `maxEdge` | `int` | no | `1280` | Observe only: longest edge of the returned image, 320 to 3840. |
+| `elevated` | `bool` | no | `false` | Use the elevated token, needed to reach elevated windows. |
 
 ## `set_default_audio_endpoint`
 

@@ -649,7 +649,7 @@ public static class ScreenCapture
     private static IReadOnlyList<string> Intersecting(IReadOnlyList<DisplayInfo> displays, DesktopRect bounds) =>
         displays.Where(display => bounds.Intersects(display.Bounds)).Select(display => display.GdiDeviceName).ToList();
 
-    private static unsafe bool IsInputDesktopAvailable(out string? error)
+    internal static unsafe bool IsInputDesktopAvailable(out string? error)
     {
         error = null;
         HDESK input = Win32PInvoke.OpenInputDesktop(0, false, (DESKTOP_ACCESS_FLAGS)DesktopReadObjects);

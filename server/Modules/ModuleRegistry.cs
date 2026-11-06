@@ -25,6 +25,7 @@ public static class ModuleRegistry
         new LogsModule(),
         new EventLogModule(),
         new DesktopModule(),
+        new InputModule(),
         new AudioModule(),
         new DebugOutputModule(),
         new DiagnosticsModule(),
@@ -96,6 +97,11 @@ public static class ModuleRegistry
         if (options.Software.AllowUninstall && enabled.Any(module => module.Name == "Software"))
         {
             capabilities.Add("Software uninstall");
+        }
+
+        if (options.Input.AllowInput && enabled.Any(module => module.Name == "Input"))
+        {
+            capabilities.Add("Input injection (mouse and keyboard as the console user)");
         }
 
         if (options.ScheduledTasks.AllowChanges && enabled.Any(module => module.Name == "ScheduledTasks"))

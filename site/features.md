@@ -51,6 +51,13 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <h2>Desktop and screenshots</h2>
     <p>List windows and displays on the console user's desktop, including titles, bounds, and monitor topology. Screenshots stay off until <code>Desktop:AllowScreenshots</code> is true. Capture the virtual screen, one display, one window, or a rectangle, and optionally save a PNG into a write root.</p>
     <p>The lock screen and UAC secure desktop return <code>desktop_unavailable</code>. Some GPU or DRM windows capture black.</p>
+    <p><code>inspect_screen</code> and <code>find_on_screen</code> go further: they return an annotated image with numbered boxes plus a text element list built from UI Automation, Windows OCR and OpenCV, so an agent can act on it even without seeing the image. They share the screenshot gate.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Input gated</span></p>
+    <h2>Mouse and keyboard input</h2>
+    <p>Inject mouse movement, clicks, scrolling, drags, typing and key chords as the console user, by element id or by coordinates from an <code>inspect_screen</code> capture. One call can act and then return a fresh view. Stays off until <code>Input:AllowInput</code> is true.</p>
+    <p>Input cannot reach the secure desktop (UAC prompts, lock screen) and needs <code>elevated</code> for elevated windows. This is administrator-equivalent when an elevated window is open.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Default switch gated</span></p>
