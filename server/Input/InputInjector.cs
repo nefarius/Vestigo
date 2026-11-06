@@ -93,9 +93,6 @@ public static class InputInjector
             PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
         }
 
-        // A synthetic Alt tap lifts the foreground lock so SetForegroundWindow is honoured.
-        _ = SendKeys([new KeyStroke((ushort)VIRTUAL_KEY.VK_MENU, false)], release: false);
-        _ = SendKeys([new KeyStroke((ushort)VIRTUAL_KEY.VK_MENU, false)], release: true);
         PInvoke.SetForegroundWindow(hwnd);
         Thread.Sleep(120);
         return PInvoke.GetForegroundWindow() == hwnd
