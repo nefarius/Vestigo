@@ -45,11 +45,18 @@ public static class OcrReader
             using SoftwareBitmap bitmap = decoder.GetSoftwareBitmapAsync().AsTask().GetAwaiter().GetResult();
             OcrResult recognized = engine.RecognizeAsync(bitmap).AsTask().GetAwaiter().GetResult();
             List<ScreenElement> lines = [];
+            bool truncated = false;
             foreach (OcrLine line in recognized.Lines)
             {
-                if (lines.Count >= MaxLines || string.IsNullOrWhiteSpace(line.Text) || line.Words.Count == 0)
+                if (string.IsNullOrWhiteSpace(line.Text) || line.Words.Count == 0)
                 {
                     continue;
+                }
+
+                if (lines.Count >= MaxLines)
+                {
+                    truncated = true;
+                    break;
                 }
 
                 double left = line.Words.Min(word => word.BoundingRect.Left);
@@ -70,7 +77,7 @@ public static class OcrReader
                         Math.Max(1, (int)Math.Ceiling(bottom - top)))));
             }
 
-            return (lines, "ok");
+            return (lines, truncated ? "truncated" : "ok");
         }
         catch (Exception ex) when (ex is COMException or InvalidOperationException or ArgumentException)
         {

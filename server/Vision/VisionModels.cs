@@ -31,7 +31,7 @@ public sealed record ScreenElement(
 
 /// <summary>Helper output of <c>inspect-screen</c>: the full capture plus UI Automation and OCR elements.</summary>
 /// <param name="Capture">Capture with <c>FullPngBase64</c> set. Element boxes are physical pixels.</param>
-/// <param name="OcrStatus"><c>ok</c>, <c>skipped</c>, or an <c>ocr_unavailable</c> reason.</param>
+/// <param name="OcrStatus"><c>ok</c>, <c>skipped</c>, <c>truncated</c>, or an <c>ocr_unavailable</c> reason.</param>
 /// <param name="UiaStatus"><c>ok</c>, <c>skipped</c>, <c>truncated</c>, or a failure reason.</param>
 public sealed record InspectCaptureResult(
     ScreenCaptureResult Capture,
