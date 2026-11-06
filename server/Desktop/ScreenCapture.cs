@@ -649,7 +649,11 @@ public static class ScreenCapture
     private static IReadOnlyList<string> Intersecting(IReadOnlyList<DisplayInfo> displays, DesktopRect bounds) =>
         displays.Where(display => bounds.Intersects(display.Bounds)).Select(display => display.GdiDeviceName).ToList();
 
-    private static unsafe bool IsInputDesktopAvailable(out string? error)
+    /// <summary>
+    ///     Checks that the input desktop is this session's default desktop. With <paramref name="requireDesktopNames" />
+    ///     unreadable desktop names count as unavailable, which input injection needs; screenshots tolerate them.
+    /// </summary>
+    internal static unsafe bool IsInputDesktopAvailable(out string? error, bool requireDesktopNames = false)
     {
         error = null;
         HDESK input = Win32PInvoke.OpenInputDesktop(0, false, (DESKTOP_ACCESS_FLAGS)DesktopReadObjects);
@@ -664,6 +668,12 @@ public static class ScreenCapture
             string? inputName = DesktopName((nint)input.Value);
             HDESK current = Win32PInvoke.GetThreadDesktop(Win32PInvoke.GetCurrentThreadId());
             string? currentName = current.IsNull ? null : DesktopName((nint)current.Value);
+            if (requireDesktopNames && (string.IsNullOrEmpty(inputName) || string.IsNullOrEmpty(currentName)))
+            {
+                error = "The input desktop could not be identified, so input was not sent.";
+                return false;
+            }
+
             if (!string.IsNullOrEmpty(inputName) &&
                 !string.IsNullOrEmpty(currentName) &&
                 !string.Equals(inputName, currentName, StringComparison.OrdinalIgnoreCase))

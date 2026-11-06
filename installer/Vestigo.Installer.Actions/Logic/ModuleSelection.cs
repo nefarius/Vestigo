@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Audio, DebugOutput, Diagnostics, and gated extras are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Input, InputInjection, Audio, DebugOutput, Diagnostics, and gated extras are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -81,6 +81,9 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowScreenshots</c>.</summary>
         public const string DesktopScreenshots = "DesktopScreenshots";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Input:AllowInput</c>.</summary>
+        public const string InputInjection = "InputInjection";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Diagnostics:AllowCaptureProbes</c>.</summary>
         public const string DiagnosticsCaptureProbes = "DiagnosticsCaptureProbes";
 
@@ -103,6 +106,7 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges"),
             new OptionToggle(UacChanges, "System", "AllowUacChanges"),
             new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots"),
+            new OptionToggle(InputInjection, "Input", "AllowInput"),
             new OptionToggle(DiagnosticsCaptureProbes, "Diagnostics", "AllowCaptureProbes"),
             new OptionToggle(DiagnosticsNetworkProbes, "Diagnostics", "AllowNetworkProbes"),
             new OptionToggle(DiagnosticsAudioPlayback, "Diagnostics", "AllowAudioPlayback"),
@@ -120,6 +124,8 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
             new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop. Screenshots are a separate child feature.", false, null),
             new ModuleDefinition(DesktopScreenshots, "Screenshots", "Allow capturing PNG screenshots of the console user's desktop, one display, one window, or a region (Vestigo:Desktop:AllowScreenshots). Discloses screen contents.", false, "Desktop"),
+            new ModuleDefinition("Input", "Input", "Inject mouse movement, clicks, scrolling, typing and key chords into the console user's session. Needs Desktop. Injection is a separate child feature.", false, "Desktop"),
+            new ModuleDefinition(InputInjection, "Allow input injection", "Allow send_input to act as the console user (Vestigo:Input:AllowInput). Anything on screen can be clicked or typed into. Administrator-equivalent when an elevated window is open.", false, "Input"),
             new ModuleDefinition("Audio", "Audio", "List audio playback and recording endpoints, volumes, sessions, and defaults. Optionally switch the default device.", false, null),
             new ModuleDefinition(AudioSetDefault, "Set default audio device", "Allow changing the default, multimedia, and communications audio devices (Vestigo:Audio:AllowSetDefault).", false, "Audio"),
             new ModuleDefinition("DebugOutput", "Debug output", "Capture and filter Win32 OutputDebugString messages through DebugViewConsole. Reads debug output from every session.", false, null),
@@ -249,7 +255,8 @@ namespace Vestigo.Installer.Actions.Logic
         /// </summary>
         public static bool PreservesExistingWhenUnselected(string name)
         {
-            return string.Equals(name, DesktopScreenshots, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(name, DesktopScreenshots, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, InputInjection, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

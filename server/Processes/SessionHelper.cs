@@ -23,6 +23,10 @@ public static partial class SessionHelper
 
     public const string CaptureScreenCommand = "capture-screen";
 
+    public const string InspectScreenCommand = "inspect-screen";
+
+    public const string SendInputCommand = "send-input";
+
     public const string ProbeCaptureCommand = "probe-capture";
 
     public const string ProbeAudioFormatCommand = "probe-audio-format";
@@ -37,7 +41,7 @@ public static partial class SessionHelper
     {
         if (args.Length < 2 || args[0] != Flag)
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}> ..." }, Json));
+            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}> ..." }, Json));
             return 2;
         }
 
@@ -49,6 +53,8 @@ public static partial class SessionHelper
             ListAudioCommand => RunListAudio(args),
             SetDefaultAudioCommand => RunSetDefaultAudio(args),
             CaptureScreenCommand => RunCaptureScreen(args),
+            InspectScreenCommand => RunInspectScreen(args),
+            SendInputCommand => RunSendInput(args),
             ProbeCaptureCommand => RunProbeCapture(args),
             ProbeAudioFormatCommand => RunProbeAudioFormat(args),
             _ => Reject($"Unknown session-helper command '{args[1]}'.")

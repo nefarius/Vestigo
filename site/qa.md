@@ -30,6 +30,15 @@ Use the Devices module when the case needs a driver stack, a filter, or a device
 
 The lock screen and UAC secure desktop fail with `desktop_unavailable`. A console user must be logged on.
 
+## Drive the UI
+
+1. Enable Desktop and Input, then set `Desktop:AllowScreenshots` and `Input:AllowInput` to true. Both are off by default.
+2. `inspect_screen` returns an annotated image, a numbered element list and a `captureId`.
+3. `send_input` with that `captureId` and an `elementId` (or `x`, `y` from the image) to click or type. Set `observe: true` to get the next view in the same call.
+4. `find_on_screen` locates text or an image template when the element list is not enough.
+
+Input cannot reach UAC prompts or the lock screen, and needs `elevated: true` for elevated windows.
+
 ## Query event logs
 
 1. `list_event_logs` to see which channels are enabled.
