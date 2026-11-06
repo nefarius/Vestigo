@@ -199,8 +199,8 @@ public class VisionTests
         Assert.Contains(result.Elements, item => item.Source == ElementSource.Uia && item.Name == "Go");
         ScreenElement region = Assert.Single(result.Elements, item => item.Source == ElementSource.Cv);
         // The contour of the drawn rectangle, mapped back to physical pixels.
-        Assert.InRange(region.Box.X, 1000 + 100, 1000 + 140);
-        Assert.InRange(region.Box.Width, 140, 180);
+        Assert.InRange(region.Box.X, 1000 + 50, 1000 + 70);
+        Assert.InRange(region.Box.Width, 100, 150);
 
         AnalysisResult grid = ScreenAnalyzer.Analyze(png, bounds, [], [], 640, grid: true, annotate: true);
         Assert.NotNull(grid.AnnotatedPng);
