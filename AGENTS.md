@@ -24,9 +24,17 @@ apply to Codex, even if the client does not automatically load `.mdc` files:
 - `.cursor/rules/feature-branch-required.mdc`
 - `.cursor/rules/vestigo-development.mdc`
 - `.cursor/rules/mcp-docs.mdc`
+- `.cursor/rules/windows-interop.mdc`
 
 Consume released NuGet packages, preserve package boundaries, confine client
 paths to configured roots, never log tokens, and save UTF-8 without BOM.
+
+## Windows native interop
+
+Prefer CsWin32-generated APIs, COM interfaces, structs, enums and constants from
+`server/NativeMethods.txt`. Before adding handwritten interop, test the pinned
+generator's support. Document any actual metadata/generation gap beside the
+fallback; preserve native ownership, bounds, errors and DLL search restrictions.
 
 ## New MCP tools and modules
 
