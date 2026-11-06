@@ -15,7 +15,8 @@ public sealed record PerceptionRequest(
     bool Grid,
     bool Annotate,
     string? DiffAgainst,
-    bool Elevated);
+    bool Elevated,
+    Func<ScreenElement, bool>? Prioritize = null);
 
 /// <summary>A finished inspection: the cached record, the annotated or raw image, and how each source fared.</summary>
 public sealed record PerceptionOutcome(
@@ -24,7 +25,10 @@ public sealed record PerceptionOutcome(
     byte[]? Image,
     string UiaStatus,
     string OcrStatus,
-    DiffResult? Diff);
+    DiffResult? Diff,
+    SourceCounts Candidates,
+    SourceCounts Omitted,
+    int PriorityOmitted);
 
 /// <summary>Runs the helper's capture, UI Automation and OCR, then the OpenCV pipeline, and caches the result.</summary>
 public sealed class PerceptionService(
@@ -38,6 +42,7 @@ public sealed class PerceptionService(
 
     public CaptureCache Cache { get; } = cache;
 
+    /// <summary>Captures the screen, merges UI Automation and OCR, and caches the numbered elements.</summary>
     /// <param name="extraElements">
     ///     Optional extra elements (for example template matches) computed from the analyzed image. They are added
     ///     after merging, so they get ids that follow the merged list. Boxes are physical pixels.
@@ -101,7 +106,8 @@ public sealed class PerceptionService(
                     value.Elements.Where(item => item.Source == ElementSource.Ocr).ToList(),
                     request.MaxEdge,
                     request.Grid,
-                    request.Annotate),
+                    request.Annotate,
+                    request.Prioritize),
                 cancellationToken).ConfigureAwait(false);
             if (previous is not null)
             {
@@ -138,13 +144,16 @@ public sealed class PerceptionService(
 
         CaptureRecord record = Cache.Add(value.Capture.Bounds, analysis.ImageSize, elements, analysis.WorkingPng);
         logger?.LogInformation(
-            "Inspect target={Target} image={Width}x{Height} elements={Elements} uia={Uia} ocr={Ocr} durationMs={Ms}",
+            "Inspect target={Target} image={Width}x{Height} elements={Elements} uia={Uia} ocr={Ocr} omittedUia={OmittedUia} omittedOcr={OmittedOcr} omittedCv={OmittedCv} durationMs={Ms}",
             value.Capture.Target,
             analysis.ImageSize.Width,
             analysis.ImageSize.Height,
             elements.Count,
             value.UiaStatus,
             value.OcrStatus,
+            analysis.Omitted.Uia,
+            analysis.Omitted.Ocr,
+            analysis.Omitted.Cv,
             clock.ElapsedMilliseconds);
 
         byte[]? image = request.Annotate || request.Grid ? analysis.AnnotatedPng : null;
@@ -154,6 +163,9 @@ public sealed class PerceptionService(
             image,
             value.UiaStatus,
             value.OcrStatus,
-            diff));
+            diff,
+            analysis.Candidates,
+            analysis.Omitted,
+            analysis.PriorityOmitted));
     }
 }

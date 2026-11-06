@@ -36,7 +36,10 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         + "Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an "
         + "elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId "
         + "(same target and maxEdge) and lists the regions that changed. imageMode 'annotated' (default), 'raw' or 'none' controls the image. "
-        + "grid:true draws a labelled coordinate grid instead of boxes. Takes the same targets as take_screenshot. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.")]
+        + "grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, "
+        + "with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). "
+        + "truncated, candidates and omitted report when collected elements were left out. Takes the same targets as take_screenshot. "
+        + "Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.")]
     public async Task<CallToolResult> InspectScreen(
         [Description("'desktop' (default), 'display', 'window' or 'region'.")] string target = ScreenCaptureTarget.Desktop,
         [Description("GDI device name such as \\\\.\\DISPLAY2, or 'primary'. Required for target 'display'.")] string? display = null,
@@ -77,7 +80,9 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
 
     [McpServerTool(Name = "find_on_screen", ReadOnly = true, Destructive = false)]
     [Description(
-        "Finds things on the console user's screen. text matches UI Automation names and OCR text (case-insensitive substring). "
+        "Finds things on the console user's screen. text matches UI Automation names and OCR text (case-insensitive substring) "
+        + "across every collected candidate, before the 150-element cap, so a full UI Automation list cannot hide an OCR match. "
+        + "matchesTruncated is true when the matches themselves exceed that cap. "
         + "template matches an image with multi-scale OpenCV template matching, from a PNG or JPEG at root:relative\\file.png (needs Read access) or "
         + "from a crop of an earlier capture (templateCaptureId with templateX, templateY, templateWidth, templateHeight in that capture's image pixels). "
         + "Give text, a template, or both. Returns matches with boxes in image pixels and an elementId on the new captureId, so send_input can click a match. "
@@ -143,8 +148,18 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
 
         string mode = prepared.Value.Mode;
         IReadOnlyList<TemplateMatch> templateMatches = [];
+        string? query = string.IsNullOrWhiteSpace(text) ? null : text;
         OperationResult<PerceptionOutcome> outcome = await perception.InspectAsync(
-            new PerceptionRequest(prepared.Value.Request, true, !string.IsNullOrWhiteSpace(text), maxEdge, false, mode == ImageAnnotated, null, elevated),
+            new PerceptionRequest(
+                prepared.Value.Request,
+                true,
+                query is not null,
+                maxEdge,
+                false,
+                mode == ImageAnnotated,
+                null,
+                elevated,
+                query is null ? null : element => MatchesText(element, query)),
             templatePng is null
                 ? null
                 : (analysis, bounds) =>
@@ -178,9 +193,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         {
             foreach (ScreenElement element in value.Record.Elements.Where(item => item.Role != "template-match"))
             {
-                bool hit = (element.Name?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
-                           || (element.Text?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
-                if (hit)
+                if (MatchesText(element, text))
                 {
                     matches.Add(MatchNode("text", element, value.Record, null));
                 }
@@ -198,6 +211,11 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         }
 
         JsonObject extra = new() { ["matchCount"] = matches.Count, ["matches"] = new JsonArray(matches.Select(node => (JsonNode)node).ToArray()) };
+        if (value.PriorityOmitted > 0)
+        {
+            extra["matchesTruncated"] = true;
+        }
+
         return Describe(value, mode, extra, includeElements: false);
     }
 
@@ -333,6 +351,11 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         }
     }
 
+    /// <summary>True when <paramref name="text" /> occurs in the element's name or OCR text.</summary>
+    private static bool MatchesText(ScreenElement element, string text) =>
+        (element.Name?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (element.Text?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
+
     private static JsonObject MatchNode(string kind, ScreenElement element, CaptureRecord record, double? confidence)
     {
         JsonObject node = new()
@@ -359,6 +382,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         return node;
     }
 
+    /// <summary>Builds the JSON result for an inspection, including whether the element cap left anything out.</summary>
     internal static CallToolResult Describe(PerceptionOutcome outcome, string imageMode, JsonObject? extra, bool includeElements = true)
     {
         CaptureRecord record = outcome.Record;
@@ -372,6 +396,9 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             ["windowTitle"] = outcome.Capture.WindowTitle,
             ["uia"] = outcome.UiaStatus,
             ["ocr"] = outcome.OcrStatus,
+            ["truncated"] = outcome.Omitted.Total > 0,
+            ["candidates"] = SourceCountsNode(outcome.Candidates),
+            ["omitted"] = SourceCountsNode(outcome.Omitted),
             ["validForSeconds"] = (int)CaptureCache.DefaultTtl.TotalSeconds
         };
         if (includeElements)
@@ -411,6 +438,14 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         content.Add(new TextContentBlock { Text = node.ToJsonString(VisionJson.Options) });
         return new CallToolResult { Content = content };
     }
+
+    /// <summary>Per-source counts for the inspection JSON.</summary>
+    private static JsonObject SourceCountsNode(SourceCounts counts) => new()
+    {
+        ["uia"] = counts.Uia,
+        ["ocr"] = counts.Ocr,
+        ["cv"] = counts.Cv
+    };
 
     private static OperationResult<(ScreenCaptureRequest, string)> Invalid(string message) =>
         OperationResult<(ScreenCaptureRequest, string)>.Fail("invalid_request", message);

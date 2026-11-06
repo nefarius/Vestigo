@@ -58,20 +58,125 @@ public class VisionTests
         ScreenElement button = Uia("button", "Save", new DesktopRect(200, 10, 80, 30));
         ScreenElement duplicate = Uia("button", "Save", new DesktopRect(200, 10, 80, 30));
         ScreenElement label = Uia("text", "Name", new DesktopRect(10, 12, 60, 20));
+        ScreenElement document = Uia("document", "Artifact Browser", new DesktopRect(0, 60, 500, 80));
         ScreenElement coveredText = Ocr("Save", new DesktopRect(210, 15, 50, 18));
+        ScreenElement pageText = Ocr("Download", new DesktopRect(20, 90, 80, 14));
         ScreenElement freeText = Ocr("Footer text", new DesktopRect(10, 400, 100, 16));
         ScreenElement coveredRegion = Cv(new DesktopRect(195, 5, 95, 40));
         ScreenElement freeRegion = Cv(new DesktopRect(300, 200, 50, 50));
 
-        IReadOnlyList<ScreenElement> merged = ElementMerger.Merge([button, duplicate, label], [coveredText, freeText], [coveredRegion, freeRegion]);
+        MergeResult merged = ElementMerger.Merge(
+            [button, duplicate, label, document],
+            [coveredText, pageText, freeText],
+            [coveredRegion, freeRegion]);
+        IReadOnlyList<ScreenElement> elements = merged.Elements;
 
-        Assert.Equal(4, merged.Count);
-        Assert.Equal([1, 2, 3, 4], merged.Select(item => item.Id).ToArray());
-        Assert.Equal(["Save", "Name"], merged.Take(2).Select(item => item.Name).ToArray());
-        Assert.DoesNotContain(merged, item => item.Text == "Save");
-        Assert.Contains(merged, item => item.Text == "Footer text");
-        Assert.Single(merged, item => item.Source == ElementSource.Cv);
-        Assert.Equal(ElementSource.Ocr, merged[^1].Source);
+        Assert.Equal(6, elements.Count);
+        Assert.Equal([1, 2, 3, 4, 5, 6], elements.Select(item => item.Id).ToArray());
+        Assert.Equal(["Save", "Name", "Artifact Browser"], elements.Where(item => item.Source == ElementSource.Uia).Select(item => item.Name).ToArray());
+        Assert.DoesNotContain(elements, item => item.Text == "Save");
+        Assert.Contains(elements, item => item.Text == "Download");
+        Assert.Contains(elements, item => item.Text == "Footer text");
+        Assert.Single(elements, item => item.Source == ElementSource.Cv);
+        Assert.Equal(ElementSource.Ocr, elements[^1].Source);
+        Assert.Equal(0, merged.Omitted.Total);
+    }
+
+    [Fact]
+    public void ElementMerger_KeepsPriorityOcrHiddenByAShorterName()
+    {
+        ScreenElement button = Uia("button", "Download", new DesktopRect(0, 0, 200, 40));
+        ScreenElement line = Ocr("Download the nightly build", new DesktopRect(10, 8, 160, 16));
+
+        MergeResult plain = ElementMerger.Merge([button], [line], [], maxElements: 10);
+        Assert.DoesNotContain(plain.Elements, item => item.Text == "Download the nightly build");
+
+        MergeResult searched = ElementMerger.Merge(
+            [button],
+            [line],
+            [],
+            maxElements: 10,
+            priority: item => Matches(item, "nightly"));
+        Assert.Contains(searched.Elements, item => item.Text == "Download the nightly build");
+        Assert.Contains(searched.Elements, item => item.Name == "Download");
+        Assert.Equal(0, searched.Omitted.Total);
+
+        MergeResult both = ElementMerger.Merge([button], [line], [], maxElements: 10, priority: MatchesDownload);
+        Assert.Contains(both.Elements, item => item.Name == "Download");
+        Assert.DoesNotContain(both.Elements, item => item.Source == ElementSource.Ocr);
+    }
+
+    [Fact]
+    public void ElementMerger_KeepsRecognizedTextWhenUiAutomationFillsTheCap()
+    {
+        List<ScreenElement> controls = Enumerable.Range(0, 200)
+            .Select(index => Uia("listitem", "Item " + index, new DesktopRect(0, index * 24, 40, 20)))
+            .ToList();
+        ScreenElement download = Ocr("Download", new DesktopRect(10, 200 * 24, 80, 14));
+
+        MergeResult merged = ElementMerger.Merge(controls, [download], []);
+
+        Assert.Equal(ElementMerger.MaxElements, merged.Elements.Count);
+        Assert.Contains(merged.Elements, item => item.Text == "Download");
+        Assert.Equal(200, merged.Candidates.Uia);
+        Assert.Equal(1, merged.Candidates.Ocr);
+        Assert.Equal(51, merged.Omitted.Uia);
+        Assert.Equal(0, merged.Omitted.Ocr);
+
+        List<ScreenElement> lines = Enumerable.Range(0, 200)
+            .Select(index => Ocr("Line " + index, new DesktopRect(100, index * 24, 40, 14)))
+            .Append(download)
+            .ToList();
+        MergeResult crowded = ElementMerger.Merge(controls, lines, [], maxElements: 10);
+        Assert.DoesNotContain(crowded.Elements, item => item.Text == "Download");
+
+        MergeResult prioritized = ElementMerger.Merge(controls, lines, [], maxElements: 10, priority: MatchesDownload);
+        Assert.Contains(prioritized.Elements, item => item.Text == "Download");
+        Assert.Equal(0, prioritized.PriorityOmitted);
+    }
+
+    [Fact]
+    public void ElementMerger_SplitsTheCapBetweenSources()
+    {
+        List<ScreenElement> uia = Enumerable.Range(0, 200)
+            .Select(index => Uia("button", "B" + index, new DesktopRect(0, index * 20, 10, 10)))
+            .ToList();
+        List<ScreenElement> ocr = Enumerable.Range(0, 200)
+            .Select(index => Ocr("T" + index, new DesktopRect(40, index * 20, 10, 10)))
+            .ToList();
+
+        MergeResult even = ElementMerger.Merge(Enumerable.Reverse(uia), Enumerable.Reverse(ocr), [], maxElements: 10);
+
+        Assert.Equal(["B0", "B1", "B2", "B3", "B4"], even.Elements.Where(item => item.Source == ElementSource.Uia).Select(item => item.Name).ToArray());
+        Assert.Equal(["T0", "T1", "T2", "T3", "T4"], even.Elements.Where(item => item.Source == ElementSource.Ocr).Select(item => item.Text).ToArray());
+        Assert.Equal(195, even.Omitted.Uia);
+        Assert.Equal(195, even.Omitted.Ocr);
+
+        MergeResult passed = ElementMerger.Merge(uia.Take(2), ocr, [], maxElements: 10);
+        Assert.Equal(2, passed.Elements.Count(item => item.Source == ElementSource.Uia));
+        Assert.Equal(8, passed.Elements.Count(item => item.Source == ElementSource.Ocr));
+
+        List<ScreenElement> regions = Enumerable.Range(0, 6).Select(index => Cv(new DesktopRect(80, index * 20, 10, 10))).ToList();
+        MergeResult withRegions = ElementMerger.Merge(uia.Take(1), ocr.Take(1), regions, maxElements: 6);
+        Assert.Equal(1, withRegions.Elements.Count(item => item.Source == ElementSource.Uia));
+        Assert.Equal(1, withRegions.Elements.Count(item => item.Source == ElementSource.Ocr));
+        Assert.Equal(4, withRegions.Elements.Count(item => item.Source == ElementSource.Cv));
+        Assert.Equal(2, withRegions.Omitted.Cv);
+    }
+
+    [Fact]
+    public void ElementMerger_TruncatesPriorityMatchesInReadingOrder()
+    {
+        List<ScreenElement> lines = Enumerable.Range(0, 8)
+            .Select(index => Ocr("Hit " + index, new DesktopRect(0, (7 - index) * 20, 30, 12)))
+            .ToList();
+
+        MergeResult merged = ElementMerger.Merge([], lines, [], maxElements: 3, priority: item => item.Text!.StartsWith("Hit", StringComparison.Ordinal));
+
+        Assert.Equal(["Hit 7", "Hit 6", "Hit 5"], merged.Elements.Select(item => item.Text).ToArray());
+        Assert.Equal(5, merged.PriorityOmitted);
+        Assert.Equal(5, merged.Omitted.Ocr);
+        Assert.Equal(8, merged.Candidates.Ocr);
     }
 
     [Fact]
@@ -79,9 +184,13 @@ public class VisionTests
     {
         List<ScreenElement> many = Enumerable.Range(0, 20).Select(index => Uia("button", "B" + index, new DesktopRect(index * 30, 0, 20, 20))).ToList();
 
-        IReadOnlyList<ScreenElement> merged = ElementMerger.Merge(many, [], [], maxElements: 5);
+        MergeResult merged = ElementMerger.Merge(Enumerable.Reverse(many), [], [], maxElements: 5);
 
-        Assert.Equal(5, merged.Count);
+        Assert.Equal(["B0", "B1", "B2", "B3", "B4"], merged.Elements.Select(item => item.Name).ToArray());
+        Assert.Equal(20, merged.Candidates.Uia);
+        Assert.Equal(15, merged.Omitted.Uia);
+        Assert.Equal(0, merged.Omitted.Ocr);
+        Assert.Equal(0, merged.Omitted.Cv);
     }
 
     [Fact]
@@ -162,7 +271,10 @@ public class VisionTests
             [9, 9],
             "ok",
             "ok",
-            null);
+            null,
+            new SourceCounts(1, 0, 0),
+            new SourceCounts(0, 0, 0),
+            0);
 
         CallToolResult annotated = PerceptionTools.Describe(outcome, PerceptionTools.ImageAnnotated, null);
         Assert.Equal(2, annotated.Content.Count);
@@ -170,6 +282,9 @@ public class VisionTests
         using JsonDocument document = JsonDocument.Parse(Assert.IsType<TextContentBlock>(annotated.Content[1]).Text);
         JsonElement element = document.RootElement.GetProperty("elements")[0];
         Assert.Equal(record.Id, document.RootElement.GetProperty("captureId").GetString());
+        Assert.False(document.RootElement.GetProperty("truncated").GetBoolean());
+        Assert.Equal(1, document.RootElement.GetProperty("candidates").GetProperty("uia").GetInt32());
+        Assert.Equal(0, document.RootElement.GetProperty("omitted").GetProperty("ocr").GetInt32());
         Assert.Equal("OK", element.GetProperty("name").GetString());
         // The client sees the image, so boxes are in image pixels (half of the physical ones).
         Assert.Equal(10, element.GetProperty("box").GetProperty("x").GetInt32());
@@ -183,6 +298,33 @@ public class VisionTests
     }
 
     [Fact]
+    public void Describe_ReportsOmittedElements()
+    {
+        CaptureCache cache = new();
+        CaptureRecord record = cache.Add(new DesktopRect(0, 0, 10, 10), new DesktopSize(10, 10), [], [1]);
+        PerceptionOutcome outcome = new(
+            record,
+            new ScreenCaptureResult(ScreenCaptureTarget.Desktop, record.Bounds, new DesktopSize(10, 10), null, 96, ["a"], null, null, null, null, 1),
+            null,
+            "truncated",
+            "ok",
+            null,
+            new SourceCounts(180, 40, 3),
+            new SourceCounts(30, 0, 3),
+            0);
+
+        CallToolResult result = PerceptionTools.Describe(outcome, PerceptionTools.ImageNone, null);
+        using JsonDocument document = JsonDocument.Parse(Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text);
+        Assert.True(document.RootElement.GetProperty("truncated").GetBoolean());
+        Assert.Equal(180, document.RootElement.GetProperty("candidates").GetProperty("uia").GetInt32());
+        Assert.Equal(40, document.RootElement.GetProperty("candidates").GetProperty("ocr").GetInt32());
+        Assert.Equal(3, document.RootElement.GetProperty("candidates").GetProperty("cv").GetInt32());
+        Assert.Equal(30, document.RootElement.GetProperty("omitted").GetProperty("uia").GetInt32());
+        Assert.Equal(0, document.RootElement.GetProperty("omitted").GetProperty("ocr").GetInt32());
+        Assert.Equal(3, document.RootElement.GetProperty("omitted").GetProperty("cv").GetInt32());
+    }
+
+    [Fact]
     public void ScreenAnalyzer_AnnotatesAndFindsRegions()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "The OpenCvSharp native runtime in this repository is Windows-only.");
@@ -191,7 +333,7 @@ public class VisionTests
         DesktopRect bounds = new(1000, 500, 640, 480);
         ScreenElement uia = Uia("button", "Go", new DesktopRect(1000 + 300, 500 + 300, 80, 30));
 
-        AnalysisResult result = ScreenAnalyzer.Analyze(png, bounds, [uia], [], 320, grid: false, annotate: true);
+        AnalysisResult result = ScreenAnalyzer.Analyze(png, bounds, [uia], [], 320, grid: false, annotate: true, priority: null);
 
         Assert.Equal(new DesktopSize(320, 240), result.ImageSize);
         Assert.NotNull(result.AnnotatedPng);
@@ -202,9 +344,9 @@ public class VisionTests
         Assert.InRange(region.Box.X, 1000 + 50, 1000 + 70);
         Assert.InRange(region.Box.Width, 100, 150);
 
-        AnalysisResult grid = ScreenAnalyzer.Analyze(png, bounds, [], [], 640, grid: true, annotate: true);
+        AnalysisResult grid = ScreenAnalyzer.Analyze(png, bounds, [], [], 640, grid: true, annotate: true, priority: null);
         Assert.NotNull(grid.AnnotatedPng);
-        AnalysisResult plain = ScreenAnalyzer.Analyze(png, bounds, [], [], 640, grid: false, annotate: false);
+        AnalysisResult plain = ScreenAnalyzer.Analyze(png, bounds, [], [], 640, grid: false, annotate: false, priority: null);
         Assert.Null(plain.AnnotatedPng);
     }
 
@@ -253,6 +395,12 @@ public class VisionTests
         PerceptionService service = new(launcher, new SessionHelperClient(launcher), new CaptureCache(), options);
         return new PerceptionTools(service, options, new RootPolicy(options));
     }
+
+    private static bool MatchesDownload(ScreenElement element) => Matches(element, "download");
+
+    private static bool Matches(ScreenElement element, string text) =>
+        (element.Name?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (element.Text?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
 
     private static ScreenElement Uia(string role, string name, DesktopRect box) => new(0, ElementSource.Uia, role, name, null, box);
 

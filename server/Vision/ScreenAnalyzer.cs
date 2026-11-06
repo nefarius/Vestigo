@@ -9,7 +9,10 @@ public sealed record AnalysisResult(
     IReadOnlyList<ScreenElement> Elements,
     DesktopSize ImageSize,
     byte[] WorkingPng,
-    byte[]? AnnotatedPng);
+    byte[]? AnnotatedPng,
+    SourceCounts Candidates,
+    SourceCounts Omitted,
+    int PriorityOmitted);
 
 /// <summary>OpenCV image work: contour fallback, set-of-marks and grid annotation, diff, template matching.</summary>
 public static class ScreenAnalyzer
@@ -26,6 +29,7 @@ public static class ScreenAnalyzer
 
     public const int MaxTemplateMatches = 5;
 
+    /// <summary>Downscales the capture, merges the element lists, and draws the annotated or grid image.</summary>
     public static AnalysisResult Analyze(
         byte[] fullPng,
         DesktopRect bounds,
@@ -33,7 +37,8 @@ public static class ScreenAnalyzer
         IReadOnlyList<ScreenElement> ocr,
         int maxEdge,
         bool grid,
-        bool annotate)
+        bool annotate,
+        Func<ScreenElement, bool>? priority)
     {
         using Mat full = Decode(fullPng);
         using Mat working = Downscale(full, maxEdge);
@@ -56,7 +61,7 @@ public static class ScreenAnalyzer
                     Math.Max(1, (int)Math.Round(rect.Height * sy)))));
         }
 
-        IReadOnlyList<ScreenElement> merged = ElementMerger.Merge(uia, ocr, cv);
+        MergeResult merged = ElementMerger.Merge(uia, ocr, cv, priority: priority);
         byte[] workingPng = Encode(working);
         byte[]? annotatedPng = null;
         if (annotate)
@@ -68,13 +73,20 @@ public static class ScreenAnalyzer
             }
             else
             {
-                DrawMarks(canvas, merged, bounds);
+                DrawMarks(canvas, merged.Elements, bounds);
             }
 
             annotatedPng = Encode(canvas);
         }
 
-        return new AnalysisResult(merged, new DesktopSize(working.Width, working.Height), workingPng, annotatedPng);
+        return new AnalysisResult(
+            merged.Elements,
+            new DesktopSize(working.Width, working.Height),
+            workingPng,
+            annotatedPng,
+            merged.Candidates,
+            merged.Omitted,
+            merged.PriorityOmitted);
     }
 
     /// <summary>Returns regions that changed between two same-sized PNG images, in image pixels.</summary>
