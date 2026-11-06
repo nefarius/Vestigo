@@ -83,16 +83,24 @@ The service context does not see user-session audio. Per-app overrides in Settin
 4. `list_windows_updates` starts an offline inventory job. `list_servicing_packages`
    starts a DISM package inventory job; it normally needs elevation. Use
    `wait_job` and paged `read_job_output` to read their JSON results. WUA history
-   may have been reset and is not a complete installed-package inventory.
+   may have been reset and is not a complete installed-package inventory. Run
+   the inventory jobs one at a time: wait for the first job to finish before
+   starting the next. If `wait_job` returns Running, continue waiting; its wait
+   timeout does not stop the job. A native diagnostic timeout can leave Windows
+   work running even after the job fails. Wait before retrying `servicing_busy`.
 5. `get_servicing_status` shows CBS and pending-file metadata without an integrity
    check. `get_update_storage_status` shows volume space and fixed-file metadata,
    without recursive cache totals or a WinSxS allocation estimate.
 
-`get_servicing_logs` needs a Read root covering the fixed logs under
-`%windir%\Logs`; no root is granted automatically. `get_file_lockers` needs the
-selected file in a Read root and returns best-effort Restart Manager results,
-without stopping processes. Raw registry queue paths can be returned outside
-Read roots, but queued files are not opened. Read [Security](security.md) first.
+WindowsServicing adds no roots of its own. Check the existing roots before
+collecting logs: a fresh MSI install defaults to FixedVolumes with Read, Write
+and Execute access, so the paths may already be covered. Both
+`get_servicing_logs` and the log tails in `get_update_failure_details` need Read
+access to the fixed logs under `%windir%\Logs`. Add a Read root only if those
+paths are not already covered. `get_file_lockers` likewise needs the selected
+file in a Read root and returns best-effort Restart Manager results without
+stopping processes. Raw registry queue paths can be returned outside Read roots,
+but queued files are not opened. Read [Security](security.md) first.
 
 The module does not install updates, repair Windows, clear queues or reboot.
 Offline applicability work can still update WUA's cache or logs. Timeout or job

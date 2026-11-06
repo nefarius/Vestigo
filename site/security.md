@@ -54,7 +54,7 @@ software or users on the machine. Raw pending-file queue paths are returned even
 outside configured roots; queue inspection never opens those files.
 
 CBS/DISM log content and caller-selected file-locker queries require Read roots.
-No roots are added automatically. Logs can contain sensitive machine/user data.
+WindowsServicing adds no roots of its own; existing roots apply, including the fresh MSI default FixedVolumes roots. Logs can contain sensitive machine/user data.
 Failure evidence is bounded, and an unavailable source remains unknown or an
 explicit error. Empty results are not proof that servicing is healthy.
 
