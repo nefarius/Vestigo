@@ -46,6 +46,14 @@ Even after a module is on, these actions stay off until their own setting is tru
 
 Attaching to someone else's ETW session stays off until you list the session name in `AttachableSessions`.
 
+## Screen and input
+
+Screenshots, `inspect_screen`, and `find_on_screen` can disclose whatever is on the console user's screen. UI Automation names and OCR text come back as plain text, which is easier to copy out than pixels. Edit-control values are not read through UI Automation. Text that is visible can still be read by OCR.
+
+`send_input` acts as the console user. Anything on screen can be clicked or typed into. With `elevated: true`, that input is administrator-equivalent while an elevated window is open. Input cannot reach the secure desktop (UAC prompts, the lock screen, Ctrl+Alt+Del).
+
+The MSI preserves a hand-set `Input:AllowInput` on an unelevated upgrade when the Allow input injection feature stays unselected.
+
 ## Windows servicing data
 
 WindowsServicing is opt-in and requires Jobs. Enabling it without API tokens

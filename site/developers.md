@@ -54,6 +54,10 @@ There is no server push. Vestigo decodes into a spool; it does not record a raw 
 2. `start_debug_capture` with optional include and exclude filters for messages and process names.
 3. Follow with `read_debug_output` the same way you follow an ETW capture. Debugger-attached processes send output to the debugger instead of this capture.
 
+## Check the UI after a build
+
+Enable Desktop and Input, and turn on `Desktop:AllowScreenshots` and `Input:AllowInput`. `inspect_screen` returns an annotated image, a numbered element list, and a `captureId`. `send_input` with that `captureId` and an `elementId` clicks or types; `observe: true` returns the next view in the same call. The full walkthrough, including text and template search, is [Drive the UI](qa.md#drive-the-ui).
+
 ## Attach the remote debugger
 
 1. Enable RemoteDebugger, Processes, and Jobs.

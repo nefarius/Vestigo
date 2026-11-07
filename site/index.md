@@ -5,14 +5,14 @@ description: Vestigo is a Windows MCP server for driver and application developm
 
 # A Windows lab that an agent can operate
 
-Vestigo is a Windows MCP server for driver and application development. It runs as a Windows service and hosts a stateless Streamable HTTP endpoint at `/mcp`. A remote agent uses that endpoint to convert WPP traces, capture ETW live, move files, inspect the machine and Windows servicing state, and change the things a driver or QA lab actually needs changed.
+Vestigo is a Windows MCP server for driver and application development. It runs as a Windows service and hosts a stateless Streamable HTTP endpoint at `/mcp`. A remote agent uses that endpoint to convert WPP traces, capture ETW live, move files, inspect the machine and Windows servicing state, read and drive the desktop UI, and change the things a driver or QA lab actually needs changed.
 
 This booklet is for developers and QA personnel who will point an MCP client at a lab PC. The source repository is public. [Features](features.md) is the catalogue. [Developers](developers.md) and [QA](qa.md) are the two common workflows. [Security](security.md) is the short model you should read before binding anything beyond loopback.
 
 ## Who it is for
 
-- **Driver and application developers** who want an agent to install a build, start a WPP session, resolve PDBs, inspect a binary, read `OutputDebugString`, and attach Visual Studio's remote debugger.
-- **QA and test-rig operators** who want the same agent to install or uninstall a build, toggle devices, take a screenshot, query event logs, switch an audio endpoint, collect crash-report metadata, investigate Windows Update failures and pending reboot work, and pull logs and traces back as artifacts.
+- **Driver and application developers** who want an agent to install a build, start a WPP session, resolve PDBs, inspect a binary, inspect a window with UI Automation and OCR, read `OutputDebugString`, and attach Visual Studio's remote debugger.
+- **QA and test-rig operators** who want the same agent to install or uninstall a build, toggle devices, take a screenshot, inspect the screen with OCR and click or type through the UI, query event logs, switch an audio endpoint, collect crash-report metadata, investigate Windows Update failures and pending reboot work, and pull logs and traces back as artifacts.
 
 It is Windows only. There is no management UI: opening `/` in a browser shows connection instructions, and `/health` is an anonymous probe.
 
@@ -21,6 +21,10 @@ It is Windows only. There is no management UI: opening `/` in a browser shows co
 The client speaks MCP over Streamable HTTP at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is set, every `/mcp` call needs `Authorization: Bearer <token>`. File-transfer tools return short-lived, single-use `/files` URLs, so a client does not need the API token to fetch a screenshot or a converted trace.
 
 A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` from the repository uses loopback and no tokens until you add some.
+
+## Windows Update and servicing
+
+The opt-in WindowsServicing module adds read-only reboot signals, queued file operations, Windows Update inventory and history, CBS package state, bounded failure evidence, storage metadata, and file-locker inspection. It requires Jobs and is separate from Vestigo's own Updates module. See [the features](features.md) and [the QA walkthrough](qa.md#investigate-windows-update-and-servicing). It does not install or repair Windows updates, clear queues, or reboot the PC.
 
 ## Quick start
 
@@ -39,8 +43,3 @@ A fresh MSI install binds every interface and writes a generated bearer token. `
 The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopback still works on the same machine. Binding beyond loopback without tokens logs a startup warning. Traffic is plain HTTP; use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine.
 
 Installed MSI needs Windows 10 or later (x64; Windows 11 ARM64 through x64 emulation), the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this; on ARM64 these are the x64 runtimes under `%ProgramFiles%\dotnet\x64`), and an elevated service account for realtime ETW sessions and most mutating tools. When either runtime is missing, the installer stops and names that requirement.
-
-
-## Windows Update and servicing
-
-The opt-in WindowsServicing module adds read-only reboot signals, queued file operations, Windows Update inventory and history, CBS package state, bounded failure evidence, storage metadata, and file-locker inspection. It requires Jobs and is separate from Vestigo's own Updates module. See [the features](features.md) and [the QA walkthrough](qa.md#investigate-windows-update-and-servicing). It does not install or repair Windows updates, clear queues, or reboot the PC.

@@ -137,7 +137,8 @@ There is no recursive cache scan, reserved-storage measurement, low-space verdic
 or WinSxS allocation estimate: hard links make directory sums misleading.
 
 `get_file_lockers` resolves one existing file through a Read root before calling
-Restart Manager. It returns application/service names, PID, process start time,
+Restart Manager. A path that resolves but is not an existing file, such as a
+directory, fails with `not_a_file`. It returns application/service names, PID, process start time,
 session ID and reboot-reason flags. It retries list changes at most three times
 and caps native list allocation at 4,096 processes. An unstable or oversized list
 is explicitly truncated. Restart Manager APIs, process structures, session-key sizing and Windows error constants use CsWin32-generated bindings with System32-restricted imports. Restart Manager sessions always end; no shutdown or

@@ -51,13 +51,19 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <h2>Desktop and screenshots</h2>
     <p>List windows and displays on the console user's desktop, including titles, bounds, and monitor topology. Screenshots stay off until <code>Desktop:AllowScreenshots</code> is true. Capture the virtual screen, one display, one window, or a rectangle, and optionally save a PNG into a write root.</p>
     <p>The lock screen and UAC secure desktop return <code>desktop_unavailable</code>. Some GPU or DRM windows capture black.</p>
-    <p><code>inspect_screen</code> and <code>find_on_screen</code> go further: they return an annotated image with numbered boxes plus a text element list built from UI Automation, Windows OCR and OpenCV, so an agent can act on it even without seeing the image. They share the screenshot gate.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Desktop opt-in</span> <span class="pill gated">Screenshots gated</span></p>
+    <h2>Screen inspection (UI Automation, OCR, OpenCV)</h2>
+    <p><code>inspect_screen</code> describes the console user's screen for an agent that cannot see the image. It returns an annotated capture, a text element list, and a <code>captureId</code>. Numbered boxes are green for UI Automation, blue for Windows OCR, and red for OpenCV regions. UI Automation supplies names and roles and never reads edit-control values. OCR uses the console user's installed languages. OpenCV adds contour regions only where the other two found nothing.</p>
+    <p><code>diffAgainst</code> compares an earlier capture of the same target and size and reports the share of changed pixels and the regions that changed. <code>find_on_screen</code> locates text in element names and OCR, or matches a PNG or JPEG template from a Read root, or a crop of an earlier capture, at more than one scale.</p>
+    <p>Both tools share the screenshot gate. OCR needs an installed OCR language for the console user. Owner-drawn and game surfaces fall back to unnamed OpenCV regions. A <code>captureId</code> lasts about two minutes, and the server keeps at most eight.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Input gated</span></p>
     <h2>Mouse and keyboard input</h2>
-    <p>Inject mouse movement, clicks, scrolling, drags, typing and key chords as the console user, by element id or by coordinates from an <code>inspect_screen</code> capture. One call can act and then return a fresh view. Stays off until <code>Input:AllowInput</code> is true.</p>
-    <p>Input cannot reach the secure desktop (UAC prompts, lock screen) and needs <code>elevated</code> for elevated windows. This is administrator-equivalent when an elevated window is open.</p>
+    <p>Inject mouse movement, clicks, scrolling, drags, typing and key chords as the console user. Pass the <code>captureId</code> from <code>inspect_screen</code> with an <code>elementId</code>, or <code>x</code> and <code>y</code> in that image. <code>observe: true</code> waits, then returns a fresh <code>inspect_screen</code> result in the same call. The Input module needs Desktop, and input stays off until <code>Input:AllowInput</code> is true.</p>
+    <p>Input cannot reach the secure desktop (UAC prompts, the lock screen, Ctrl+Alt+Del). Elevated windows need <code>elevated: true</code>. That is administrator-equivalent while an elevated window is open, and Windows can still drop the input silently.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Default switch gated</span></p>
@@ -132,7 +138,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>Jobs</h2>
-    <p>Long work (process launch, silent uninstall, file fetch, remote-debugger install, process dumps, Windows update inventory and servicing-package inventory) returns a job id. <code>wait_job</code>, <code>read_job_output</code>, and <code>cancel_job</code> page the output inspect or cancel the job. Process jobs can stop their process tree; native servicing calls are not forcibly terminated.</p>
+    <p>Long work (process launch, silent uninstall, file fetch, remote-debugger install, process dumps, Windows update inventory and servicing-package inventory) returns a job id. <code>wait_job</code>, <code>read_job_output</code>, and <code>cancel_job</code> wait for, page the output of, or cancel a job. Process jobs can stop their process tree; native servicing calls are not forcibly terminated.</p>
     <p>Finished jobs are kept for a bounded retention period, then discarded.</p>
   </article>
   <article class="card">
