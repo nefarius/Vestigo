@@ -34,10 +34,10 @@ The lock screen and UAC secure desktop fail with `desktop_unavailable`. A consol
 
 1. Enable Desktop and Input, then set `Desktop:AllowScreenshots` and `Input:AllowInput` to true. Both are off by default.
 2. `inspect_screen` returns an annotated image, a numbered element list and a `captureId`.
-3. `send_input` with that `captureId` and an `elementId` (or `x`, `y` from the image) to click or type. Set `observe: true` to get the next view in the same call.
+3. `send_input` with that `captureId` and an `elementId` (or `x`, `y` from the image) clicks that point. A `type` action ignores `elementId` and sends text to the focused field, so click the field first. Set `observe: true` to add the next view to the same call when that capture succeeds. When the actions ran and the capture failed, the result has `performed` and `observeError` and no new view. Read those fields before calling again, because another call repeats the actions.
 4. `find_on_screen` locates text or an image template when the element list is not enough.
 
-Input cannot reach UAC prompts or the lock screen, and needs `elevated: true` for elevated windows.
+Input cannot reach a UAC prompt on the secure desktop, the lock screen, or Ctrl+Alt+Del. A prompt on the interactive desktop, used when secure-desktop prompting is off, is reachable. Elevated windows need `elevated: true`.
 
 ## Query event logs
 

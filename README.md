@@ -85,9 +85,6 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 
 ## Limitations
 
-- Windows servicing diagnostics do not install updates, repair Windows, clear queues or reboot. WUA searches are offline-only; native timeout/cancellation stops waiting without terminating Windows work. Log tails require Read roots; DISM package inventory generally requires elevation. See [Windows servicing diagnostics](docs/windows-servicing.md).
-
-
 - Windows only. The NT Kernel Logger and kernel-mode realtime providers are not supported.
 - Vestigo decodes events; it does not record a raw ETL file.
 - There is no server push. Follow a live capture by long-polling `read_capture` or `read_debug_output` with `waitSeconds`; external sessions can be read with `attach_etw_session` once allowed by `Vestigo:AttachableSessions`.
@@ -95,17 +92,16 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - There is no management UI. `/` is a static page that only explains how to connect an MCP client. Traffic is plain HTTP; use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine.
 - Screenshots fail with `desktop_unavailable` on the lock screen and the UAC secure desktop. DRM, `SetWindowDisplayAffinity`, and some GPU or fullscreen-exclusive windows may capture black.
 - `send_input` cannot reach the secure desktop (UAC prompts, the lock screen, Ctrl+Alt+Del) and cannot send the secure attention sequence. Input into elevated windows needs `elevated: true` because of User Interface Privilege Isolation, and Windows can still drop it silently. `inspect_screen` finds elements through UI Automation and Windows OCR; OCR needs an installed OCR language for the user, and owner-drawn or game surfaces fall back to coarse OpenCV regions without names. The `captureId` that links `inspect_screen` to `send_input` expires after about two minutes and the server keeps at most eight captures.
-
-Vestigo uses [OpenCvSharp](https://github.com/shimat/opencvsharp) (Apache-2.0) and [OpenCV](https://opencv.org/) for image analysis.
 - BCD test-signing applies only to the default boot entry, takes effect after a reboot, and is refused while Secure Boot is on or its state is unknown.
 - Turning UAC off (`set_uac` `disabled`) takes effect after a reboot and breaks UWP and Store apps until UAC is turned back on.
 - WPP enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` remain numeric in the upstream decoder.
-- Symbol resolution uses the released `Nefarius.Utilities.ETW` package. PE metadata uses [PeNet](https://github.com/secana/PeNet). A valid Authenticode result is not a decision that Windows will load the file as a kernel driver. `list_process_modules` is a best-effort snapshot and returns root aliases only, never absolute paths. `probe_capture_support` only reports whether frames arrived. `backend` `wgc` is unsupported: Windows Graphics Capture would require WinRT projections (`net10.0-windows10.0.19041.0` or a hand-bound COM layer), and this build does neither. `list_process_connections` returns bindings for one process and omits remote addresses unless requested. `test_endpoint` stays off until `Diagnostics:AllowNetworkProbes` is true and the destination is allow-listed; it does not capture packets. `list_video_encoders` is a Media Foundation `MFTEnumEx` enumeration, not a vendor-SDK inventory and not proof that an encoder can process a frame. `list_camera_formats` does not read camera samples. `probe_audio_format` does not emit sound unless `Diagnostics:AllowAudioPlayback` is true. `list_crash_reports` returns WER metadata only, not dump bytes. `capture_process_dump` stays off until `Diagnostics:AllowProcessDumps` is true, refuses protected processes, and does not upload the dump or create a download ticket. Diagnostics requires Jobs.
+- Symbol resolution uses the released `Nefarius.Utilities.ETW` package. PE metadata uses [PeNet](https://github.com/secana/PeNet). A valid Authenticode result is not a decision that Windows will load the file as a kernel driver. `list_process_modules` is a best-effort snapshot and returns root aliases only, never absolute paths. `probe_capture_support` only reports whether frames arrived. `backend` `wgc` is unsupported: this build does not implement Windows Graphics Capture. `list_process_connections` returns bindings for one process and omits remote addresses unless requested. `test_endpoint` stays off until `Diagnostics:AllowNetworkProbes` is true and the destination is allow-listed; it does not capture packets. `list_video_encoders` is a Media Foundation `MFTEnumEx` enumeration, not a vendor-SDK inventory and not proof that an encoder can process a frame. `list_camera_formats` does not read camera samples. `probe_audio_format` does not emit sound unless `Diagnostics:AllowAudioPlayback` is true. `list_crash_reports` returns WER metadata only, not dump bytes. `capture_process_dump` stays off until `Diagnostics:AllowProcessDumps` is true, refuses protected processes, and does not upload the dump or create a download ticket. Diagnostics requires Jobs.
 - Silent uninstall covers MSI, Burn, Inno Setup, NSIS and entries that publish a `QuietUninstallString`. Other installers are refused, per-user entries cannot be uninstalled, and AppX/MSIX packages are not listed.
 - Scheduled task tools work on the local machine only. They cannot create or edit tasks, and task history needs the `Microsoft-Windows-TaskScheduler/Operational` channel to be enabled.
 - Audio default-device switching uses the undocumented `IPolicyConfig` interface and may fail on a future Windows release. Per-app device overrides are not shown or changed. The peak meter is a short sample, not a continuous monitor. The service context does not see user audio sessions.
 - `search_text` runs the bundled ripgrep with a bounded result count, line length, run time and concurrency, so a search can stop early with `truncated` or `timedOut` set. It does not follow links or junctions, skips binary files, and decodes only UTF-8 and UTF-16 with a byte order mark. It looks at files as they are on disk and cannot follow a growing file; use `read_text_file_since` for that.
 - Vestigo never triggers a reboot; tools report or schedule reboot-time work.
+- Windows servicing diagnostics do not install updates, repair Windows, clear queues or reboot. WUA searches are offline-only; native timeout/cancellation stops waiting without terminating Windows work. Log tails require Read roots; DISM package inventory generally requires elevation. See [Windows servicing diagnostics](docs/windows-servicing.md).
 - `check_for_updates` uses the service account's proxy settings. `start_self_update` needs the MSI Automatic updates feature; after Vicius hands off to its temporary copy the install result is only in the `%ProgramData%\...\Vestigo\updates` log until the service is back.
 
 ## Documentation
@@ -130,6 +126,7 @@ Vestigo uses [OpenCvSharp](https://github.com/shimat/opencvsharp) (Apache-2.0) a
 - [Nefarius.Utilities.WindowsVersion](https://github.com/nefarius/Nefarius.Utilities.WindowsVersion)
 - [NAudio](https://github.com/naudio/NAudio)
 - [PeNet](https://github.com/secana/PeNet)
+- [OpenCvSharp](https://github.com/shimat/opencvsharp) (Apache-2.0) and [OpenCV](https://opencv.org/)
 - [CsWin32](https://github.com/microsoft/CsWin32)
 - [Model Context Protocol C# SDK](https://csharp.sdk.modelcontextprotocol.io/)
 - [Serilog](https://github.com/serilog/serilog)
