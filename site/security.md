@@ -50,7 +50,7 @@ Attaching to someone else's ETW session stays off until you list the session nam
 
 Screenshots, `inspect_screen`, and `find_on_screen` can disclose whatever is on the console user's screen. UI Automation names and OCR text come back as plain text, which is easier to copy out than pixels. Edit-control values are not read through UI Automation. Text that is visible can still be read by OCR.
 
-`send_input` acts as the console user. Anything on screen can be clicked or typed into. With `elevated: true`, that input is administrator-equivalent while an elevated window is open. Input cannot reach the secure desktop (UAC prompts, the lock screen, Ctrl+Alt+Del).
+`send_input` acts as the console user. Anything on screen can be clicked or typed into. With `elevated: true`, that input is administrator-equivalent while an elevated window is open. The helper sends input only while the input desktop is the session's default desktop. That blocks the lock screen, Ctrl+Alt+Del, and a UAC prompt drawn on the secure desktop. When secure-desktop prompting is off, the UAC prompt stays on the interactive desktop and this check allows the input. The action batch is base64 JSON on the session helper command line. With command-line auditing enabled, event 4688 can record that argument, including typed text. Do not type secrets through `send_input` on a machine that audits process creation.
 
 The MSI preserves a hand-set `Input:AllowInput` on an unelevated upgrade when the Allow input injection feature stays unselected.
 
