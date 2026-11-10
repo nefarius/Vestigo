@@ -19,8 +19,17 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `DebugOutput:MaxMessages` | `1000000` |
 | `DebugOutput:MaxOutputBytes` | `536870912` |
 | `DebugOutput:MaxPatternLength` | `256` |
+| `Desktop:AllowDisplayLayoutChanges` | `false` |
 | `Desktop:AllowScreenshots` | `false` |
+| `Desktop:AllowWindowPlacement` | `false` |
+| `Desktop:DisplayObservationIntervalMilliseconds` | `200` |
+| `Desktop:DisplayTransactionLease` | `00:10:00` |
 | `Desktop:MaxScreenshotBytes` | `134217728` |
+| `Desktop:MaxWindowEventBytes` | `16777216` |
+| `Desktop:MaxWindowEventCaptures` | `2` |
+| `Desktop:MaxWindowEventDuration` | `00:10:00` |
+| `Desktop:MaxWindowEvents` | `20000` |
+| `Desktop:WindowEventRetention` | `06:00:00` |
 | `Devices:NefconPath` | `null` |
 | `Devices:NefconTimeout` | `00:02:00` |
 | `Diagnostics:AllowAudioPlayback` | `false` |

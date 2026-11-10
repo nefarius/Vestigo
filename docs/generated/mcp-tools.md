@@ -315,6 +315,14 @@ Reads %windir%\INF\setupapi.dev.log and rotated setupapi.dev.*.log files for sec
 | `limit` | `int` | no | `20` | Maximum sections to return, newest kept, oldest first. 1 to 200. |
 | `includeRaw` | `bool` | no | `false` | Include the section text. Defaults to false. |
 
+## `get_display_layout_transaction`
+
+Returns the open display transaction, including restore differences and whether restoration was verified.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | no | `null` | Transaction id. Omit to return the open transaction. |
+
 ## `get_download_url`
 
 Returns an HTTP GET URL, not the file bytes, for downloading an existing file from a root with Read access, with curl and Invoke-WebRequest examples. When API tokens are configured the URL carries a one-time ticket that expires and stops working after one successful download, so the API token never has to be shared. For a screenshot the user can open immediately, call take_screenshot with share:true.
@@ -504,6 +512,14 @@ Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-
 | `overwrite` | `bool` | no | `false` | Replace an existing file. |
 | `deferToReboot` | `bool` | no | `false` | Replace a locked file at the next reboot instead of renaming it aside. |
 
+## `get_window_event_capture`
+
+Returns the state, counts, dropped events, truncation, and whether new windows or child processes are included.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Capture id. |
+
 ## `get_windows_update_status`
 
 Snapshots WUA reboot requirement, installer busy flag, registered update services and six Windows service states. Unavailable WUA data remains an explicit source error. Stopped demand/trigger-start services are not identified as blockers. Does not infer USO activity or trigger a scan.
@@ -559,6 +575,18 @@ Looks at the console user's screen and describes it for an agent. Returns an ann
 | `includeCursor` | `bool` | no | `false` | Draw the mouse cursor on the capture. |
 | `diffAgainst` | `string` | no | `null` | captureId of an earlier inspection to diff against. |
 | `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
+
+## `inspect_window`
+
+Reads one window in physical virtual-screen pixels. Returns the raw GetWindowRect, the DWM visible frame, and the client rectangle in screen coordinates, plus DPI, frame metrics, styles, visibility, owner relationships, display intersections, and process integrity, elevation, and LocalSystem state when those reads succeed. Each field has its own success or error. A failed read is not reported as a zero rectangle. Geometry is omitted when per-monitor DPI awareness v2 cannot be entered. expectedPid and expectedStartTime reject a reused handle or pid. context 'interactive' (default) reads the console user's desktop. This does not change the window.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowHandle` | `string` | yes |  | Hex window handle from list_windows (0x...). |
+| `expectedPid` | `int?` | no | `null` | Process id from list_windows. A different owner fails with window_identity_mismatch. |
+| `expectedStartTime` | `DateTimeOffset?` | no | `null` | Process start time from list_processes. A different process fails with process_identity_mismatch. |
+| `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+| `elevated` | `bool` | no | `false` | Interactive only: use the elevated token. |
 
 ## `inspect_wpp_pdb`
 
@@ -839,6 +867,12 @@ Lists video encoders registered with Media Foundation, using MFTEnumEx. backend 
 | `backend` | `string` | no | `media-foundation` | Discovery backend. Only media-foundation is implemented. |
 | `limit` | `int` | no | `100` | Maximum encoders. Clamped to 1..Vestigo:Diagnostics:MaxVideoEncoders. |
 
+## `list_window_event_captures`
+
+Lists window-event captures started by this service process.
+
+No parameters.
+
 ## `list_windows`
 
 Lists Win32 windows on the chosen desktop with owning process, parent and owner, physical-pixel bounds, and the GDI display they are rendered on. Filters combine: pid or processName, narrowed by titleRegex and className. context 'interactive' (default) enumerates the console user's desktop through the session helper.
@@ -883,6 +917,25 @@ Moves or renames a file or directory. Both paths need Write access. Refuses to m
 | `source` | `string` | yes |  | Source path. |
 | `destination` | `string` | yes |  | Destination path (the new name). |
 | `overwrite` | `bool` | no | `false` | Replace an existing destination file. |
+
+## `observe_display_layout_transaction`
+
+Samples the active topology until a target is active, matches the requested mode and position, and has the same geometry for stableSamples consecutive samples, or until timeoutSeconds. There is no fixed pixel tolerance. A timeout returns the last differences with timedOut true and leaves the transaction open. Omit the target fields to wait until the original topology is stable again.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Transaction id. |
+| `timeoutSeconds` | `int` | no | `15` | Seconds to wait, from 1 to 120. |
+| `stableSamples` | `int` | no | `2` | Consecutive matching samples required. |
+| `monitorDevicePath` | `string` | no | `null` | Monitor device path from the snapshot. |
+| `connectorInstance` | `uint?` | no | `null` | Connector instance from the snapshot. |
+| `adapterLuid` | `string` | no | `null` | Adapter LUID from the snapshot, HHHHHHHH:LLLLLLLL. |
+| `targetId` | `uint?` | no | `null` | CCD target id from the snapshot. |
+| `x` | `int?` | no | `null` | Requested left, used when a target is selected. |
+| `y` | `int?` | no | `null` | Requested top. |
+| `width` | `int?` | no | `null` | Requested width. |
+| `height` | `int?` | no | `null` | Requested height. |
+| `rotation` | `string` | no | `null` | Optional IDENTITY, ROTATE90, ROTATE180, or ROTATE270. |
 
 ## `prepare_remote_debugger_computer`
 
@@ -1003,6 +1056,17 @@ Returns complete lines after a cursor from tail_text_file or an earlier call. If
 | `maxLines` | `int?` | no | `null` | Maximum lines to return. Clamped to MaxTailLines. |
 | `maxBytes` | `int?` | no | `null` | Maximum bytes to examine. Clamped to MaxTailBytes. |
 
+## `read_window_event_capture`
+
+Reads window-event records after afterSequence. waitSeconds long-polls for new records. Completed is true when no further records will arrive. Dropped is the helper queue count. Native WinEvent loss is not reported because Windows does not provide that count.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Capture id from start_window_event_capture. |
+| `afterSequence` | `long` | no | `0` | Return records with a sequence greater than this value. |
+| `limit` | `int?` | no | `null` | Maximum records, clamped to Vestigo:MaxReadBatch. |
+| `waitSeconds` | `double` | no | `0` | Seconds to wait for new records, up to Vestigo:MaxReadWait. |
+
 ## `remove_class_filter`
 
 Removes a driver service from a device class's upper or lower filter list.
@@ -1057,6 +1121,24 @@ Stops a service (waiting for Stopped) and starts it again (waiting for Running).
 | `name` | `string` | yes |  | Service name. |
 | `stopDependents` | `bool` | no | `false` | Also stop running dependent services first. |
 | `timeoutSeconds` | `int` | no | `30` | Seconds to wait for each phase, 1 to 300. |
+
+## `restore_display_layout_transaction`
+
+Applies the snapshot taken before the transaction and reads the topology again. RestorationVerified is true only when the fingerprint matches. A failed restore stays open and blocks another transaction. The restore is written to the display database so a temporary test layout cannot return at logoff. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Transaction id. |
+
+## `restore_window_placement`
+
+Restores a placement saved by set_window_client_rect. The window and process identity are checked again. SetWindowPlacement can let Windows activate the window; Vestigo does not call SetForegroundWindow. Achieved is true only when the measured normal rectangle matches the saved one. Requires Vestigo:Desktop:AllowWindowPlacement.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `token` | `string` | yes |  | Token returned by set_window_client_rect. |
+| `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+| `elevated` | `bool` | no | `false` | Interactive only: use the elevated token. |
 
 ## `run_process`
 
@@ -1177,6 +1259,32 @@ Sets the kernel WHQL developer test mode policy that allows traditional cross-si
 | --- | --- | --- | --- | --- |
 | `enabled` | `bool` | yes |  | true to enable WHQL developer test mode, false to disable it. |
 
+## `set_window_client_rect`
+
+Moves and sizes a window so its client area matches x,y,width,height in physical virtual-screen pixels. The call accounts for the window's current decorations and DPI, then measures the result. Achieved is true only when the measured client rectangle matches. Windows or the application may alter the request; that is reported instead of being treated as success. Activation and Z-order are preserved by SetWindowPos flags. savePlacement stores the previous placement for restore_window_placement. The token does not survive a service restart. Requires Vestigo:Desktop:AllowWindowPlacement. context service changes a window in the service session; interactive changes the console user's window and needs an elevated helper for an elevated window.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowHandle` | `string` | yes |  | Hex window handle from list_windows. |
+| `x` | `int` | yes |  | Client left in physical screen pixels. |
+| `y` | `int` | yes |  | Client top in physical screen pixels. |
+| `width` | `int` | yes |  | Client width in physical screen pixels. |
+| `height` | `int` | yes |  | Client height in physical screen pixels. |
+| `coordinateSpace` | `string` | no | `physical-screen-pixels` | Must be physical-screen-pixels. |
+| `expectedPid` | `int?` | no | `null` | Owner pid. A different owner fails before the window is moved. |
+| `expectedStartTime` | `DateTimeOffset?` | no | `null` | Process start time. A different process fails before the window is moved. |
+| `savePlacement` | `bool` | no | `false` | Save the current placement and return a restore token. |
+| `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+| `elevated` | `bool` | no | `false` | Interactive only: use the elevated token. |
+
+## `snapshot_display_layout`
+
+Captures the active display topology. Each path is identified by its monitor device path, connector instance, adapter LUID, and target id. GDI device names such as \\.\DISPLAY1 are included as operational names and are not stable across hotplug. Coordinates are physical screen pixels. This does not change the displays. Interactive session only.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `elevated` | `bool` | no | `false` | Use the elevated token. |
+
 ## `start_capture`
 
 Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them. See get_trace_settings for allowed roots.
@@ -1203,6 +1311,16 @@ Starts the single DebugViewConsole capture of OutputDebugString messages. Events
 | `includeProcesses` | `string[]` | no | `null` | Process-name include filters passed to DebugViewConsole --include-process. |
 | `excludeProcesses` | `string[]` | no | `null` | Process-name exclude filters passed to DebugViewConsole --exclude-process. |
 | `duration` | `string` | no | `null` | Maximum capture duration, for example 00:05:00. Capped by Vestigo:DebugOutput:MaxDuration. |
+
+## `start_display_layout_transaction`
+
+Validates and applies a layout for targets that are already active. The original topology is saved before the change. persistent defaults to false and is the only way the change is also written to the display database. Only one transaction can be open. Cancellation of this call attempts to restore the original layout. A later client disconnect does not, because MCP is stateless; the lease restores it. Service shutdown and the next service start also attempt restore. External display changes are reported and cannot be blocked. This tool does not create or remove virtual displays. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `targets` | `List<DisplayTargetChange>` | yes |  | Active targets to reposition or change mode. Identity must match snapshot_display_layout. |
+| `persistent` | `bool` | no | `false` | Write the change to the display database. Leave false for a temporary test layout. |
+| `elevated` | `bool` | no | `false` | Use the elevated token. |
 
 ## `start_remote_debugger`
 
@@ -1237,6 +1355,18 @@ Starts a service or driver and waits until it is running. Starting an unsigned d
 | `name` | `string` | yes |  | Service name. |
 | `arguments` | `string[]` | no | `null` | Optional start arguments passed to the service. |
 | `timeoutSeconds` | `int` | no | `30` | Seconds to wait for Running, 0 to 300. 0 returns without waiting. |
+
+## `start_window_event_capture`
+
+Captures window creation, destruction, show, hide, foreground, and location changes, plus exit of the selected process. A process filter includes windows that process creates later and does not include child processes. A window handle without a process filter follows only that window. Events are observed; geometry and DPI are sampled when an event arrives. DPI changes are comparisons of samples, not WM_DPICHANGED. Process exit has no inferred cause. WinEvent does not report how many events it dropped before delivery; dropped counts only the helper queue. The capture keeps running after this call returns. Read it with read_window_event_capture and stop it with stop_window_event_capture. A stateless client disconnect does not stop it. Service shutdown does. Interactive session only.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `windowHandle` | `string` | no | `null` | Hex window handle. Omit to follow a process. |
+| `pid` | `int?` | no | `null` | Process id. Later windows from this process are included; child processes are not. |
+| `expectedStartTime` | `DateTimeOffset?` | no | `null` | Start time from list_processes. Required to prove the pid was not reused when it can be read. |
+| `durationSeconds` | `int` | no | `30` | Seconds to capture, from 1 to Vestigo:Desktop:MaxWindowEventDuration. |
+| `elevated` | `bool` | no | `false` | Use the elevated token for the helper. |
 
 ## `stat_path`
 
@@ -1290,6 +1420,14 @@ Stops a service or driver and waits until it is stopped.
 | `name` | `string` | yes |  | Service name. |
 | `stopDependents` | `bool` | no | `false` | Also stop running dependent services first. |
 | `timeoutSeconds` | `int` | no | `30` | Seconds to wait for Stopped, 0 to 300. 0 returns without waiting. |
+
+## `stop_window_event_capture`
+
+Stops a window-event capture and unhooks its helper. Already-stopped captures return their final state.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Capture id. |
 
 ## `tail_text_file`
 

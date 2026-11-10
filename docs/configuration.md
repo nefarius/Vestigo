@@ -47,6 +47,15 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Diagnostics:MaxInspectBytes` | `268435456` | Maximum file size accepted by `inspect_binary`. Minimum `1048576`, maximum `2147483648`. |
 | `Services:ProtectedNames` | `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs` | Service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
 | `Desktop:AllowScreenshots` | `false` | Enables `take_screenshot`, `inspect_screen` and `find_on_screen`. Window and display listing remains available when the Desktop module is enabled. |
+| `Desktop:AllowWindowPlacement` | `false` | Enables `set_window_client_rect` and `restore_window_placement`. |
+| `Desktop:AllowDisplayLayoutChanges` | `false` | Enables `start_display_layout_transaction` and `restore_display_layout_transaction`. Does not create virtual displays. |
+| `Desktop:MaxWindowEventCaptures` | `2` | Most window-event captures at once. Range 1 to 8. |
+| `Desktop:MaxWindowEvents` | `20000` | Most records stored for one window-event capture. Range 1 to 100000. |
+| `Desktop:MaxWindowEventBytes` | `16777216` | Largest spool for one window-event capture. Range 65536 to 134217728. |
+| `Desktop:MaxWindowEventDuration` | `00:10:00` | Longest window-event capture. Positive, at most one hour. |
+| `Desktop:WindowEventRetention` | `06:00:00` | How long a finished window-event capture is kept. Positive, at most 7 days. |
+| `Desktop:DisplayTransactionLease` | `00:10:00` | How long an unreleased display-layout transaction may stay applied. 15 seconds to 2 hours. |
+| `Desktop:DisplayObservationIntervalMilliseconds` | `200` | Delay between display-topology samples. Range 50 to 2000. |
 | `Desktop:MaxScreenshotBytes` | `134217728` | Upper bound for the session-helper JSON that carries the PNG (including base64). Minimum `1048576`, maximum `536870912`. |
 | `Input:AllowInput` | `false` | Enables `send_input`, which injects mouse and keyboard input as the console user. Needs the Input module, which needs the Desktop module. Administrator-equivalent when an elevated window is open. |
 | `Input:MaxActions` | `50` | Largest number of actions in one `send_input` call. Minimum `1`, maximum `200`. |
@@ -118,7 +127,7 @@ Serilog writes console output and daily files under the settings `logs` director
 
 `AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, zip, and conversion-output paths used by the Trace tools. When both lists are empty, Vestigo also registers a named root `traces` (Read, Write) at that folder so `get_upload_url traces:driver.pdb` works in every `VolumeRoots` mode. A configured root already named `traces` wins and a startup warning is logged. Named `Roots` and any `VolumeRoots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, binaries for `resolve_binary_symbols`, and the `/files` endpoints.
 
-The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Desktop:AllowScreenshots`, `Input:AllowInput`, `Diagnostics:AllowCaptureProbes`, `Diagnostics:AllowNetworkProbes`, `Diagnostics:AllowAudioPlayback`, `Diagnostics:AllowProcessDumps`, and `Updates:AllowSelfUpdate` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
+The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Desktop:AllowScreenshots`, `Desktop:AllowWindowPlacement`, `Desktop:AllowDisplayLayoutChanges`, `Input:AllowInput`, `Diagnostics:AllowCaptureProbes`, `Diagnostics:AllowNetworkProbes`, `Diagnostics:AllowAudioPlayback`, `Diagnostics:AllowProcessDumps`, and `Updates:AllowSelfUpdate` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
 
 ## Examples
 
@@ -164,7 +173,9 @@ Authenticated remote access with opt-in modules. Retrieve a generated MSI token 
       "AllowChanges": false
     },
     "Desktop": {
-      "AllowScreenshots": false
+      "AllowScreenshots": false,
+      "AllowWindowPlacement": false,
+      "AllowDisplayLayoutChanges": false
     },
     "Input": {
       "AllowInput": false,
