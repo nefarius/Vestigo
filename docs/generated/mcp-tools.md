@@ -360,6 +360,15 @@ Returns the root type, SHA-256, and top-level shape of a UTF-8 JSON document und
 | `path` | `string` | yes |  | File path: root:relative\path or an absolute path inside a root. |
 | `maxBytes` | `int?` | no | `null` | Optional byte cap, clamped down to Vestigo:Logs:MaxJsonBytes. The file is not read when it is larger. |
 
+## `get_logon_session`
+
+Returns one Windows logon session, including token elevation, local Administrators membership, and the logon id when the session token can be opened. Those token fields are null when the token cannot be read. includeClientAddresses adds the client name and address; otherwise those fields are null and are not written to the log.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `sessionId` | `int` | yes |  | WTS session id from list_logon_sessions. |
+| `includeClientAddresses` | `bool` | no | `false` | Include client name and address. Default false. These values are not written to the log. |
+
 ## `get_reboot_pending`
 
 Collects independent 64-bit registry and WUA reboot signals. Returns pending, notPending, or unknown; unreadable sources are never treated as clear. Installer and CBS session presence are advisory activity signals. Does not reboot or change the queue.
@@ -702,6 +711,16 @@ Lists installed programs from the Uninstall registry keys (machine 64/32-bit and
 Lists background jobs owned by this Vestigo process, newest first.
 
 No parameters.
+
+## `list_logon_sessions`
+
+Lists Windows logon sessions. isCurrentInput marks the session interactive tools would use. includeClientAddresses adds the client name and address; otherwise those fields are null and are not written to the log. Station names are displayed, not interpreted. There is no logoff or connect tool.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `includeDisconnected` | `bool` | no | `true` | Include disconnected sessions. Default true. |
+| `includeListeners` | `bool` | no | `false` | Include listener rows such as RDP-Tcp. Default false. |
+| `includeClientAddresses` | `bool` | no | `false` | Include client name and address. Default false. These values are not written to the log. |
 
 ## `list_pending_file_operations`
 
