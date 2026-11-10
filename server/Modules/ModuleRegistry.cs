@@ -160,7 +160,7 @@ public static class ModuleRegistry
                 names.Add("Desktop");
                 clauses.Add(
                     desktopScreenshots
-                        ? $"{reach} can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop."
+                        ? $"{reach} can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop. A client can also publish a short-lived, single-use link to a downscaled preview; that link does not require an API token."
                         : $"{reach} can list windows, titles, and displays on the console user's desktop.");
             }
 
@@ -201,7 +201,7 @@ public static class ModuleRegistry
         if (desktop)
         {
             extras += desktopScreenshots
-                ? "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop. "
+                ? "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop. A client can also publish a short-lived, single-use link to a downscaled preview; that link does not require an API token. "
                 : "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop. ";
         }
 

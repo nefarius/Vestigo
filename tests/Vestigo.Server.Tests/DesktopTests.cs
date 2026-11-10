@@ -1,8 +1,14 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+
 using ModelContextProtocol.Protocol;
 
+using Vestigo.Abstractions;
 using Vestigo.Configuration;
 using Vestigo.Desktop;
 using Vestigo.Files;
@@ -317,6 +323,140 @@ public class DesktopTests
     }
 
     [Fact]
+    public void TakeScreenshot_ShareAddsResourceLinkAndHandoffMetadata()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4];
+        CapturedScreenshot capture = new(
+            new ScreenCaptureInfo(
+                ScreenCaptureTarget.Desktop,
+                new DesktopRect(0, 0, 1, 1),
+                new DesktopSize(1, 1),
+                new DesktopSize(1, 1),
+                96,
+                [@"\\.\DISPLAY1"],
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                1),
+            png);
+        ScreenshotShareLink share = new(
+            "http://h/desktop/shares/shot-0123abcd?ticket=t",
+            DateTimeOffset.UnixEpoch,
+            true,
+            ScreenshotShareLink.PresentToUser);
+
+        CallToolResult result = DesktopTools.SuccessResult(capture, share: share);
+
+        Assert.Equal(3, result.Content.Count);
+        Assert.IsType<ImageContentBlock>(result.Content[0]);
+        ResourceLinkBlock link = Assert.IsType<ResourceLinkBlock>(result.Content[1]);
+        Assert.Equal(share.Url, link.Uri);
+        Assert.Equal("image/png", link.MimeType);
+        Assert.Equal("vestigo-screenshot.png", link.Name);
+        Assert.NotNull(link.Annotations);
+        Assert.Contains(Role.User, link.Annotations.Audience);
+        TextContentBlock text = Assert.IsType<TextContentBlock>(result.Content[2]);
+        using JsonDocument document = JsonDocument.Parse(text.Text);
+        JsonElement shared = document.RootElement.GetProperty("share");
+        Assert.Equal(share.Url, shared.GetProperty("url").GetString());
+        Assert.True(shared.GetProperty("singleUse").GetBoolean());
+        Assert.Equal(ScreenshotShareLink.PresentToUser, shared.GetProperty("instruction").GetString());
+        Assert.Contains("may not appear in chat", text.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("PreviewPngBase64", text.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TakeScreenshot_RefusesShareWithoutPreviewOrStore()
+    {
+        DesktopTools disabled = CreateTools(new UnavailableLauncher());
+        Assert.Equal("screenshots_disabled", ErrorCode(await disabled.TakeScreenshot(share: true)));
+
+        VestigoOptions enabled = new() { Desktop = { AllowScreenshots = true } };
+        DesktopTools tools = CreateTools(new UnavailableLauncher(), enabled);
+        CallToolResult noPreview = await tools.TakeScreenshot(share: true, maxEdge: 0);
+        CallToolResult noStore = await tools.TakeScreenshot(share: true);
+
+        Assert.Equal("share_unavailable", ErrorCode(noPreview));
+        Assert.Contains("maxEdge", ErrorText(noPreview), StringComparison.Ordinal);
+        Assert.Equal("share_unavailable", ErrorCode(noStore));
+        Assert.Contains("not available", ErrorText(noStore), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShareStore_BindsTokenAndRejectsUnknownAndMismatch()
+    {
+        ScreenshotShareStore store = new(new FakeTime());
+        (string id, string ticket) = Issued(store, [0x89, 0x50, 0x4E, 0x47]);
+
+        Assert.Equal(ShareFailure.Missing, Failure(store, id, " "));
+        Assert.Equal(ShareFailure.Unknown, Failure(store, id, "not-a-ticket"));
+        Assert.Equal(ShareFailure.Mismatched, Failure(store, "shot-deadbeef", ticket));
+        ScreenshotShareStore.Reservation reservation = store.TryReserve(id, ticket, out ShareFailure reserved)!;
+        Assert.Equal(ShareFailure.None, reserved);
+        Assert.Equal(ShareFailure.Replayed, Failure(store, id, ticket));
+        store.Release(reservation);
+        Assert.NotNull(store.TryReserve(id, ticket, out ShareFailure again));
+        Assert.Equal(ShareFailure.None, again);
+    }
+
+    [Fact]
+    public void ShareStore_ReleasesThenConsumesAndExpires()
+    {
+        FakeTime time = new();
+        ScreenshotShareStore store = new(time, lifetime: TimeSpan.FromMinutes(10));
+        (string id, string ticket) = Issued(store, [1, 2, 3, 4]);
+
+        ScreenshotShareStore.Reservation reservation = store.TryReserve(id, ticket, out ShareFailure failure)!;
+        Assert.Equal(ShareFailure.None, failure);
+        store.Release(reservation);
+        reservation = store.TryReserve(id, ticket, out failure)!;
+        Assert.Equal(ShareFailure.None, failure);
+        store.Consume(reservation);
+        Assert.Equal(ShareFailure.Replayed, Failure(store, id, ticket));
+
+        (id, ticket) = Issued(store, [5, 6, 7, 8]);
+        time.Now += TimeSpan.FromMinutes(11);
+        Assert.Equal(ShareFailure.Expired, Failure(store, id, ticket));
+        Assert.Equal(ShareFailure.Unknown, Failure(store, id, ticket));
+    }
+
+    [Fact]
+    public void ShareStore_EvictsOldestIdleEntryForCountAndBytes()
+    {
+        FakeTime time = new();
+        ScreenshotShareStore store = new(time, maxEntries: 2, maxTotalBytes: 10);
+        (string firstId, string firstTicket) = Issued(store, [1, 2, 3]);
+        Issued(store, [4, 5, 6]);
+        (string thirdId, string thirdTicket) = Issued(store, [7, 8, 9]);
+
+        Assert.Equal(ShareFailure.Unknown, Failure(store, firstId, firstTicket));
+        ScreenshotShareStore.Reservation third = store.TryReserve(thirdId, thirdTicket, out ShareFailure thirdFailure)!;
+        Assert.Equal(ShareFailure.None, thirdFailure);
+        store.Release(third);
+
+        ScreenshotShareStore bytes = new(time, maxEntries: 8, maxTotalBytes: 6);
+        (string largeId, string largeTicket) = Issued(bytes, [1, 2, 3, 4]);
+        (string keptId, string keptTicket) = Issued(bytes, [5, 6, 7]);
+        Assert.Equal(ShareFailure.Unknown, Failure(bytes, largeId, largeTicket));
+        Assert.NotNull(bytes.TryReserve(keptId, keptTicket, out ShareFailure keptFailure));
+        Assert.Equal(ShareFailure.None, keptFailure);
+
+        ScreenshotShareStore busy = new(time, maxEntries: 1, maxTotalBytes: 8);
+        (string onlyId, string onlyTicket) = Issued(busy, [1, 2]);
+        Assert.NotNull(busy.TryReserve(onlyId, onlyTicket, out _));
+        OperationResult<ScreenshotShareLink> refused = busy.Issue([3, 4], "http://lab");
+        Assert.False(refused.Success);
+        Assert.Equal("share_unavailable", refused.ErrorCode);
+        Assert.Contains("in use", refused.Error, StringComparison.Ordinal);
+        OperationResult<ScreenshotShareLink> tooLarge = busy.Issue(new byte[9], "http://lab");
+        Assert.Equal("share_unavailable", tooLarge.ErrorCode);
+        Assert.Contains("too large", tooLarge.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ErrorResult_OmitsANullReasonAndKeepsAPresentOne()
     {
         CallToolResult absent = DesktopTools.ErrorResult("screenshots_disabled", "Screenshots are disabled.");
@@ -503,6 +643,22 @@ public class DesktopTests
         Assert.Equal(@"\\.\DISPLAY1", parsed.Displays.Single().GdiDeviceName);
     }
 
+    private static (string Id, string Ticket) Issued(ScreenshotShareStore store, byte[] png)
+    {
+        ScreenshotShareLink link = store.Issue(png, "http://lab").Value!;
+        Uri uri = new(link.Url);
+        string query = uri.Query.TrimStart('?');
+        Assert.StartsWith("ticket=", query, StringComparison.Ordinal);
+        string ticket = Uri.UnescapeDataString(query["ticket=".Length..]);
+        return (uri.AbsolutePath.Split('/')[^1], ticket);
+    }
+
+    private static ShareFailure Failure(ScreenshotShareStore store, string id, string? ticket)
+    {
+        store.TryReserve(id, ticket, out ShareFailure failure);
+        return failure;
+    }
+
     private static string? ErrorCode(CallToolResult result)
     {
         Assert.True(result.IsError);
@@ -614,4 +770,106 @@ public class DesktopTests
 
     [DllImport("user32.dll")]
     private static extern nint DefWindowProc(nint window, uint message, nint wParam, nint lParam);
+
+    private sealed class FakeTime : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 11, 10, 12, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+}
+
+[Collection("VestigoHost")]
+public class ScreenshotShareEndpointTests : IDisposable
+{
+    private readonly string _settings = Directory.CreateTempSubdirectory("vestigo-share-host").FullName;
+    private readonly string? _previous = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
+
+    public ScreenshotShareEndpointTests()
+    {
+        Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _settings);
+    }
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _previous);
+        try
+        {
+            Directory.Delete(_settings, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best effort cleanup of temp data.
+        }
+    }
+
+    [Fact]
+    public async Task Get_ServesInlinePreviewOnceAndRejectsReplay()
+    {
+        await using WebApplicationFactory<Program> factory = Create(["secret"]);
+        using HttpClient client = factory.CreateClient();
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 9, 8, 7];
+        ScreenshotShareLink link = factory.Services.GetRequiredService<ScreenshotShareStore>().Issue(png, "http://lab").Value!;
+        string path = new Uri(link.Url).PathAndQuery;
+
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "secret");
+        HttpResponseMessage bearerOnly = await client.GetAsync(path.Split('?')[0]);
+        client.DefaultRequestHeaders.Authorization = null;
+        HttpResponseMessage first = await client.GetAsync(path);
+        HttpResponseMessage second = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, bearerOnly.StatusCode);
+        Assert.Contains("invalid_ticket", await bearerOnly.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(png, await first.Content.ReadAsByteArrayAsync());
+        Assert.Equal("image/png", first.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("inline", first.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("vestigo-screenshot.png", first.Content.Headers.ContentDisposition?.FileNameStar);
+        Assert.Contains("no-store", first.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.Unauthorized, second.StatusCode);
+        Assert.Contains("already used", await second.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Get_RejectsUnknownMismatchAndKeepsTheMatchingTicket()
+    {
+        await using WebApplicationFactory<Program> factory = Create([]);
+        using HttpClient client = factory.CreateClient();
+        ScreenshotShareLink link = factory.Services.GetRequiredService<ScreenshotShareStore>().Issue([1, 2, 3, 4], "http://lab").Value!;
+        Uri uri = new(link.Url);
+        string ticket = Uri.UnescapeDataString(uri.Query.TrimStart('?')["ticket=".Length..]);
+
+        HttpResponseMessage unknown = await client.GetAsync("/desktop/shares/shot-0123abcd?ticket=nope");
+        HttpResponseMessage mismatched = await client.GetAsync($"/desktop/shares/shot-deadbeef?ticket={Uri.EscapeDataString(ticket)}");
+        HttpResponseMessage matching = await client.GetAsync(uri.PathAndQuery);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, unknown.StatusCode);
+        Assert.Contains("unknown", await unknown.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.Unauthorized, mismatched.StatusCode);
+        Assert.Contains("does not match", await mismatched.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, matching.StatusCode);
+        Assert.Equal("nosniff", matching.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal("no-referrer", matching.Headers.GetValues("Referrer-Policy").Single());
+    }
+
+    private WebApplicationFactory<Program> Create(string[] tokens)
+    {
+        using TcpListener listener = new(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        string json = JsonSerializer.Serialize(new
+        {
+            Vestigo = new
+            {
+                ListenAddress = "127.0.0.1",
+                ListenPort = port,
+                ApiTokens = tokens,
+                Modules = new { Desktop = new { Enabled = true } },
+                Desktop = new { AllowScreenshots = true }
+            }
+        });
+        File.WriteAllText(Path.Combine(_settings, "appsettings.json"), json);
+        return new WebApplicationFactory<Program>();
+    }
 }

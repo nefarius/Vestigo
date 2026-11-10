@@ -357,7 +357,7 @@ public sealed class FileTools(
     }
 
     [McpServerTool(Name = "fetch_file")]
-    [Description("Downloads an HTTP(S) URL or copies a UNC file into a root with Write access as a background job. Poll with wait_job and read_job_output; the output ends with the stored file's path, size and SHA-256.")]
+    [Description("Imports an HTTP(S) URL or UNC file onto this host, into a root with Write access, as a background job. This does not export a screenshot or other file to the MCP client; use get_download_url or a tool-issued download or share link for that. Poll with wait_job and read_job_output; the output ends with the stored file's path, size and SHA-256.")]
     public OperationResult<JobInfo> FetchFile(
         [Description("http:// or https:// URL, or a UNC path such as \\\\server\\share\\file.sys.")] string source,
         [Description("Destination file as root:relative\\path.")] string destination,
@@ -461,7 +461,7 @@ public sealed class FileTools(
     }
 
     [McpServerTool(Name = "get_download_url")]
-    [Description("Returns an HTTP GET URL for downloading an existing file from a root with Read access, with curl and Invoke-WebRequest examples. When API tokens are configured the URL carries a one-time ticket that expires and stops working after one successful download, so the API token never has to be shared.")]
+    [Description("Returns an HTTP GET URL, not the file bytes, for downloading an existing file from a root with Read access, with curl and Invoke-WebRequest examples. When API tokens are configured the URL carries a one-time ticket that expires and stops working after one successful download, so the API token never has to be shared. For a screenshot the user can open immediately, call take_screenshot with share:true.")]
     public OperationResult<DownloadUrlInfo> GetDownloadUrl(
         [Description("File as root:relative\\path or an absolute path inside a root with Read access.")] string path)
     {

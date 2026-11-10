@@ -27,8 +27,14 @@ public sealed class DesktopModule : VestigoModule
         services.TryAddSingleton<SessionHelperClient>();
         services.TryAddSingleton<IRebootScheduler, Win32RebootScheduler>();
         services.TryAddSingleton<FileDeployer>();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<ScreenshotShareStore>();
         services.AddSingleton<DesktopInventory>();
         services.AddSingleton<CaptureCache>();
         services.AddSingleton<PerceptionService>();
     }
+
+    public override void MapEndpoints(WebApplication app, VestigoOptions options) =>
+        ScreenshotShareEndpoint.Map(app, options);
 }

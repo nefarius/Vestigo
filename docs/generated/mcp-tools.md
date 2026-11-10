@@ -191,7 +191,7 @@ Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root in
 
 ## `fetch_file`
 
-Downloads an HTTP(S) URL or copies a UNC file into a root with Write access as a background job. Poll with wait_job and read_job_output; the output ends with the stored file's path, size and SHA-256.
+Imports an HTTP(S) URL or UNC file onto this host, into a root with Write access, as a background job. This does not export a screenshot or other file to the MCP client; use get_download_url or a tool-issued download or share link for that. Poll with wait_job and read_job_output; the output ends with the stored file's path, size and SHA-256.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -317,7 +317,7 @@ Reads %windir%\INF\setupapi.dev.log and rotated setupapi.dev.*.log files for sec
 
 ## `get_download_url`
 
-Returns an HTTP GET URL for downloading an existing file from a root with Read access, with curl and Invoke-WebRequest examples. When API tokens are configured the URL carries a one-time ticket that expires and stops working after one successful download, so the API token never has to be shared.
+Returns an HTTP GET URL, not the file bytes, for downloading an existing file from a root with Read access, with curl and Invoke-WebRequest examples. When API tokens are configured the URL carries a one-time ticket that expires and stops working after one successful download, so the API token never has to be shared. For a screenshot the user can open immediately, call take_screenshot with share:true.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1291,7 +1291,7 @@ Returns the last lines of a text file under a root with Read access. The file is
 
 ## `take_screenshot`
 
-Captures a PNG of the console user's desktop. target 'desktop' (default) is the virtual screen across all monitors; 'display' is one GDI display (display='primary' or \\.\DISPLAYn from list_displays); 'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel coordinates list_displays reports. Returns a downscaled preview as image content (maxEdge, default 1920; 0 omits it) plus JSON metadata. saveTo stores the full-resolution PNG in a root with Write access (root:relative\file.png) and adds a download link (one-time ticket when API tokens are configured). Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+Captures a PNG of the console user's desktop. target 'desktop' (default) is the virtual screen across all monitors; 'display' is one GDI display (display='primary' or \\.\DISPLAYn from list_displays); 'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel coordinates list_displays reports. Returns a downscaled preview as MCP image content for the model (maxEdge, default 1920; 0 omits it) plus JSON metadata. That image block may not be shown to the user. share:true also returns a short-lived, single-use URL and resource link for the same preview so the user can open and copy it; present that URL and do not fetch it first. saveTo stores the full-resolution PNG in a root with Write access (root:relative\file.png) and adds a download link (one-time ticket when API tokens are configured). Do not use fetch_file to export a screenshot. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1309,6 +1309,7 @@ Captures a PNG of the console user's desktop. target 'desktop' (default) is the 
 | `maxEdge` | `int` | no | `1920` | Longest edge of the inline preview in pixels. 0 omits the preview. Default 1920. |
 | `saveTo` | `string` | no | `null` | Optional destination as root:relative\file.png. Needs Write access. |
 | `overwrite` | `bool` | no | `false` | Replace an existing saveTo file. |
+| `share` | `bool` | no | `false` | When true, also return a short-lived single-use URL for the downscaled preview so a person can open and copy it. The MCP image block is for the model and may not appear in chat. Present the share URL and do not fetch it. Needs maxEdge above 0. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when capturing as the console user. |
 
 ## `test_endpoint`

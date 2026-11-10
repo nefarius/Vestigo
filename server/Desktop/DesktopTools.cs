@@ -13,7 +13,13 @@ namespace Vestigo.Desktop;
 
 /// <summary>MCP tools that list Win32 windows and the displays they are rendered on, and capture screenshots.</summary>
 [McpServerToolType]
-public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions options, RootPolicy roots, FileLinkIssuer? links = null)
+public sealed class DesktopTools(
+    DesktopInventory inventory,
+    VestigoOptions options,
+    RootPolicy roots,
+    FileLinkIssuer? links = null,
+    ScreenshotShareStore? shares = null,
+    IHttpContextAccessor? httpContext = null)
 {
     [McpServerTool(Name = "list_windows")]
     [Description(
@@ -72,9 +78,13 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
         + "monitors; 'display' is one GDI display (display='primary' or \\\\.\\DISPLAYn from list_displays); "
         + "'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that "
         + "must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel "
-        + "coordinates list_displays reports. Returns a downscaled preview as image content (maxEdge, default 1920; "
-        + "0 omits it) plus JSON metadata. saveTo stores the full-resolution PNG in a root with Write access "
-        + "(root:relative\\file.png) and adds a download link (one-time ticket when API tokens are configured). Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.")]
+        + "coordinates list_displays reports. Returns a downscaled preview as MCP image content for the model "
+        + "(maxEdge, default 1920; 0 omits it) plus JSON metadata. That image block may not be shown to the user. "
+        + "share:true also returns a short-lived, single-use URL and resource link for the same preview so the user "
+        + "can open and copy it; present that URL and do not fetch it first. saveTo stores the full-resolution PNG "
+        + "in a root with Write access (root:relative\\file.png) and adds a download link (one-time ticket when API "
+        + "tokens are configured). Do not use fetch_file to export a screenshot. Requires Vestigo:Desktop:AllowScreenshots. "
+        + "Interactive session only.")]
     public async Task<CallToolResult> TakeScreenshot(
         [Description("'desktop' (default), 'display', 'window' or 'region'.")] string target = ScreenCaptureTarget.Desktop,
         [Description("GDI device name such as \\\\.\\DISPLAY2, or 'primary'. Required for target 'display'.")] string? display = null,
@@ -90,6 +100,10 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
         [Description("Longest edge of the inline preview in pixels. 0 omits the preview. Default 1920.")] int maxEdge = ScreenCaptureTarget.DefaultMaxEdge,
         [Description("Optional destination as root:relative\\file.png. Needs Write access.")] string? saveTo = null,
         [Description("Replace an existing saveTo file.")] bool overwrite = false,
+        [Description(
+            "When true, also return a short-lived single-use URL for the downscaled preview so a person can open and copy it. "
+            + "The MCP image block is for the model and may not appear in chat. Present the share URL and do not fetch it. Needs maxEdge above 0.")]
+        bool share = false,
         [Description("Interactive only: use the elevated token when capturing as the console user.")] bool elevated = false,
         CancellationToken cancellationToken = default)
     {
@@ -108,6 +122,16 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
         if (maxEdge is < 0 or > ScreenCaptureTarget.MaxMaxEdge)
         {
             return ErrorResult("invalid_request", $"maxEdge must be between 0 and {ScreenCaptureTarget.MaxMaxEdge}.");
+        }
+
+        if (share && maxEdge == 0)
+        {
+            return ErrorResult("share_unavailable", "share needs a preview. Set maxEdge above 0.");
+        }
+
+        if (share && shares is null)
+        {
+            return ErrorResult("share_unavailable", "Screenshot sharing is not available.");
         }
 
         bool hasWindowFilter = pid is not null || !string.IsNullOrWhiteSpace(processName) || !string.IsNullOrWhiteSpace(titleRegex);
@@ -166,11 +190,28 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
             return ErrorResult(captured);
         }
 
+        ScreenshotShareLink? shareLink = null;
+        if (share)
+        {
+            if (captured.Value!.PreviewPng is not { Length: > 0 })
+            {
+                return ErrorResult("share_unavailable", "share needs a preview. Set maxEdge above 0.");
+            }
+
+            OperationResult<ScreenshotShareLink> issued = shares!.Issue(captured.Value.PreviewPng, BaseUrl());
+            if (!issued.Success)
+            {
+                return ErrorResult(issued.ErrorCode!, issued.Error!);
+            }
+
+            shareLink = issued.Value;
+        }
+
         FileLink? download = captured.Value!.Info.SavedPath is { } saved ? links?.TryCreateDownload(saved) : null;
-        return SuccessResult(captured.Value!, download);
+        return SuccessResult(captured.Value!, download, shareLink);
     }
 
-    internal static CallToolResult SuccessResult(CapturedScreenshot capture, FileLink? download = null)
+    internal static CallToolResult SuccessResult(CapturedScreenshot capture, FileLink? download = null, ScreenshotShareLink? share = null)
     {
         List<ContentBlock> content = [];
         if (capture.PreviewPng is { Length: > 0 })
@@ -178,16 +219,47 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
             content.Add(ImageContentBlock.FromBytes(capture.PreviewPng, "image/png"));
         }
 
-        string json = JsonSerializer.Serialize(capture.Info, SessionHelper.Json);
-        if (download is not null)
+        if (share is not null)
         {
-            System.Text.Json.Nodes.JsonObject node = (System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(json)!;
-            node["download"] = JsonSerializer.SerializeToNode(download, SessionHelper.Json);
-            json = node.ToJsonString(SessionHelper.Json);
+            content.Add(new ResourceLinkBlock
+            {
+                Uri = share.Url,
+                Name = "vestigo-screenshot.png",
+                Title = "Desktop screenshot",
+                Description = share.Instruction,
+                MimeType = "image/png",
+                Size = capture.PreviewPng?.LongLength,
+                Annotations = new Annotations { Audience = [Role.User] }
+            });
         }
 
-        content.Add(new TextContentBlock { Text = json });
+        string json = JsonSerializer.Serialize(capture.Info, SessionHelper.Json);
+        System.Text.Json.Nodes.JsonObject node = (System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        if (download is not null)
+        {
+            node["download"] = JsonSerializer.SerializeToNode(download, SessionHelper.Json);
+        }
+
+        if (share is not null)
+        {
+            node["share"] = JsonSerializer.SerializeToNode(share, SessionHelper.Json);
+        }
+
+        content.Add(new TextContentBlock { Text = node.ToJsonString(SessionHelper.Json) });
         return new CallToolResult { Content = content };
+    }
+
+    private string BaseUrl()
+    {
+        HttpRequest? request = httpContext?.HttpContext?.Request;
+        if (request is not null && request.Host.HasValue)
+        {
+            return $"{request.Scheme}://{request.Host.Value}";
+        }
+
+        System.Net.IPAddress address = System.Net.IPAddress.Parse(options.ListenAddress);
+        string host = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]" : address.ToString();
+        return $"http://{host}:{options.ListenPort}";
     }
 
     internal static CallToolResult ErrorResult<T>(OperationResult<T> result) =>

@@ -26,7 +26,7 @@ Use the Devices module when the case needs a driver stack, a filter, or a device
 
 1. Enable Desktop. Screenshots stay off until `Desktop:AllowScreenshots` is true.
 2. `list_windows` and `list_displays` to find the window or monitor.
-3. `take_screenshot` of the desktop, one display, one window, or a region. Pass `saveTo` in a write root; the result includes a one-time download link when tokens are configured.
+3. `take_screenshot` of the desktop, one display, one window, or a region. The MCP image is for the agent and may not appear in chat. Pass `share: true` and give the person the returned URL; it shows the downscaled preview once and then expires. Pass `saveTo` in a write root when the full-resolution PNG must be kept; that result includes a one-time download link when tokens are configured. Do not use `fetch_file` to export the image.
 
 The lock screen and UAC secure desktop fail with `desktop_unavailable`. A console user must be logged on.
 
