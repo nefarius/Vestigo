@@ -18,8 +18,8 @@ public class WindowInvestigationWindowsTests
         string decoratedClass = "VestigoInspectDecorated_" + Guid.NewGuid().ToString("N");
         string borderlessClass = "VestigoInspectBorderless_" + Guid.NewGuid().ToString("N");
         string rejectClass = "VestigoInspectReject_" + Guid.NewGuid().ToString("N");
-        nint decorated = Create(decoratedClass, 0x00CF0000, DefWindowProc);
-        nint borderless = Create(borderlessClass, 0x80000000, DefWindowProc);
+        nint decorated = Create(decoratedClass, 0x00CF0000, DefaultProcedure);
+        nint borderless = Create(borderlessClass, 0x80000000, DefaultProcedure);
         nint rejecting = Create(rejectClass, 0x00CF0000, RejectMove);
         try
         {
@@ -206,7 +206,7 @@ public class WindowInvestigationWindowsTests
 
     private static string Hex(nint window) => "0x" + window.ToString("X");
 
-    private static readonly WndProc DefWindowProc = DefWindowProcNative;
+    private static readonly WndProc DefaultProcedure = DefWindowProc;
 
     private static readonly WndProc RejectMove = (window, message, wParam, lParam) =>
     {
@@ -217,7 +217,7 @@ public class WindowInvestigationWindowsTests
             Marshal.StructureToPtr(position, lParam, false);
         }
 
-        return DefWindowProcNative(window, message, wParam, lParam);
+        return DefWindowProc(window, message, wParam, lParam);
     };
 
     private delegate nint WndProc(nint window, uint message, nint wParam, nint lParam);
@@ -265,5 +265,5 @@ public class WindowInvestigationWindowsTests
     private static extern nint GetModuleHandle(string? module);
 
     [DllImport("user32.dll")]
-    private static extern nint DefWindowProcNative(nint window, uint message, nint wParam, nint lParam);
+    private static extern nint DefWindowProc(nint window, uint message, nint wParam, nint lParam);
 }
