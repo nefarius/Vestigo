@@ -190,10 +190,12 @@ public sealed class DesktopTools(
             return ErrorResult(captured);
         }
 
+        FileLink? download = captured.Value!.Info.SavedPath is { } saved ? links?.TryCreateDownload(saved) : null;
         ScreenshotShareLink? shareLink = null;
+        OperationResult<ScreenshotShareLink>? shareFailure = null;
         if (share)
         {
-            if (captured.Value!.PreviewPng is not { Length: > 0 })
+            if (captured.Value.PreviewPng is not { Length: > 0 })
             {
                 return ErrorResult("share_unavailable", "share needs a preview. Set maxEdge above 0.");
             }
@@ -201,17 +203,28 @@ public sealed class DesktopTools(
             OperationResult<ScreenshotShareLink> issued = shares!.Issue(captured.Value.PreviewPng, BaseUrl());
             if (!issued.Success)
             {
-                return ErrorResult(issued.ErrorCode!, issued.Error!);
-            }
+                // The PNG is already stored, so a full share store must not hide that file.
+                if (captured.Value.Info.SavedPath is not { Length: > 0 })
+                {
+                    return ErrorResult(issued);
+                }
 
-            shareLink = issued.Value;
+                shareFailure = issued;
+            }
+            else
+            {
+                shareLink = issued.Value;
+            }
         }
 
-        FileLink? download = captured.Value!.Info.SavedPath is { } saved ? links?.TryCreateDownload(saved) : null;
-        return SuccessResult(captured.Value!, download, shareLink);
+        return SuccessResult(captured.Value, download, shareLink, shareFailure);
     }
 
-    internal static CallToolResult SuccessResult(CapturedScreenshot capture, FileLink? download = null, ScreenshotShareLink? share = null)
+    internal static CallToolResult SuccessResult(
+        CapturedScreenshot capture,
+        FileLink? download = null,
+        ScreenshotShareLink? share = null,
+        OperationResult<ScreenshotShareLink>? shareFailure = null)
     {
         List<ContentBlock> content = [];
         if (capture.PreviewPng is { Length: > 0 })
@@ -243,6 +256,12 @@ public sealed class DesktopTools(
         if (share is not null)
         {
             node["share"] = JsonSerializer.SerializeToNode(share, SessionHelper.Json);
+        }
+        else if (shareFailure is not null)
+        {
+            node["shareError"] = JsonSerializer.SerializeToNode(
+                new { errorCode = shareFailure.ErrorCode, error = shareFailure.Error },
+                SessionHelper.Json);
         }
 
         content.Add(new TextContentBlock { Text = node.ToJsonString(SessionHelper.Json) });

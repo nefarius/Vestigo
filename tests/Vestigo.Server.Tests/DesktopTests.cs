@@ -369,6 +369,44 @@ public class DesktopTests
     }
 
     [Fact]
+    public void TakeScreenshot_SavedCaptureReportsShareFailureWithoutLink()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4];
+        CapturedScreenshot capture = new(
+            new ScreenCaptureInfo(
+                ScreenCaptureTarget.Desktop,
+                new DesktopRect(0, 0, 1, 1),
+                new DesktopSize(1, 1),
+                new DesktopSize(1, 1),
+                96,
+                [@"\\.\DISPLAY1"],
+                null,
+                null,
+                @"C:\shots\desk.png",
+                png.Length,
+                "abc",
+                false,
+                1),
+            png);
+        OperationResult<ScreenshotShareLink> failure = OperationResult<ScreenshotShareLink>.Fail(
+            "share_unavailable",
+            "Too many screenshot shares are in use. Try again shortly.");
+
+        CallToolResult result = DesktopTools.SuccessResult(capture, shareFailure: failure);
+
+        Assert.NotEqual(true, result.IsError);
+        Assert.Equal(2, result.Content.Count);
+        Assert.IsType<ImageContentBlock>(result.Content[0]);
+        Assert.DoesNotContain(result.Content, block => block is ResourceLinkBlock);
+        using JsonDocument document = JsonDocument.Parse(Assert.IsType<TextContentBlock>(result.Content[1]).Text);
+        Assert.False(document.RootElement.TryGetProperty("share", out _));
+        JsonElement shareError = document.RootElement.GetProperty("shareError");
+        Assert.Equal("share_unavailable", shareError.GetProperty("errorCode").GetString());
+        Assert.Contains("in use", shareError.GetProperty("error").GetString(), StringComparison.Ordinal);
+        Assert.Equal(@"C:\shots\desk.png", document.RootElement.GetProperty("savedPath").GetString());
+    }
+
+    [Fact]
     public async Task TakeScreenshot_RefusesShareWithoutPreviewOrStore()
     {
         DesktopTools disabled = CreateTools(new UnavailableLauncher());
