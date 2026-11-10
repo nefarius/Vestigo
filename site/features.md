@@ -55,7 +55,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Screenshots gated</span></p>
     <h2>Desktop and screenshots</h2>
-    <p>List windows and displays on the console user's desktop, including titles, bounds, and monitor topology. Screenshots stay off until <code>Desktop:AllowScreenshots</code> is true. Capture the virtual screen, one display, one window, or a rectangle, and optionally save a PNG into a write root.</p>
+    <p>List windows and displays on the console user's desktop, including titles, bounds, and monitor topology. Screenshots stay off until <code>Desktop:AllowScreenshots</code> is true. Capture the virtual screen, one display, one window, or a rectangle, and optionally save a PNG into a write root. <code>share: true</code> adds a 10-minute, single-use link to the downscaled preview so a person can open or copy it when the chat does not show the MCP image.</p>
     <p>The lock screen and UAC secure desktop return <code>desktop_unavailable</code>. Some GPU or DRM windows capture black.</p>
   </article>
   <article class="card">

@@ -39,6 +39,10 @@ Install the x64 .NET Runtime 10.0 (or the Hosting Bundle) from [https://dotnet.m
 
 The URL's `ticket` is unknown, expired (`Vestigo:Files:TicketLifetime`), already used by a completed transfer, in use by another request, issued for a different method or path, or lost in a service restart. Ask the tool (`get_download_url`, `get_upload_url`, `take_screenshot`, `convert_etl`) for a fresh link. An API token in `Authorization: Bearer` also works.
 
+## `/desktop/shares` returns 401 `invalid_ticket`
+
+The screenshot share ticket is missing, unknown, expired (10 minutes), already used, in use by another request, bound to a different screenshot id, or lost in a service restart. Call `take_screenshot` with `share: true` again and give the new URL to the person who needs the image. Do not fetch it first: one completed response consumes it. An API token does not authorize this URL. `share_unavailable` from the tool means `maxEdge` was 0, the preview was larger than 32 MiB, or every share slot was already in use. When `saveTo` stored the PNG and the link could not be issued, the tool succeeds and `shareError` reports that failure instead.
+
 ## Startup fails immediately
 
 The exception names the setting. Common causes:

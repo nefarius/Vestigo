@@ -18,7 +18,7 @@ It is Windows only. There is no management UI: opening `/` in a browser shows co
 
 ## How an agent talks to it
 
-The client speaks MCP over Streamable HTTP at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is set, every `/mcp` call needs `Authorization: Bearer <token>`. File-transfer tools return short-lived, single-use `/files` URLs, so a client does not need the API token to fetch a screenshot or a converted trace.
+The client speaks MCP over Streamable HTTP at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is set, every `/mcp` call needs `Authorization: Bearer <token>`. File-transfer tools return short-lived, single-use `/files` URLs, so a client does not need the API token to fetch a saved screenshot or a converted trace. `take_screenshot` with `share: true` returns a 10-minute, single-use preview URL for a person to open when the chat does not render the MCP image.
 
 A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` from the repository uses loopback and no tokens until you add some.
 
