@@ -6,6 +6,7 @@ using Vestigo.Devices;
 using Vestigo.Diagnostics;
 using Vestigo.Jobs;
 using Vestigo.Processes;
+using Vestigo.SystemInfo;
 
 namespace Vestigo.Server.Tests;
 
@@ -82,7 +83,9 @@ public class GraphicsDiagnosticsTests
         SessionCaptureProbe probe = new(launcher, new SessionHelperClient(launcher));
 
         Assert.Equal("unsupported", (await probe.ProbeAsync("primary", "wgc", 100, CancellationToken.None)).ErrorCode);
-        Assert.Equal("user_not_available", (await probe.ProbeAsync("primary", "dxgi", 100, CancellationToken.None)).ErrorCode);
+        OperationResult<CaptureProbeResult> missing = await probe.ProbeAsync("primary", "dxgi", 100, CancellationToken.None);
+        Assert.Equal("user_not_available", missing.ErrorCode);
+        Assert.Equal(ConsoleSessionReasons.NobodyLoggedOn, missing.Reason);
         Assert.False(launcher.Started);
     }
 
@@ -119,7 +122,10 @@ public class GraphicsDiagnosticsTests
         public bool Started { get; private set; }
 
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) =>
-            OperationResult<bool>.Fail("no_interactive_session", "No user is logged on at the console.");
+            OperationResult<bool>.Fail(
+                "no_interactive_session",
+                "No user is logged on at the console.",
+                ConsoleSessionReasons.NobodyLoggedOn);
 
         public Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
         {

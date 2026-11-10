@@ -3,6 +3,8 @@ using System.Security.Principal;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
+using Vestigo.SystemInfo;
+
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Security;
@@ -17,7 +19,6 @@ namespace Vestigo.EnvVars;
 public sealed class RegistryEnvironmentStore : IEnvironmentStore
 {
     private const string MachineKey = @"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
-    private const uint NoSession = 0xFFFFFFFF;
 
     public EnvironmentValue? Get(EnvironmentScope scope, string name)
     {
@@ -136,23 +137,26 @@ public sealed class RegistryEnvironmentStore : IEnvironmentStore
     /// <summary>SID of the user on the active console session, or <see cref="UserNotAvailableException" />.</summary>
     internal static unsafe string ActiveConsoleUserSid()
     {
-        uint session = PInvoke.WTSGetActiveConsoleSessionId();
-        if (session == NoSession)
+        uint session = ConsoleSession.ActiveConsoleSessionId();
+        if (session == ConsoleSession.NoSession)
         {
-            throw new UserNotAvailableException("No user is logged on at the console.");
+            throw new UserNotAvailableException(
+                ConsoleSessionReasons.Message,
+                ConsoleSession.Explain(session, tokenError: null, ConsoleSession.TryList(), sessionZeroIsUnusable: false));
         }
 
-        HANDLE rawToken = default;
-        if (!PInvoke.WTSQueryUserToken(session, ref rawToken))
+        SafeFileHandle? opened = ConsoleSession.TryOpenToken(session, out int error);
+        if (opened is null)
         {
-            int error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
             // ERROR_NO_TOKEN: the session exists (for example the logon screen) but nobody is signed in.
-            if (error == 1008)
+            if (error == ConsoleSession.ErrorNoToken)
             {
-                throw new UserNotAvailableException("No user is logged on at the console.");
+                throw new UserNotAvailableException(
+                    ConsoleSessionReasons.Message,
+                    ConsoleSessionReasons.ConsoleSessionHasNoToken);
             }
 
-            if (error == 5)
+            if (error == ConsoleSession.ErrorAccessDenied)
             {
                 throw new UnauthorizedAccessException("Querying the console user token requires the SYSTEM account (SeTcbPrivilege).");
             }
@@ -160,7 +164,7 @@ public sealed class RegistryEnvironmentStore : IEnvironmentStore
             throw new IOException($"Querying the console user failed with Win32 error {error}.");
         }
 
-        using (SafeFileHandle token = new(rawToken, ownsHandle: true))
+        using (SafeFileHandle token = opened)
         {
             uint needed = 0;
             PInvoke.GetTokenInformation(token, TOKEN_INFORMATION_CLASS.TokenUser, null, 0, out needed);

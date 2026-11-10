@@ -94,7 +94,7 @@ public sealed class ProcessTools(
         OperationResult<bool> available = launcher.CheckAvailability(launchContext, elevated);
         if (!available.Success)
         {
-            return Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<RunProcessResult>();
         }
 
         LaunchRequest request = new(plan.Executable, plan.Arguments, directory, environment, launchContext, elevated);

@@ -11,7 +11,11 @@ public enum EnvironmentScope
 public sealed record EnvironmentValue(string Value, bool Expandable);
 
 /// <summary>Raised when the user scope is requested but nobody is logged on at the console.</summary>
-public sealed class UserNotAvailableException(string message) : Exception(message);
+/// <param name="reason">Stable token describing why, when one is known.</param>
+public sealed class UserNotAvailableException(string message, string? reason = null) : Exception(message)
+{
+    public string? Reason { get; } = reason;
+}
 
 /// <summary>Storage behind the environment tools. Implementations never log values.</summary>
 public interface IEnvironmentStore

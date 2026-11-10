@@ -27,8 +27,8 @@ internal sealed class SessionCaptureProbe(IProcessLauncher launcher, SessionHelp
         if (!available.Success)
         {
             return available.ErrorCode == "no_interactive_session"
-                ? OperationResult<CaptureProbeResult>.Fail("user_not_available", "No user is logged on at the console.")
-                : OperationResult<CaptureProbeResult>.Fail(available.ErrorCode!, available.Error!);
+                ? OperationResult<CaptureProbeResult>.Fail("user_not_available", available.Error!, available.Reason)
+                : available.FailAs<CaptureProbeResult>();
         }
 
         return await helper.RunAsync<CaptureProbeResult>(

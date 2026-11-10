@@ -6,6 +6,7 @@ using Win32 = Microsoft.Win32;
 using Vestigo.Configuration;
 using Vestigo.Modules;
 using Vestigo.RegistryProbe;
+using Vestigo.SystemInfo;
 
 namespace Vestigo.Server.Tests;
 
@@ -235,8 +236,14 @@ public class RegistryTests
         RegistryValueResult other = tools.ReadRegistryValue(@"HKU\S-1-5-21-9\Software\Contoso", "Flag").Value!;
         Assert.Equal("other", other.Text);
 
-        store.ConsoleUser = new ConsoleUserLookup(null, "no_interactive_session", "No user is logged on at the console.");
-        Assert.Equal("no_interactive_session", tools.ReadRegistryValue(@"HKCU\Software\Contoso", "Flag").ErrorCode);
+        store.ConsoleUser = new ConsoleUserLookup(
+            null,
+            "no_interactive_session",
+            "No user is logged on at the console.",
+            ConsoleSessionReasons.OnlyDisconnectedSessions);
+        OperationResult<RegistryValueResult> missing = tools.ReadRegistryValue(@"HKCU\Software\Contoso", "Flag");
+        Assert.Equal("no_interactive_session", missing.ErrorCode);
+        Assert.Equal(ConsoleSessionReasons.OnlyDisconnectedSessions, missing.Reason);
         Assert.Equal("other", tools.ReadRegistryValue(@"HKU\S-1-5-21-9\Software\Contoso", "Flag").Value!.Text);
     }
 

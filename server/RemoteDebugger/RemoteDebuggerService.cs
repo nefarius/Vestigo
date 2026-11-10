@@ -137,7 +137,7 @@ public sealed class RemoteDebuggerService(
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Service, false);
         if (!available.Success)
         {
-            return Fail<InstallRemoteDebuggerResult>(available.ErrorCode!, available.Error!);
+            return available.FailAs<InstallRemoteDebuggerResult>();
         }
 
         OperationResult<JobInfo> started = jobs.Start(
@@ -277,7 +277,7 @@ public sealed class RemoteDebuggerService(
         OperationResult<bool> available = launcher.CheckAvailability(context, elevated);
         if (!available.Success)
         {
-            return Fail<StartRemoteDebuggerResult>(available.ErrorCode!, available.Error!);
+            return available.FailAs<StartRemoteDebuggerResult>();
         }
 
         IReadOnlyList<string> args = RemoteDebuggerPlanner.BuildStartArguments(port, timeoutSeconds, auth, allowUsers);
@@ -505,7 +505,7 @@ public sealed class RemoteDebuggerService(
         OperationResult<bool> available = launcher.CheckAvailability(context, false);
         if (!available.Success)
         {
-            return Fail<PrepareRemoteDebuggerResult>(available.ErrorCode!, available.Error!);
+            return available.FailAs<PrepareRemoteDebuggerResult>();
         }
 
         LaunchRequest request = new(

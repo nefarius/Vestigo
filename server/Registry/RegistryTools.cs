@@ -31,7 +31,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
         OperationResult<RegistryPathDecision> decision = Decide(path, out _);
         if (!decision.Success || decision.Value is null)
         {
-            return OperationResult<RegistryValueResult>.Fail(decision.ErrorCode!, decision.Error!);
+            return decision.FailAs<RegistryValueResult>();
         }
 
         RegistryOpen opened = store.Open(kind, decision.Value.Hive, decision.Value.SubKey);
@@ -83,7 +83,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
         OperationResult<RegistryPathDecision> decision = Decide(path, out string? consoleSid);
         if (!decision.Success || decision.Value is null)
         {
-            return OperationResult<RegistryListResult>.Fail(decision.ErrorCode!, decision.Error!);
+            return decision.FailAs<RegistryListResult>();
         }
 
         int entryCap = maxEntries is null
@@ -124,7 +124,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
         OperationResult<RegistryPathDecision> decision = Decide(path, out _);
         if (!decision.Success || decision.Value is null)
         {
-            return OperationResult<RegistryMetadata>.Fail(decision.ErrorCode!, decision.Error!);
+            return decision.FailAs<RegistryMetadata>();
         }
 
         RegistryOpen opened = store.Open(kind, decision.Value.Hive, decision.Value.SubKey);
@@ -365,7 +365,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
                     && !string.Equals(user.ErrorCode, "no_interactive_session", StringComparison.Ordinal);
                 if (pathNeedsUser || lookupError)
                 {
-                    return OperationResult<RegistryPathDecision>.Fail(user.ErrorCode!, user.Error!);
+                    return OperationResult<RegistryPathDecision>.Fail(user.ErrorCode!, user.Error!, user.Reason);
                 }
             }
             else

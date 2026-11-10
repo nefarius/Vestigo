@@ -20,9 +20,9 @@ public sealed class WindowsRegistryStore : IRegistryStore
         {
             return new ConsoleUserLookup(EnvVars.RegistryEnvironmentStore.ActiveConsoleUserSid(), null, null);
         }
-        catch (EnvVars.UserNotAvailableException)
+        catch (EnvVars.UserNotAvailableException exception)
         {
-            return new ConsoleUserLookup(null, "no_interactive_session", "No user is logged on at the console.");
+            return new ConsoleUserLookup(null, "no_interactive_session", exception.Message, exception.Reason);
         }
         catch (UnauthorizedAccessException)
         {

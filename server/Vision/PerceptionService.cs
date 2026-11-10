@@ -61,7 +61,7 @@ public sealed class PerceptionService(
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, request.Elevated);
         if (!available.Success)
         {
-            return OperationResult<PerceptionOutcome>.Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<PerceptionOutcome>();
         }
 
         long maxBytes = options.Desktop.MaxScreenshotBytes;
@@ -75,7 +75,7 @@ public sealed class PerceptionService(
             cancellationToken).ConfigureAwait(false);
         if (!helperResult.Success)
         {
-            return OperationResult<PerceptionOutcome>.Fail(helperResult.ErrorCode!, helperResult.Error!);
+            return helperResult.FailAs<PerceptionOutcome>();
         }
 
         InspectCaptureResult value = helperResult.Value!;

@@ -75,7 +75,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             cancellationToken).ConfigureAwait(false);
         return outcome.Success
             ? Describe(outcome.Value!, mode, null)
-            : DesktopTools.ErrorResult(outcome.ErrorCode!, outcome.Error!);
+            : DesktopTools.ErrorResult(outcome);
     }
 
     [McpServerTool(Name = "find_on_screen", ReadOnly = true, Destructive = false)]
@@ -184,7 +184,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             cancellationToken).ConfigureAwait(false);
         if (!outcome.Success)
         {
-            return DesktopTools.ErrorResult(outcome.ErrorCode!, outcome.Error!);
+            return DesktopTools.ErrorResult(outcome);
         }
 
         PerceptionOutcome value = outcome.Value!;

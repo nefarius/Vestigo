@@ -4,7 +4,8 @@ namespace Vestigo.RegistryProbe;
 /// <param name="Sid">Account SID, or null when lookup failed.</param>
 /// <param name="ErrorCode">Stable error code when <paramref name="Sid" /> is null.</param>
 /// <param name="Error">Caller-facing message when <paramref name="Sid" /> is null.</param>
-public sealed record ConsoleUserLookup(string? Sid, string? ErrorCode, string? Error);
+/// <param name="Reason">Why the console user is missing, when <paramref name="ErrorCode" /> is <c>no_interactive_session</c>.</param>
+public sealed record ConsoleUserLookup(string? Sid, string? ErrorCode, string? Error, string? Reason = null);
 
 /// <summary>A page of registry names, stopped at the caller's limit.</summary>
 /// <param name="Names">Names that fit in the limit.</param>
