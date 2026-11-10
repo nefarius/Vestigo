@@ -20,7 +20,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>Files and text search</h2>
     <p>Named roots with <code>Read</code>, <code>Write</code>, and <code>Execute</code> confine every path. List, copy, move, delete, and mkdir stay inside those roots. <code>fetch_file</code> pulls HTTP(S) or UNC into a root as a job. Upload and download URLs can carry a one-time ticket so the API token never goes into a curl command.</p>
-    <p><code>tail_text_file</code> and <code>read_text_file_since</code> follow a growing log. <code>search_text</code> runs bundled ripgrep across a root and returns only the matching lines.</p>
+    <p><code>tail_text_file</code> and <code>read_text_file_since</code> follow a growing log. <code>search_text</code> runs bundled ripgrep across a root and returns only the matching lines. <code>read_json_path</code> and <code>get_json_summary</code> read one UTF-8 JSON document without downloading it.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span> <span class="pill optin">Processes opt-in</span></p>

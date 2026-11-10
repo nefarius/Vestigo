@@ -119,7 +119,8 @@ concurrency slot stays occupied until that work finishes.
 ## Collect logs and traces
 
 1. `tail_text_file` or `read_text_file_since` for a growing log under a read root.
-2. `search_text` when you need a regex across a directory tree without pulling every file.
-3. `start_capture` / `read_capture` or `convert_etl` for WPP. `get_download_url` or the ticket on a conversion result pulls the file back without pasting the API token into the client.
+2. `search_text` when you need a regex across a directory tree without pulling every file. Use it for line-oriented NDJSON too.
+3. `get_json_summary` or `read_json_path` for one UTF-8 JSON snapshot. A query such as `$.status` or `$.items[*]` returns typed values; it does not filter or walk every descendant.
+4. `start_capture` / `read_capture` or `convert_etl` for WPP. `get_download_url` or the ticket on a conversion result pulls the file back without pasting the API token into the client.
 
 Keep [the intro](index.md) connection steps nearby: the MSI writes the token into ProgramData, and `/` in a browser repeats the same instructions.

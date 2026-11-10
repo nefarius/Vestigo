@@ -82,6 +82,9 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Logs:MaxSearchLineLength` | 1000 | Longest line text returned; longer lines are cut to a window around the first match. At least 80. |
 | `Logs:MaxSearchDuration` | 00:01:00 | Longest time one search may run before ripgrep is stopped and partial results are returned. |
 | `Logs:MaxConcurrentSearches` | 2 | Searches that may run at once; further calls wait briefly and then fail with `search_busy`. |
+| `Logs:MaxJsonBytes` | 16777216 | Largest UTF-8 JSON document `read_json_path` or `get_json_summary` will read. A caller `maxBytes` can only lower this cap. |
+| `Logs:MaxJsonValueBytes` | 262144 | Largest matched value returned inline. One larger match fails with `value_too_large`; a larger wildcard match is omitted. |
+| `Logs:MaxJsonMatches` | 100 | Most matches, top-level keys, or summary members returned by one JSON call. |
 | `EventLog:MaxEvents` | 500 | Maximum events returned by one `query_event_log` call. |
 | `EventLog:MaxScannedEvents` | 20000 | Maximum events examined per query, which bounds message text filters. |
 | `SymbolServer` | null | Optional HTTP symbol server. Explicit values bypass `_NT_SYMBOL_PATH`. A `user:pass@` prefix is converted to `SymbolServerAuth` Basic and stripped from the URL. A query string logs a startup warning; put API keys in `SymbolServerAuth` instead. `get_trace_settings` reports the URL with userinfo and the query string removed. |

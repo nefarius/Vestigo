@@ -53,6 +53,15 @@ public sealed class LogsOptions
     /// <summary>Searches that may run at once. Further calls wait for a slot within their own time limit.</summary>
     public int MaxConcurrentSearches { get; set; } = 2;
 
+    /// <summary>Largest UTF-8 JSON document <c>read_json_path</c> or <c>get_json_summary</c> will read.</summary>
+    public int MaxJsonBytes { get; set; } = 16 * 1024 * 1024;
+
+    /// <summary>Largest matched JSON value returned inline. A larger single match fails; a larger wildcard match is omitted.</summary>
+    public int MaxJsonValueBytes { get; set; } = 256 * 1024;
+
+    /// <summary>Most values or object members returned by one JSON call.</summary>
+    public int MaxJsonMatches { get; set; } = 100;
+
     public void Validate()
     {
         if (MaxTailLines < 1 || MaxTailBytes < 16)
@@ -77,6 +86,11 @@ public sealed class LogsOptions
         {
             throw new InvalidOperationException(
                 "Vestigo:Logs search limits must be positive (MaxSearchLineLength at least 80, MaxSearchContextLines not negative).");
+        }
+
+        if (MaxJsonBytes < 1 || MaxJsonValueBytes < 1 || MaxJsonMatches < 1)
+        {
+            throw new InvalidOperationException("Vestigo:Logs JSON limits must be positive.");
         }
     }
 }

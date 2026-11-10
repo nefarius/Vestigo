@@ -351,6 +351,15 @@ Returns state, exit code, and output size for one job.
 | --- | --- | --- | --- | --- |
 | `jobId` | `string` | yes |  | Job identifier. |
 
+## `get_json_summary`
+
+Returns the root type, SHA-256, and top-level shape of a UTF-8 JSON document under a root with Read access. Object properties include type and serialized size. Array elements are counted, not listed. Values are not written to the log.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | File path: root:relative\path or an absolute path inside a root. |
+| `maxBytes` | `int?` | no | `null` | Optional byte cap, clamped down to Vestigo:Logs:MaxJsonBytes. The file is not read when it is larger. |
+
 ## `get_reboot_pending`
 
 Collects independent 64-bit registry and WUA reboot signals. Returns pending, notPending, or unknown; unreadable sources are never treated as clear. Installer and CBS session presence are advisory activity signals. Does not reboot or change the queue.
@@ -902,6 +911,16 @@ Reads a page of text output from a job. Pass the returned NextOffset to continue
 | `jobId` | `string` | yes |  | Job identifier. |
 | `offset` | `long` | no | `0` | Byte offset to read from. Use 0 for the beginning. |
 | `limit` | `int?` | no | `null` | Maximum bytes to return. Clamped to MaxJobReadBytes. |
+
+## `read_json_path`
+
+Reads one JSON value, or a bounded set of values, from a UTF-8 JSON document under a root with Read access. The query supports $.name, quoted keys, array indexes, and one trailing .* or [*] wildcard. It does not filter, slice, or walk descendants. Line-oriented NDJSON belongs to search_text. Matched values are not written to the log.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | File path: root:relative\path or an absolute path inside a root. |
+| `query` | `string` | yes |  | Query such as $.status, $['dashed-key'], $.items[0].name, or $.items[*]. |
+| `maxBytes` | `int?` | no | `null` | Optional byte cap, clamped down to Vestigo:Logs:MaxJsonBytes. The file is not read when it is larger. |
 
 ## `read_text_file_since`
 
