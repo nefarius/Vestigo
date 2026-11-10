@@ -302,3 +302,15 @@ RegEnumKeyEx
 RegEnumValue
 RegQueryValueEx
 REG_VALUE_TYPE
+
+// System module: logon session inventory. Tokens stay on the service; client addresses are not logged.
+WTSEnumerateSessions
+WTSQuerySessionInformation
+WTSFreeMemory
+WTS_INFO_CLASS
+WTS_CONNECTSTATE_CLASS
+WTS_CLIENT_ADDRESS
+CheckTokenMembership
+CreateWellKnownSid
+WELL_KNOWN_SID_TYPE
+TOKEN_STATISTICS
