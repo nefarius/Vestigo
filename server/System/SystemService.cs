@@ -53,7 +53,7 @@ public sealed record UacChange(
     bool RebootRequired);
 
 /// <summary>Validates and maps host OS and boot-security probes. Never reboots the machine.</summary>
-public sealed class SystemService(ISystemPlatform platform, VestigoOptions options)
+public sealed class SystemService(ISystemPlatform platform, VestigoOptions options, IBootStatePlatform? boot = null)
 {
     public OperationResult<SystemInfoResult> GetSystemInfo()
     {
@@ -105,6 +105,34 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
 
         return OperationResult<BootSecurityResult>.Ok(
             new BootSecurityResult(uefi, secureBoot, configured, active, whql, rebootPending, notes));
+    }
+
+    /// <summary>
+    ///     Uptime, approximate boot time, Fast Startup configuration, safe mode, and the pending-rename count.
+    ///     A failed probe is a null field. <paramref name="utcNow" /> is the clock for the approximate boot time.
+    /// </summary>
+    public OperationResult<BootStateResult> GetBootState(DateTimeOffset? utcNow = null)
+    {
+        BootStateSample sample = default;
+        if (boot is not null)
+        {
+            try
+            {
+                sample = boot.Read();
+            }
+            catch (Exception)
+            {
+                sample = default;
+            }
+        }
+
+        DateTimeOffset now = utcNow ?? DateTimeOffset.UtcNow;
+        return OperationResult<BootStateResult>.Ok(new BootStateResult(
+            BootState.ApproximateBootTime(sample.UptimeMilliseconds, now),
+            BootState.UptimeSeconds(sample.UptimeMilliseconds),
+            sample.FastStartupEnabled,
+            BootState.SafeMode(sample.CleanBoot),
+            sample.PendingFileRenameCount));
     }
 
     public OperationResult<BootConfigurationChange> SetTestSigning(bool enabled)
