@@ -187,19 +187,20 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 4096,
                 FileOptions.SequentialScan);
-            if (stream.Length > limit)
+            long size = stream.Length;
+            if (size > limit)
             {
                 return OperationResult<T>.Fail(
                     "file_too_large",
-                    $"JSON document is {stream.Length} bytes, above the {limit} byte limit.");
+                    $"JSON document is {size} bytes, above the {limit} byte limit.");
             }
 
-            if (stream.Length > int.MaxValue)
+            if (size > int.MaxValue)
             {
                 return OperationResult<T>.Fail("file_too_large", "JSON document is too large to read.");
             }
 
-            byte[] bytes = new byte[stream.Length];
+            byte[] bytes = new byte[size];
             stream.ReadExactly(bytes);
             string sha = Convert.ToHexString(SHA256.HashData(bytes));
             try
