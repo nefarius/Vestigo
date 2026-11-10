@@ -295,3 +295,10 @@ SYSTEMTIME
 UpdateSession
 SystemInformation
 UpdateServiceManager
+
+// Registry module: metadata and bounded value reads. Keys are opened with Microsoft.Win32 so the 32/64 view is explicit.
+RegQueryInfoKey
+RegEnumKeyEx
+RegEnumValue
+RegQueryValueEx
+REG_VALUE_TYPE

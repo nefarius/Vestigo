@@ -80,6 +80,12 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `MaxReadWait` | `00:00:30` |
 | `Modules` | `empty` |
 | `Processes:AllowPathLookup` | `true` |
+| `Registry:AllowedPrefixes` | `empty` |
+| `Registry:DeniedPrefixes` | `HKLM\SAM, HKLM\SECURITY, HKLM\SYSTEM\CurrentControlSet\Control\Lsa, HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` |
+| `Registry:MaxBinaryBytes` | `4096` |
+| `Registry:MaxEntries` | `500` |
+| `Registry:MaxRecursionDepth` | `4` |
+| `Registry:MaxValueStringLength` | `4096` |
 | `RemoteDebugger:DefaultPort` | `4026` |
 | `RemoteDebugger:ExtraSearchPaths` | `empty` |
 | `RemoteDebugger:InstallerDownloadTimeout` | `00:10:00` |

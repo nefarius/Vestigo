@@ -23,6 +23,7 @@ public static class ModuleRegistry
         new EnvironmentModule(),
         new SystemModule(),
         new LogsModule(),
+        new RegistryModule(),
         new EventLogModule(),
         new DesktopModule(),
         new InputModule(),
@@ -130,6 +131,7 @@ public static class ModuleRegistry
         bool audio = enabled.Any(module => module.Name == "Audio");
         bool audioSetDefault = audio && options.Audio.AllowSetDefault;
         bool servicing = enabled.Any(module => module.Name == "WindowsServicing");
+        bool registry = enabled.Any(module => module.Name == "Registry");
 
         bool diagnostics = enabled.Any(module => module.Name == "Diagnostics");
         bool diagnosticsOnline = diagnostics && options.Diagnostics.AllowOnlineRevocation;
@@ -137,7 +139,7 @@ public static class ModuleRegistry
         bool diagnosticsNetwork = diagnostics && options.Diagnostics.AllowNetworkProbes;
         bool diagnosticsPlayback = diagnostics && options.Diagnostics.AllowAudioPlayback;
         bool diagnosticsDumps = diagnostics && options.Diagnostics.AllowProcessDumps;
-        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics && !servicing)
+        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics && !servicing && !registry)
         {
             return null;
         }
@@ -149,8 +151,10 @@ public static class ModuleRegistry
         {
             List<string> names = [];
             if (servicing) names.Add("WindowsServicing");
+            if (registry) names.Add("Registry");
             List<string> clauses = [];
             if (servicing) clauses.Add($"{reach} can read reboot queue paths, update history, CBS package metadata and root-confined servicing logs.");
+            if (registry) clauses.Add($"{reach} can read registry values under the allowed prefixes. Values are returned to the client and are not written to the log.");
             if (desktop)
             {
                 names.Add("Desktop");
@@ -190,6 +194,10 @@ public static class ModuleRegistry
         }
 
         string extras = servicing ? "The WindowsServicing module can also disclose reboot queue paths, update history, CBS package metadata and root-confined servicing logs. " : "";
+        if (registry)
+        {
+            extras += "The Registry module can also read registry values under the allowed prefixes. Values are returned to the client and are not written to the log. ";
+        }
         if (desktop)
         {
             extras += desktopScreenshots
