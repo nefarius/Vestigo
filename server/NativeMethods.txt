@@ -328,4 +328,3 @@ PowerGetActiveScheme
 PowerReadFriendlyName
 PowerReadACValueIndex
 PowerReadDCValueIndex
-LocalFree
