@@ -4,6 +4,8 @@ using System.Runtime.InteropServices;
 
 using Microsoft.Win32.SafeHandles;
 
+using Vestigo.Processes;
+
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Storage.FileSystem;
@@ -410,27 +412,8 @@ internal sealed class MiniDumpWriter : IProcessDumpWriter
             ? OperationResult<long>.Fail(code, deleted)
             : OperationResult<long>.Fail(code, remained);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
-
-    private static bool CreationMatches(SafeFileHandle process, DateTimeOffset expected)
-    {
-        if (!GetProcessTimes(process.DangerousGetHandle(), out long creation, out _, out _, out _))
-        {
-            return WindowsProcessModuleSource.StartUnchanged(expected, null);
-        }
-
-        GC.KeepAlive(process);
-        try
-        {
-            DateTimeOffset started = new(DateTime.FromFileTimeUtc(creation), TimeSpan.Zero);
-            return WindowsProcessModuleSource.StartUnchanged(expected, started);
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            return false;
-        }
-    }
+    private static bool CreationMatches(SafeFileHandle process, DateTimeOffset expected) =>
+        ProcessStartTime.TryRead(process, out DateTimeOffset started, out _)
+        && WindowsProcessModuleSource.StartUnchanged(expected, started);
 
 }

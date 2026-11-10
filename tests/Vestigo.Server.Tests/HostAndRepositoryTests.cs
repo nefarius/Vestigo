@@ -209,7 +209,11 @@ public class RepositoryBoundaryTests
                      "Diagnostics:MaxCrashReportFileBytes", "Diagnostics:MaxDumpBytes",
                      "Diagnostics:MinDumpFreeBytes",
                      "Audio:AllowSetDefault", "Audio:MeterSampleMilliseconds",
-                     "Desktop:AllowScreenshots", "Desktop:MaxScreenshotBytes"
+                     "Desktop:AllowScreenshots", "Desktop:MaxScreenshotBytes",
+                     "Desktop:AllowWindowPlacement", "Desktop:AllowDisplayLayoutChanges",
+                     "Desktop:MaxWindowEventCaptures", "Desktop:MaxWindowEvents", "Desktop:MaxWindowEventBytes",
+                     "Desktop:MaxWindowEventDuration", "Desktop:WindowEventRetention",
+                     "Desktop:DisplayTransactionLease", "Desktop:DisplayObservationIntervalMilliseconds"
                  })
         {
             Assert.Contains(name, generated, StringComparison.Ordinal);

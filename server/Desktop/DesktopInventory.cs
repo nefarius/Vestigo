@@ -69,6 +69,40 @@ public sealed class DesktopInventory(
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<OperationResult<WindowInspectionReport>> InspectWindowAsync(
+        string handle,
+        int? expectedPid,
+        DateTimeOffset? expectedStart,
+        LaunchContext context,
+        bool elevated,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return OperationResult<WindowInspectionReport>.Fail("windows_required", "Window inspection requires Windows.");
+        }
+
+        if (context == LaunchContext.Service)
+        {
+            return await Task.Run(
+                () => new WindowInspector(new WindowsWindowInspectionSource()).Inspect(handle, expectedPid, expectedStart),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
+        if (!available.Success)
+        {
+            return available.FailAs<WindowInspectionReport>();
+        }
+
+        return await helper.RunAsync<WindowInspectionReport>(
+            SessionHelper.BuildInspectWindowArguments(handle, expectedPid, expectedStart),
+            elevated,
+            HelperTimeout,
+            HelperMaxOutputBytes,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<OperationResult<DisplayListResult>> ListDisplaysAsync(
         LaunchContext context,
         bool elevated,

@@ -1,0 +1,381 @@
+using System.Text.Json;
+
+using Vestigo.Configuration;
+using Vestigo.Processes;
+using Vestigo.Security;
+
+namespace Vestigo.Desktop;
+
+public interface IDisplayLayoutClient
+{
+    Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken);
+
+    Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(DisplayLayoutRequest request, bool elevated, CancellationToken cancellationToken);
+}
+
+/// <summary>
+///     One display-layout transaction at a time. The original snapshot is stored before a change is applied.
+///     Cancellation of the start call and service shutdown attempt a restore. A stateless MCP disconnect does not;
+///     the lease does. Startup retries a checkpoint that is still present. External topology changes are reported,
+///     not prevented.
+/// </summary>
+public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposable
+{
+    private const int CheckpointVersion = 1;
+
+    private readonly IDisplayLayoutClient _client;
+    private readonly VestigoOptions _options;
+    private readonly TimeProvider _time;
+    private readonly ILogger<DisplayLayoutTransactionManager>? _logger;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private DisplayLayoutTransaction? _current;
+    private bool _elevated;
+    private DateTimeOffset _lastRestoreAttempt = DateTimeOffset.MinValue;
+    private Timer? _timer;
+
+    public DisplayLayoutTransactionManager(
+        IDisplayLayoutClient client,
+        VestigoOptions options,
+        TimeProvider time,
+        ILogger<DisplayLayoutTransactionManager>? logger = null)
+    {
+        _client = client;
+        _options = options;
+        _time = time;
+        _logger = logger;
+    }
+
+    /// <summary>Test seam. Production waits with <see cref="Task.Delay(TimeSpan, CancellationToken)"/>.</summary>
+    internal Func<TimeSpan, CancellationToken, Task>? Delay { get; set; }
+
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        Load();
+        if (_current is not null)
+        {
+            await RestoreAsync(_current.Id, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        _timer = new Timer(_ => _ = SweepAsync(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_timer is not null)
+        {
+            await _timer.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_current is { State: not "restored" })
+        {
+            await RestoreAsync(_current.Id, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken) =>
+        await _client.SnapshotAsync(elevated, cancellationToken).ConfigureAwait(false);
+
+    public async Task<OperationResult<DisplayLayoutTransaction>> StartAsync(
+        IReadOnlyList<DisplayTargetChange> targets,
+        bool persistent,
+        bool elevated,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_current is { State: not "restored" })
+            {
+                return OperationResult<DisplayLayoutTransaction>.Fail(
+                    "display_transaction_busy",
+                    "A display-layout transaction is already open. Restore it before starting another.");
+            }
+
+            OperationResult<DisplayLayoutSnapshot> before = await _client.SnapshotAsync(elevated, cancellationToken).ConfigureAwait(false);
+            if (!before.Success)
+            {
+                return before.FailAs<DisplayLayoutTransaction>();
+            }
+
+            DisplayLayoutValidation validation = DisplayLayoutPlanner.Validate(before.Value!, targets);
+            if (!validation.Valid)
+            {
+                return OperationResult<DisplayLayoutTransaction>.Fail("invalid_request", string.Join(' ', validation.Errors));
+            }
+
+            DisplayLayoutTransaction transaction = new(
+                Guid.NewGuid().ToString("N")[..12],
+                "pending",
+                _time.GetUtcNow(),
+                _time.GetUtcNow() + _options.Desktop.DisplayTransactionLease,
+                persistent,
+                before.Value!,
+                targets,
+                null,
+                false,
+                [],
+                null);
+            _current = transaction;
+            _elevated = elevated;
+            Save();
+            OperationResult<DisplayLayoutApplyResult> applied = await _client.ApplyAsync(
+                new DisplayLayoutRequest(targets, persistent, false),
+                elevated,
+                cancellationToken).ConfigureAwait(false);
+            if (!applied.Success || applied.Value is not { Applied: true })
+            {
+                _current = null;
+                TryDelete();
+                return applied.Success
+                    ? OperationResult<DisplayLayoutTransaction>.Fail(applied.Value!.ErrorCode ?? "display_config_rejected", applied.Value.Error ?? "SetDisplayConfig did not apply the layout.")
+                    : applied.FailAs<DisplayLayoutTransaction>();
+            }
+
+            _current = transaction with { State = "active", Current = applied.Value.After };
+            Save();
+            return OperationResult<DisplayLayoutTransaction>.Ok(_current);
+        }
+        catch (OperationCanceledException)
+        {
+            if (_current is not null)
+            {
+                await RestoreCoreAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+
+            return OperationResult<DisplayLayoutTransaction>.Fail(
+                "cancelled",
+                "The display change was cancelled. Restore was attempted and its result is in get_display_layout_transaction.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public OperationResult<DisplayLayoutTransaction> Get(string? id)
+    {
+        if (_current is null || (id is not null && !string.Equals(id, _current.Id, StringComparison.Ordinal)))
+        {
+            return OperationResult<DisplayLayoutTransaction>.Fail("not_found", "Display-layout transaction was not found.");
+        }
+
+        return OperationResult<DisplayLayoutTransaction>.Ok(_current);
+    }
+
+    public async Task<OperationResult<DisplayLayoutObservation>> ObserveAsync(
+        string id,
+        DisplayWait wait,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<DisplayLayoutTransaction> existing = Get(id);
+        if (!existing.Success)
+        {
+            return existing.FailAs<DisplayLayoutObservation>();
+        }
+
+        if (wait.Timeout <= TimeSpan.Zero || wait.Timeout > TimeSpan.FromMinutes(2) || wait.StableSamples is < 1 or > 10)
+        {
+            return OperationResult<DisplayLayoutObservation>.Fail("invalid_request", "timeout must be positive and at most 2 minutes, and stableSamples must be from 1 to 10.");
+        }
+
+        DateTimeOffset deadline = _time.GetUtcNow() + wait.Timeout;
+        int stable = 0;
+        string? previous = null;
+        DisplayLayoutObservation? last = null;
+        while (true)
+        {
+            OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, cancellationToken).ConfigureAwait(false);
+            if (!snapshot.Success)
+            {
+                return snapshot.FailAs<DisplayLayoutObservation>();
+            }
+
+            IReadOnlyList<string> differences = wait.Target is null
+                ? DisplayLayoutPlanner.Compare(existing.Value!.Original, snapshot.Value!)
+                : DisplayLayoutPlanner.Compare(wait.Target, snapshot.Value!);
+            string sample = snapshot.Value!.Fingerprint + string.Join('\n', differences);
+            stable = sample == previous && differences.Count == 0 ? stable + 1 : differences.Count == 0 ? 1 : 0;
+            previous = sample;
+            DisplayPathLayout? target = wait.Target is null
+                ? null
+                : snapshot.Value.Paths.FirstOrDefault(path => DisplayLayoutPlanner.Matches(path.Identity, wait.Target));
+            last = new DisplayLayoutObservation(
+                id,
+                differences.Count == 0,
+                stable >= wait.StableSamples,
+                stable,
+                wait.StableSamples,
+                false,
+                target,
+                differences,
+                snapshot.Value);
+            if (last.Stable)
+            {
+                return OperationResult<DisplayLayoutObservation>.Ok(last);
+            }
+
+            if (_time.GetUtcNow() >= deadline)
+            {
+                return OperationResult<DisplayLayoutObservation>.Ok(last with { TimedOut = true });
+            }
+
+            await (Delay ?? Task.Delay)(TimeSpan.FromMilliseconds(_options.Desktop.DisplayObservationIntervalMilliseconds), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    public async Task<OperationResult<DisplayLayoutTransaction>> RestoreAsync(string id, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (Get(id) is not { Success: true })
+            {
+                return OperationResult<DisplayLayoutTransaction>.Fail("not_found", "Display-layout transaction was not found.");
+            }
+
+            await RestoreCoreAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResult<DisplayLayoutTransaction>.Ok(_current!);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public void Dispose() => _gate.Dispose();
+
+    internal async Task SweepAsync()
+    {
+        if (_current is not { State: "active" or "restore_failed" })
+        {
+            return;
+        }
+
+        bool leaseExpired = _current.LeaseUntil is DateTimeOffset lease && _time.GetUtcNow() >= lease;
+        bool retry = _current.State == "restore_failed" && _time.GetUtcNow() - _lastRestoreAttempt >= TimeSpan.FromSeconds(30);
+        if (!leaseExpired && !retry)
+        {
+            return;
+        }
+
+        try
+        {
+            await RestoreAsync(_current.Id, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger?.LogWarning("Display-layout restore retry failed: {ErrorType}", ex.GetType().Name);
+        }
+    }
+
+    private async Task RestoreCoreAsync(CancellationToken cancellationToken)
+    {
+        if (_current is null)
+        {
+            return;
+        }
+
+        _lastRestoreAttempt = _time.GetUtcNow();
+        List<DisplayTargetChange> original = _current.Original.Paths.Select(path => new DisplayTargetChange(
+            path.Identity.MonitorDevicePath,
+            path.Identity.ConnectorInstance,
+            path.Identity.AdapterLuid,
+            path.Identity.TargetId,
+            path.X,
+            path.Y,
+            path.Width,
+            path.Height,
+            path.RefreshNumerator,
+            path.RefreshDenominator,
+            path.Rotation)).ToList();
+        OperationResult<DisplayLayoutApplyResult> applied = await _client.ApplyAsync(
+            new DisplayLayoutRequest(original, true, false),
+            _elevated,
+            cancellationToken).ConfigureAwait(false);
+        OperationResult<DisplayLayoutSnapshot> after = await _client.SnapshotAsync(_elevated, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> differences = after.Success
+            ? DisplayLayoutPlanner.Compare(_current.Original, after.Value!)
+            : [after.Error ?? "The topology could not be read after restore."];
+        bool verified = applied.Success && applied.Value is { Applied: true } && after.Success && differences.Count == 0;
+        _current = _current with
+        {
+            State = verified ? "restored" : "restore_failed",
+            Current = after.Success ? after.Value : _current.Current,
+            RestorationVerified = verified,
+            Differences = differences,
+            Error = verified ? null : applied.Error ?? (differences.Count == 0 ? "restore was not verified" : string.Join(' ', differences))
+        };
+        if (verified)
+        {
+            DisplayLayoutTransaction restored = _current;
+            _current = null;
+            TryDelete();
+            _current = restored;
+            return;
+        }
+
+        Save();
+    }
+
+    private void Load()
+    {
+        if (!File.Exists(VestigoPaths.OwnedDisplayLayoutPath))
+        {
+            return;
+        }
+
+        try
+        {
+            StoredCheckpoint? stored = JsonSerializer.Deserialize<StoredCheckpoint>(File.ReadAllText(VestigoPaths.OwnedDisplayLayoutPath), SessionHelper.Json);
+            if (stored is not { Version: CheckpointVersion })
+            {
+                _logger?.LogWarning("Display-layout checkpoint version is unsupported. It was left in place.");
+                return;
+            }
+
+            _current = stored.Transaction with { State = "restore_failed", Error = "Restoring a layout that was open when the service stopped." };
+            _elevated = stored.Elevated;
+        }
+        catch (JsonException)
+        {
+            _logger?.LogWarning("Display-layout checkpoint could not be read. It was left in place.");
+        }
+    }
+
+    private void Save()
+    {
+        if (_current is null)
+        {
+            return;
+        }
+
+        StateDirectories.EnsureSubdirectory(VestigoPaths.SettingsDirectory);
+        string temp = VestigoPaths.OwnedDisplayLayoutPath + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(new StoredCheckpoint(CheckpointVersion, _current, _elevated), SessionHelper.Json));
+        if (File.Exists(VestigoPaths.OwnedDisplayLayoutPath))
+        {
+            File.Replace(temp, VestigoPaths.OwnedDisplayLayoutPath, null);
+        }
+        else
+        {
+            File.Move(temp, VestigoPaths.OwnedDisplayLayoutPath);
+        }
+    }
+
+    private static void TryDelete()
+    {
+        try
+        {
+            if (File.Exists(VestigoPaths.OwnedDisplayLayoutPath))
+            {
+                File.Delete(VestigoPaths.OwnedDisplayLayoutPath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private sealed record StoredCheckpoint(int Version, DisplayLayoutTransaction Transaction, bool Elevated);
+}
