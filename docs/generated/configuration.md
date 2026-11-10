@@ -56,6 +56,9 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `ListenAddress` | `127.0.0.1` |
 | `ListenPort` | `5098` |
 | `Logs:MaxConcurrentSearches` | `2` |
+| `Logs:MaxJsonBytes` | `16777216` |
+| `Logs:MaxJsonMatches` | `100` |
+| `Logs:MaxJsonValueBytes` | `262144` |
 | `Logs:MaxSearchContextLines` | `10` |
 | `Logs:MaxSearchDuration` | `00:01:00` |
 | `Logs:MaxSearchLineLength` | `1000` |
