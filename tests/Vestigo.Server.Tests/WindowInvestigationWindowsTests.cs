@@ -79,7 +79,7 @@ public class WindowInvestigationWindowsTests
             {
                 placer.Place(new WindowPlacementRequest(
                     Hex(decorated), Environment.ProcessId, null, 80, 80, 150, 100, DesktopCoordinates.PhysicalScreenPixels, false));
-            }));
+            }), ReadShared(capture));
             cancel.Cancel();
             Assert.True(loop.Wait(TimeSpan.FromSeconds(5)));
         }
@@ -158,7 +158,7 @@ public class WindowInvestigationWindowsTests
     private static bool WaitFor(string path, string text, Action nudge)
     {
         DateTimeOffset readyDeadline = DateTimeOffset.UtcNow.AddSeconds(3);
-        while (DateTimeOffset.UtcNow < readyDeadline && !File.ReadAllText(path).Contains("\"kind\":\"ready\"", StringComparison.Ordinal))
+        while (DateTimeOffset.UtcNow < readyDeadline && !Contains(path, "\"kind\":\"ready\""))
         {
             Thread.Sleep(20);
         }
@@ -167,7 +167,7 @@ public class WindowInvestigationWindowsTests
         DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(3);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (File.ReadAllText(path).Contains(text, StringComparison.Ordinal))
+            if (Contains(path, text))
             {
                 return true;
             }
@@ -176,6 +176,26 @@ public class WindowInvestigationWindowsTests
         }
 
         return false;
+    }
+
+    private static bool Contains(string path, string text)
+    {
+        try
+        {
+            return ReadShared(path).Contains(text, StringComparison.Ordinal);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    private static string ReadShared(string path)
+    {
+        // The capture thread keeps this file open for write. ReadAllText uses a share mode Windows rejects.
+        using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using StreamReader reader = new(stream);
+        return reader.ReadToEnd();
     }
 
     private static nint Create(string className, uint style, WndProc procedure)

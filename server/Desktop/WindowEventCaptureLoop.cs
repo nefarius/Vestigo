@@ -98,12 +98,13 @@ internal static class WindowEventCaptureLoop
             }
 
             using SafeFileHandle? process = OpenWatch(_processId);
-            Write(output, Ready());
             if (!TryHook(process))
             {
                 Write(output, Error("capture_failed", "SetWinEventHook failed."));
                 return 2;
             }
+
+            Write(output, Ready());
 
             try
             {
@@ -198,6 +199,14 @@ internal static class WindowEventCaptureLoop
         private unsafe bool TryHook(SafeFileHandle? process)
         {
             HMODULE module = default;
+            uint flags = PInvoke.WINEVENT_OUTOFCONTEXT;
+            if (_processId != Environment.ProcessId)
+            {
+                // Watching another process. Skip events this hook process generates itself.
+                // A capture of the current process must omit that flag or it receives nothing.
+                flags |= PInvoke.WINEVENT_SKIPOWNPROCESS;
+            }
+
             _hook = PInvoke.SetWinEventHook(
                 PInvoke.EVENT_SYSTEM_FOREGROUND,
                 PInvoke.EVENT_OBJECT_LOCATIONCHANGE,
@@ -205,7 +214,7 @@ internal static class WindowEventCaptureLoop
                 &Hook,
                 (uint)_processId,
                 0,
-                PInvoke.WINEVENT_OUTOFCONTEXT | PInvoke.WINEVENT_SKIPOWNPROCESS);
+                flags);
             _ = process;
             return !_hook.IsNull;
         }
