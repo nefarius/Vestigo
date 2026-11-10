@@ -14,6 +14,10 @@ reviews:
     - "!installer/DebugViewPP-LICENSE.txt"
     - "!installer/nefcon-LICENSE.txt"
     - "!installer/ripgrep-LICENSE.txt"
+  pre_merge_checks:
+    # Docstring coverage misreads C# and flags private helpers that already follow the repo's comment style.
+    docstrings:
+      mode: "off"
   tools:
     # Secret, SAST, and OSV scans are enforced by the CI security job.
     gitleaks:
