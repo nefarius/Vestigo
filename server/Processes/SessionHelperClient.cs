@@ -108,6 +108,8 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         }
     }
 
+    internal static (string Executable, List<string> Prefix) Host() => HelperHost();
+
     /// <summary>The executable that hosts Vestigo, plus a DLL argument when started through <c>dotnet</c>.</summary>
     private static (string Executable, List<string> Prefix) HelperHost()
     {

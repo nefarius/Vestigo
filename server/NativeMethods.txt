@@ -263,7 +263,7 @@ UDP_TABLE_CLASS
 MIB_TCP_STATE
 
 // Diagnostics: process protection query. MiniDumpWriteDump is declared locally because CsWin32 will not generate it for AnyCPU.
-// GetProcessTimes is declared locally because the generated FILETIME is not public.
+// GetProcessTimes is declared in Processes/ProcessStartTime.cs because the generated FILETIME is not public.
 GetProcessInformation
 PROCESS_INFORMATION_CLASS
 PROCESS_PROTECTION_LEVEL_INFORMATION
@@ -317,6 +317,59 @@ TOKEN_STATISTICS
 
 // System module: uptime. Safe mode uses GetSystemMetrics, already listed above.
 GetTickCount64
+
+// Desktop module: detailed window inspection, placement, window-event capture, and display-layout transactions.
+// GetProcessTimes stays in Processes/ProcessStartTime.cs. CsWin32's generated FILETIME is not public with these settings.
+ClientToScreen
+GetWindowLong
+WINDOW_LONG_PTR_INDEX
+SetLastError
+AreDpiAwarenessContextsEqual
+GetThreadDpiAwarenessContext
+GetWindowDpiAwarenessContext
+GetAwarenessFromDpiAwarenessContext
+DPI_AWARENESS
+GetSystemMetricsForDpi
+SYSTEM_METRICS_INDEX
+SetWindowPos
+SET_WINDOW_POS_FLAGS
+GetWindowPlacement
+SetWindowPlacement
+WINDOWPLACEMENT
+ProcessIdToSessionId
+OpenProcessToken
+TOKEN_ACCESS_MASK
+EqualSid
+GetSidSubAuthority
+GetSidSubAuthorityCount
+ConvertSidToStringSid
+TOKEN_ELEVATION
+TOKEN_MANDATORY_LABEL
+SetWinEventHook
+UnhookWinEvent
+EVENT_OBJECT_CREATE
+EVENT_OBJECT_DESTROY
+EVENT_OBJECT_SHOW
+EVENT_OBJECT_HIDE
+EVENT_OBJECT_LOCATIONCHANGE
+EVENT_SYSTEM_FOREGROUND
+WINEVENT_OUTOFCONTEXT
+WINEVENT_SKIPOWNPROCESS
+OBJECT_IDENTIFIER
+PeekMessage
+TranslateMessage
+DispatchMessage
+PEEK_MESSAGE_REMOVE_TYPE
+MsgWaitForMultipleObjectsEx
+QUEUE_STATUS_FLAGS
+MSG_WAIT_FOR_MULTIPLE_OBJECTS_EX_FLAGS
+SetDisplayConfig
+SET_DISPLAY_CONFIG_FLAGS
+QDC_VIRTUAL_MODE_AWARE
+DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE
+DISPLAYCONFIG_PATH_MODE_IDX_INVALID
+DISPLAYCONFIG_PATH_SOURCE_MODE_IDX_INVALID
+DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID
 
 // Power module: battery, scheme, capabilities, and AC/DC policy. No writes.
 GetSystemPowerStatus

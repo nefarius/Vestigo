@@ -129,6 +129,8 @@ public static class ModuleRegistry
         bool debugOutput = enabled.Any(module => module.Name == "DebugOutput");
         bool desktop = enabled.Any(module => module.Name == "Desktop");
         bool desktopScreenshots = desktop && options.Desktop.AllowScreenshots;
+        bool desktopPlacement = desktop && options.Desktop.AllowWindowPlacement;
+        bool desktopLayout = desktop && options.Desktop.AllowDisplayLayoutChanges;
         bool audio = enabled.Any(module => module.Name == "Audio");
         bool audioSetDefault = audio && options.Audio.AllowSetDefault;
         bool servicing = enabled.Any(module => module.Name == "WindowsServicing");
@@ -159,10 +161,23 @@ public static class ModuleRegistry
             if (desktop)
             {
                 names.Add("Desktop");
-                clauses.Add(
-                    desktopScreenshots
-                        ? $"{reach} can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop. A client can also publish a short-lived, single-use link to a downscaled preview; that link does not require an API token."
-                        : $"{reach} can list windows, titles, and displays on the console user's desktop.");
+                string desktopClause = $"{reach} can list windows, titles, and displays on the console user's desktop, inspect those windows, and capture window events.";
+                if (desktopScreenshots)
+                {
+                    desktopClause += " They can take screenshots of that desktop. A client can also publish a short-lived, single-use link to a downscaled preview; that link does not require an API token.";
+                }
+
+                if (desktopPlacement)
+                {
+                    desktopClause += " They can move windows by client rectangle.";
+                }
+
+                if (desktopLayout)
+                {
+                    desktopClause += " They can change the active display layout.";
+                }
+
+                clauses.Add(desktopClause);
             }
 
             if (audio)
@@ -201,9 +216,21 @@ public static class ModuleRegistry
         }
         if (desktop)
         {
-            extras += desktopScreenshots
-                ? "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop, and can take screenshots of that desktop. A client can also publish a short-lived, single-use link to a downscaled preview; that link does not require an API token. "
-                : "The Desktop module is also enabled, so the same clients can list windows, titles, and displays on the console user's desktop. ";
+            extras += "The Desktop module is also enabled, so the same clients can list windows and titles, inspect window geometry, DPI, styles, and process integrity, capture window events, and list displays. ";
+            if (desktopScreenshots)
+            {
+                extras += "They can take screenshots of that desktop. A client can also publish a short-lived, single-use link to a downscaled preview; that link does not require an API token. ";
+            }
+
+            if (desktopPlacement)
+            {
+                extras += "They can move windows by client rectangle. ";
+            }
+
+            if (desktopLayout)
+            {
+                extras += "They can change the active display layout. ";
+            }
         }
 
         if (audio)

@@ -35,6 +35,8 @@ Even after a module is on, these actions stay off until their own setting is tru
 - `Software:AllowUninstall`
 - `ScheduledTasks:AllowChanges`
 - `Desktop:AllowScreenshots`
+- `Desktop:AllowWindowPlacement`
+- `Desktop:AllowDisplayLayoutChanges`
 - `Input:AllowInput`
 - `Audio:AllowSetDefault`
 - `System:AllowBootConfigurationChanges`

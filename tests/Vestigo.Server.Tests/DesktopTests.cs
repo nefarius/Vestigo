@@ -124,6 +124,10 @@ public class DesktopTests
         Assert.NotNull(warning);
         Assert.Contains("Desktop", warning);
         Assert.Contains("windows, titles, and displays", warning);
+        Assert.Contains("inspect those windows", warning);
+        Assert.Contains("capture window events", warning);
+        Assert.DoesNotContain("move windows by client rectangle", warning);
+        Assert.DoesNotContain("change the active display layout", warning);
         Assert.DoesNotContain("administrator-equivalent", warning);
 
         VestigoOptions tokens = new() { ApiTokens = ["t"], Modules = { ["Desktop"] = new ModuleSettings { Enabled = true } } };
@@ -133,6 +137,16 @@ public class DesktopTests
         string? shots = ModuleRegistry.GetPrivilegedModuleWarning(open);
         Assert.NotNull(shots);
         Assert.Contains("take screenshots of that desktop", shots);
+
+        open.Desktop.AllowWindowPlacement = true;
+        string? placement = ModuleRegistry.GetPrivilegedModuleWarning(open);
+        Assert.NotNull(placement);
+        Assert.Contains("move windows by client rectangle", placement);
+
+        open.Desktop.AllowDisplayLayoutChanges = true;
+        string? layout = ModuleRegistry.GetPrivilegedModuleWarning(open);
+        Assert.NotNull(layout);
+        Assert.Contains("change the active display layout", layout);
     }
 
     [Fact]

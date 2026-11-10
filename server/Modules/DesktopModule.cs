@@ -19,7 +19,8 @@ public sealed class DesktopModule : VestigoModule
     /// <summary>Window titles from the user session are information disclosure, so the module is opt-in.</summary>
     public override bool EnabledByDefault => false;
 
-    public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(DesktopTools), typeof(PerceptionTools)];
+    public override IReadOnlyList<Type> ToolTypes { get; } =
+        [typeof(DesktopTools), typeof(PerceptionTools), typeof(WindowInspectionTools), typeof(WindowEventTools), typeof(WindowPlacementTools), typeof(DisplayLayoutTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
@@ -31,6 +32,17 @@ public sealed class DesktopModule : VestigoModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ScreenshotShareStore>();
         services.AddSingleton<DesktopInventory>();
+        services.AddSingleton<IWindowInspectionSource, WindowsWindowInspectionSource>();
+        services.AddSingleton<WindowInspector>();
+        services.AddSingleton<IWindowEventSessionFactory, HelperWindowEventSessionFactory>();
+        services.AddSingleton<WindowEventCaptureManager>();
+        services.AddHostedService(provider => provider.GetRequiredService<WindowEventCaptureManager>());
+        services.AddSingleton<WindowPlacementStore>();
+        services.AddSingleton<IWindowPlacementSource, WindowsWindowPlacementSource>();
+        services.AddSingleton<WindowPlacer>();
+        services.AddSingleton<IDisplayLayoutClient, HelperDisplayLayoutClient>();
+        services.AddSingleton<DisplayLayoutTransactionManager>();
+        services.AddHostedService(provider => provider.GetRequiredService<DisplayLayoutTransactionManager>());
         services.AddSingleton<CaptureCache>();
         services.AddSingleton<PerceptionService>();
     }
