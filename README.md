@@ -101,7 +101,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - Audio default-device switching uses the undocumented `IPolicyConfig` interface and may fail on a future Windows release. Per-app device overrides are not shown or changed. The peak meter is a short sample, not a continuous monitor. The service context does not see user audio sessions.
 - `search_text` runs the bundled ripgrep with a bounded result count, line length, run time and concurrency, so a search can stop early with `truncated` or `timedOut` set. It does not follow links or junctions, skips binary files, and decodes only UTF-8 and UTF-16 with a byte order mark. It looks at files as they are on disk and cannot follow a growing file; use `read_text_file_since` for that.
 - `read_registry_value` reads one allow-listed key. The 32-bit and 64-bit views are explicit, `HKCU` is the console user, and a denied prefix wins. Registry symbolic links are followed by Windows. There is no write tool.
-- `read_json_path` and `get_json_summary` read one UTF-8 JSON document under a Read root. Queries are parsed by [JsonPath.Net](https://www.nuget.org/packages/JsonPath.Net/) and limited to names, indexes, and one trailing wildcard, so filters and recursive descent are rejected. A document above `Logs:MaxJsonBytes` is refused before it is read, and matched values are not logged. Line-oriented NDJSON belongs to `search_text`.
+- `read_json_path` and `get_json_summary` read one UTF-8 JSON document under a Read root. Queries are parsed by [JsonPath.Net](https://github.com/json-everything/json-everything) and limited to names, indexes, and one trailing wildcard, so filters and recursive descent are rejected. A document above `Logs:MaxJsonBytes` is refused before it is read, and matched values are not logged. Line-oriented NDJSON belongs to `search_text`.
 - Vestigo never triggers a reboot; tools report or schedule reboot-time work.
 - Windows servicing diagnostics do not install updates, repair Windows, clear queues or reboot. WUA searches are offline-only; native timeout/cancellation stops waiting without terminating Windows work. Log tails require Read roots; DISM package inventory generally requires elevation. See [Windows servicing diagnostics](docs/windows-servicing.md).
 - `check_for_updates` uses the service account's proxy settings. `start_self_update` needs the MSI Automatic updates feature; after Vicius hands off to its temporary copy the install result is only in the `%ProgramData%\...\Vestigo\updates` log until the service is back.
@@ -128,6 +128,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - [Nefarius.Utilities.WindowsVersion](https://github.com/nefarius/Nefarius.Utilities.WindowsVersion)
 - [NAudio](https://github.com/naudio/NAudio)
 - [PeNet](https://github.com/secana/PeNet)
+- [json-everything](https://github.com/json-everything/json-everything) (`JsonPath.Net`)
 - [OpenCvSharp](https://github.com/shimat/opencvsharp) (Apache-2.0) and [OpenCV](https://opencv.org/)
 - [CsWin32](https://github.com/microsoft/CsWin32)
 - [Model Context Protocol C# SDK](https://csharp.sdk.modelcontextprotocol.io/)
