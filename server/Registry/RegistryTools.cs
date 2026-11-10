@@ -28,7 +28,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             return viewError!;
         }
 
-        OperationResult<RegistryPathDecision> decision = Decide(path);
+        OperationResult<RegistryPathDecision> decision = Decide(path, out _);
         if (!decision.Success || decision.Value is null)
         {
             return OperationResult<RegistryValueResult>.Fail(decision.ErrorCode!, decision.Error!);
@@ -80,7 +80,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             return viewError!;
         }
 
-        OperationResult<RegistryPathDecision> decision = Decide(path);
+        OperationResult<RegistryPathDecision> decision = Decide(path, out string? consoleSid);
         if (!decision.Success || decision.Value is null)
         {
             return OperationResult<RegistryListResult>.Fail(decision.ErrorCode!, decision.Error!);
@@ -100,6 +100,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             keys,
             ref budget,
             ref truncated,
+            consoleSid,
             reportOpenFailure: true);
         if (openFailure is not null)
         {
@@ -120,7 +121,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             return viewError!;
         }
 
-        OperationResult<RegistryPathDecision> decision = Decide(path);
+        OperationResult<RegistryPathDecision> decision = Decide(path, out _);
         if (!decision.Success || decision.Value is null)
         {
             return OperationResult<RegistryMetadata>.Fail(decision.ErrorCode!, decision.Error!);
@@ -148,6 +149,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
         List<RegistryKeyListing> keys,
         ref int budget,
         ref bool truncated,
+        string? consoleSid,
         bool reportOpenFailure)
     {
         if (budget <= 0)
@@ -214,7 +216,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
                 string name = page.Names[index];
                 examined++;
                 string childPath = decision.Canonical + "\\" + name;
-                OperationResult<RegistryPathDecision> child = RegistryPathPolicy.Check(childPath, consoleSid: null, options.Registry);
+                OperationResult<RegistryPathDecision> child = RegistryPathPolicy.Check(childPath, consoleSid, options.Registry);
                 if (!child.Success || child.Value is null)
                 {
                     continue;
@@ -244,7 +246,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
 
         foreach (RegistryPathDecision child in children)
         {
-            Walk(view, child, depthLeft - 1, keys, ref budget, ref truncated, reportOpenFailure: false);
+            Walk(view, child, depthLeft - 1, keys, ref budget, ref truncated, consoleSid, reportOpenFailure: false);
         }
 
         return null;
@@ -349,21 +351,36 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
 
     private int StringCapBytes() => checked((options.Registry.MaxValueStringLength + 1) * 2);
 
-    private OperationResult<RegistryPathDecision> Decide(string path)
+    private OperationResult<RegistryPathDecision> Decide(string path, out string? consoleSid)
     {
-        string? sid = null;
-        if (RegistryPathPolicy.NeedsConsoleUser(path))
+        consoleSid = null;
+        bool pathNeedsUser = RegistryPathPolicy.NeedsConsoleUser(path);
+        if (pathNeedsUser || (RegistryPathPolicy.IsUsersHive(path) && HasCurrentUserPrefix()))
         {
             ConsoleUserLookup user = store.LookupConsoleUser();
             if (user.Sid is null)
             {
-                return OperationResult<RegistryPathDecision>.Fail(user.ErrorCode!, user.Error!);
+                if (pathNeedsUser)
+                {
+                    return OperationResult<RegistryPathDecision>.Fail(user.ErrorCode!, user.Error!);
+                }
             }
-
-            sid = user.Sid;
+            else
+            {
+                consoleSid = user.Sid;
+            }
         }
 
-        return RegistryPathPolicy.Check(path, sid, options.Registry);
+        return RegistryPathPolicy.Check(path, consoleSid, options.Registry);
+    }
+
+    private bool HasCurrentUserPrefix()
+    {
+        IEnumerable<string> allowed = options.Registry.AllowedPrefixes.Count == 0
+            ? RegistryOptions.BuiltInAllowedPrefixes
+            : options.Registry.AllowedPrefixes;
+        return allowed.Any(RegistryPathPolicy.NeedsConsoleUser)
+            || options.Registry.DeniedPrefixes.Any(RegistryPathPolicy.NeedsConsoleUser);
     }
 
     private static bool TryView<T>(string view, out RegistryViewKind kind, out OperationResult<T>? error)

@@ -25,6 +25,10 @@ public static class RegistryPathPolicy
     public static bool NeedsConsoleUser(string? path) =>
         FirstSegment(NormalizeSeparators(path)) is "HKCU" or "HKEY_CURRENT_USER";
 
+    /// <summary>True when the path addresses <c>HKEY_USERS</c> directly.</summary>
+    public static bool IsUsersHive(string? path) =>
+        FirstSegment(NormalizeSeparators(path)) is "HKU" or "HKEY_USERS";
+
     /// <summary>Returns a canonical path, or a stable error. Denied prefixes win over allowed ones.</summary>
     public static OperationResult<RegistryPathDecision> Check(string? path, string? consoleSid, RegistryOptions options)
     {

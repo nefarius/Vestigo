@@ -1,4 +1,5 @@
 using System.Security.Principal;
+using System.Text;
 
 using Win32 = Microsoft.Win32;
 
@@ -191,6 +192,55 @@ public class RegistryTests
     }
 
     [Fact]
+    public void List_HonorsHkcuAllowAndDenyPrefixesWhileRecursing()
+    {
+        FakeStore store = new();
+        string root = $@"{Sid}\Software\Contoso";
+        FakeKey key = store.Add(root, "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("parent")));
+        key.SubKeys.Add("Child");
+        key.SubKeys.Add("Secret");
+        store.Add(root + @"\Child", "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("visible")));
+        store.Add(root + @"\Secret", "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("hidden")));
+        RegistryOptions options = Allowing(@"HKCU\Software\Contoso");
+        options.DeniedPrefixes.Add(@"HKCU\Software\Contoso\Secret");
+        RegistryTools tools = Tools(store, options);
+
+        RegistryListResult listed = tools.ListRegistryValues(@"HKCU\Software\Contoso", recurse: 1).Value!;
+
+        Assert.Equal(2, listed.Total);
+        Assert.Equal(2, listed.Keys.Count);
+        Assert.Equal($@"HKU\{Sid}\Software\Contoso", listed.Keys[0].Path);
+        Assert.Equal(["Flag"], listed.Keys[0].Values.Select(item => item.Name));
+        Assert.Equal("parent", listed.Keys[0].Values[0].DisplayValue);
+        Assert.Equal(["Child"], listed.Keys[0].SubKeys.Select(item => item.Name));
+        Assert.Equal(1, listed.Keys[0].SubKeys[0].ValueCount);
+        Assert.Equal($@"HKU\{Sid}\Software\Contoso\Child", listed.Keys[1].Path);
+        Assert.Equal(["Flag"], listed.Keys[1].Values.Select(item => item.Name));
+        Assert.Equal("visible", listed.Keys[1].Values[0].DisplayValue);
+        Assert.DoesNotContain(listed.Keys, item => item.Path.Contains("Secret", StringComparison.OrdinalIgnoreCase));
+        Assert.False(listed.Truncated);
+    }
+
+    [Fact]
+    public void Read_ChecksTheConsoleUsersHiveAgainstHkcuDenyPrefixes()
+    {
+        FakeStore store = new();
+        store.Add($@"{Sid}\Software\Contoso", "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("console")));
+        store.Add(@"S-1-5-21-9\Software\Contoso", "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("other")));
+        RegistryOptions options = Allowing(@"HKU");
+        options.DeniedPrefixes.Add(@"HKCU\Software\Contoso");
+        RegistryTools tools = Tools(store, options);
+
+        Assert.Equal("path_denied", tools.ReadRegistryValue($@"HKU\{Sid}\Software\Contoso", "Flag").ErrorCode);
+        RegistryValueResult other = tools.ReadRegistryValue(@"HKU\S-1-5-21-9\Software\Contoso", "Flag").Value!;
+        Assert.Equal("other", other.Text);
+
+        store.ConsoleUser = new ConsoleUserLookup(null, "no_interactive_session", "No user is logged on at the console.");
+        Assert.Equal("no_interactive_session", tools.ReadRegistryValue(@"HKCU\Software\Contoso", "Flag").ErrorCode);
+        Assert.Equal("other", tools.ReadRegistryValue(@"HKU\S-1-5-21-9\Software\Contoso", "Flag").Value!.Text);
+    }
+
+    [Fact]
     public void Module_IsOptInAndWarnsWhenNoTokenIsConfigured()
     {
         VestigoOptions options = new();
@@ -276,11 +326,13 @@ public class RegistryTests
     {
         private readonly Dictionary<string, FakeKey> _keys = new(StringComparer.OrdinalIgnoreCase);
 
+        public ConsoleUserLookup ConsoleUser { get; set; } = new(Sid, null, null);
+
         public FakeKey Add(string subKey, string name, RegistryRawValue value)
         {
             if (!_keys.TryGetValue(subKey, out FakeKey? key))
             {
-                key = new FakeKey();
+                key = new FakeKey(this, subKey);
                 _keys[subKey] = key;
             }
 
@@ -288,7 +340,9 @@ public class RegistryTests
             return key;
         }
 
-        public ConsoleUserLookup LookupConsoleUser() => new(Sid, null, null);
+        public FakeKey? Find(string subKey) => _keys.TryGetValue(subKey, out FakeKey? key) ? key : null;
+
+        public ConsoleUserLookup LookupConsoleUser() => ConsoleUser;
 
         public RegistryOpen Open(RegistryViewKind view, RegistryHiveKind hive, string subKey) =>
             _keys.TryGetValue(subKey, out FakeKey? key)
@@ -296,7 +350,7 @@ public class RegistryTests
                 : new RegistryOpen(null, "key_not_found", "Registry key was not found.");
     }
 
-    private sealed class FakeKey : IRegistryKey
+    private sealed class FakeKey(FakeStore store, string path) : IRegistryKey
     {
         public DateTimeOffset? LastWriteUtc => DateTimeOffset.UnixEpoch;
 
@@ -312,7 +366,11 @@ public class RegistryTests
 
         public RegistryNamePage ValueNames(int limit) => Page(Values.Keys.ToList(), limit);
 
-        public int? SubKeyValueCount(string name) => 0;
+        public int? SubKeyValueCount(string name)
+        {
+            string child = path.Length == 0 ? name : path + "\\" + name;
+            return store.Find(child)?.ValueCount;
+        }
 
         public RegistryRawValue Read(string? name, int maxBinaryBytes, int maxStringBytes) =>
             Values.TryGetValue(name ?? string.Empty, out RegistryRawValue? value)
