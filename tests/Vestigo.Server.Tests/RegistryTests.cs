@@ -241,6 +241,44 @@ public class RegistryTests
     }
 
     [Fact]
+    public void Read_ReturnsSidLookupErrorsWhenAnHkcuDenyCannotBeResolved()
+    {
+        FakeStore store = new()
+        {
+            ConsoleUser = new ConsoleUserLookup(null, "access_denied", "Querying the console user requires the service account.")
+        };
+        store.Add(@"S-1-5-21-9\Software\Contoso", "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("other")));
+        RegistryOptions options = Allowing(@"HKU");
+        options.DeniedPrefixes.Add(@"HKCU\Software\Contoso");
+        RegistryTools tools = Tools(store, options);
+
+        OperationResult<RegistryValueResult> result = tools.ReadRegistryValue(@"HKU\S-1-5-21-9\Software\Contoso", "Flag");
+
+        Assert.Equal("access_denied", result.ErrorCode);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public void List_ReturnsSidLookupErrorsWhenAnHkcuDenyCannotBeResolved()
+    {
+        FakeStore store = new()
+        {
+            ConsoleUser = new ConsoleUserLookup(null, "access_denied", "Querying the console user requires the service account.")
+        };
+        FakeKey key = store.Add(@"S-1-5-21-9\Software\Contoso", "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("other")));
+        key.SubKeys.Add("Child");
+        store.Add(@"S-1-5-21-9\Software\Contoso\Child", "Flag", Raw("REG_SZ", Encoding.Unicode.GetBytes("nested")));
+        RegistryOptions options = Allowing(@"HKU");
+        options.DeniedPrefixes.Add(@"HKCU\Software\Contoso");
+        RegistryTools tools = Tools(store, options);
+
+        OperationResult<RegistryListResult> listed = tools.ListRegistryValues(@"HKU\S-1-5-21-9\Software\Contoso", recurse: 1);
+
+        Assert.Equal("access_denied", listed.ErrorCode);
+        Assert.Null(listed.Value);
+    }
+
+    [Fact]
     public void Module_IsOptInAndWarnsWhenNoTokenIsConfigured()
     {
         VestigoOptions options = new();

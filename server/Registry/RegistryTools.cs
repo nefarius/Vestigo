@@ -360,7 +360,10 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             ConsoleUserLookup user = store.LookupConsoleUser();
             if (user.Sid is null)
             {
-                if (pathNeedsUser)
+                bool denyNeedsUser = options.Registry.DeniedPrefixes.Any(RegistryPathPolicy.NeedsConsoleUser);
+                bool lookupError = denyNeedsUser
+                    && !string.Equals(user.ErrorCode, "no_interactive_session", StringComparison.Ordinal);
+                if (pathNeedsUser || lookupError)
                 {
                     return OperationResult<RegistryPathDecision>.Fail(user.ErrorCode!, user.Error!);
                 }
