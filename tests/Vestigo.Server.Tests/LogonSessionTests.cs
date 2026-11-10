@@ -190,16 +190,21 @@ public class LogonSessionTests
         Assert.All(listed.Value.Sessions, session => Assert.False(string.IsNullOrWhiteSpace(session.State)));
         LogonSession[] input = listed.Value.Sessions.Where(session => session.IsCurrentInput).ToArray();
         Assert.All(input, session => Assert.True(session.IsConsole));
+        if (input.Length == 1)
+        {
+            LogonSession console = input[0];
+            OperationResult<LogonSessionDetail> detail = tools.GetLogonSession((int)console.SessionId);
+            Assert.True(detail.Success, detail.Error);
+            Assert.Equal(console.SessionId, detail.Value!.SessionId);
+            Assert.True(detail.Value.IsCurrentInput);
+            Assert.NotNull(detail.Value.IsAdministrator);
+        }
+
         if (input.Length != 1 || !listed.Value.Sessions.Any(session => session.State == "disconnected"))
         {
             Assert.Skip("Requires a console user and one disconnected session.");
         }
 
-        LogonSession console = input[0];
-        OperationResult<LogonSessionDetail> detail = tools.GetLogonSession((int)console.SessionId);
-        Assert.True(detail.Success, detail.Error);
-        Assert.Equal(console.SessionId, detail.Value!.SessionId);
-        Assert.True(detail.Value.IsCurrentInput);
         Assert.DoesNotContain(listed.Value.Sessions, session => session.State == "disconnected" && session.IsCurrentInput);
     }
 

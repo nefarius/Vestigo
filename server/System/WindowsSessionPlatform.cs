@@ -244,12 +244,27 @@ public sealed class WindowsSessionPlatform : ISessionPlatform
             return null;
         }
 
-        if (!PInvoke.CheckTokenMembership(token, administrators, out BOOL member))
+        if (!PInvoke.DuplicateTokenEx(
+                token,
+                TOKEN_ACCESS_MASK.TOKEN_QUERY,
+                null,
+                SECURITY_IMPERSONATION_LEVEL.SecurityImpersonation,
+                TOKEN_TYPE.TokenImpersonation,
+                out SafeFileHandle impersonation))
         {
+            impersonation?.Dispose();
             return null;
         }
 
-        return member;
+        using (impersonation)
+        {
+            if (!PInvoke.CheckTokenMembership(impersonation, administrators, out BOOL member))
+            {
+                return null;
+            }
+
+            return member;
+        }
     }
 
     private static unsafe string? ReadLogonId(SafeFileHandle token)
