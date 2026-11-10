@@ -65,6 +65,12 @@ The service context does not see user-session audio. Per-app overrides in Settin
 2. Add the host, or the host and port, to `Diagnostics:AllowedProbeDestinations`. The installer does not write that list.
 3. `test_endpoint` with `dns`, `tcp`, or `tls`. The probe uses Vestigo's own network context and does not capture packets.
 
+## Read a registry value
+
+1. Enable Registry. It is off by default.
+2. `read_registry_value` with a path such as `HKLM\SYSTEM\CurrentControlSet\Services` and `view` `registry64`. `HKCU` means the console user.
+3. A path outside the allow list is `path_not_allowed`. Winlogon, Lsa, SAM, and SECURITY are `path_denied` even if you allow a parent. Add `HKLM\SOFTWARE\<Vendor>\<Product>` to `Registry:AllowedPrefixes` when the built-in locations are not enough. That replaces the built-in list.
+
 ## Investigate Windows Update and servicing
 
 1. Enable WindowsServicing and Jobs in the installer feature tree or configuration:

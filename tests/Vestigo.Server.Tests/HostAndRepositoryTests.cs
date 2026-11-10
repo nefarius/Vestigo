@@ -193,6 +193,8 @@ public class RepositoryBoundaryTests
                      "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
                      "Services:ProtectedNames", "ScheduledTasks:AllowChanges", "ScheduledTasks:ProtectedPaths", "Processes:AllowPathLookup", "Files:MaxUploadBytes",
                      "Logs:MaxJsonBytes", "Logs:MaxJsonValueBytes", "Logs:MaxJsonMatches",
+                     "Registry:AllowedPrefixes", "Registry:DeniedPrefixes", "Registry:MaxEntries",
+                     "Registry:MaxRecursionDepth", "Registry:MaxBinaryBytes", "Registry:MaxValueStringLength",
                      "DebugOutput:ExecutablePath", "DebugOutput:ExpectedSha256",
                      "DebugOutput:MaxDuration", "DebugOutput:MaxMessages", "DebugOutput:MaxOutputBytes",
                      "DebugOutput:MaxFilterPatterns", "DebugOutput:MaxPatternLength",

@@ -23,7 +23,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Input, InputInjection, Audio, DebugOutput, Diagnostics, and gated extras are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Input, InputInjection, Audio, DebugOutput, Diagnostics, Registry, and gated extras are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -121,6 +121,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
             new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail, incremental reads and regex search of text log files.", true, null),
+            new ModuleDefinition("Registry", "Registry", "Read allow-listed registry values and key metadata. Opt-in. There is no write tool.", false, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
             new ModuleDefinition("Desktop", "Desktop", "List windows, their processes, bounds, and displays on the console user's or service desktop. Screenshots are a separate child feature.", false, null),
             new ModuleDefinition(DesktopScreenshots, "Screenshots", "Allow capturing PNG screenshots of the console user's desktop, one display, one window, or a region (Vestigo:Desktop:AllowScreenshots). Discloses screen contents.", false, "Desktop"),

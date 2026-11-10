@@ -366,6 +366,15 @@ Collects independent 64-bit registry and WUA reboot signals. Returns pending, no
 
 No parameters.
 
+## `get_registry_metadata`
+
+Returns the last write time, subkey count, and value count of an allow-listed registry key. It does not read values or security descriptors.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Key path: HKLM, HKU, or HKCU, then a subkey. |
+| `view` | `string` | no | `registry64` | registry64 or registry32. Default registry64. |
+
 ## `get_remote_debugger_status`
 
 Reports, for each Visual Studio version (2022, 2026) and architecture (x64, arm64, x86), whether msvsmon.exe is installed (path, file version, how it was found), plus running msvsmon processes with pid, session id, port (from the command line when readable) and whether that port is listening.
@@ -735,6 +744,17 @@ Lists running processes with pid, name, session id and start time. Filters are o
 | `sessionId` | `int?` | no | `null` | Only this session id (0 is services, the console session is usually 1). |
 | `limit` | `int` | no | `500` | Maximum rows, 1 to 2000. |
 
+## `list_registry_values`
+
+Lists values and subkey names under an allow-listed registry key. recurse walks nested keys up to MaxRecursionDepth. maxEntries can only lower MaxEntries. Denied children are omitted. Values are not written to the log.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Key path: HKLM, HKU, or HKCU, then a subkey. |
+| `recurse` | `int` | no | `0` | Nested levels to open. Zero lists only this key. Clamped down to MaxRecursionDepth. |
+| `maxEntries` | `int?` | no | `null` | Optional entry cap, clamped down to Vestigo:Registry:MaxEntries. |
+| `view` | `string` | no | `registry64` | registry64 or registry32. Default registry64. |
+
 ## `list_roots`
 
 Lists the configured named roots with their access flags and free disk space.
@@ -921,6 +941,18 @@ Reads one JSON value, or a bounded set of values, from a UTF-8 JSON document und
 | `path` | `string` | yes |  | File path: root:relative\path or an absolute path inside a root. |
 | `query` | `string` | yes |  | Query such as $.status, $['dashed-key'], $.items[0].name, or $.items[*]. |
 | `maxBytes` | `int?` | no | `null` | Optional byte cap, clamped down to Vestigo:Logs:MaxJsonBytes. The file is not read when it is larger. |
+
+## `read_registry_value`
+
+Reads one value from an allow-listed registry key. HKCU is the console user's hive. view is registry64 or registry32 and does not follow the service bitness. REG_BINARY is hashed only when it fits MaxBinaryBytes. The value is not written to the log.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Key path: HKLM, HKU, or HKCU, then a subkey. HKLM and HKEY_LOCAL_MACHINE are the same hive. |
+| `value` | `string` | no | `null` | Value name. Omit it to read the key's default value. |
+| `expand` | `bool` | no | `false` | Expand a REG_EXPAND_SZ as the service account. Other types ignore this. |
+| `includeBinary` | `bool` | no | `false` | Include REG_BINARY as hex. This cannot raise MaxBinaryBytes. |
+| `view` | `string` | no | `registry64` | registry64 or registry32. Default registry64. |
 
 ## `read_text_file_since`
 

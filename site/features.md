@@ -23,6 +23,12 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p><code>tail_text_file</code> and <code>read_text_file_since</code> follow a growing log. <code>search_text</code> runs bundled ripgrep across a root and returns only the matching lines. <code>read_json_path</code> and <code>get_json_summary</code> read one UTF-8 JSON document without downloading it.</p>
   </article>
   <article class="card">
+    <p class="pills"><span class="pill optin">Registry opt-in</span></p>
+    <h2>Registry</h2>
+    <p><code>read_registry_value</code>, <code>list_registry_values</code>, and <code>get_registry_metadata</code> read one allow-listed key. An empty allow list uses built-in Windows locations. A denied prefix, including Winlogon, wins. <code>HKCU</code> is the console user. Choose <code>registry64</code> or <code>registry32</code> explicitly.</p>
+    <p>There is no write tool. A binary larger than <code>Registry:MaxBinaryBytes</code> is not returned. Values are not written to the log.</p>
+  </article>
+  <article class="card">
     <p class="pills"><span class="pill on">On by default</span> <span class="pill optin">Processes opt-in</span></p>
     <h2>Processes and services</h2>
     <p>List, start, stop, restart, and reconfigure Win32 services and kernel drivers. Create or delete a <code>KERNEL_DRIVER</code> service through bundled nefcon. Protected service names cannot be mutated.</p>

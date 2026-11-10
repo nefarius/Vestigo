@@ -7,6 +7,7 @@ using Vestigo.Desktop;
 using Vestigo.Devices;
 using Vestigo.Diagnostics;
 using Vestigo.Input;
+using Vestigo.RegistryProbe;
 using Vestigo.ScheduledTasks;
 using Vestigo.Services;
 using Vestigo.Software;
@@ -112,6 +113,8 @@ public sealed class VestigoOptions
     public EnvironmentOptions Environment { get; set; } = new();
 
     public LogsOptions Logs { get; set; } = new();
+
+    public RegistryOptions Registry { get; set; } = new();
 
     public EventLogOptions EventLog { get; set; } = new();
 
@@ -319,6 +322,7 @@ public sealed class VestigoOptions
         Environment.Validate();
         WindowsServicing.Validate();
         Logs.Validate();
+        Registry.Validate();
         EventLog.Validate();
         RemoteDebugger.Validate();
         DebugOutput.Validate();
