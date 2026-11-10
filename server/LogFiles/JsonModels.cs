@@ -1,17 +1,20 @@
-using System.Text.Json.Nodes;
+using System.Text.Json;
 
 namespace Vestigo.LogFiles;
 
 /// <summary>One value selected by a JSON query.</summary>
 /// <param name="MatchedAt">Canonical path of this match.</param>
 /// <param name="Type">JSON type: object, array, string, number, boolean, or null.</param>
-/// <param name="Value">The JSON value. Null when <paramref name="ValueOmitted" /> is true. A JSON null is a node, not a C# null.</param>
+/// <param name="Value">
+///     The JSON value. Absent only when <paramref name="ValueOmitted" /> is true.
+///     A JSON null is a <see cref="JsonValueKind.Null" /> element, so it stays present after the document is released.
+/// </param>
 /// <param name="SerializedBytes">UTF-8 size of the matched JSON text.</param>
 /// <param name="ValueOmitted">True when the value exceeded the configured byte limit and was left out.</param>
 public sealed record JsonMatch(
     string MatchedAt,
     string Type,
-    JsonNode? Value,
+    JsonElement? Value,
     long SerializedBytes,
     bool ValueOmitted);
 

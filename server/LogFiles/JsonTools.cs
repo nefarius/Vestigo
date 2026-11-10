@@ -59,7 +59,7 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
             matches.Add(new JsonMatch(
                 hit.MatchedAt,
                 JsonPathEvaluator.TypeName(hit.Value),
-                omit ? null : hit.Value,
+                omit ? null : CloneValue(hit.Value),
                 size,
                 omit));
         }
@@ -204,10 +204,21 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
             string sha = Convert.ToHexString(SHA256.HashData(bytes));
             try
             {
-                return project(JsonNode.Parse(bytes), bytes.LongLength, sha);
+                return project(
+                    JsonNode.Parse(
+                        bytes,
+                        documentOptions: new JsonDocumentOptions { AllowDuplicateProperties = false }),
+                    bytes.LongLength,
+                    sha);
             }
             catch (JsonException exception)
             {
+                if (exception.LineNumber is null &&
+                    exception.Message.Contains("Duplicate property", StringComparison.Ordinal))
+                {
+                    return OperationResult<T>.Fail("invalid_json", "JSON object contains a duplicate property name.");
+                }
+
                 long offset = ByteOffset(bytes, exception);
                 return OperationResult<T>.Fail("invalid_json", $"JSON is invalid at byte {offset}.");
             }
@@ -224,6 +235,21 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
         {
             return OperationResult<T>.Fail("io_error", exception.Message);
         }
+    }
+
+    /// <summary>
+    ///     Copies a JSON value into an element that stays valid after the source is released.
+    ///     A missing node is JSON null, which remains a present value.
+    /// </summary>
+    private static JsonElement CloneValue(JsonNode? node)
+    {
+        if (node is null)
+        {
+            using JsonDocument document = JsonDocument.Parse("null");
+            return document.RootElement.Clone();
+        }
+
+        return JsonSerializer.SerializeToElement(node);
     }
 
     /// <summary>Converts a parser line and byte-in-line into a document byte offset.</summary>

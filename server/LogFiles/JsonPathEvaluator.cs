@@ -79,7 +79,17 @@ public static class JsonPathEvaluator
             return OperationResult<JsonSelection>.Ok(new JsonSelection(rootHit, false, wildcard));
         }
 
-        List<Node> matches = path.Evaluate(root).Matches.ToList();
+        // Matches is deferred. Keep one extra node so truncation is still visible, then stop.
+        List<Node> matches = [];
+        foreach (Node match in path.Evaluate(root).Matches)
+        {
+            matches.Add(match);
+            if (matches.Count > maxMatches)
+            {
+                break;
+            }
+        }
+
         if (!wildcard && matches.Count == 0)
         {
             return OperationResult<JsonSelection>.Fail("query_no_match", "Query did not match a value.");

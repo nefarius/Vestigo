@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 using Vestigo.Configuration;
 using Vestigo.LogFiles;
@@ -114,10 +115,23 @@ public class JsonToolsTests : IDisposable
         Assert.True(read.Success, read.Error);
         Assert.Equal(["$['items'][0]"], read.Value!.Matches.Select(match => match.MatchedAt));
         Assert.Equal("number", read.Value.Matches[0].Type);
-        Assert.Equal("1", read.Value.Matches[0].Value!.ToJsonString());
+        Assert.Equal("1", read.Value.Matches[0].Value.Value.GetRawText());
         Assert.False(read.Value.Matches[0].ValueOmitted);
         Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))), read.Value.Sha256);
         Assert.Equal(["status", "count", "flag", "empty", "items"], read.Value.TopLevelKeys);
+
+        OperationResult<JsonQueryResult> empty = tools.ReadJsonPath("logs:state.json", "$.empty");
+        Assert.True(empty.Success, empty.Error);
+        JsonMatch nullMatch = Assert.Single(empty.Value!.Matches);
+        Assert.Equal("$['empty']", nullMatch.MatchedAt);
+        Assert.Equal("null", nullMatch.Type);
+        Assert.False(nullMatch.ValueOmitted);
+        Assert.Equal(JsonValueKind.Null, nullMatch.Value.Value.ValueKind);
+        Assert.Equal("null", nullMatch.Value.Value.GetRawText());
+        Assert.Contains(
+            "\"value\":null",
+            JsonSerializer.Serialize(nullMatch, WebJson),
+            StringComparison.Ordinal);
 
         Assert.True(summary.Success, summary.Error);
         Assert.Equal("object", summary.Value!.RootType);
@@ -167,7 +181,7 @@ public class JsonToolsTests : IDisposable
 
         Assert.True(result.Success, result.Error);
         Assert.False(result.Value!.Matches[0].ValueOmitted);
-        Assert.Equal("1", result.Value.Matches[0].Value!.ToJsonString());
+        Assert.Equal("1", result.Value.Matches[0].Value.Value.GetRawText());
         Assert.True(result.Value.Matches[1].ValueOmitted);
         Assert.Null(result.Value.Matches[1].Value);
         Assert.Equal("string", result.Value.Matches[1].Type);
@@ -203,6 +217,22 @@ public class JsonToolsTests : IDisposable
 
         Assert.Equal("file_too_large", tools.ReadJsonPath("logs:state.json", "$", maxBytes: 1000).ErrorCode);
         Assert.Equal("invalid_request", tools.ReadJsonPath("logs:state.json", "$", maxBytes: 0).ErrorCode);
+    }
+
+    [Fact]
+    public void JsonTools_DuplicatePropertyIsInvalidJsonAndSerializesNothing()
+    {
+        Write("dup.json", """{"a":1,"a":2}""");
+        JsonTools tools = Tools();
+
+        OperationResult<JsonQueryResult> read = tools.ReadJsonPath("logs:dup.json", "$");
+        OperationResult<JsonSummary> summary = tools.GetJsonSummary("logs:dup.json");
+
+        Assert.Equal("invalid_json", read.ErrorCode);
+        Assert.Equal("invalid_json", summary.ErrorCode);
+        Assert.Equal("JSON object contains a duplicate property name.", read.Error);
+        Assert.DoesNotContain("\"a\":1", read.Error, StringComparison.Ordinal);
+        Assert.Null(read.Value);
     }
 
     [Fact]
@@ -249,6 +279,11 @@ public class JsonToolsTests : IDisposable
 
     private void Write(string name, string json) =>
         File.WriteAllText(Path.Combine(_root, name), json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     private static JsonSelection Select(JsonNode? root, string query, int maxMatches)
     {
