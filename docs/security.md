@@ -106,6 +106,10 @@ Controls: uninstall strings are split into an executable and an argument list an
 
 `set_uac` writes the UAC policy under `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System`. It stays off until `Vestigo:System:AllowUacChanges` is `true`. Treat a token that can call it as administrator-equivalent: it lowers or removes elevation prompts, and turning UAC off also breaks UWP and Store apps until it is turned back on. Enabling the option without an entry in `ApiTokens` only logs a `SECURITY WARNING` that names "UAC changes". Vestigo never reboots the machine. `EnableLUA` changes take effect after a reboot.
 
+## Power
+
+`get_power_state` and `get_sleep_configuration` are read-only. They disclose AC status, battery percent and charging, the active scheme name, approximate last sleep and wake times, and the AC/DC lid, timeout, wake-timer, and hybrid-sleep settings. They do not name processes and they do not change the scheme. The module is on by default; disable it with `Vestigo:Modules:Power:Enabled=false`.
+
 ## Remote debugger
 
 A running `msvsmon.exe` lets any authenticated remote debugger attach to processes and execute code as the user the monitor runs as. `start_remote_debugger` therefore defaults to Windows authentication; use `allowUsers` to limit who may connect. `auth: none` runs `/noauth /anyuser`, which disables authentication completely: anyone who can reach the port gets code execution. It needs `iUnderstandNoAuthIsInsecure: true` and writes a warning to the result and the log. Use it only on isolated networks and stop the monitor afterwards. Vestigo binds only `ListenAddress`, but `msvsmon.exe` listens on the chosen port on all interfaces, subject to the firewall (`prepare_remote_debugger_computer` changes firewall rules).

@@ -22,6 +22,7 @@ public static class ModuleRegistry
         new TraceModule(),
         new EnvironmentModule(),
         new SystemModule(),
+        new PowerModule(),
         new LogsModule(),
         new RegistryModule(),
         new EventLogModule(),

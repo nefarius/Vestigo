@@ -375,6 +375,12 @@ Returns one Windows logon session, including token elevation, local Administrato
 | `sessionId` | `int` | yes |  | WTS session id from list_logon_sessions. |
 | `includeClientAddresses` | `bool` | no | `false` | Include client name and address. Default false. These values are not written to the log. |
 
+## `get_power_state`
+
+Returns AC line status (online, offline, or unknown), whether a battery is present, its percent, whether it is charging (separate from AC status), remaining seconds, the active scheme GUID and name, approximate UTC last sleep and wake times, and platform capabilities. A battery that is absent leaves the battery fields null. Charging can be true while AC status is offline. Last sleep and wake are UTC now minus the interrupt-time counters, so a clock change moves them. fastStartupSupported is a capability, not the HiberbootEnabled configuration from get_boot_state. A failed probe is a null field. There is no write.
+
+No parameters.
+
 ## `get_reboot_pending`
 
 Collects independent 64-bit registry and WUA reboot signals. Returns pending, notPending, or unknown; unreadable sources are never treated as clear. Installer and CBS session presence are advisory activity signals. Does not reboot or change the queue.
@@ -435,6 +441,12 @@ Returns bounded tails of the fixed CBS.log and DISM dism.log, using existing Rea
 ## `get_servicing_status`
 
 Fast CBS registry snapshot plus pending.xml/reboot.xml metadata. No XML content is parsed and no DISM/SFC health scan or repair is invoked. Missing pending files do not establish component-store health.
+
+No parameters.
+
+## `get_sleep_configuration`
+
+Returns the active scheme's AC and DC lid-close action (doNothing, sleep, hibernate, shutdown, or unknown), standby, hibernate, and monitor timeouts in seconds (0 means never), wake-timer enablement, and hybrid sleep. A value Windows did not return is null, not doNothing and not zero. There is no write.
 
 No parameters.
 
