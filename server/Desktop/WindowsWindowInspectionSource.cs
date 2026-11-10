@@ -241,8 +241,8 @@ public sealed class WindowsWindowInspectionSource : IWindowInspectionSource
         }
 
         return FieldResult<WindowStyleInfo>.Ok(new WindowStyleInfo(
-            "0x" + ((nuint)style).ToString("X"),
-            "0x" + ((nuint)extended).ToString("X"),
+            "0x" + unchecked((uint)style).ToString("X"),
+            "0x" + unchecked((uint)extended).ToString("X"),
             Names(style, StyleNames),
             Names(extended, ExtendedStyleNames)));
     }

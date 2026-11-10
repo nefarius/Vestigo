@@ -83,7 +83,9 @@ internal static class WindowEventCaptureLoop
 
         private readonly WindowsWindowInspectionSource _windows = new();
         private long _dropped;
+        private long _reportedDrops;
         private int _written;
+        private string? _canonicalHandle;
         private HWINEVENTHOOK _hook;
         private int _processId;
         private DateTimeOffset? _processStart;
@@ -178,6 +180,7 @@ internal static class WindowEventCaptureLoop
                 _processId = identity.Value!.ProcessId;
                 _processStart = identity.Value.StartTime;
                 _startReadable = identity.Value.StartTimeReadable;
+                _canonicalHandle = WindowInspection.FormatHandle(new HWND(handle));
                 return true;
             }
 
@@ -241,7 +244,7 @@ internal static class WindowEventCaptureLoop
                 return;
             }
 
-            if (start.Handle is not null && !string.Equals(WindowInspection.FormatHandle(hwnd), Normalize(start.Handle), StringComparison.OrdinalIgnoreCase))
+            if (_canonicalHandle is not null && !string.Equals(WindowInspection.FormatHandle(hwnd), _canonicalHandle, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -347,9 +350,11 @@ internal static class WindowEventCaptureLoop
                 _written++;
             }
 
-            if (_dropped > 0)
+            long dropped = Interlocked.Read(ref _dropped);
+            if (dropped > _reportedDrops)
             {
-                Write(output, new WindowEventMessage("hook-dropped", DateTimeOffset.UtcNow, null, null, null, null, null, null, null, null, null, null, null, null, null, _dropped, null, null, null, null, null, null, null));
+                _reportedDrops = dropped;
+                Write(output, new WindowEventMessage("hook-dropped", DateTimeOffset.UtcNow, null, null, null, null, null, null, null, null, null, null, null, null, null, dropped, null, null, null, null, null, null, null));
             }
         }
 
@@ -438,8 +443,6 @@ internal static class WindowEventCaptureLoop
             return process is not null && ProcessStartTime.TryRead(process, out DateTimeOffset start, out _) ? start : null;
         }
 
-        private static string Normalize(string handle) =>
-            handle.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? handle : "0x" + handle;
     }
 }
 

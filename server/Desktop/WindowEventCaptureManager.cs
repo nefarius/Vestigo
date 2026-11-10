@@ -93,9 +93,14 @@ public sealed class WindowEventCaptureManager : IHostedService, IDisposable
             return OperationResult<WindowEventCaptureStatus>.Fail("invalid_request", "pid must be positive.");
         }
 
-        if (start.Handle is not null && !WindowEventLines.TryParseHandle(start.Handle, out _))
+        if (start.Handle is not null)
         {
-            return OperationResult<WindowEventCaptureStatus>.Fail("invalid_request", "windowHandle must be a non-zero hex handle such as 0x1A2B.");
+            if (!WindowEventLines.TryParseHandle(start.Handle, out string canonical))
+            {
+                return OperationResult<WindowEventCaptureStatus>.Fail("invalid_request", "windowHandle must be a non-zero hex handle such as 0x1A2B.");
+            }
+
+            start = start with { Handle = canonical };
         }
 
         if (start.Duration <= TimeSpan.Zero || start.Duration > _options.Desktop.MaxWindowEventDuration)

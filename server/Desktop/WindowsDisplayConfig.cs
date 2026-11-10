@@ -207,8 +207,9 @@ public static class WindowsDisplayConfig
         int y = 0;
         int width = 0;
         int height = 0;
-        uint sourceIndex = path.sourceInfo.modeInfoIdx;
-        if (sourceIndex < modes.Length && modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
+        if (TrySourceModeIndex(path, out uint sourceIndex)
+            && sourceIndex < modes.Length
+            && modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
         {
             DISPLAYCONFIG_SOURCE_MODE sourceMode = modes[sourceIndex].sourceMode;
             x = sourceMode.position.x;
@@ -217,8 +218,9 @@ public static class WindowsDisplayConfig
             height = checked((int)sourceMode.height);
         }
 
-        uint targetIndex = path.targetInfo.modeInfoIdx;
-        if (targetIndex < modes.Length && modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
+        if (TryTargetModeIndex(path, out uint targetIndex)
+            && targetIndex < modes.Length
+            && modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
         {
             DISPLAYCONFIG_2DREGION active = modes[targetIndex].targetMode.targetVideoSignalInfo.activeSize;
             width = width == 0 ? checked((int)active.cx) : width;
@@ -250,8 +252,9 @@ public static class WindowsDisplayConfig
     private static bool TryPatch(ref DISPLAYCONFIG_PATH_INFO path, DISPLAYCONFIG_MODE_INFO[] modes, DisplayTargetChange change)
     {
         bool patched = false;
-        uint sourceIndex = path.sourceInfo.modeInfoIdx;
-        if (sourceIndex < modes.Length && modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
+        if (TrySourceModeIndex(path, out uint sourceIndex)
+            && sourceIndex < modes.Length
+            && modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
         {
             DISPLAYCONFIG_MODE_INFO mode = modes[sourceIndex];
             DISPLAYCONFIG_SOURCE_MODE source = mode.sourceMode;
@@ -264,8 +267,9 @@ public static class WindowsDisplayConfig
             patched = true;
         }
 
-        uint targetIndex = path.targetInfo.modeInfoIdx;
-        if (targetIndex < modes.Length && modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
+        if (TryTargetModeIndex(path, out uint targetIndex)
+            && targetIndex < modes.Length
+            && modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
         {
             DISPLAYCONFIG_MODE_INFO mode = modes[targetIndex];
             DISPLAYCONFIG_TARGET_MODE target = mode.targetMode;
@@ -291,6 +295,30 @@ public static class WindowsDisplayConfig
         }
 
         return patched;
+    }
+
+    private static bool TrySourceModeIndex(DISPLAYCONFIG_PATH_INFO path, out uint index)
+    {
+        if ((path.flags & PInvoke.DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE) != 0)
+        {
+            index = path.sourceInfo.sourceModeInfoIdx;
+            return index != PInvoke.DISPLAYCONFIG_PATH_SOURCE_MODE_IDX_INVALID;
+        }
+
+        index = path.sourceInfo.modeInfoIdx;
+        return index != PInvoke.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+    }
+
+    private static bool TryTargetModeIndex(DISPLAYCONFIG_PATH_INFO path, out uint index)
+    {
+        if ((path.flags & PInvoke.DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE) != 0)
+        {
+            index = path.targetInfo.targetModeInfoIdx;
+            return index != PInvoke.DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID;
+        }
+
+        index = path.targetInfo.modeInfoIdx;
+        return index != PInvoke.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
     }
 
     private static unsafe WIN32_ERROR ApplyNative(

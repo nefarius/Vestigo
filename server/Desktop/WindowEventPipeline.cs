@@ -1,8 +1,9 @@
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using Vestigo.Processes;
+
+using Windows.Win32.Foundation;
 
 namespace Vestigo.Desktop;
 
@@ -398,17 +399,12 @@ public static class WindowEventLines
     public static bool TryParseHandle(string? text, out string handle)
     {
         handle = string.Empty;
-        if (!WindowInspection.TryParseHandle(text, out _))
+        if (!WindowInspection.TryParseHandle(text, out HWND window))
         {
             return false;
         }
 
-        handle = text!.Trim();
-        if (handle.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            handle = "0x" + handle[2..].ToUpperInvariant();
-        }
-
-        return nuint.TryParse(handle[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);
+        handle = WindowInspection.FormatHandle(window);
+        return true;
     }
 }

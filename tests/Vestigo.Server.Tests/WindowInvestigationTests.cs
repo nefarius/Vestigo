@@ -433,6 +433,29 @@ public class WindowPlacementContractTests
     }
 
     [Fact]
+    public void Restore_RequiresTheSavedShowState()
+    {
+        FakePlacement windows = new();
+        WindowPlacer placer = new(windows, new WindowPlacementStore(TimeProvider.System));
+        OperationResult<WindowPlacementResult> saved = placer.Place(
+            new WindowPlacementRequest("0x11", 10, Start, 10, 10, 20, 20, DesktopCoordinates.PhysicalScreenPixels, true));
+        windows.ReportedShowCommand = 3;
+
+        OperationResult<WindowPlacementResult> restored = placer.Restore(saved.Value!.SavedPlacementToken);
+
+        Assert.False(restored.Value!.Achieved);
+        Assert.Equal("placement_not_achieved", restored.Value.StopCode);
+    }
+
+    [Fact]
+    public void TryParseHandle_DropsLeadingZeroes()
+    {
+        Assert.True(WindowEventLines.TryParseHandle("0x0000000A", out string handle));
+        Assert.Equal("0xA", handle);
+        Assert.False(WindowEventLines.TryParseHandle("0x0", out _));
+    }
+
+    [Fact]
     public async Task Tool_RequiresThePlacementGate()
     {
         WindowPlacementTools tools = new(
@@ -461,6 +484,7 @@ public class WindowPlacementContractTests
         public bool Reject;
         public int Moves;
         public string? ForegroundHandle = "0x1";
+        public int ReportedShowCommand = 1;
         private SavedWindowPlacement? _saved;
 
         public OperationResult<PlacementSample> Measure(string handle, int? expectedPid, DateTimeOffset? expectedStart) =>
@@ -488,7 +512,7 @@ public class WindowPlacementContractTests
 
         public OperationResult<SavedWindowPlacement> ReadPlacement(string handle, int? expectedPid, DateTimeOffset? expectedStart)
         {
-            _saved = new SavedWindowPlacement(handle, 10, Start, true, 1, -1, -1, -1, -1, -8, -31, 1936, 1239, 0);
+            _saved = new SavedWindowPlacement(handle, 10, Start, true, ReportedShowCommand, -1, -1, -1, -1, -8, -31, 1936, 1239, 0);
             return OperationResult<SavedWindowPlacement>.Ok(_saved);
         }
 
@@ -617,6 +641,42 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_RestoresWhenTheHelperResultIsUncertainAndDropsADefiniteRejection()
+    {
+        FakeDisplays uncertain = new(Snap(Path(0, 0, 1920, 1080))) { UncertainError = "helper_timeout" };
+        DisplayLayoutTransactionManager manager = Manager(uncertain);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None);
+        Assert.Equal("helper_timeout", started.ErrorCode);
+        Assert.Equal(2, uncertain.Applied.Count);
+        Assert.True(uncertain.Applied[1].Persistent);
+        Assert.Equal("restored", manager.Get(null).Value!.State);
+
+        FakeDisplays rejected = new(Snap(Path(0, 0, 1920, 1080))) { FailApply = true };
+        DisplayLayoutTransactionManager rejection = Manager(rejected);
+        OperationResult<DisplayLayoutTransaction> failed = await rejection.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None);
+        Assert.Equal("display_config_rejected", failed.ErrorCode);
+        Assert.Single(rejected.Applied);
+        Assert.False(File.Exists(VestigoPaths.OwnedDisplayLayoutPath));
+        Assert.Equal("not_found", rejection.Get(null).ErrorCode);
+    }
+
+    [Fact]
+    public async Task Restore_LeavesAnAlreadyRestoredTransactionUntouched()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
+        DisplayLayoutTransactionManager manager = Manager(displays);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None);
+        OperationResult<DisplayLayoutTransaction> restored = await manager.RestoreAsync(started.Value!.Id, CancellationToken.None);
+        Assert.Equal("restored", restored.Value!.State);
+        int applies = displays.Applied.Count;
+
+        OperationResult<DisplayLayoutTransaction> again = await manager.RestoreAsync(started.Value.Id, CancellationToken.None);
+
+        Assert.Equal("restored", again.Value!.State);
+        Assert.Equal(applies, displays.Applied.Count);
+    }
+
+    [Fact]
     public async Task Tool_RequiresTheDisplayGate()
     {
         DisplayLayoutTools tools = new(Manager(new FakeDisplays(Snap(Path(0, 0, 1920, 1080)))), new VestigoOptions());
@@ -676,6 +736,7 @@ public class DisplayLayoutContractTests : IDisposable
         public int SnapshotsBeforeChanged;
         public bool FailApply;
         public bool CancelFirstApply;
+        public string? UncertainError;
         public List<DisplayLayoutRequest> Applied { get; } = [];
 
         public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken)
@@ -694,6 +755,11 @@ public class DisplayLayoutContractTests : IDisposable
             if (CancelFirstApply && Applied.Count == 1)
             {
                 throw new OperationCanceledException();
+            }
+
+            if (UncertainError is not null && Applied.Count == 1)
+            {
+                return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Fail(UncertainError, "The helper did not return a result."));
             }
 
             if (FailApply)

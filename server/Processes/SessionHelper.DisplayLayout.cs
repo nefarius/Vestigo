@@ -207,8 +207,12 @@ public static partial class SessionHelper
             placement.Handle,
             placement.ProcessId,
             placement.StartTimeReadable ? placement.ProcessStartTime : null);
+        OperationResult<SavedWindowPlacement> reread = source.ReadPlacement(
+            placement.Handle,
+            placement.ProcessId,
+            placement.StartTimeReadable ? placement.ProcessStartTime : null);
         DesktopRect requested = new(placement.NormalX, placement.NormalY, placement.NormalWidth, placement.NormalHeight);
-        bool achieved = applied.Value!.ApiSucceeded && measured.Success && measured.Value!.Raw == requested;
+        bool achieved = applied.Value!.ApiSucceeded && reread.Success && WindowPlacer.SameRestoredPlacement(placement, reread.Value!);
         string? after = source.Foreground();
         WindowPlacementResult result = new(
             achieved,

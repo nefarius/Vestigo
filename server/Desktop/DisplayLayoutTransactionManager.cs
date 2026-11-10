@@ -82,6 +82,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        string? ownedId = null;
         try
         {
             if (_current is { State: not "restored" })
@@ -115,6 +116,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                 false,
                 [],
                 null);
+            ownedId = transaction.Id;
             _current = transaction;
             _elevated = elevated;
             Save();
@@ -122,22 +124,35 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                 new DisplayLayoutRequest(targets, persistent, false),
                 elevated,
                 cancellationToken).ConfigureAwait(false);
-            if (!applied.Success || applied.Value is not { Applied: true })
+            if (applied.Success && applied.Value is { Applied: true })
+            {
+                _current = transaction with { State = "active", Current = applied.Value.After };
+                Save();
+                return OperationResult<DisplayLayoutTransaction>.Ok(_current);
+            }
+
+            if (applied.Value is { Applied: false })
             {
                 _current = null;
                 TryDelete();
-                return applied.Success
-                    ? OperationResult<DisplayLayoutTransaction>.Fail(applied.Value!.ErrorCode ?? "display_config_rejected", applied.Value.Error ?? "SetDisplayConfig did not apply the layout.")
-                    : applied.FailAs<DisplayLayoutTransaction>();
+                return OperationResult<DisplayLayoutTransaction>.Fail(
+                    applied.Value.ErrorCode ?? "display_config_rejected",
+                    applied.Value.Error ?? "SetDisplayConfig did not apply the layout.");
             }
 
-            _current = transaction with { State = "active", Current = applied.Value.After };
-            Save();
-            return OperationResult<DisplayLayoutTransaction>.Ok(_current);
+            if (!applied.Success && applied.ErrorCode is "helper_timeout" or "helper_failed" or "cancelled")
+            {
+                await RestoreCoreAsync(CancellationToken.None).ConfigureAwait(false);
+                return applied.FailAs<DisplayLayoutTransaction>();
+            }
+
+            _current = null;
+            TryDelete();
+            return applied.FailAs<DisplayLayoutTransaction>();
         }
         catch (OperationCanceledException)
         {
-            if (_current is not null)
+            if (_current is { Id: var id, State: "pending" or "active" } && id == ownedId)
             {
                 await RestoreCoreAsync(CancellationToken.None).ConfigureAwait(false);
             }
@@ -232,6 +247,11 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             if (Get(id) is not { Success: true })
             {
                 return OperationResult<DisplayLayoutTransaction>.Fail("not_found", "Display-layout transaction was not found.");
+            }
+
+            if (_current!.State == "restored")
+            {
+                return OperationResult<DisplayLayoutTransaction>.Ok(_current);
             }
 
             await RestoreCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -337,9 +357,9 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             _current = stored.Transaction with { State = "restore_failed", Error = "Restoring a layout that was open when the service stopped." };
             _elevated = stored.Elevated;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            _logger?.LogWarning("Display-layout checkpoint could not be read. It was left in place.");
+            _logger?.LogWarning(ex, "Display-layout checkpoint could not be read. It was left in place.");
         }
     }
 

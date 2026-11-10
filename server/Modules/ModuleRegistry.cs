@@ -161,7 +161,7 @@ public static class ModuleRegistry
             if (desktop)
             {
                 names.Add("Desktop");
-                string desktopClause = $"{reach} can list and inspect windows, capture window events, and list displays on the console user's desktop.";
+                string desktopClause = $"{reach} can list windows, titles, and displays on the console user's desktop, inspect those windows, and capture window events.";
                 if (desktopScreenshots)
                 {
                     desktopClause += " They can take screenshots of that desktop. A client can also publish a short-lived, single-use link to a downscaled preview; that link does not require an API token.";

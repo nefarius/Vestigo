@@ -152,8 +152,12 @@ public sealed class WindowPlacer(IWindowPlacementSource source, WindowPlacementS
             saved.Value!.Handle,
             saved.Value.ProcessId,
             saved.Value.StartTimeReadable ? saved.Value.ProcessStartTime : null);
+        OperationResult<SavedWindowPlacement> reread = source.ReadPlacement(
+            saved.Value.Handle,
+            saved.Value.ProcessId,
+            saved.Value.StartTimeReadable ? saved.Value.ProcessStartTime : null);
         DesktopRect requested = new(saved.Value.NormalX, saved.Value.NormalY, saved.Value.NormalWidth, saved.Value.NormalHeight);
-        bool achieved = applied.Value!.ApiSucceeded && measured.Success && measured.Value!.Raw == requested;
+        bool achieved = applied.Value!.ApiSucceeded && reread.Success && SameRestoredPlacement(saved.Value, reread.Value!);
         string? after = source.Foreground();
         return OperationResult<WindowPlacementResult>.Ok(new WindowPlacementResult(
             achieved,
@@ -239,6 +243,13 @@ public sealed class WindowPlacer(IWindowPlacementSource source, WindowPlacementS
             achieved ? null : stopError ?? "The measured client rectangle does not match the request.",
             captured);
     }
+
+    internal static bool SameRestoredPlacement(SavedWindowPlacement saved, SavedWindowPlacement actual) =>
+        saved.ShowCommand == actual.ShowCommand
+        && saved.NormalX == actual.NormalX
+        && saved.NormalY == actual.NormalY
+        && saved.NormalWidth == actual.NormalWidth
+        && saved.NormalHeight == actual.NormalHeight;
 }
 
 /// <summary>Short-lived placement tokens. They are not kept across a service restart.</summary>

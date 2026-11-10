@@ -123,7 +123,9 @@ public class DesktopTests
         string? warning = ModuleRegistry.GetPrivilegedModuleWarning(open);
         Assert.NotNull(warning);
         Assert.Contains("Desktop", warning);
-        Assert.Contains("list and inspect windows, capture window events, and list displays", warning);
+        Assert.Contains("windows, titles, and displays", warning);
+        Assert.Contains("inspect those windows", warning);
+        Assert.Contains("capture window events", warning);
         Assert.DoesNotContain("move windows by client rectangle", warning);
         Assert.DoesNotContain("change the active display layout", warning);
         Assert.DoesNotContain("administrator-equivalent", warning);
