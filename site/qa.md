@@ -30,6 +30,12 @@ Use the Devices module when the case needs a driver stack, a filter, or a device
 
 The lock screen and UAC secure desktop fail with `desktop_unavailable`. A console user must be logged on.
 
+## See whether the machine slept
+
+1. `get_power_state` reports AC, battery charging, approximate last sleep and wake times, and whether the platform supports modern standby.
+2. `get_sleep_configuration` reports the lid-close action and the standby timeout on AC and on battery. A null value was not returned. A timeout of 0 means never.
+3. Fast Startup configuration is `get_boot_state` `fastStartupEnabled`. That setting does not prove the previous boot was hybrid.
+
 ## Why a screenshot failed
 
 1. `list_logon_sessions` shows every session, which one is the console, and which one interactive tools would use (`isCurrentInput`).

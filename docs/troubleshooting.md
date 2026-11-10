@@ -135,6 +135,10 @@ Messages from a process that has a debugger attached go to the debugger, not to 
 `MissingFormatCount` counts WPP events whose message format was not in the loaded PDB or TMF sources. Point `binaryPaths` at the installed binary, add the matching PDB or TMF under `traces`, or enable symbol resolution for offline ETL. Enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` stay numeric. `symbol_auth_failed` means the configured symbol server rejected the request.
 
 
+## The machine stops responding overnight
+
+`get_power_state` reports whether the machine is on AC, whether a battery is present and charging, and approximate `lastSleepTimeUtc` and `lastWakeTimeUtc`. Those times move if the clock changes, and a zero interrupt-time counter is null. `capabilities.modernStandby` means the platform supports S0 low-power idle. `get_sleep_configuration` reports the lid-close action and the standby, hibernate, and monitor timeouts for AC and DC. A null lid action was not returned; it is not `doNothing`. A timeout of 0 means never. Vestigo does not list power-request owners and does not name the device that woke the machine. `power_api_failed` means the power read threw. A denied or missing policy index is a null field.
+
 ## A restart-required state never clears
 
 `get_boot_state` reports `fastStartupEnabled` from `HiberbootEnabled`. When that value is true, shutting down can restore the previous kernel session, so driver and service state from before shutdown can still be there. Restart is the startup Windows treats as a full boot. The field is configuration only: it does not say the previous boot was hybrid, and Vestigo has no boot identity to compare across calls. `pendingFileRenameCount` is the queued rename and delete count. The paths are `list_pending_file_operations` when the Windows servicing module is enabled. `get_boot_security` `rebootPending` is only the BCD test-signing value versus the running kernel.
