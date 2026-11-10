@@ -193,10 +193,13 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
     internal static CallToolResult ErrorResult<T>(OperationResult<T> result) =>
         ErrorResult(result.ErrorCode!, result.Error!, result.Reason);
 
-    internal static CallToolResult ErrorResult(string errorCode, string error, string? reason = null) =>
-        new()
+    internal static CallToolResult ErrorResult(string errorCode, string error, string? reason = null)
+    {
+        object payload = reason is null ? new { errorCode, error } : new { errorCode, error, reason };
+        return new()
         {
             IsError = true,
-            Content = [new TextContentBlock { Text = JsonSerializer.Serialize(new { errorCode, error, reason }, SessionHelper.Json) }]
+            Content = [new TextContentBlock { Text = JsonSerializer.Serialize(payload, SessionHelper.Json) }]
         };
+    }
 }

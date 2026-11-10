@@ -317,6 +317,27 @@ public class DesktopTests
     }
 
     [Fact]
+    public void ErrorResult_OmitsANullReasonAndKeepsAPresentOne()
+    {
+        CallToolResult absent = DesktopTools.ErrorResult("screenshots_disabled", "Screenshots are disabled.");
+        using (JsonDocument missing = JsonDocument.Parse(ErrorText(absent)))
+        {
+            Assert.Equal("screenshots_disabled", missing.RootElement.GetProperty("errorCode").GetString());
+            Assert.Equal("Screenshots are disabled.", missing.RootElement.GetProperty("error").GetString());
+            Assert.False(missing.RootElement.TryGetProperty("reason", out _));
+        }
+
+        CallToolResult present = DesktopTools.ErrorResult(
+            "no_interactive_session",
+            "No user is logged on at the console.",
+            ConsoleSessionReasons.NobodyLoggedOn);
+        using JsonDocument withReason = JsonDocument.Parse(ErrorText(present));
+        Assert.Equal("no_interactive_session", withReason.RootElement.GetProperty("errorCode").GetString());
+        Assert.Equal("No user is logged on at the console.", withReason.RootElement.GetProperty("error").GetString());
+        Assert.Equal(ConsoleSessionReasons.NobodyLoggedOn, withReason.RootElement.GetProperty("reason").GetString());
+    }
+
+    [Fact]
     public async Task ListWindows_RejectsBadContextAndRegex()
     {
         DesktopTools tools = CreateTools(new UnavailableLauncher());
@@ -485,9 +506,14 @@ public class DesktopTests
     private static string? ErrorCode(CallToolResult result)
     {
         Assert.True(result.IsError);
-        TextContentBlock text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
-        using JsonDocument document = JsonDocument.Parse(text.Text);
+        using JsonDocument document = JsonDocument.Parse(ErrorText(result));
         return document.RootElement.GetProperty("errorCode").GetString();
+    }
+
+    private static string ErrorText(CallToolResult result)
+    {
+        TextContentBlock text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        return text.Text;
     }
 
     private static string? ErrorReason(CallToolResult result)
