@@ -163,7 +163,7 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
             .ConfigureAwait(false);
         if (!captured.Success)
         {
-            return ErrorResult(captured.ErrorCode!, captured.Error!);
+            return ErrorResult(captured);
         }
 
         FileLink? download = captured.Value!.Info.SavedPath is { } saved ? links?.TryCreateDownload(saved) : null;
@@ -190,10 +190,16 @@ public sealed class DesktopTools(DesktopInventory inventory, VestigoOptions opti
         return new CallToolResult { Content = content };
     }
 
-    internal static CallToolResult ErrorResult(string errorCode, string error) =>
-        new()
+    internal static CallToolResult ErrorResult<T>(OperationResult<T> result) =>
+        ErrorResult(result.ErrorCode!, result.Error!, result.Reason);
+
+    internal static CallToolResult ErrorResult(string errorCode, string error, string? reason = null)
+    {
+        object payload = reason is null ? new { errorCode, error } : new { errorCode, error, reason };
+        return new()
         {
             IsError = true,
-            Content = [new TextContentBlock { Text = JsonSerializer.Serialize(new { errorCode, error }, SessionHelper.Json) }]
+            Content = [new TextContentBlock { Text = JsonSerializer.Serialize(payload, SessionHelper.Json) }]
         };
+    }
 }

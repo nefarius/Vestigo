@@ -5,6 +5,7 @@ using System.Security.Principal;
 using Microsoft.Win32.SafeHandles;
 
 using Vestigo.Jobs;
+using Vestigo.SystemInfo;
 
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -23,8 +24,6 @@ namespace Vestigo.Processes;
 /// </summary>
 internal static class InteractiveProcessRunner
 {
-    private const uint NoSession = 0xFFFFFFFF;
-    private const uint ErrorNoToken = 1008;
     private const int TokenElevationTypeDefault = 1;
     private const int TokenElevationTypeFull = 2;
     private const int TokenElevationTypeLimited = 3;
@@ -39,7 +38,7 @@ internal static class InteractiveProcessRunner
         }
         catch (ProcessLaunchException ex)
         {
-            return OperationResult<bool>.Fail(ex.Code, ex.Message[(ex.Code.Length + 2)..]);
+            return OperationResult<bool>.Fail(ex.Code, ex.Message[(ex.Code.Length + 2)..], ex.Reason);
         }
     }
 
@@ -197,26 +196,32 @@ internal static class InteractiveProcessRunner
 
         return info;
     }
-    internal static unsafe SafeFileHandle OpenUserToken(bool elevated)
+    internal static SafeFileHandle OpenUserToken(bool elevated)
     {
-        uint session = PInvoke.WTSGetActiveConsoleSessionId();
-        if (session is NoSession or 0)
+        uint session = ConsoleSession.ActiveConsoleSessionId();
+        if (session is ConsoleSession.NoSession or 0)
         {
-            throw new ProcessLaunchException("no_interactive_session", "No user is logged on at the console.");
+            string? reason = ConsoleSession.Explain(
+                session,
+                tokenError: null,
+                session == ConsoleSession.NoSession ? ConsoleSession.TryList() : null,
+                sessionZeroIsUnusable: true);
+            throw new ProcessLaunchException("no_interactive_session", ConsoleSessionReasons.Message, reason);
         }
 
-        HANDLE rawToken = default;
-        if (!PInvoke.WTSQueryUserToken(session, &rawToken))
+        SafeFileHandle? token = ConsoleSession.TryOpenToken(session, out int error);
+        if (token is null)
         {
-            int error = Marshal.GetLastWin32Error();
-            throw error == ErrorNoToken
-                ? new ProcessLaunchException("no_interactive_session", "No user is logged on at the console.")
+            throw error == ConsoleSession.ErrorNoToken
+                ? new ProcessLaunchException(
+                    "no_interactive_session",
+                    ConsoleSessionReasons.Message,
+                    ConsoleSessionReasons.ConsoleSessionHasNoToken)
                 : new ProcessLaunchException(
                     "token_unavailable",
                     "Could not get the console user token (the service needs SYSTEM): " + new Win32Exception(error).Message);
         }
 
-        SafeFileHandle token = new(rawToken, ownsHandle: true);
         if (!elevated)
         {
             return token;

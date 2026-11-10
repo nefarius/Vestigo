@@ -22,9 +22,12 @@ public sealed record LaunchRequest(
     bool Elevated);
 
 /// <summary>Raised when a process cannot be started. <see cref="Code" /> is a stable error code.</summary>
-public sealed class ProcessLaunchException(string code, string message) : Exception($"{code}: {message}")
+/// <param name="reason">Optional stable token, such as why no console user is available.</param>
+public sealed class ProcessLaunchException(string code, string message, string? reason = null) : Exception($"{code}: {message}")
 {
     public string Code { get; } = code;
+
+    public string? Reason { get; } = reason;
 }
 
 /// <summary>Starts processes for jobs and appends their stdout and stderr to the job spool.</summary>

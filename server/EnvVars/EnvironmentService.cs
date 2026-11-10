@@ -199,7 +199,7 @@ public sealed class EnvironmentService(IEnvironmentStore store, VestigoOptions o
         }
         catch (UserNotAvailableException exception)
         {
-            return OperationResult<T>.Fail("user_not_available", exception.Message);
+            return OperationResult<T>.Fail("user_not_available", exception.Message, exception.Reason);
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException)
         {

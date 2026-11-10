@@ -10,6 +10,7 @@ using Vestigo.Jobs;
 using Vestigo.Modules;
 using Vestigo.Processes;
 using Vestigo.Security;
+using Vestigo.SystemInfo;
 
 namespace Vestigo.Server.Tests;
 
@@ -316,6 +317,27 @@ public class DesktopTests
     }
 
     [Fact]
+    public void ErrorResult_OmitsANullReasonAndKeepsAPresentOne()
+    {
+        CallToolResult absent = DesktopTools.ErrorResult("screenshots_disabled", "Screenshots are disabled.");
+        using (JsonDocument missing = JsonDocument.Parse(ErrorText(absent)))
+        {
+            Assert.Equal("screenshots_disabled", missing.RootElement.GetProperty("errorCode").GetString());
+            Assert.Equal("Screenshots are disabled.", missing.RootElement.GetProperty("error").GetString());
+            Assert.False(missing.RootElement.TryGetProperty("reason", out _));
+        }
+
+        CallToolResult present = DesktopTools.ErrorResult(
+            "no_interactive_session",
+            "No user is logged on at the console.",
+            ConsoleSessionReasons.NobodyLoggedOn);
+        using JsonDocument withReason = JsonDocument.Parse(ErrorText(present));
+        Assert.Equal("no_interactive_session", withReason.RootElement.GetProperty("errorCode").GetString());
+        Assert.Equal("No user is logged on at the console.", withReason.RootElement.GetProperty("error").GetString());
+        Assert.Equal(ConsoleSessionReasons.NobodyLoggedOn, withReason.RootElement.GetProperty("reason").GetString());
+    }
+
+    [Fact]
     public async Task ListWindows_RejectsBadContextAndRegex()
     {
         DesktopTools tools = CreateTools(new UnavailableLauncher());
@@ -323,7 +345,9 @@ public class DesktopTests
         Assert.Equal("invalid_request", (await tools.ListWindows(context: "desktop")).ErrorCode);
         Assert.Equal("invalid_request", (await tools.ListDisplays(context: "desktop")).ErrorCode);
         Assert.Equal("invalid_request", (await tools.ListWindows(titleRegex: "[")).ErrorCode);
-        Assert.Equal("no_interactive_session", (await tools.ListWindows()).ErrorCode);
+        OperationResult<WindowListResult> windows = await tools.ListWindows();
+        Assert.Equal("no_interactive_session", windows.ErrorCode);
+        Assert.Equal(ConsoleSessionReasons.NobodyLoggedOn, windows.Reason);
         Assert.Equal("no_interactive_session", (await tools.ListDisplays()).ErrorCode);
     }
 
@@ -341,7 +365,9 @@ public class DesktopTests
         Assert.Equal("invalid_request", ErrorCode(await allowed.TakeScreenshot(maxEdge: -1)));
         Assert.Equal("invalid_request", ErrorCode(await allowed.TakeScreenshot(target: "window", windowHandle: "0x1", pid: 1)));
         Assert.Equal("invalid_request", ErrorCode(await allowed.TakeScreenshot(target: "region", x: 0, y: 0)));
-        Assert.Equal("no_interactive_session", ErrorCode(await allowed.TakeScreenshot()));
+        CallToolResult missing = await allowed.TakeScreenshot();
+        Assert.Equal("no_interactive_session", ErrorCode(missing));
+        Assert.Equal(ConsoleSessionReasons.NobodyLoggedOn, ErrorReason(missing));
     }
 
     [Fact]
@@ -480,9 +506,21 @@ public class DesktopTests
     private static string? ErrorCode(CallToolResult result)
     {
         Assert.True(result.IsError);
+        using JsonDocument document = JsonDocument.Parse(ErrorText(result));
+        return document.RootElement.GetProperty("errorCode").GetString();
+    }
+
+    private static string ErrorText(CallToolResult result)
+    {
+        TextContentBlock text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        return text.Text;
+    }
+
+    private static string? ErrorReason(CallToolResult result)
+    {
         TextContentBlock text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
         using JsonDocument document = JsonDocument.Parse(text.Text);
-        return document.RootElement.GetProperty("errorCode").GetString();
+        return document.RootElement.TryGetProperty("reason", out JsonElement reason) ? reason.GetString() : null;
     }
 
     private static DesktopTools CreateTools(IProcessLauncher launcher, VestigoOptions? options = null)
@@ -499,7 +537,10 @@ public class DesktopTests
     {
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) =>
             context == LaunchContext.Interactive
-                ? OperationResult<bool>.Fail("no_interactive_session", "No user is logged on at the console.")
+                ? OperationResult<bool>.Fail(
+                    "no_interactive_session",
+                    "No user is logged on at the console.",
+                    ConsoleSessionReasons.NobodyLoggedOn)
                 : OperationResult<bool>.Ok(true);
 
         public Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken) =>

@@ -58,7 +58,7 @@ public sealed class DesktopInventory(
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
         {
-            return OperationResult<WindowListResult>.Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<WindowListResult>();
         }
 
         return await helper.RunAsync<WindowListResult>(
@@ -89,7 +89,7 @@ public sealed class DesktopInventory(
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
         {
-            return OperationResult<DisplayListResult>.Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<DisplayListResult>();
         }
 
         return await helper.RunAsync<DisplayListResult>(
@@ -110,7 +110,7 @@ public sealed class DesktopInventory(
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
         {
-            return OperationResult<CapturedScreenshot>.Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<CapturedScreenshot>();
         }
 
         long maxBytes = options.Desktop.MaxScreenshotBytes;
@@ -124,7 +124,7 @@ public sealed class DesktopInventory(
             cancellationToken).ConfigureAwait(false);
         if (!helperResult.Success)
         {
-            return OperationResult<CapturedScreenshot>.Fail(helperResult.ErrorCode!, helperResult.Error!);
+            return helperResult.FailAs<CapturedScreenshot>();
         }
 
         ScreenCaptureResult value = helperResult.Value!;

@@ -25,7 +25,7 @@ public sealed class AudioInventory(IProcessLauncher launcher, SessionHelperClien
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated: false);
         if (!available.Success)
         {
-            return OperationResult<AudioEndpointListResult>.Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<AudioEndpointListResult>();
         }
 
         return await helper.RunAsync<AudioEndpointListResult>(
@@ -50,7 +50,7 @@ public sealed class AudioInventory(IProcessLauncher launcher, SessionHelperClien
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated: false);
         if (!available.Success)
         {
-            return OperationResult<SetDefaultAudioResult>.Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<SetDefaultAudioResult>();
         }
 
         return await helper.RunAsync<SetDefaultAudioResult>(

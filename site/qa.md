@@ -36,6 +36,7 @@ The lock screen and UAC secure desktop fail with `desktop_unavailable`. A consol
 2. A disconnected session can still have a user and still not be the console. `includeDisconnected` is true by default. Listener rows such as `RDP-Tcp` stay hidden unless `includeListeners` is true.
 3. `get_logon_session` adds token elevation and local Administrators membership when Windows allows the token to be opened. A missing token leaves those fields null.
 4. Client name and address stay null unless `includeClientAddresses` is true. They are not written to the Vestigo log.
+5. The error includes `reason`: `nobody_logged_on`, `only_disconnected_sessions`, `session_0_only`, or `console_session_has_no_token`. `probe_capture_support` and user-scope environment keep `user_not_available` and include the same `reason`.
 
 ## Drive the UI
 

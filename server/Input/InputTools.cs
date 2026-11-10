@@ -82,7 +82,7 @@ public sealed class InputTools(
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
         {
-            return DesktopTools.ErrorResult(available.ErrorCode!, available.Error!);
+            return DesktopTools.ErrorResult(available);
         }
 
         // Helper startup allowance plus the time every planned step takes, including waits and drag pauses.
@@ -94,7 +94,7 @@ public sealed class InputTools(
             .ConfigureAwait(false);
         if (!sent.Success)
         {
-            return DesktopTools.ErrorResult(sent.ErrorCode!, sent.Error!);
+            return DesktopTools.ErrorResult(sent);
         }
 
         // Typed text is never logged, only the kinds and counts.
@@ -142,7 +142,9 @@ public sealed class InputTools(
         if (!observed.Success)
         {
             // The input already happened, so report the failure next to the success instead of as an error.
-            summary["observeError"] = JsonSerializer.SerializeToNode(new { errorCode = observed.ErrorCode, error = observed.Error });
+            summary["observeError"] = JsonSerializer.SerializeToNode(
+                new { errorCode = observed.ErrorCode, error = observed.Error, reason = observed.Reason },
+                VisionJson.Options);
             content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
             return new CallToolResult { Content = content };
         }

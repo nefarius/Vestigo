@@ -22,7 +22,7 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
         {
-            return OperationResult<T>.Fail(available.ErrorCode!, available.Error!);
+            return available.FailAs<T>();
         }
 
         string directory;
@@ -57,7 +57,7 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         }
         catch (ProcessLaunchException ex)
         {
-            return OperationResult<T>.Fail(ex.Code, ex.Message);
+            return OperationResult<T>.Fail(ex.Code, ex.Message, ex.Reason);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

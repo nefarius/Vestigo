@@ -21,8 +21,8 @@ internal sealed class SessionAudioFormatProbe(IProcessLauncher launcher, Session
         if (!available.Success)
         {
             return available.ErrorCode == "no_interactive_session"
-                ? OperationResult<AudioFormatProbeResult>.Fail("user_not_available", "No user is logged on at the console.")
-                : OperationResult<AudioFormatProbeResult>.Fail(available.ErrorCode!, available.Error!);
+                ? OperationResult<AudioFormatProbeResult>.Fail("user_not_available", available.Error!, available.Reason)
+                : available.FailAs<AudioFormatProbeResult>();
         }
 
         return await helper.RunAsync<AudioFormatProbeResult>(
