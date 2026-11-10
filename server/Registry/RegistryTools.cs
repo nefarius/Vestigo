@@ -93,7 +93,19 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
         List<RegistryKeyListing> keys = [];
         bool truncated = false;
         int budget = entryCap;
-        Walk(kind, decision.Value, depthCap, keys, ref budget, ref truncated);
+        OperationResult<RegistryListResult>? openFailure = Walk(
+            kind,
+            decision.Value,
+            depthCap,
+            keys,
+            ref budget,
+            ref truncated,
+            reportOpenFailure: true);
+        if (openFailure is not null)
+        {
+            return openFailure;
+        }
+
         return OperationResult<RegistryListResult>.Ok(new RegistryListResult(keys, keys.Count, truncated));
     }
 
@@ -129,24 +141,27 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             key.ValueCount));
     }
 
-    private void Walk(
+    private OperationResult<RegistryListResult>? Walk(
         RegistryViewKind view,
         RegistryPathDecision decision,
         int depthLeft,
         List<RegistryKeyListing> keys,
         ref int budget,
-        ref bool truncated)
+        ref bool truncated,
+        bool reportOpenFailure)
     {
         if (budget <= 0)
         {
             truncated = true;
-            return;
+            return null;
         }
 
         RegistryOpen opened = store.Open(view, decision.Hive, decision.SubKey);
         if (opened.Key is null)
         {
-            return;
+            return reportOpenFailure
+                ? OperationResult<RegistryListResult>.Fail(opened.ErrorCode!, opened.Error!)
+                : null;
         }
 
         using IRegistryKey key = opened.Key;
@@ -171,44 +186,68 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             values.Add(new RegistryListedValue(name, raw.Type, Display(raw), raw.ByteLength));
         }
 
-        RegistryNamePage subNames = key.SubKeyNames(Math.Max(budget, 0));
-        if (subNames.Truncated || key.SubKeyCount > subNames.Names.Count)
-        {
-            truncated = true;
-        }
-
         List<RegistryListedSubKey> subKeys = [];
         List<RegistryPathDecision> children = [];
-        foreach (string name in subNames.Names)
+        int examined = 0;
+        int request = budget;
+        while (budget > 0 && examined < key.SubKeyCount)
         {
-            if (budget <= 0)
+            if (request <= examined)
             {
-                truncated = true;
+                int doubled = request > (int.MaxValue / 2) ? int.MaxValue : request * 2;
+                request = Math.Min(key.SubKeyCount, Math.Max(examined + 1, doubled));
+            }
+
+            RegistryNamePage page = key.SubKeyNames(request);
+            if (page.Names.Count <= examined)
+            {
                 break;
             }
 
-            string childPath = decision.Canonical + "\\" + name;
-            OperationResult<RegistryPathDecision> child = RegistryPathPolicy.Check(childPath, consoleSid: null, options.Registry);
-            if (!child.Success || child.Value is null)
+            for (int index = examined; index < page.Names.Count; index++)
             {
-                continue;
+                if (budget <= 0)
+                {
+                    break;
+                }
+
+                string name = page.Names[index];
+                examined++;
+                string childPath = decision.Canonical + "\\" + name;
+                OperationResult<RegistryPathDecision> child = RegistryPathPolicy.Check(childPath, consoleSid: null, options.Registry);
+                if (!child.Success || child.Value is null)
+                {
+                    continue;
+                }
+
+                budget--;
+                subKeys.Add(new RegistryListedSubKey(name, key.SubKeyValueCount(name)));
+                children.Add(child.Value);
             }
 
-            budget--;
-            subKeys.Add(new RegistryListedSubKey(name, key.SubKeyValueCount(name)));
-            children.Add(child.Value);
+            if (budget <= 0 || !page.Truncated)
+            {
+                break;
+            }
+        }
+
+        if (examined < key.SubKeyCount)
+        {
+            truncated = true;
         }
 
         keys.Add(new RegistryKeyListing(decision.Canonical, key.LastWriteUtc, values, subKeys));
         if (depthLeft <= 0)
         {
-            return;
+            return null;
         }
 
         foreach (RegistryPathDecision child in children)
         {
-            Walk(view, child, depthLeft - 1, keys, ref budget, ref truncated);
+            Walk(view, child, depthLeft - 1, keys, ref budget, ref truncated, reportOpenFailure: false);
         }
+
+        return null;
     }
 
     private OperationResult<RegistryValueResult> Render(

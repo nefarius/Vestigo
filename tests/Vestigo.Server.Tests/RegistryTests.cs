@@ -142,6 +142,55 @@ public class RegistryTests
     }
 
     [Fact]
+    public void List_ReportsAMissingKeyInsteadOfAnEmptySuccess()
+    {
+        RegistryTools tools = Tools(new FakeStore(), Allowing(@"HKLM\SOFTWARE\Contoso"));
+
+        OperationResult<RegistryListResult> missing = tools.ListRegistryValues(@"HKLM\SOFTWARE\Contoso");
+
+        Assert.False(missing.Success);
+        Assert.Equal("key_not_found", missing.ErrorCode);
+        Assert.Null(missing.Value);
+    }
+
+    [Fact]
+    public void List_KeepsTheParentWhenARecursiveChildCannotBeOpened()
+    {
+        FakeStore store = new();
+        FakeKey key = store.Add(@"SOFTWARE\Contoso", "A", Raw("REG_SZ", "one"u8.ToArray()));
+        key.SubKeys.Add("Child");
+        RegistryTools tools = Tools(store, Allowing(@"HKLM\SOFTWARE\Contoso"));
+
+        RegistryListResult listed = tools.ListRegistryValues(@"HKLM\SOFTWARE\Contoso", recurse: 1).Value!;
+
+        Assert.Equal(["Child"], listed.Keys[0].SubKeys.Select(item => item.Name));
+        Assert.Single(listed.Keys);
+    }
+
+    [Fact]
+    public void List_DoesNotSpendTheEntryBudgetOnDeniedChildren()
+    {
+        FakeStore store = new();
+        FakeKey key = store.Add(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "A", Raw("REG_SZ", "one"u8.ToArray()));
+        key.SubKeys.Add("Winlogon");
+        key.SubKeys.Add("Other");
+        key.SubKeys.Add("Later");
+        RegistryTools tools = Tools(store, Allowing(@"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion"));
+
+        RegistryListResult oneChild = tools.ListRegistryValues(
+            @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+            maxEntries: 3).Value!;
+        RegistryListResult bothChildren = tools.ListRegistryValues(
+            @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+            maxEntries: 4).Value!;
+
+        Assert.Equal(["Other"], oneChild.Keys[0].SubKeys.Select(item => item.Name));
+        Assert.True(oneChild.Truncated);
+        Assert.Equal(["Other", "Later"], bothChildren.Keys[0].SubKeys.Select(item => item.Name));
+        Assert.False(bothChildren.Truncated);
+    }
+
+    [Fact]
     public void Module_IsOptInAndWarnsWhenNoTokenIsConfigured()
     {
         VestigoOptions options = new();
