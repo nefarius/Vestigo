@@ -4,13 +4,17 @@ using ModelContextProtocol.Server;
 
 namespace Vestigo.SystemInfo;
 
-/// <summary>MCP tools for host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.</summary>
+/// <summary>MCP tools for host Windows version, boot state, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.</summary>
 [McpServerToolType]
 public sealed class SystemTools(SystemService service)
 {
     [McpServerTool(Name = "get_system_info", ReadOnly = true)]
     [Description("Returns the host Windows name, edition, display version (for example 24H2), version string, major/minor/build/UBR, whether it is Windows 11 or Server, whether the install was in-place upgraded, OS and processor bitness, ARM64, UAC disabled, and the machine name. One failed probe becomes a null field.")]
     public OperationResult<SystemInfoResult> GetSystemInfo() => service.GetSystemInfo();
+
+    [McpServerTool(Name = "get_boot_state", ReadOnly = true)]
+    [Description("Returns uptime in whole seconds, an approximate UTC boot time (now minus GetTickCount64; a clock change moves it), whether Fast Startup is configured (HiberbootEnabled; null when absent, and not proof the previous boot was hybrid), safe mode (normal, safe, or network), and the pending file-rename pair count. Paths are not returned. A failed probe is a null field. Does not reboot.")]
+    public OperationResult<BootStateResult> GetBootState() => service.GetBootState();
 
     [McpServerTool(Name = "get_boot_security", ReadOnly = true)]
     [Description("Returns UEFI vs legacy BIOS, Secure Boot, BCD test-signing (configured, takes effect at next boot), the running kernel test-signing state, WHQL developer test mode, and rebootPending when the BCD value and the running state differ. Notes cover Secure Boot, a pending reboot, and that BCD changes apply only to the default boot entry.")]

@@ -266,6 +266,12 @@ Returns UEFI vs legacy BIOS, Secure Boot, BCD test-signing (configured, takes ef
 
 No parameters.
 
+## `get_boot_state`
+
+Returns uptime in whole seconds, an approximate UTC boot time (now minus GetTickCount64; a clock change moves it), whether Fast Startup is configured (HiberbootEnabled; null when absent, and not proof the previous boot was hybrid), safe mode (normal, safe, or network), and the pending file-rename pair count. Paths are not returned. A failed probe is a null field. Does not reboot.
+
+No parameters.
+
 ## `get_capture`
 
 Returns status, counters, and the last error for one capture.
