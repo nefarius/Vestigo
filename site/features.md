@@ -90,6 +90,12 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p><code>set_test_signing</code> and <code>set_whql_developer_test_mode</code> stay off until <code>System:AllowBootConfigurationChanges</code> is true. <code>set_uac</code> stays off until <code>System:AllowUacChanges</code> is true. Test-signing is refused while Secure Boot is on. Vestigo never reboots the machine.</p>
   </article>
   <article class="card">
+    <p class="pills"><span class="pill on">On by default</span></p>
+    <h2>Power</h2>
+    <p><code>get_power_state</code> reports AC status, battery presence, percent, and charging separately, the active scheme, approximate last sleep and wake times, and platform capabilities. <code>get_sleep_configuration</code> reports AC and DC lid, timeout, wake-timer, and hybrid-sleep settings.</p>
+    <p>A missing policy value is null, not <code>doNothing</code>. A machine with no battery leaves the battery fields null. There is no scheme write and no list of power-request owners.</p>
+  </article>
+  <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span></p>
     <h2>Debug output</h2>
     <p>Capture Win32 <code>OutputDebugString</code> through bundled DebugViewConsole. Start a filtered capture, then follow it with long-polling <code>read_debug_output</code>.</p>

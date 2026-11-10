@@ -101,6 +101,14 @@ The `System` module reports the host Windows version, boot state, boot-security 
 
 `get_logon_session` returns one session id from that list. It adds token elevation (`default`, `full`, `limited`, or `unknown`), whether the token is in the local Administrators group, and the logon id, when the session token can be opened. Those three fields are null when the token cannot be read; the rest of the session is still returned. A negative id is `invalid_request`. An id Windows did not return is `session_not_found`. A refused query is `access_denied`. A Terminal Services failure is `wts_unavailable`. Protocol names are `console`, `ica`, `rdp`, or `unknown`.
 
+## Power
+
+The `Power` module is enabled by default. It is read-only. There is no scheme change, sleep, hibernate, or shutdown tool.
+
+`get_power_state` returns `acLineStatus` (`online`, `offline`, or `unknown`), `batteryPresent`, `batteryPercent`, `batteryCharging`, `batteryTimeRemainingSeconds`, `activeSchemeGuid`, `activeSchemeName`, `lastSleepTimeUtc`, `lastWakeTimeUtc`, and `capabilities`. `batteryCharging` is separate from AC status: a battery can be charging while `acLineStatus` is `offline`. When no battery is present, or the battery status is unknown, the battery percent, charging flag, and remaining time are null. `lastSleepTimeUtc` and `lastWakeTimeUtc` are UTC now minus the `LastSleepTime` and `LastWakeTime` interrupt-time counters, so a clock change moves them. A zero counter is null. `capabilities.fastStartupSupported` means the platform can use Fast Startup. Whether it is configured is `get_boot_state` `fastStartupEnabled`. `capabilities.modernStandby` is `AoAc`. A failed probe is a null field. The call fails with `power_api_failed` only when the power read throws.
+
+`get_sleep_configuration` returns the active scheme's AC and DC values for lid close (`doNothing`, `sleep`, `hibernate`, `shutdown`, or `unknown`), standby, hibernate, and monitor timeouts in seconds, wake timers, and hybrid sleep. A timeout of 0 means never. A value Windows did not return is null. Null is not `doNothing` and it is not zero. `doNothing` is only lid index 0 (`PowerActionNone`).
+
 ## Updates
 
 The `Updates` module is enabled by default. Checking the signed Buildbot feed is always available while the module is on. Installing a release stays off until `Vestigo:Updates:AllowSelfUpdate` is `true`, and it also needs the MSI `Automatic updates` feature so `Nefarius_Vestigo_Updater.exe` is present. Read [security.md](security.md#updates) first.

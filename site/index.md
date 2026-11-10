@@ -28,6 +28,8 @@ The opt-in Registry module reads allow-listed registry values. `HKCU` is the con
 
 The opt-in WindowsServicing module adds read-only reboot signals, queued file operations, Windows Update inventory and history, CBS package state, bounded failure evidence, storage metadata, and file-locker inspection. It requires Jobs and is separate from Vestigo's own Updates module. See [the features](features.md) and [the QA walkthrough](qa.md#investigate-windows-update-and-servicing). It does not install or repair Windows updates, clear queues, or reboot the PC.
 
+Power is on by default and read-only. `get_power_state` reports AC, battery, the active scheme, and approximate last sleep and wake times. `get_sleep_configuration` reports lid and timeout policy. See [the features](features.md) and [the QA walkthrough](qa.md#see-whether-the-machine-slept).
+
 ## Quick start
 
 1. Install the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0. The MSI refuses to continue without them. Either install the ASP.NET Core 10.0 Hosting Bundle from [https://dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0), which includes both, or run these from an elevated prompt:

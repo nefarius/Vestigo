@@ -317,3 +317,15 @@ TOKEN_STATISTICS
 
 // System module: uptime. Safe mode uses GetSystemMetrics, already listed above.
 GetTickCount64
+
+// Power module: battery, scheme, capabilities, and AC/DC policy. No writes.
+GetSystemPowerStatus
+CallNtPowerInformation
+POWER_INFORMATION_LEVEL
+SYSTEM_POWER_CAPABILITIES
+QueryInterruptTime
+PowerGetActiveScheme
+PowerReadFriendlyName
+PowerReadACValueIndex
+PowerReadDCValueIndex
+LocalFree
