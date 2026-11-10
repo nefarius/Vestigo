@@ -16,48 +16,48 @@ public class JsonToolsTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     [Theory]
-    [InlineData("$.status", "\"pending\"", "$.status")]
-    [InlineData("$.items[0].name", "\"device\"", "$.items[0].name")]
+    [InlineData("$.status", "\"pending\"", "$['status']")]
+    [InlineData("$.items[0].name", "\"device\"", "$['items'][0]['name']")]
     [InlineData("$['dashed-key']", "1", "$['dashed-key']")]
     [InlineData("$['a.b']", "\"dot\"", "$['a.b']")]
     [InlineData("$['a\\'b']", "true", "$['a\\'b']")]
-    [InlineData("$.flag", "null", "$.flag")]
+    [InlineData("$.flag", "null", "$['flag']")]
     public void Evaluator_SelectsDottedIndexesAndQuotedKeys(string query, string expected, string path)
     {
-        using JsonDocument document = JsonDocument.Parse(
+        JsonNode? document = JsonNode.Parse(
             """{"status":"pending","items":[{"name":"device"}],"dashed-key":1,"a.b":"dot","a'b":true,"flag":null}""");
 
-        JsonSelection selection = Select(document.RootElement, query, 10);
+        JsonSelection selection = Select(document, query, 10);
 
         JsonHit hit = Assert.Single(selection.Hits);
         Assert.False(selection.Wildcard);
         Assert.Equal(path, hit.MatchedAt);
-        Assert.Equal(expected, hit.Value.GetRawText());
+        Assert.Equal(expected, JsonPathEvaluator.Raw(hit.Value));
     }
 
     [Fact]
     public void Evaluator_TrailingWildcardPreservesDocumentOrderAndCapsMatches()
     {
-        using JsonDocument document = JsonDocument.Parse("""{"b":1,"a":[2,3]}""");
+        JsonNode? document = JsonNode.Parse("""{"b":1,"a":[2,3]}""");
 
-        JsonSelection all = Select(document.RootElement, "$.*", 10);
-        Assert.Equal(["$.b", "$.a"], all.Hits.Select(hit => hit.MatchedAt));
+        JsonSelection all = Select(document, "$.*", 10);
+        Assert.Equal(["$['b']", "$['a']"], all.Hits.Select(hit => hit.MatchedAt));
         Assert.False(all.Truncated);
 
-        JsonSelection elements = Select(document.RootElement, "$.a[*]", 10);
-        Assert.Equal(["$.a[0]", "$.a[1]"], elements.Hits.Select(hit => hit.MatchedAt));
+        JsonSelection elements = Select(document, "$.a[*]", 10);
+        Assert.Equal(["$['a'][0]", "$['a'][1]"], elements.Hits.Select(hit => hit.MatchedAt));
 
-        JsonSelection capped = Select(document.RootElement, "$.a[*]", 1);
+        JsonSelection capped = Select(document, "$.a[*]", 1);
         Assert.True(capped.Truncated);
-        Assert.Equal("$.a[0]", Assert.Single(capped.Hits).MatchedAt);
+        Assert.Equal("$['a'][0]", Assert.Single(capped.Hits).MatchedAt);
     }
 
     [Fact]
     public void Evaluator_EmptyWildcardMatchesNothing()
     {
-        using JsonDocument document = JsonDocument.Parse("[]");
+        JsonNode? document = JsonNode.Parse("[]");
 
-        JsonSelection selection = Select(document.RootElement, "$[*]", 10);
+        JsonSelection selection = Select(document, "$[*]", 10);
 
         Assert.True(selection.Wildcard);
         Assert.Empty(selection.Hits);
@@ -70,9 +70,9 @@ public class JsonToolsTests : IDisposable
     [InlineData("$.items.name")]
     public void Evaluator_MissingValueDoesNotMatch(string query)
     {
-        using JsonDocument document = JsonDocument.Parse("""{"items":[{"name":"device"}]}""");
+        JsonNode? document = JsonNode.Parse("""{"items":[{"name":"device"}]}""");
 
-        OperationResult<JsonSelection> result = JsonPathEvaluator.Select(document.RootElement, query, 10);
+        OperationResult<JsonSelection> result = JsonPathEvaluator.Select(document, query, 10);
 
         Assert.Equal("query_no_match", result.ErrorCode);
     }
@@ -85,9 +85,9 @@ public class JsonToolsTests : IDisposable
     [InlineData("name")]
     public void Evaluator_RejectsUnsupportedSyntax(string query)
     {
-        using JsonDocument document = JsonDocument.Parse("""{"items":[{"name":"device"}]}""");
+        JsonNode? document = JsonNode.Parse("""{"items":[{"name":"device"}]}""");
 
-        OperationResult<JsonSelection> result = JsonPathEvaluator.Select(document.RootElement, query, 10);
+        OperationResult<JsonSelection> result = JsonPathEvaluator.Select(document, query, 10);
 
         Assert.Equal("invalid_query", result.ErrorCode);
         Assert.Contains(JsonPathEvaluator.SupportedSubset, result.Error, StringComparison.Ordinal);
@@ -112,7 +112,7 @@ public class JsonToolsTests : IDisposable
         OperationResult<JsonSummary> summary = tools.GetJsonSummary("logs:state.json");
 
         Assert.True(read.Success, read.Error);
-        Assert.Equal(["$.items[0]"], read.Value!.Matches.Select(match => match.MatchedAt));
+        Assert.Equal(["$['items'][0]"], read.Value!.Matches.Select(match => match.MatchedAt));
         Assert.Equal("number", read.Value.Matches[0].Type);
         Assert.Equal("1", read.Value.Matches[0].Value!.ToJsonString());
         Assert.False(read.Value.Matches[0].ValueOmitted);
@@ -250,7 +250,7 @@ public class JsonToolsTests : IDisposable
     private void Write(string name, string json) =>
         File.WriteAllText(Path.Combine(_root, name), json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
-    private static JsonSelection Select(JsonElement root, string query, int maxMatches)
+    private static JsonSelection Select(JsonNode? root, string query, int maxMatches)
     {
         OperationResult<JsonSelection> result = JsonPathEvaluator.Select(root, query, maxMatches);
         Assert.True(result.Success, result.Error);

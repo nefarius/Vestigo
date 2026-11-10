@@ -15,13 +15,6 @@ namespace Vestigo.LogFiles;
 [McpServerToolType]
 public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
 {
-    private static readonly JsonDocumentOptions ParseOptions = new()
-    {
-        CommentHandling = JsonCommentHandling.Disallow,
-        AllowTrailingCommas = false,
-        MaxDepth = 64
-    };
-
     [McpServerTool(Name = "read_json_path")]
     [Description("Reads one JSON value, or a bounded set of values, from a UTF-8 JSON document under a root with Read access. The query supports $.name, quoted keys, array indexes, and one trailing .* or [*] wildcard. It does not filter, slice, or walk descendants. Line-oriented NDJSON belongs to search_text. Matched values are not written to the log.")]
     public OperationResult<JsonQueryResult> ReadJsonPath(
@@ -40,7 +33,7 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
     private OperationResult<JsonQueryResult> ProjectQuery(
         string path,
         string query,
-        JsonElement root,
+        JsonNode? root,
         long documentBytes,
         string sha)
     {
@@ -53,7 +46,7 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
         List<JsonMatch> matches = [];
         foreach (JsonHit hit in selected.Value.Hits)
         {
-            string raw = hit.Value.GetRawText();
+            string raw = JsonPathEvaluator.Raw(hit.Value);
             long size = Encoding.UTF8.GetByteCount(raw);
             if (!selected.Value.Wildcard && size > options.Logs.MaxJsonValueBytes)
             {
@@ -65,8 +58,8 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
             bool omit = size > options.Logs.MaxJsonValueBytes;
             matches.Add(new JsonMatch(
                 hit.MatchedAt,
-                JsonPathEvaluator.TypeName(hit.Value.ValueKind),
-                omit ? null : JsonNode.Parse(raw),
+                JsonPathEvaluator.TypeName(hit.Value),
+                omit ? null : hit.Value,
                 size,
                 omit));
         }
@@ -76,34 +69,28 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
             path,
             documentBytes,
             sha,
-            JsonPathEvaluator.TypeName(root.ValueKind),
+            JsonPathEvaluator.TypeName(root),
             keys,
             keysTruncated,
             matches,
             selected.Value.Truncated));
     }
 
-    private JsonSummary Summarize(string path, JsonElement root, long documentBytes, string sha)
+    private JsonSummary Summarize(string path, JsonNode? root, long documentBytes, string sha)
     {
-        if (root.ValueKind == JsonValueKind.Array)
+        if (root is JsonArray array)
         {
-            int length = 0;
-            foreach (JsonElement _ in root.EnumerateArray())
-            {
-                length++;
-            }
-
-            return new JsonSummary(path, documentBytes, sha, "array", length, null, [], false);
+            return new JsonSummary(path, documentBytes, sha, "array", array.Count, null, [], false);
         }
 
-        if (root.ValueKind != JsonValueKind.Object)
+        if (root is not JsonObject document)
         {
-            return new JsonSummary(path, documentBytes, sha, JsonPathEvaluator.TypeName(root.ValueKind), null, null, [], false);
+            return new JsonSummary(path, documentBytes, sha, JsonPathEvaluator.TypeName(root), null, null, [], false);
         }
 
         List<JsonMemberSummary> members = [];
         int count = 0;
-        foreach (JsonProperty property in root.EnumerateObject())
+        foreach (KeyValuePair<string, JsonNode?> property in document)
         {
             count++;
             if (members.Count >= options.Logs.MaxJsonMatches)
@@ -112,9 +99,9 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
             }
 
             members.Add(new JsonMemberSummary(
-                property.Name,
-                JsonPathEvaluator.TypeName(property.Value.ValueKind),
-                Encoding.UTF8.GetByteCount(property.Value.GetRawText())));
+                property.Key,
+                JsonPathEvaluator.TypeName(property.Value),
+                Encoding.UTF8.GetByteCount(JsonPathEvaluator.Raw(property.Value))));
         }
 
         return new JsonSummary(
@@ -128,28 +115,28 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
             count > members.Count);
     }
 
-    private (IReadOnlyList<string> Keys, bool Truncated) TopLevelKeys(JsonElement root)
+    private (IReadOnlyList<string> Keys, bool Truncated) TopLevelKeys(JsonNode? root)
     {
-        if (root.ValueKind != JsonValueKind.Object)
+        if (root is not JsonObject document)
         {
             return ([], false);
         }
 
         List<string> keys = [];
         int count = 0;
-        foreach (JsonProperty property in root.EnumerateObject())
+        foreach (KeyValuePair<string, JsonNode?> property in document)
         {
             count++;
             if (keys.Count < options.Logs.MaxJsonMatches)
             {
-                keys.Add(property.Name);
+                keys.Add(property.Key);
             }
         }
 
         return (keys, count > keys.Count);
     }
 
-    private OperationResult<T> Read<T>(string path, int? maxBytes, Func<JsonElement, long, string, OperationResult<T>> project)
+    private OperationResult<T> Read<T>(string path, int? maxBytes, Func<JsonNode?, long, string, OperationResult<T>> project)
     {
         if (maxBytes is < 1)
         {
@@ -217,8 +204,7 @@ public sealed class JsonTools(VestigoOptions options, RootPolicy roots)
             string sha = Convert.ToHexString(SHA256.HashData(bytes));
             try
             {
-                using JsonDocument document = JsonDocument.Parse(bytes, ParseOptions);
-                return project(document.RootElement, bytes.LongLength, sha);
+                return project(JsonNode.Parse(bytes), bytes.LongLength, sha);
             }
             catch (JsonException exception)
             {

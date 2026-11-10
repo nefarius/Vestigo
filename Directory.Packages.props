@@ -30,6 +30,7 @@
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.14" />
     <PackageVersion Include="Fallout.Common" Version="10.4.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2026.2.0" />
+    <PackageVersion Include="JsonPath.Net" Version="2.2.0" />
     <PackageVersion Include="minisign-net" Version="1.0.0" />
     <PackageVersion Include="Nefarius.Vicius.Abstractions" Version="1.8.1" />
     <!-- Tests -->
