@@ -13,7 +13,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>WPP and ETW tracing</h2>
-    <p>Inspect a WPP PDB, validate PDB or TMF sources, scan ETL metadata, and convert an ETL file to JSON or NDJSON. <code>start_capture</code> creates a <code>Vestigo-</code> realtime session from provider GUIDs or PDB paths. Follow it with long-polling <code>read_capture</code>. <code>attach_etw_session</code> can read an existing session once you list it in <code>AttachableSessions</code>.</p>
+    <p>Inspect a WPP PDB, validate PDB or TMF sources, scan ETL metadata, and convert an ETL file to JSON or NDJSON. <code>start_capture</code> creates a <code>Vestigo-</code> realtime session from provider GUIDs or PDB paths. Follow it with long-polling <code>read_capture</code>. <code>attach_etw_session</code> can read an existing session once you list it in <code>AttachableSessions</code>. <code>observe_presentation</code> reports composed, independent-flip, or exclusive only when a DXGI, DWM, or DxgKrnl event says so, and returns unknown otherwise.</p>
     <p>Vestigo decodes events; it does not write a raw ETL file. The NT Kernel Logger is not supported.</p>
   </article>
   <article class="card">

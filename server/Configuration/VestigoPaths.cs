@@ -26,6 +26,8 @@ public static class VestigoPaths
 
     public static string OwnedSessionsPath => Path.Combine(SettingsDirectory, "owned-sessions.json");
 
+    public static string OwnedPresentationPath => Path.Combine(SettingsDirectory, "owned-presentation.json");
+
     public static string OwnedDebugViewPath => Path.Combine(SettingsDirectory, "owned-debugview.json");
 
     public static string OwnedWindowEventsPath => Path.Combine(SettingsDirectory, "owned-window-events.json");

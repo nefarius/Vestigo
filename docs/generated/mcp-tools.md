@@ -1016,6 +1016,16 @@ Samples the active topology until a target is active, matches the requested mode
 | `height` | `int?` | no | `null` | Requested height. |
 | `rotation` | `string` | no | `null` | Optional IDENTITY, ROTATE90, ROTATE180, or ROTATE270. |
 
+## `observe_presentation`
+
+Observes DXGI, DWM, and DxgKrnl events for one process for a bounded interval and reports composed, independent-flip, or exclusive only when an explicit event supports that mode. A DXGI present by itself, window styles, and monitor-sized bounds are not evidence. The result is unknown when providers are missing, events do not correlate, events were dropped or truncated, the evidence disagrees, or the call is cancelled. Creates a short Vestigo- session and stops that session when the call ends. Duration is at most 30 seconds and cannot exceed Vestigo:MaxCaptureDuration.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `processId` | `int` | yes |  | Process id to correlate. Must be positive. |
+| `windowHandle` | `long?` | no | `null` | Optional window handle. When set, only events that carry the same handle correlate. |
+| `durationMilliseconds` | `int` | no | `5000` | Observation length in milliseconds. Default 5000. Minimum 1. Maximum 30000, and also capped by Vestigo:MaxCaptureDuration. |
+
 ## `prepare_remote_debugger_computer`
 
 Runs 'msvsmon /prepcomputer /private /quiet' as a job: configures the Windows firewall and permissions for remote debugging on private networks. It changes firewall rules; needs the service context (default). Returns the job id.

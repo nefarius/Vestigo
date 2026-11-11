@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 using Vestigo.Configuration;
 using Vestigo.Etws;
 using Vestigo.Tools;
@@ -9,9 +11,9 @@ public sealed class TraceModule : VestigoModule
 {
     public override string Name => "Trace";
 
-    public override string Description => "Offline ETL/WPP conversion and managed realtime capture.";
+    public override string Description => "Offline ETL/WPP conversion, managed realtime capture, and bounded presentation observation.";
 
-    public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(TraceTools)];
+    public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(TraceTools), typeof(PresentationTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
@@ -24,5 +26,8 @@ public sealed class TraceModule : VestigoModule
         services.AddSingleton<IRealtimeTraceSessionFactory, EtwRealtimeTraceSessionFactory>();
         services.AddSingleton<CaptureManager>();
         services.AddHostedService(provider => provider.GetRequiredService<CaptureManager>());
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<PresentationObserver>();
+        services.AddHostedService(provider => provider.GetRequiredService<PresentationObserver>());
     }
 }
