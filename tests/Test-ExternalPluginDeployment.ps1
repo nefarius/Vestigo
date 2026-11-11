@@ -1,3 +1,4 @@
+#Requires -Version 7.4
 param(
     [Parameter(Mandatory)][string]$HostPublishDirectory,
     [Parameter(Mandatory)][string]$PluginPublishDirectory
@@ -52,21 +53,21 @@ try {
     for ($attempt = 0; $attempt -lt 100; $attempt++) {
         if ($process.HasExited) { throw "Published host exited: $($stderr.GetAwaiter().GetResult())" }
         try {
-            $health = Invoke-WebRequest "$base/health" -TimeoutSec 1 -SkipHttpErrorCheck
+            $health = Invoke-WebRequest "$base/health" -ConnectionTimeoutSeconds 1 -OperationTimeoutSeconds 1 -SkipHttpErrorCheck
             if ($health.StatusCode -eq 200) { $ready = $true; break }
         } catch { }
         Start-Sleep -Milliseconds 100
     }
     if (!$ready) { throw 'Published host did not become healthy.' }
-    $anonymous = Invoke-WebRequest "$base/plugins/example-plugin/status" -SkipHttpErrorCheck
+    $anonymous = Invoke-WebRequest "$base/plugins/example-plugin/status" -ConnectionTimeoutSeconds 5 -OperationTimeoutSeconds 10 -SkipHttpErrorCheck
     if ($anonymous.StatusCode -ne 401) { throw 'Plugin HTTP endpoint did not require authentication.' }
     $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json, text/event-stream' }
-    $status = Invoke-WebRequest "$base/plugins/example-plugin/status" -Headers $headers
+    $status = Invoke-WebRequest "$base/plugins/example-plugin/status" -Headers $headers -ConnectionTimeoutSeconds 5 -OperationTimeoutSeconds 10
     if ($status.Content -ne 'ok') { throw 'Plugin status endpoint failed.' }
 
     function Invoke-Mcp([int]$id, [string]$method, [hashtable]$parameters) {
         $body = @{ jsonrpc = '2.0'; id = $id; method = $method; params = $parameters } | ConvertTo-Json -Depth 10 -Compress
-        $response = Invoke-WebRequest "$base/mcp" -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+        $response = Invoke-WebRequest "$base/mcp" -Method Post -Headers $headers -ContentType 'application/json' -Body $body -ConnectionTimeoutSeconds 5 -OperationTimeoutSeconds 10
         $content = $response.Content
         if ($content.StartsWith('event:') -or $content.StartsWith('data:')) {
             $content = (($content -split "`n" | Where-Object { $_.StartsWith('data:') }) -replace '^data:\s*', '') -join "`n"

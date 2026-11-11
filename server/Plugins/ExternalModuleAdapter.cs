@@ -24,11 +24,13 @@ internal sealed class ExternalModuleAdapter(Extensibility.VestigoModule module, 
 
     public override void MapEndpoints(WebApplication app, VestigoOptions options)
     {
+        HashSet<EndpointDataSource> existing = [.. ((IEndpointRouteBuilder)app).DataSources];
         RouteGroupBuilder group = app.MapGroup($"/plugins/{pluginId}");
         if (options.AuthenticationEnabled) group.RequireAuthorization();
         try { module.MapEndpoints(group, context); }
         catch (Exception ex) { throw new InvalidOperationException($"Plugin '{pluginId}', module '{Name}' endpoint registration failed ({ex.GetType().Name}); startup aborted."); }
-        foreach (Endpoint endpoint in ((IEndpointRouteBuilder)group).DataSources.SelectMany(source => source.Endpoints))
+        // Enumerate the app's group data source so all nested group conventions have been applied.
+        foreach (Endpoint endpoint in ((IEndpointRouteBuilder)app).DataSources.Where(source => !existing.Contains(source)).SelectMany(source => source.Endpoints))
             if (endpoint.Metadata.GetMetadata<IAllowAnonymous>() is not null)
                 throw new InvalidOperationException($"Plugin '{pluginId}', module '{Name}' declares an anonymous endpoint; startup aborted.");
     }

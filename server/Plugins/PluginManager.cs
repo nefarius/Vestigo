@@ -127,7 +127,7 @@ internal sealed class PluginManager
 
     private static void ValidateManifest(PluginManifest manifest)
     {
-        if (manifest.Id is null || !Regex.IsMatch(manifest.Id, "^[a-z][a-z0-9-]{0,63}$", RegexOptions.CultureInvariant))
+        if (manifest.Id is null || !Regex.IsMatch(manifest.Id, "^[a-z][a-z0-9-]{0,63}\\z", RegexOptions.CultureInvariant))
             throw new PluginValidationException("id must contain lowercase letters, digits or hyphens and start with a letter (1–64 characters).");
         if (string.IsNullOrWhiteSpace(manifest.Version) || !System.Version.TryParse(manifest.Version, out _))
             throw new PluginValidationException("version must be a numeric .NET version.");

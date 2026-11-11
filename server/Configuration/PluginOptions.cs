@@ -17,6 +17,9 @@ public sealed class PluginOptions
             throw new InvalidOperationException("Vestigo:Plugins requires an explicit TrustMode when enabled.");
         if (Root is not null && !Path.IsPathFullyQualified(Root))
             throw new InvalidOperationException("Vestigo:Plugins:Root must be an absolute path.");
+        if (Root is not null && (EffectiveRoot.StartsWith(@"\\?\", StringComparison.Ordinal) ||
+                                 EffectiveRoot.StartsWith(@"\\.\", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Vestigo:Plugins:Root must not use a device-path prefix.");
         if (Root is not null && Security.PathPolicy.TryCanonicalize(EffectiveRoot, out string pluginRoot) &&
             Security.PathPolicy.TryCanonicalize(VestigoPaths.SettingsDirectory, out string stateRoot) &&
             (Security.PathPolicy.IsInsideRoot(pluginRoot, stateRoot) || Security.PathPolicy.IsInsideRoot(stateRoot, pluginRoot)) &&

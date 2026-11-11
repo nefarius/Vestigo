@@ -20,7 +20,7 @@ internal static class PluginToolValidation
                 if (!type.IsClass || !type.IsPublic || type.ContainsGenericParameters ||
                     (type.IsAbstract && !type.IsSealed) || type.GetCustomAttribute<McpServerToolTypeAttribute>() is null)
                     throw new InvalidOperationException($"Invalid MCP tool type '{type.FullName}' in {owner}.");
-                foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
+                foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
                 {
                     if (method.GetCustomAttribute<McpServerToolAttribute>() is null) continue;
                     string name;

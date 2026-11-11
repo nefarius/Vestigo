@@ -35,7 +35,8 @@ internal sealed class VestigoPluginLoadContext : AssemblyLoadContext
             if (!string.Equals(actual.Name, name.Name, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(actual.CultureName ?? "", name.CultureName ?? "", StringComparison.OrdinalIgnoreCase) ||
                 !(actual.GetPublicKeyToken() ?? []).SequenceEqual(name.GetPublicKeyToken() ?? []) ||
-                (name.Version is { } requested && (actual.Version!.Major != requested.Major || actual.Version < requested)))
+                (name.Version is { } requested && (actual.Version! < requested ||
+                    (Shared.Contains(name.Name!) && actual.Version!.Major != requested.Major))))
                 throw new PluginValidationException($"Incompatible shared assembly '{name.Name}': requested {name.Version}, host {actual.Version}; check culture and public key identity as well as version.");
             return assembly;
         }

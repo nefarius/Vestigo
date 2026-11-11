@@ -108,6 +108,16 @@ public sealed class PluginTests : IDisposable
         options.Validate();
     }
 
+    [Theory]
+    [InlineData(@"\\?\C:\plugins")]
+    [InlineData(@"\\.\C:\plugins")]
+    [InlineData(@"\\?\UNC\server\share\plugins")]
+    public void CustomRoot_RejectsDevicePaths(string root)
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => new PluginOptions { Root = root }.Validate());
+        Assert.Contains("device-path prefix", exception.Message);
+    }
+
     [Fact]
     public void PublishedPlugin_SharesContractsAndKeepsDependenciesPrivate()
     {
@@ -141,6 +151,7 @@ public sealed class PluginTests : IDisposable
     [InlineData("entryType", "Missing.Type")]
     [InlineData("entryType", "Vestigo.ExamplePlugin.EchoModule")]
     [InlineData("id", "../bad")]
+    [InlineData("id", "example-plugin\n")]
     [InlineData("version", "invalid")]
     [InlineData("unknownField", "value")]
     public void InvalidManifestOrEntry_RejectsEntirePlugin(string field, string? value)
@@ -244,7 +255,7 @@ public sealed class PluginTests : IDisposable
     }
 
     [Fact]
-    public void UntrustedAcl_IsRejectedWithoutRepair()
+    public void StateRepair_LeavesUntrustedPluginDllAclForLoaderRejection()
     {
         string directory = Install();
         FileInfo file = new(Path.Combine(directory, "Vestigo.ExamplePlugin.dll"));
@@ -252,8 +263,16 @@ public sealed class PluginTests : IDisposable
         FileSystemAccessRule rule = new(new SecurityIdentifier(WellKnownSidType.WorldSid, null), FileSystemRights.Write, AccessControlType.Allow);
         security.AddAccessRule(rule);
         file.SetAccessControl(security);
-        Assert.Empty(new PluginManager().LoadModules(Options(), _configuration));
+        // Leave only the plugin subtree during root repair; the managed state directories are empty.
+        foreach (string managed in new[] { VestigoPaths.LogDirectory, VestigoPaths.SpoolDirectory, VestigoPaths.DefaultSymbolCache, VestigoPaths.TraceDirectory })
+            Directory.Delete(managed);
+        DirectoryInfo settings = new(_settings);
+        DirectorySecurity settingsSecurity = settings.GetAccessControl();
+        settingsSecurity.AddAccessRule(rule);
+        settings.SetAccessControl(settingsSecurity);
+        Assert.NotEmpty(StateDirectories.EnsureSecure());
         Assert.NotNull(AclTrust.FindUntrustedWriter(file.GetAccessControl(), FileSystemRights.Write, WindowsIdentity.GetCurrent().User!.Value));
+        Assert.Empty(new PluginManager().LoadModules(Options(), _configuration));
     }
 
     [Fact]
@@ -296,8 +315,33 @@ public sealed class PluginTests : IDisposable
     [Fact]
     public void ToolCollision_UsesSdkResolvedNames()
     {
-        Assert.Throws<InvalidOperationException>(() => PluginToolValidation.Validate(
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => PluginToolValidation.Validate(
             [new TestModule("One", [], [typeof(CollisionTools)]), new TestModule("Two", [], [typeof(OtherCollisionTools)])]));
+        string name = McpServerTool.Create(typeof(CollisionTools).GetMethod(nameof(CollisionTools.ResolvedName))!, (RequestContext<CallToolRequestParams> _) => new CollisionTools()).ProtocolTool.Name;
+        Assert.Contains($"Duplicate MCP tool name '{name}'", exception.Message);
+    }
+
+    [Fact]
+    public void NonPublicToolCollision_IsRejectedBeforeRegistration()
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => PluginToolValidation.Validate(
+            [new TestModule("PrivateTools", [], [typeof(NonPublicCollisionTools)])]));
+        Assert.Contains("Duplicate MCP tool name 'nonpublic_collision'", exception.Message);
+    }
+
+    [Fact]
+    public void NetStandardDependency_WithVersionFourFrameworkReferenceLoads()
+    {
+        string directory = Install("legacy", "v1");
+        ChangeManifest(directory, "entryType", "Vestigo.PluginFixture.LegacyPlugin");
+        PluginManager manager = new();
+        VestigoModule module = Assert.Single(manager.LoadModules(Options(), _configuration));
+        Assert.Equal("Legacy4", module.Name);
+        AssemblyLoadContext context = AssemblyLoadContext.All.Single(item => item.Name == $"Vestigo plugin: {Path.Combine(directory, "PluginV1.dll")}");
+        var helper = context.Assemblies.Single(assembly => assembly.GetName().Name == "LegacyFramework");
+        Assert.Equal(".NETStandard,Version=v2.0", System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Runtime.Versioning.TargetFrameworkAttribute>(helper)!.FrameworkName);
+        Assert.Contains(context.Assemblies.SelectMany(assembly => assembly.GetReferencedAssemblies()),
+            reference => reference.Name == "System.Runtime.CompilerServices.Unsafe" && reference.Version!.Major == 4);
     }
 
     [Fact]
@@ -327,6 +371,7 @@ public sealed class PluginTests : IDisposable
 
     [Theory]
     [InlineData("AnonymousPlugin", "AnonymousFixture", "declares an anonymous endpoint")]
+    [InlineData("GroupAnonymousPlugin", "GroupAnonymousFixture", "declares an anonymous endpoint")]
     [InlineData("FailedServicesPlugin", "FailedServices", "service registration failed")]
     [InlineData("MissingDiPlugin", "MissingDi", "Unable to resolve service")]
     public void ActivationFailures_AbortBeforeServing(string entry, string module, string expectedDiagnostic)
@@ -427,4 +472,13 @@ public sealed class OtherCollisionTools
 {
     [McpServerTool]
     public string ResolvedName() => "different class, same SDK tool name";
+}
+
+[McpServerToolType]
+public sealed class NonPublicCollisionTools
+{
+    [McpServerTool(Name = "nonpublic_collision")]
+    public string Public() => "public";
+    [McpServerTool(Name = "nonpublic_collision")]
+    private static string Hidden() => "private";
 }

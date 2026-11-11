@@ -41,6 +41,36 @@ public sealed class AnonymousModule : VestigoModule
         endpoints.MapGet("/anonymous", () => "unsafe").AllowAnonymous();
 }
 
+public sealed class GroupAnonymousPlugin : IVestigoPlugin
+{
+    public IReadOnlyList<VestigoModule> Modules => [new GroupAnonymousModule()];
+}
+
+public sealed class GroupAnonymousModule : VestigoModule
+{
+    public override string Name => "GroupAnonymousFixture";
+    public override string Description => "Anonymous route-group rejection fixture.";
+    public override IReadOnlyList<Type> ToolTypes => [];
+    public override void MapEndpoints(IEndpointRouteBuilder endpoints, PluginContext context)
+    {
+        RouteGroupBuilder group = (RouteGroupBuilder)endpoints;
+        group.AllowAnonymous();
+        group.MapGet("/group/anonymous", () => "unsafe");
+    }
+}
+
+public sealed class LegacyPlugin : IVestigoPlugin
+{
+    public IReadOnlyList<VestigoModule> Modules => [new LegacyModule()];
+}
+
+public sealed class LegacyModule : VestigoModule
+{
+    public override string Name => "Legacy" + Legacy.LegacyTypes.Size;
+    public override string Description => "A .NET Standard dependency with an older framework reference.";
+    public override IReadOnlyList<Type> ToolTypes => [];
+}
+
 public sealed class FailedPlugin : IVestigoPlugin
 {
     public IReadOnlyList<VestigoModule> Modules => throw new InvalidOperationException("fixture-secret-must-not-be-logged");
