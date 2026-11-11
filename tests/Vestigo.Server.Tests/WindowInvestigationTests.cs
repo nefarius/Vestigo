@@ -908,6 +908,32 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Observe_CancelledDesktopLookupUsesTheTimeoutAndStillHonoursTheCaller()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
+        FakeDesktops desktops = new(input: true) { CancelAfterLookups = 0 };
+        DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), TimeProvider.System, desktops);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+
+        OperationResult<DisplayLayoutObservation> timedOut = await manager.ObserveAsync(
+            started.Value!.Id, new DisplayWait(TimeSpan.FromMilliseconds(100), 1, null), CancellationToken.None);
+        Assert.Equal("helper_timeout", timedOut.ErrorCode);
+
+        using CancellationTokenSource caller = new(TimeSpan.FromMilliseconds(50));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => manager.ObserveAsync(
+            started.Value.Id, new DisplayWait(TimeSpan.FromSeconds(30), 1, null), caller.Token));
+
+        FakeDesktops refresh = new(input: true) { CancelAfterLookups = 1 };
+        displays = new(Snap(Path(0, 0, 1920, 1080)));
+        manager = new(displays, new VestigoOptions(), TimeProvider.System, refresh);
+        started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+        displays.FailSnapshots = true;
+        OperationResult<DisplayLayoutObservation> refreshed = await manager.ObserveAsync(
+            started.Value!.Id, new DisplayWait(TimeSpan.FromMilliseconds(100), 1, null), CancellationToken.None);
+        Assert.Equal("helper_timeout", refreshed.ErrorCode);
+    }
+
+    [Fact]
     public async Task ManagedDesktop_FailedLookupIsNotTreatedAsTheDefaultDesktop()
     {
         FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
@@ -961,16 +987,31 @@ public class DisplayLayoutContractTests : IDisposable
 
         public bool FailLookup { get; set; }
 
+        /// <summary>Lookups after this many return a failure result once the token is cancelled, instead of throwing.</summary>
+        public int CancelAfterLookups { get; set; } = -1;
+
         public Action? AfterLookup { get; set; }
 
-        public Task<OperationResult<string?>> InputDesktopPathAsync(CancellationToken cancellationToken)
+        public async Task<OperationResult<string?>> InputDesktopPathAsync(CancellationToken cancellationToken)
         {
             Lookups++;
+            if (CancelAfterLookups >= 0 && Lookups > CancelAfterLookups)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return OperationResult<string?>.Fail("cancelled", "The desktop host was cancelled.");
+                }
+            }
+
             OperationResult<string?> result = FailLookup
                 ? OperationResult<string?>.Fail("desktop_unavailable", "The input desktop could not be read.")
                 : OperationResult<string?>.Ok(OtherInput ?? (Input ? DesktopPath : null));
             AfterLookup?.Invoke();
-            return Task.FromResult(result);
+            return result;
         }
 
         public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>

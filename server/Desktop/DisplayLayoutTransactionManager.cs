@@ -282,6 +282,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         try
         {
             OperationResult<string?> resolved = await ExecutionPathAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
             if (!resolved.Success)
             {
                 return resolved.FailAs<DisplayLayoutObservation>();
@@ -299,6 +300,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                 {
                     // The desktop may have closed or lost input since the last lookup; look once more before giving up.
                     OperationResult<string?> refreshed = await ExecutionPathAsync(token).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
                     if (!rerouted && refreshed.Success && refreshed.Value != desktopPath && _time.GetUtcNow() < deadline)
                     {
                         rerouted = true;
