@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Security;
 
 using Microsoft.Win32;
@@ -35,39 +34,293 @@ public sealed class WindowsRegistryStore : IRegistryStore
     }
 
     /// <inheritdoc />
-    public RegistryOpen Open(RegistryViewKind view, RegistryHiveKind hive, string subKey)
+    public RegistryOpen Open(RegistryViewKind view, RegistryHiveKind hive, string subKey, RegistryLinkConfinement confine)
     {
-        RegistryKey? root = null;
+        string hiveName = hive == RegistryHiveKind.Users ? "HKU" : "HKLM";
+        string canonical = subKey.Length == 0 ? hiveName : hiveName + "\\" + subKey;
+        RegistryPathDecision requested = new(canonical, hive, subKey);
+        using RelativeProbe walk = new(view);
+        OperationResult<RegistryPathDecision> resolved = RegistryLinkWalker.Resolve(requested, walk.Probe, confine);
+        if (!resolved.Success || resolved.Value is null)
+        {
+            return new RegistryOpen(null, resolved.ErrorCode, resolved.Error);
+        }
+
         try
         {
-            root = RegistryKey.OpenBaseKey(ToHive(hive), ToView(view));
-            if (subKey.Length == 0)
+            if (resolved.Value.SubKey.Length == 0)
             {
-                return new RegistryOpen(new WindowsRegistryKey(root, root), null, null);
+                RegistryKey root = RegistryKey.OpenBaseKey(ToHive(resolved.Value.Hive), ToView(view));
+                RegistryLinkProbe rootLink = ReadLink(root.Handle);
+                if (rootLink.ErrorCode is not null)
+                {
+                    root.Dispose();
+                    return new RegistryOpen(null, rootLink.ErrorCode, rootLink.Error);
+                }
+
+                if (rootLink.IsLink)
+                {
+                    root.Dispose();
+                    return new RegistryOpen(null, "invalid_request", "Registry symbolic link was not followed.");
+                }
+
+                return new RegistryOpen(new WindowsRegistryKey(root, this, view, requested, confine), null, null, resolved.Value);
             }
 
-            RegistryKey? key = root.OpenSubKey(subKey, writable: false);
-            if (key is null)
+            if (!walk.TryTake(resolved.Value.SubKey, out SafeRegistryHandle? opened))
             {
-                root.Dispose();
-                return new RegistryOpen(null, "key_not_found", "Registry key was not found.");
+                return new RegistryOpen(null, "invalid_request", "Registry symbolic link was not followed.");
             }
 
-            return new RegistryOpen(new WindowsRegistryKey(root, key), null, null);
+            return new RegistryOpen(
+                new WindowsRegistryKey(opened!, this, view, requested, confine),
+                null,
+                null,
+                resolved.Value);
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException)
         {
-            root?.Dispose();
             return new RegistryOpen(null, "access_denied", "Windows denied access to the registry key.");
         }
         catch (IOException exception)
         {
-            root?.Dispose();
             return new RegistryOpen(null, "io_error", exception.Message);
         }
     }
 
-    private static HKEY HandleOf(RegistryKey key) => new(key.Handle.DangerousGetHandle());
+    /// <summary>Opens each path segment from the previous handle so an intermediate link cannot be swapped in.</summary>
+    private sealed class RelativeProbe(RegistryViewKind view) : IDisposable
+    {
+        private RegistryHiveKind _hive;
+        private RegistryKey? _root;
+        private SafeRegistryHandle? _parent;
+        private string _parentSub = string.Empty;
+        private bool _parentIsRoot;
+        private bool _started;
+
+        public RegistryLinkProbe Probe(RegistryHiveKind hive, string subKey)
+        {
+            try
+            {
+                if (!_started || hive != _hive || !IsNext(_parentSub, subKey, out string segment))
+                {
+                    Reset();
+                    Start(hive);
+                    if (!IsNext(string.Empty, subKey, out segment))
+                    {
+                        return RegistryLinkProbe.Fail("invalid_request", "Registry symbolic link was not followed.");
+                    }
+                }
+
+                if (!TryOpen(_parent!, segment, view, queryOnly: false, out SafeRegistryHandle? child, out string? code, out string? error))
+                {
+                    return RegistryLinkProbe.Fail(code!, error!);
+                }
+
+                RegistryLinkProbe link = ReadLink(child!);
+                if (link.ErrorCode is not null || link.IsLink)
+                {
+                    child!.Dispose();
+                    return link;
+                }
+
+                if (!_parentIsRoot)
+                {
+                    _parent!.Dispose();
+                }
+
+                _parent = child;
+                _parentSub = subKey;
+                _parentIsRoot = false;
+                return link;
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException)
+            {
+                return RegistryLinkProbe.Fail("access_denied", "Windows denied access to the registry key.");
+            }
+            catch (IOException exception)
+            {
+                return RegistryLinkProbe.Fail("io_error", exception.Message);
+            }
+        }
+
+        public bool TryTake(string subKey, out SafeRegistryHandle? handle)
+        {
+            if (_parent is not null && !_parentIsRoot && subKey.Equals(_parentSub, StringComparison.OrdinalIgnoreCase))
+            {
+                handle = _parent;
+                _parent = null;
+                return true;
+            }
+
+            handle = null;
+            return false;
+        }
+
+        public void Dispose() => Reset();
+
+        private void Start(RegistryHiveKind hive)
+        {
+            _root = RegistryKey.OpenBaseKey(ToHive(hive), ToView(view));
+            _parent = _root.Handle;
+            _parentIsRoot = true;
+            _parentSub = string.Empty;
+            _hive = hive;
+            _started = true;
+        }
+
+        private void Reset()
+        {
+            if (_parent is not null && !_parentIsRoot)
+            {
+                _parent.Dispose();
+            }
+
+            _parent = null;
+            _root?.Dispose();
+            _root = null;
+            _parentIsRoot = false;
+            _parentSub = string.Empty;
+            _started = false;
+        }
+
+        private static bool IsNext(string parentSub, string subKey, out string segment)
+        {
+            if (parentSub.Length == 0)
+            {
+                segment = subKey;
+                return subKey.Length > 0 && !subKey.Contains('\\');
+            }
+
+            string prefix = parentSub + "\\";
+            if (!subKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                segment = string.Empty;
+                return false;
+            }
+
+            segment = subKey[prefix.Length..];
+            return segment.Length > 0 && !segment.Contains('\\');
+        }
+    }
+
+    private static RegistryLinkProbe ReadLink(SafeRegistryHandle handle)
+    {
+        REG_VALUE_TYPE type = default;
+        uint size = 0;
+        WIN32_ERROR error = QueryValue(handle, "SymbolicLinkValue", null, ref type, ref size);
+        if (error == WIN32_ERROR.ERROR_FILE_NOT_FOUND || type != REG_VALUE_TYPE.REG_LINK)
+        {
+            return error is WIN32_ERROR.ERROR_FILE_NOT_FOUND or WIN32_ERROR.ERROR_SUCCESS
+                ? RegistryLinkProbe.NotALink()
+                : ProbeIo(error);
+        }
+
+        OperationResult<int> length = RegistryPathPolicy.LinkTargetLength(size);
+        if (!length.Success || length.Value == 0)
+        {
+            return RegistryLinkProbe.Fail(length.ErrorCode!, length.Error!);
+        }
+
+        byte[] data = new byte[length.Value];
+        uint got = size;
+        error = QueryValue(handle, "SymbolicLinkValue", data, ref type, ref got);
+        if (error != WIN32_ERROR.ERROR_SUCCESS || type != REG_VALUE_TYPE.REG_LINK)
+        {
+            return ProbeIo(error);
+        }
+
+        if (got < data.Length)
+        {
+            Array.Resize(ref data, (int)got);
+        }
+
+        return RegistryLinkProbe.Link(data);
+    }
+
+    private static bool TryOpen(
+        SafeRegistryHandle parent,
+        string subKey,
+        RegistryViewKind view,
+        bool queryOnly,
+        out SafeRegistryHandle? opened,
+        out string? code,
+        out string? error)
+    {
+        opened = null;
+        REG_SAM_FLAGS access = (queryOnly ? REG_SAM_FLAGS.KEY_QUERY_VALUE : REG_SAM_FLAGS.KEY_READ)
+            | (view == RegistryViewKind.Registry32 ? REG_SAM_FLAGS.KEY_WOW64_32KEY : REG_SAM_FLAGS.KEY_WOW64_64KEY);
+        unsafe
+        {
+            fixed (char* name = subKey)
+            {
+                HKEY raw;
+                WIN32_ERROR result = PInvoke.RegOpenKeyEx(
+                    HandleOf(parent),
+                    name,
+                    (uint)REG_OPEN_CREATE_OPTIONS.REG_OPTION_OPEN_LINK,
+                    access,
+                    &raw);
+                if (result == WIN32_ERROR.ERROR_SUCCESS)
+                {
+                    opened = new SafeRegistryHandle((IntPtr)raw.Value, ownsHandle: true);
+                    code = null;
+                    error = null;
+                    return true;
+                }
+
+                if (result == WIN32_ERROR.ERROR_FILE_NOT_FOUND)
+                {
+                    code = "key_not_found";
+                    error = "Registry key was not found.";
+                    return false;
+                }
+
+                if (result == WIN32_ERROR.ERROR_ACCESS_DENIED)
+                {
+                    code = "access_denied";
+                    error = "Windows denied access to the registry key.";
+                    return false;
+                }
+
+                code = "io_error";
+                error = $"Opening the registry key failed with Win32 error {(int)result}.";
+                return false;
+            }
+        }
+    }
+
+    private static HKEY HandleOf(SafeRegistryHandle handle) => new(handle.DangerousGetHandle());
+
+    private static WIN32_ERROR QueryValue(SafeRegistryHandle handle, string? name, byte[]? data, ref REG_VALUE_TYPE type, ref uint size)
+    {
+        REG_VALUE_TYPE localType = type;
+        uint localSize = size;
+        unsafe
+        {
+            fixed (byte* pointer = data)
+            {
+                fixed (char* valueName = name)
+                {
+                    WIN32_ERROR error = PInvoke.RegQueryValueEx(
+                        HandleOf(handle),
+                        name is null ? default : valueName,
+                        null,
+                        &localType,
+                        data is null ? null : pointer,
+                        &localSize);
+                    type = localType;
+                    size = localSize;
+                    return error;
+                }
+            }
+        }
+    }
+
+    private static RegistryLinkProbe ProbeIo(WIN32_ERROR error) =>
+        error == WIN32_ERROR.ERROR_ACCESS_DENIED
+            ? RegistryLinkProbe.Fail("access_denied", "Windows denied access to the registry key.")
+            : RegistryLinkProbe.Fail("io_error", $"Reading the registry link failed with Win32 error {(int)error}.");
 
     private static RegistryHive ToHive(RegistryHiveKind hive) =>
         hive == RegistryHiveKind.Users ? RegistryHive.Users : RegistryHive.LocalMachine;
@@ -75,12 +328,50 @@ public sealed class WindowsRegistryStore : IRegistryStore
     private static RegistryView ToView(RegistryViewKind view) =>
         view == RegistryViewKind.Registry32 ? RegistryView.Registry32 : RegistryView.Registry64;
 
-    private sealed class WindowsRegistryKey(RegistryKey root, RegistryKey key) : IRegistryKey
+    private sealed class WindowsRegistryKey : IRegistryKey
     {
+        private readonly SafeRegistryHandle _handle;
+        private readonly RegistryKey? _ownedRoot;
+        private readonly bool _ownsHandle;
+        private readonly WindowsRegistryStore _store;
+        private readonly RegistryViewKind _view;
+        private readonly RegistryPathDecision _path;
+        private readonly RegistryLinkConfinement _confine;
         private bool _loaded;
         private DateTimeOffset? _lastWrite;
         private int _subKeys;
         private int _values;
+
+        public WindowsRegistryKey(
+            RegistryKey ownedRoot,
+            WindowsRegistryStore store,
+            RegistryViewKind view,
+            RegistryPathDecision path,
+            RegistryLinkConfinement confine)
+        {
+            _ownedRoot = ownedRoot;
+            _handle = ownedRoot.Handle;
+            _ownsHandle = false;
+            _store = store;
+            _view = view;
+            _path = path;
+            _confine = confine;
+        }
+
+        public WindowsRegistryKey(
+            SafeRegistryHandle handle,
+            WindowsRegistryStore store,
+            RegistryViewKind view,
+            RegistryPathDecision path,
+            RegistryLinkConfinement confine)
+        {
+            _handle = handle;
+            _ownsHandle = true;
+            _store = store;
+            _view = view;
+            _path = path;
+            _confine = confine;
+        }
 
         public DateTimeOffset? LastWriteUtc
         {
@@ -117,8 +408,15 @@ public sealed class WindowsRegistryStore : IRegistryStore
         {
             try
             {
-                using RegistryKey? child = key.OpenSubKey(name, writable: false);
-                return child?.ValueCount;
+                string child = _path.SubKey.Length == 0 ? name : _path.SubKey + "\\" + name;
+                RegistryOpen opened = _store.Open(_view, _path.Hive, child, _confine);
+                if (opened.Key is null)
+                {
+                    return null;
+                }
+
+                using IRegistryKey key = opened.Key;
+                return key.ValueCount;
             }
             catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException or IOException)
             {
@@ -178,12 +476,12 @@ public sealed class WindowsRegistryStore : IRegistryStore
 
         public void Dispose()
         {
-            if (!ReferenceEquals(root, key))
+            if (_ownsHandle)
             {
-                key.Dispose();
+                _handle.Dispose();
             }
 
-            root.Dispose();
+            _ownedRoot?.Dispose();
         }
 
         private void EnsureInfo()
@@ -199,7 +497,7 @@ public sealed class WindowsRegistryStore : IRegistryStore
             unsafe
             {
                 WIN32_ERROR error = PInvoke.RegQueryInfoKey(
-                    HandleOf(key),
+                    HandleOf(_handle),
                     lpClass: default,
                     lpcchClass: null,
                     lpReserved: null,
@@ -271,8 +569,8 @@ public sealed class WindowsRegistryStore : IRegistryStore
                 fixed (char* pointer = buffer)
                 {
                     WIN32_ERROR error = values
-                        ? PInvoke.RegEnumValue(HandleOf(key), index, pointer, &chars, null, null, null, null)
-                        : PInvoke.RegEnumKeyEx(HandleOf(key), index, pointer, &chars, null, default, null, null);
+                        ? PInvoke.RegEnumValue(HandleOf(_handle), index, pointer, &chars, null, null, null, null)
+                        : PInvoke.RegEnumKeyEx(HandleOf(_handle), index, pointer, &chars, null, default, null, null);
                     if (error == WIN32_ERROR.ERROR_MORE_DATA)
                     {
                         grow = true;
@@ -289,30 +587,8 @@ public sealed class WindowsRegistryStore : IRegistryStore
             }
         }
 
-        private WIN32_ERROR Query(string? name, byte[]? data, ref REG_VALUE_TYPE type, ref uint size)
-        {
-            REG_VALUE_TYPE localType = type;
-            uint localSize = size;
-            unsafe
-            {
-                fixed (byte* pointer = data)
-                {
-                    fixed (char* valueName = name)
-                    {
-                        WIN32_ERROR error = PInvoke.RegQueryValueEx(
-                            HandleOf(key),
-                            name is null ? default : valueName,
-                            null,
-                            &localType,
-                            data is null ? null : pointer,
-                            &localSize);
-                        type = localType;
-                        size = localSize;
-                        return error;
-                    }
-                }
-            }
-        }
+        private WIN32_ERROR Query(string? name, byte[]? data, ref REG_VALUE_TYPE type, ref uint size) =>
+            QueryValue(_handle, name, data, ref type, ref size);
 
         private static int Cap(REG_VALUE_TYPE type, int maxBinaryBytes, int maxStringBytes) => type switch
         {

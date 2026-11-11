@@ -104,6 +104,9 @@ namespace Vestigo.Installer.Actions.Logic
 
         public const string DiagnosticsProcessDumps = "DiagnosticsProcessDumps";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Diagnostics:AllowDriverVerifier</c>.</summary>
+        public const string DiagnosticsDriverVerifier = "DiagnosticsDriverVerifier";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Updates:AllowSelfUpdate</c>.</summary>
         public const string SelfUpdate = "SelfUpdate";
 
@@ -123,6 +126,7 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(DiagnosticsNetworkProbes, "Diagnostics", "AllowNetworkProbes"),
             new OptionToggle(DiagnosticsAudioPlayback, "Diagnostics", "AllowAudioPlayback"),
             new OptionToggle(DiagnosticsProcessDumps, "Diagnostics", "AllowProcessDumps"),
+            new OptionToggle(DiagnosticsDriverVerifier, "Diagnostics", "AllowDriverVerifier"),
             new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate")
         };
 
@@ -132,7 +136,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Files", "Files", "Root-confined file tools plus authenticated PUT/GET transfer endpoints.", true, null),
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
             new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.", true, null),
-            new ModuleDefinition("Power", "Power", "Read AC and battery state, the active power scheme, platform capabilities, and AC/DC sleep policy. There is no write tool.", true, null),
+            new ModuleDefinition("Power", "Power", "Read AC and battery state, the active power scheme, platform capabilities, AC/DC sleep policy, and the newest Power-Troubleshooter wake event. There is no write tool and no power-request list.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail, incremental reads and regex search of text log files.", true, null),
             new ModuleDefinition("Registry", "Registry", "Read allow-listed registry values and key metadata. Opt-in. There is no write tool.", false, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
@@ -152,11 +156,12 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, device state, and read-only HID capabilities via nefcon. Runs code with kernel privilege.", false, null),
             new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes, Software, and Diagnostics.", true, null),
             new ModuleDefinition("WindowsServicing", "Windows servicing", "Read-only Windows Update, reboot queues, CBS packages, servicing logs, storage and file lockers. Needs Jobs. May disclose sensitive paths and logs.", false, "Jobs"),
-            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, list media capabilities, and list Windows Error Reporting report metadata. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
+            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, list media capabilities, list Windows Error Reporting report metadata, and read Driver Verifier state. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
             new ModuleDefinition(DiagnosticsCaptureProbes, "Capture probes", "Allow probe_capture_support to observe whether frames arrive (Vestigo:Diagnostics:AllowCaptureProbes). No pixel data is returned.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsNetworkProbes, "Network probes", "Allow test_endpoint to contact destinations listed in Vestigo:Diagnostics:AllowedProbeDestinations (Vestigo:Diagnostics:AllowNetworkProbes). The probe runs as the service and does not capture packets.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsAudioPlayback, "Audio playback probes", "Allow probe_audio_format to play a synthetic tone on a render endpoint (Vestigo:Diagnostics:AllowAudioPlayback). Format checks do not emit sound.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsProcessDumps, "Process dumps", "Allow capture_process_dump to write a minidump into a Write root (Vestigo:Diagnostics:AllowProcessDumps). Dumps are not uploaded and no download ticket is created.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsDriverVerifier, "Driver Verifier changes", "Allow set_driver_verifier (Vestigo:Diagnostics:AllowDriverVerifier). reset_driver_verifier stays available. Vestigo does not reboot.", false, "Diagnostics"),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),

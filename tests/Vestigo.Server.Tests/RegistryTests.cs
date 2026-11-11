@@ -286,6 +286,198 @@ public class RegistryTests
     }
 
     [Fact]
+    public void ParseLink_ReadsNtPathsAndRejectsMalformedTargets()
+    {
+        Assert.Equal(
+            @"HKLM\SYSTEM\ControlSet001",
+            RegistryPathPolicy.ParseLinkTarget(Nt(@"\Registry\Machine\SYSTEM\ControlSet001")).Value);
+        Assert.Equal(
+            $@"HKU\{Sid}\Software",
+            RegistryPathPolicy.ParseLinkTarget(Nt($@"\Registry\User\{Sid}\Software")).Value);
+        Assert.Equal("invalid_request", RegistryPathPolicy.ParseLinkTarget(Nt(@"\Registry\A\Software")).ErrorCode);
+        Assert.Equal("invalid_request", RegistryPathPolicy.LinkTargetLength(4098).ErrorCode);
+        Assert.Equal("invalid_request", RegistryPathPolicy.ParseLinkTarget([1, 2, 3]).ErrorCode);
+
+        byte[] broken = Nt(@"\Registry\Machine\SOFTWARE");
+        broken[2] = 0;
+        broken[3] = 0;
+        Assert.Equal("invalid_request", RegistryPathPolicy.ParseLinkTarget(broken).ErrorCode);
+    }
+
+    [Fact]
+    public void Walker_DeniesTheTargetAtEverySegment()
+    {
+        Dictionary<string, byte[]?> keys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"SOFTWARE\Contoso\Middle"] = Nt(@"\Registry\Machine\SOFTWARE\Contoso\Safe"),
+            [@"SOFTWARE\Contoso\Safe\Tail"] = Nt(@"\Registry\Machine\SECURITY\Policy"),
+            [@"SOFTWARE\Contoso\Safe\Kept"] = null
+        };
+
+        Assert.Equal("path_denied", Walk(keys, @"HKLM\SOFTWARE\Contoso\Middle\Tail").ErrorCode);
+        RegistryPathDecision kept = RegistryAssert.Ok(Walk(keys, @"HKLM\SOFTWARE\Contoso\Middle\Kept"));
+        Assert.Equal(@"HKLM\SOFTWARE\Contoso\Safe\Kept", kept.Canonical);
+    }
+
+    [Fact]
+    public void Walker_DenyWinsOnALinkTargetEvenWhenThatTargetIsAllowed()
+    {
+        Dictionary<string, byte[]?> keys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"SOFTWARE\Contoso\Alias"] = Nt(@"\Registry\Machine\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon")
+        };
+        RegistryOptions options = Allowing(@"HKLM\SOFTWARE\Contoso");
+        options.AllowedPrefixes.Add(@"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon");
+
+        Assert.Equal("path_denied", Walk(keys, @"HKLM\SOFTWARE\Contoso\Alias", options).ErrorCode);
+    }
+
+    [Fact]
+    public void Walker_AllowsTheCurrentControlSetLinkOnlyForThatPath()
+    {
+        Dictionary<string, byte[]?> keys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"SYSTEM\CurrentControlSet"] = Nt(@"\Registry\Machine\SYSTEM\ControlSet001"),
+            [@"SYSTEM\ControlSet001\Services\Contoso"] = null,
+            [@"SOFTWARE\Contoso\Alias"] = Nt(@"\Registry\Machine\SYSTEM\ControlSet001\Services")
+        };
+
+        RegistryPathDecision services = RegistryAssert.Ok(Walk(keys, @"HKLM\SYSTEM\CurrentControlSet\Services\Contoso", new RegistryOptions()));
+        Assert.Equal(@"HKLM\SYSTEM\ControlSet001\Services\Contoso", services.Canonical);
+        Assert.Equal(
+            "path_not_allowed",
+            Walk(keys, @"HKLM\SOFTWARE\Contoso\Alias", Allowing(@"HKLM\SOFTWARE\Contoso")).ErrorCode);
+    }
+
+    [Fact]
+    public void Walker_DeniesAControlSetTargetWhenTheLogicalPathIsDenied()
+    {
+        Dictionary<string, byte[]?> keys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"SYSTEM\CurrentControlSet"] = Nt(@"\Registry\Machine\SYSTEM\ControlSet001"),
+            [@"SYSTEM\ControlSet001\Control\Lsa"] = null
+        };
+        RegistryOptions options = Allowing(@"HKLM\SYSTEM\CurrentControlSet");
+
+        Assert.Equal(
+            "path_denied",
+            RegistryPathPolicy.CheckLink(
+                @"HKLM\SYSTEM\CurrentControlSet\Control\Lsa",
+                @"HKLM\SYSTEM\ControlSet001\Control\Lsa",
+                Sid,
+                options).ErrorCode);
+        Assert.Equal("path_denied", Walk(keys, @"HKLM\SYSTEM\CurrentControlSet\Control\Lsa", options).ErrorCode);
+    }
+
+    [Fact]
+    public void Policy_DeniesTheNumberedImageOfADeniedCurrentControlSetPath()
+    {
+        RegistryOptions broad = Allowing(@"HKLM\SYSTEM");
+
+        Assert.Equal("path_denied", RegistryPathPolicy.Check(@"HKLM\SYSTEM\ControlSet001\Control\Lsa", Sid, broad).ErrorCode);
+        Assert.Equal(
+            "path_denied",
+            RegistryPathPolicy.CheckLink(
+                @"HKLM\SYSTEM\CurrentControlSet\Control\Lsa",
+                @"HKLM\SYSTEM\ControlSet001\Control\Lsa",
+                Sid,
+                broad).ErrorCode);
+        Assert.True(RegistryPathPolicy.Check(@"HKLM\SYSTEM\ControlSet001\Control\Session Manager", Sid, broad).Success);
+        Assert.Equal("path_not_allowed", RegistryPathPolicy.Check(@"HKLM\SYSTEM\ControlSet001\Services", Sid, new RegistryOptions()).ErrorCode);
+    }
+
+    [Fact]
+    public void Walker_StopsALinkCycleAndAnOverlongChain()
+    {
+        Dictionary<string, byte[]?> cycle = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"SOFTWARE\Contoso\A"] = Nt(@"\Registry\Machine\SOFTWARE\Contoso\B"),
+            [@"SOFTWARE\Contoso\B"] = Nt(@"\Registry\Machine\SOFTWARE\Contoso\A")
+        };
+        Assert.Equal("invalid_request", Walk(cycle, @"HKLM\SOFTWARE\Contoso\A").ErrorCode);
+
+        Dictionary<string, byte[]?> chain = new(StringComparer.OrdinalIgnoreCase);
+        for (int index = 0; index <= RegistryPathPolicy.MaxLinkHops; index++)
+        {
+            chain[$@"SOFTWARE\Contoso\L{index}"] = Nt($@"\Registry\Machine\SOFTWARE\Contoso\L{index + 1}");
+        }
+
+        Assert.Equal("invalid_request", Walk(chain, @"HKLM\SOFTWARE\Contoso\L0").ErrorCode);
+    }
+
+    [Fact]
+    public void Read_DoesNotFollowALinkToADeniedKey()
+    {
+        FakeStore store = new();
+        FakeKey link = store.Add(@"SOFTWARE\Contoso\Alias", "Ignored", Raw("REG_SZ", "nope"u8.ToArray()));
+        link.LinkTarget = Nt(@"\Registry\Machine\SAM\SAM");
+        store.Add(@"SAM\SAM", "Secret", Raw("REG_SZ", Encoding.Unicode.GetBytes("password")));
+
+        OperationResult<RegistryValueResult> result = Tools(store, Allowing(@"HKLM\SOFTWARE\Contoso"))
+            .ReadRegistryValue(@"HKLM\SOFTWARE\Contoso\Alias", "Secret");
+
+        Assert.Equal("path_denied", result.ErrorCode);
+        Assert.DoesNotContain("password", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Read_FollowsALinkWhoseTargetIsAllowed()
+    {
+        FakeStore store = new();
+        FakeKey link = store.Add(@"SOFTWARE\Contoso\Alias", "Ignored", Raw("REG_SZ", "nope"u8.ToArray()));
+        link.LinkTarget = Nt(@"\Registry\Machine\SOFTWARE\Contoso\Real");
+        store.Add(@"SOFTWARE\Contoso\Real", "Flag", Raw("REG_DWORD", BitConverter.GetBytes(7)));
+
+        RegistryValueResult value = Tools(store, Allowing(@"HKLM\SOFTWARE\Contoso"))
+            .ReadRegistryValue(@"HKLM\SOFTWARE\Contoso\Alias", "Flag").Value!;
+
+        Assert.Equal(7ul, value.Number);
+        Assert.Equal(@"HKLM\SOFTWARE\Contoso\Alias", value.Path);
+        Assert.Equal(@"HKLM\SOFTWARE\Contoso\Real", value.ResolvedPath);
+        Assert.Equal(7ul, Tools(store, Allowing(@"HKLM\SOFTWARE\Contoso")).ReadRegistryValue(value.Path, "Flag").Value!.Number);
+    }
+
+    [Fact]
+    public void List_DoesNotReadADeniedLinkTarget()
+    {
+        FakeStore store = new();
+        FakeKey parent = store.Add(@"SOFTWARE\Contoso", "Flag", Raw("REG_SZ", "parent"u8.ToArray()));
+        parent.SubKeys.Add("Alias");
+        FakeKey link = store.Add(@"SOFTWARE\Contoso\Alias", "Ignored", Raw("REG_SZ", "nope"u8.ToArray()));
+        link.LinkTarget = Nt(@"\Registry\Machine\SAM\SAM");
+        store.Add(@"SAM\SAM", "Secret", Raw("REG_SZ", Encoding.Unicode.GetBytes("password")));
+
+        RegistryListResult listed = Tools(store, Allowing(@"HKLM\SOFTWARE\Contoso"))
+            .ListRegistryValues(@"HKLM\SOFTWARE\Contoso", recurse: 2).Value!;
+
+        Assert.Equal(["Alias"], listed.Keys[0].SubKeys.Select(item => item.Name));
+        Assert.Null(listed.Keys[0].SubKeys[0].ValueCount);
+        Assert.DoesNotContain(listed.Keys, key => key.Path.Contains("SAM", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(listed.Keys, key => key.Values.Any(value => (value.DisplayValue ?? string.Empty).Contains("password", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void List_OmitsADeniedChildAfterCurrentControlSetResolves()
+    {
+        FakeStore store = new();
+        FakeKey link = store.Add(@"SYSTEM\CurrentControlSet", "Unused", Raw("REG_SZ", "x"u8.ToArray()));
+        link.LinkTarget = Nt(@"\Registry\Machine\SYSTEM\ControlSet001");
+        FakeKey control = store.Add(@"SYSTEM\ControlSet001\Control", "Flag", Raw("REG_SZ", "ok"u8.ToArray()));
+        control.SubKeys.Add("Lsa");
+        control.SubKeys.Add("Session Manager");
+        store.Add(@"SYSTEM\ControlSet001\Control\Lsa", "Secret", Raw("REG_SZ", Encoding.Unicode.GetBytes("password")));
+        RegistryOptions options = Allowing(@"HKLM\SYSTEM\CurrentControlSet");
+
+        RegistryListResult listed = Tools(store, options)
+            .ListRegistryValues(@"HKLM\SYSTEM\CurrentControlSet\Control", recurse: 1).Value!;
+
+        Assert.Equal(@"HKLM\SYSTEM\CurrentControlSet\Control", listed.Keys[0].Path);
+        Assert.Equal(@"HKLM\SYSTEM\ControlSet001\Control", listed.Keys[0].ResolvedPath);
+        Assert.Equal(["Session Manager"], listed.Keys[0].SubKeys.Select(item => item.Name));
+        Assert.DoesNotContain(listed.Keys, key => key.Path.Contains("Lsa", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Module_IsOptInAndWarnsWhenNoTokenIsConfigured()
     {
         VestigoOptions options = new();
@@ -316,6 +508,15 @@ public class RegistryTests
         Assert.True(result.Success, result.Error);
         Assert.Equal("registry64", result.Value!.View);
         Assert.True(result.Value.SubKeyCount >= 0);
+
+        OperationResult<RegistryMetadata> controlSet = tools.GetRegistryMetadata(
+            @"HKLM\SYSTEM\CurrentControlSet\Services");
+        if (controlSet.ErrorCode is not "access_denied")
+        {
+            Assert.True(controlSet.Success, controlSet.Error);
+            Assert.Equal(@"HKLM\SYSTEM\CurrentControlSet\Services", controlSet.Value!.Path);
+            Assert.StartsWith(@"HKLM\SYSTEM\ControlSet", controlSet.Value.ResolvedPath, StringComparison.OrdinalIgnoreCase);
+        }
 
         OperationResult<RegistryValueResult> value = tools.ReadRegistryValue(
             @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
@@ -355,6 +556,39 @@ public class RegistryTests
         }
     }
 
+    private static byte[] Nt(string path) => Encoding.Unicode.GetBytes(path + "\0");
+
+    private static OperationResult<RegistryPathDecision> Walk(
+        Dictionary<string, byte[]?> keys,
+        string path,
+        RegistryOptions? options = null)
+    {
+        options ??= Allowing(@"HKLM\SOFTWARE\Contoso");
+        OperationResult<RegistryPathDecision> requested = RegistryPathPolicy.Check(path, Sid, options);
+        if (!requested.Success || requested.Value is null)
+        {
+            return requested;
+        }
+
+        return RegistryLinkWalker.Resolve(
+            requested.Value,
+            (_, subKey) => Probe(keys, subKey),
+            (logical, target) => RegistryPathPolicy.CheckLink(logical, target, Sid, options));
+    }
+
+    private static RegistryLinkProbe Probe(Dictionary<string, byte[]?> keys, string subKey)
+    {
+        if (keys.TryGetValue(subKey, out byte[]? target))
+        {
+            return target is null ? RegistryLinkProbe.NotALink() : RegistryLinkProbe.Link(target);
+        }
+
+        bool parent = keys.Keys.Any(path => path.StartsWith(subKey + "\\", StringComparison.OrdinalIgnoreCase));
+        return parent
+            ? RegistryLinkProbe.NotALink()
+            : RegistryLinkProbe.Fail("key_not_found", "Registry key was not found.");
+    }
+
     private static RegistryOptions Allowing(string prefix, int maxBinaryBytes = 4096) => new()
     {
         AllowedPrefixes = [prefix],
@@ -389,10 +623,40 @@ public class RegistryTests
 
         public ConsoleUserLookup LookupConsoleUser() => ConsoleUser;
 
-        public RegistryOpen Open(RegistryViewKind view, RegistryHiveKind hive, string subKey) =>
-            _keys.TryGetValue(subKey, out FakeKey? key)
-                ? new RegistryOpen(key, null, null)
-                : new RegistryOpen(null, "key_not_found", "Registry key was not found.");
+        public RegistryOpen Open(RegistryViewKind view, RegistryHiveKind hive, string subKey, RegistryLinkConfinement confine)
+        {
+            string hiveName = hive == RegistryHiveKind.Users ? "HKU" : "HKLM";
+            string canonical = subKey.Length == 0 ? hiveName : hiveName + "\\" + subKey;
+            OperationResult<RegistryPathDecision> resolved = RegistryLinkWalker.Resolve(
+                new RegistryPathDecision(canonical, hive, subKey),
+                Probe,
+                confine);
+            if (!resolved.Success || resolved.Value is null)
+            {
+                return new RegistryOpen(null, resolved.ErrorCode, resolved.Error);
+            }
+
+            if (!_keys.TryGetValue(resolved.Value.SubKey, out FakeKey? key))
+            {
+                return new RegistryOpen(null, "key_not_found", "Registry key was not found.");
+            }
+
+            key.Bind(this, view, new RegistryPathDecision(canonical, hive, subKey), confine);
+            return new RegistryOpen(key, null, null, resolved.Value);
+        }
+
+        private RegistryLinkProbe Probe(RegistryHiveKind hive, string subKey)
+        {
+            if (_keys.TryGetValue(subKey, out FakeKey? key))
+            {
+                return key.LinkTarget is null ? RegistryLinkProbe.NotALink() : RegistryLinkProbe.Link(key.LinkTarget);
+            }
+
+            bool parent = _keys.Keys.Any(path => path.StartsWith(subKey + "\\", StringComparison.OrdinalIgnoreCase));
+            return parent
+                ? RegistryLinkProbe.NotALink()
+                : RegistryLinkProbe.Fail("key_not_found", "Registry key was not found.");
+        }
     }
 
     private sealed class FakeKey(FakeStore store, string path) : IRegistryKey
@@ -403,6 +667,13 @@ public class RegistryTests
 
         public List<string> SubKeys { get; } = [];
 
+        public byte[]? LinkTarget { get; set; }
+
+        private FakeStore? _store;
+        private RegistryViewKind _view;
+        private RegistryPathDecision? _path;
+        private RegistryLinkConfinement? _confine;
+
         public int SubKeyCount => SubKeys.Count;
 
         public int ValueCount => Values.Count;
@@ -411,10 +682,30 @@ public class RegistryTests
 
         public RegistryNamePage ValueNames(int limit) => Page(Values.Keys.ToList(), limit);
 
+        public void Bind(FakeStore owner, RegistryViewKind view, RegistryPathDecision resolved, RegistryLinkConfinement confine)
+        {
+            _store = owner;
+            _view = view;
+            _path = resolved;
+            _confine = confine;
+        }
+
         public int? SubKeyValueCount(string name)
         {
-            string child = path.Length == 0 ? name : path + "\\" + name;
-            return store.Find(child)?.ValueCount;
+            if (_store is null || _path is null || _confine is null)
+            {
+                return null;
+            }
+
+            string child = _path.SubKey.Length == 0 ? name : _path.SubKey + "\\" + name;
+            RegistryOpen opened = _store.Open(_view, _path.Hive, child, _confine);
+            if (opened.Key is null)
+            {
+                return null;
+            }
+
+            using IRegistryKey key = opened.Key;
+            return key.ValueCount;
         }
 
         public RegistryRawValue Read(string? name, int maxBinaryBytes, int maxStringBytes) =>

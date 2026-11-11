@@ -277,7 +277,7 @@ public static class DisplayTopology
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private static string? DecodeManufacturer(ushort id)
+    internal static string? DecodeManufacturer(ushort id)
     {
         if (id == 0)
         {

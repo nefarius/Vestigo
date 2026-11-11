@@ -9,7 +9,7 @@ public sealed class PowerModule : VestigoModule
     public override string Name => "Power";
 
     public override string Description =>
-        "Read AC and battery state, the active power scheme, platform capabilities, and AC/DC sleep policy. There is no write tool.";
+        "Read AC and battery state, the active power scheme, platform capabilities, AC/DC sleep policy, and the newest Power-Troubleshooter wake event. There is no write tool and no power-request list.";
 
     public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(PowerTools)];
 

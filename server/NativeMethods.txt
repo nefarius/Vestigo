@@ -304,11 +304,15 @@ UpdateSession
 SystemInformation
 UpdateServiceManager
 
-// Registry module: metadata and bounded value reads. Keys are opened with Microsoft.Win32 so the 32/64 view is explicit.
+// Registry module: metadata and bounded value reads. RegOpenKeyEx uses REG_OPTION_OPEN_LINK
+// so a symbolic link is inspected before its target is opened.
+RegOpenKeyEx
 RegQueryInfoKey
 RegEnumKeyEx
 RegEnumValue
 RegQueryValueEx
+REG_OPEN_CREATE_OPTIONS
+REG_SAM_FLAGS
 REG_VALUE_TYPE
 
 // System module: logon session inventory. Tokens stay on the service; client addresses are not logged.
