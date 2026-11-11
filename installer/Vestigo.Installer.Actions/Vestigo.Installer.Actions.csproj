@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.Text.Json" />
     <PackageReference Include="WixToolset.Dtf.WindowsInstaller" />
     <PackageReference Include="WixToolset.Dtf.CustomAction" PrivateAssets="all" />
   </ItemGroup>

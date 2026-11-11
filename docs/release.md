@@ -10,11 +10,13 @@ The workflow (`.github/workflows/build.yml`) builds the app once and hands the r
 
 - `security` (Ubuntu) runs Gitleaks against git history and the checked-out tree, then Semgrep (`p/csharp`). `.gitleaks.toml` allowlists the fake installer test token. Semgrep uses a digest-pinned image.
 - `osv-restore` (Windows) writes NuGet lock files for the net10 projects and the net48 custom-action project. `osv` (Ubuntu) scans those lock files with a digest-pinned OSV Scanner image. A finding fails the job, and `build-installer` needs `security` and `osv`, so secrets, SAST, and dependency advisories block the MSI and release. The DTF packages stay on the frozen WiX 5.0.2 set.
-- `build` (Windows) runs the tests, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep`, and uploads `publish-x64/` (`server`, `updater`, `tools`) as the `vestigo-publish-x64` artifact (3-day retention).
+- `build` (Windows) runs the tests and the net48 custom-action package check, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep`, and uploads `publish-x64/` (`server`, `updater`, `tools`) as the `vestigo-publish-x64` artifact (3-day retention).
 - `build-installer` (Windows, `needs: [build, security, osv]`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything.
 - `release` (tags only) publishes the signed files.
 
 Pull requests and `master` build an unsigned MSI as a smoke test and do not upload it.
+
+To repeat the custom-action check locally, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/Verify-InstallerCustomAction.ps1 -Configuration Release`. It builds the net48 project, extracts the `.CA.dll` CAB with the restored WiX DTF tools, checks every packaging input's presence and hash, and tests settings reads and merges using only the extracted payload on .NET Framework. This verifies dependency packaging without installing an MSI or changing machine settings. The regular net10 tests separately cover settings preservation and malformed input.
 
 The project site at `https://nefarius.github.io/Vestigo/` is built from `site/` by `.github/workflows/pages.yml` and redeploys when `master` receives a change under `site/` or that workflow.
 

@@ -2,8 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Vestigo.Installer.Actions.Logic
 {
@@ -102,10 +105,10 @@ namespace Vestigo.Installer.Actions.Logic
                 return null;
             }
 
-            object? root;
+            JsonNode? root;
             try
             {
-                root = MiniJson.Parse(json!);
+                root = SettingsJson.Parse(json!);
             }
             catch (FormatException)
             {
@@ -113,26 +116,26 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             if (!(root is JsonObject rootObject) ||
-                !rootObject.TryGet(SectionName, out object? section) ||
+                !rootObject.TryGetPropertyValue(SectionName, out JsonNode? section) ||
                 !(section is JsonObject vestigo))
             {
                 return null;
             }
 
-            string? address = vestigo.TryGet("ListenAddress", out object? a) ? a as string : null;
+            string? address = vestigo.TryGetPropertyValue("ListenAddress", out JsonNode? a) ? a.StringValue() : null;
             int? port = null;
-            if (vestigo.TryGet("ListenPort", out object? p) && p is JsonNumber number &&
-                int.TryParse(number.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int parsedPort))
+            if (vestigo.TryGetPropertyValue("ListenPort", out JsonNode? p) && p?.GetValueKind() == JsonValueKind.Number &&
+                int.TryParse(p.ToJsonString(), NumberStyles.None, CultureInfo.InvariantCulture, out int parsedPort))
             {
                 port = parsedPort;
             }
 
             List<string> tokens = new List<string>();
-            if (vestigo.TryGet("ApiTokens", out object? t) && t is List<object?> list)
+            if (vestigo.TryGetPropertyValue("ApiTokens", out JsonNode? t) && t is JsonArray list)
             {
-                foreach (object? item in list)
+                foreach (JsonNode? item in list)
                 {
-                    if (item is string text && text.Trim().Length > 0)
+                    if (item.StringValue() is string text && text.Trim().Length > 0)
                     {
                         tokens.Add(text);
                     }
@@ -253,37 +256,37 @@ namespace Vestigo.Installer.Actions.Logic
             }
             else
             {
-                root = MiniJson.Parse(existingJson!) as JsonObject
+                root = SettingsJson.Parse(existingJson!) as JsonObject
                     ?? throw new FormatException("The settings file does not contain a JSON object.");
             }
 
             JsonObject vestigo;
-            if (root.TryGet(SectionName, out object? section) && section is JsonObject existingSection)
+            if (root.TryGetPropertyValue(SectionName, out JsonNode? section) && section is JsonObject existingSection)
             {
                 vestigo = existingSection;
             }
             else
             {
                 vestigo = new JsonObject();
-                root.Set(SectionName, vestigo);
+                root[SectionName] = vestigo;
             }
 
             string address = ChooseAddress(settings);
-            vestigo.Set("ListenAddress", address);
-            vestigo.Set("ListenPort", new JsonNumber(settings.Port.ToString(CultureInfo.InvariantCulture)));
+            vestigo["ListenAddress"] = address;
+            vestigo["ListenPort"] = settings.Port;
 
             if (settings.AuthMode == AuthToken)
             {
-                bool keep = vestigo.TryGet("ApiTokens", out object? current) && current is List<object?> list &&
-                            list.Exists(item => item is string text && string.Equals(text, settings.Token, StringComparison.Ordinal));
+                bool keep = vestigo.TryGetPropertyValue("ApiTokens", out JsonNode? current) && current is JsonArray list &&
+                            list.Any(item => item.StringValue() is string text && string.Equals(text, settings.Token, StringComparison.Ordinal));
                 if (!keep)
                 {
-                    vestigo.Set("ApiTokens", new List<object?> { settings.Token });
+                    vestigo["ApiTokens"] = new JsonArray(settings.Token);
                 }
             }
             else
             {
-                vestigo.Set("ApiTokens", new List<object?>());
+                vestigo["ApiTokens"] = new JsonArray();
             }
 
             if (modules != null)
@@ -296,7 +299,7 @@ namespace Vestigo.Installer.Actions.Logic
                 RootSettings.Apply(vestigo, roots);
             }
 
-            return MiniJson.Write(root);
+            return SettingsJson.Write(root);
         }
 
         private static string ChooseAddress(ResolvedSettings settings)

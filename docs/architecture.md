@@ -2,6 +2,8 @@
 
 Vestigo is one ASP.NET Core process. It hosts the official MCP Streamable HTTP endpoint at `/mcp` in stateless mode and a Windows service named `Vestigo`.
 
+The MSI custom actions target .NET Framework 4.8 and use the released `System.Text.Json` package for settings parsing and writing. `SettingsJson` retains only merge conventions: comments and trailing commas on input, a 64-container nesting limit, last-value-wins exact duplicates at the original property position, and case-insensitive edits that preserve key spelling. Numbers remain JSON tokens so unrelated values keep their precision and original spelling. WiX MakeSfxCA embeds the custom-action assembly, copy-local runtime dependencies and `CustomAction.config`. `tests/Verify-InstallerCustomAction.ps1` extracts the resulting CAB, compares its contents with the packaging inputs, and exercises the packaged implementation on the .NET Framework CLR; CI runs this separately from the net10 tests that link the settings source.
+
 ```mermaid
 flowchart LR
     client[MCP client] --> mcp["/mcp"]
