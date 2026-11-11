@@ -1,5 +1,7 @@
 using System.Text;
 
+using CliWrap.Builders;
+
 namespace Vestigo.Processes;
 
 /// <summary>
@@ -18,7 +20,7 @@ public static class CommandLineBuilder
         foreach (string argument in arguments)
         {
             builder.Append(' ');
-            AppendArgument(builder, argument);
+            builder.Append(ArgumentsBuilder.Escape(argument));
         }
 
         return builder.ToString();
@@ -35,58 +37,5 @@ public static class CommandLineBuilder
         {
             result.Append(executable);
         }
-    }
-
-    /// <summary>
-    ///     Quotes one argument: backslashes are literal unless they precede a quote, in which case they are doubled
-    ///     and the quote is escaped; trailing backslashes are doubled before the closing quote.
-    ///     Approach ported from SignRelay (MIT, same author).
-    /// </summary>
-    internal static void AppendArgument(StringBuilder result, string argument)
-    {
-        if (argument.Length == 0)
-        {
-            result.Append("\"\"");
-            return;
-        }
-
-        if (argument.IndexOfAny([' ', '\t', '\n', '\v', '"']) < 0)
-        {
-            result.Append(argument);
-            return;
-        }
-
-        result.Append('"');
-        int index = 0;
-        while (index < argument.Length)
-        {
-            int backslashes = 0;
-            while (index < argument.Length && argument[index] == '\\')
-            {
-                index++;
-                backslashes++;
-            }
-
-            if (index == argument.Length)
-            {
-                result.Append('\\', backslashes * 2);
-                break;
-            }
-
-            if (argument[index] == '"')
-            {
-                result.Append('\\', backslashes * 2 + 1);
-                result.Append('"');
-            }
-            else
-            {
-                result.Append('\\', backslashes);
-                result.Append(argument[index]);
-            }
-
-            index++;
-        }
-
-        result.Append('"');
     }
 }

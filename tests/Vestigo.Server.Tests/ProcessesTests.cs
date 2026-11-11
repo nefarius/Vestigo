@@ -59,6 +59,13 @@ public class ProcessesTests : IDisposable
     [InlineData(@"back\\""slash")]
     [InlineData("")]
     [InlineData("tab\there")]
+    [InlineData("line\nbreak")]
+    [InlineData("carriage\rreturn")]
+    [InlineData("vertical\vtab")]
+    [InlineData("form\ffeed")]
+    [InlineData("nonbreaking\u00A0space")]
+    [InlineData("\"")]
+    [InlineData(@"ends with two\\")]
     public void CommandLineBuilder_RoundTripsThroughCommandLineToArgvW(string argument)
     {
         if (!OperatingSystem.IsWindows())
