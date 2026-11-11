@@ -184,6 +184,23 @@ public class VirtualDisplayTests : IDisposable
         Assert.Equal("virtual_display_checkpoint_unsupported", (await coordinator.CreateAsync(Request(), CancellationToken.None)).ErrorCode);
     }
 
+    [Fact]
+    public async Task IdentityConflict_DoesNotRemoveTheExistingDisplay()
+    {
+        RecordingBackend backend = new() { IdentityKey = @"adapter|7|1|\\.\DISPLAY1", FailRemove = true };
+        RecordingDisplays displays = new();
+        VirtualDisplayCoordinator coordinator = Coordinator(backend, displays, new ManualClock());
+
+        OperationResult<VirtualDisplaySession> created = await coordinator.CreateAsync(Request(), CancellationToken.None);
+
+        Assert.Equal("virtual_display_identity_conflict", created.ErrorCode);
+        Assert.Contains("not removed", created.Error);
+        Assert.Empty(backend.Removed);
+        Assert.DoesNotContain("remove", backend.Operations);
+        Assert.DoesNotContain("arrange", displays.Operations);
+        Assert.False(File.Exists(VestigoPaths.OwnedVirtualDisplaysPath));
+    }
+
     private static VirtualDisplayCoordinator Coordinator(IVirtualDisplayBackend backend, RecordingDisplays displays, TimeProvider time) =>
         new(backend, displays, new VestigoOptions(), time);
 
@@ -206,6 +223,8 @@ public class VirtualDisplayTests : IDisposable
 
         public bool FailRemove { get; init; }
 
+        public string IdentityKey { get; init; } = "owned-key";
+
         public CancellationTokenSource? Cancellation { get; set; }
 
         public string Name => "fake";
@@ -223,7 +242,7 @@ public class VirtualDisplayTests : IDisposable
                 Cancellation?.Cancel();
             }
 
-            return Task.FromResult(OperationResult<OwnedVirtualDisplay>.Ok(new OwnedVirtualDisplay("disp-owned", "owned-key")));
+            return Task.FromResult(OperationResult<OwnedVirtualDisplay>.Ok(new OwnedVirtualDisplay("disp-owned", IdentityKey)));
         }
 
         public Task<OperationResult<bool>> RemoveAsync(string displayId, CancellationToken cancellationToken)
