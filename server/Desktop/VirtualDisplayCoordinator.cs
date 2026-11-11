@@ -265,7 +265,7 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
             return OperationResult<VirtualDisplaySession>.Fail("virtual_display_session_not_found", "Virtual-display session was not found or is already closed.");
         }
 
-        List<DisplayTargetChange> original = session.Checkpoint.Paths.Select(path => new DisplayTargetChange(
+        List<DisplayTargetChange> original = session.Checkpoint.Paths.Where(path => path.Active).Select(path => new DisplayTargetChange(
             path.Identity.MonitorDevicePath,
             path.Identity.ConnectorInstance,
             path.Identity.AdapterLuid,

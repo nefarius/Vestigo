@@ -150,7 +150,7 @@ public static class DisplayLayoutPlanner
                 continue;
             }
 
-            DisplayPathLayout[] matches = snapshot.Paths.Where(path => Matches(path.Identity, change)).ToArray();
+            DisplayPathLayout[] matches = snapshot.Paths.Where(path => path.Active && Matches(path.Identity, change)).ToArray();
             if (matches.Length == 0)
             {
                 errors.Add("A requested target is not in the active topology.");

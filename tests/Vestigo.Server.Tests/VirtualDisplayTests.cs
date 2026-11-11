@@ -67,6 +67,7 @@ public class VirtualDisplayTests : IDisposable
         Assert.Equal(["snapshot", "create", "arrange", "restore", "remove"], log);
         Assert.Equal(["disp-owned"], backend.Removed);
         Assert.Contains(@"\\.\DISPLAY1", displays.RestoredPaths);
+        Assert.DoesNotContain(@"\\.\DISPLAY-IDLE", displays.RestoredPaths);
         Assert.DoesNotContain("disp-owned", displays.RestoredPaths);
     }
 
@@ -291,8 +292,15 @@ public class VirtualDisplayTests : IDisposable
             Operations.Add("snapshot");
             DisplayTargetIdentity identity = new(@"\\.\DISPLAY1", 1, "adapter", 7, 1);
             DisplayPathLayout path = new(identity, @"\\.\DISPLAY1", true, 0, 0, 1920, 1080, 60, 1, "identity", "default", DesktopCoordinates.PhysicalScreenPixels);
+            DisplayPathLayout idle = path with
+            {
+                Active = false,
+                Width = 0,
+                Height = 0,
+                Identity = new DisplayTargetIdentity(@"\\.\DISPLAY-IDLE", 1, "adapter", 8, 2)
+            };
             return Task.FromResult(OperationResult<DisplayLayoutSnapshot>.Ok(
-                new DisplayLayoutSnapshot(DateTimeOffset.UnixEpoch, 1, DesktopCoordinates.PhysicalScreenPixels, "fp", [path])));
+                new DisplayLayoutSnapshot(DateTimeOffset.UnixEpoch, 1, DesktopCoordinates.PhysicalScreenPixels, "fp", [path, idle])));
         }
 
         public Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(DisplayLayoutRequest request, bool elevated, CancellationToken cancellationToken)

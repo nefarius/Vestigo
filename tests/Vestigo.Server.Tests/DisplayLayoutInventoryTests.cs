@@ -56,6 +56,21 @@ public sealed class DisplayLayoutInventoryTests
     }
 
     [Fact]
+    public void Validate_MatchesOnlyActivePaths()
+    {
+        DisplayPathLayout active = Path(source: 1, active: true);
+        DisplayPathLayout idle = Path(source: 4, active: false, target: 9);
+        DisplayLayoutSnapshot snapshot = Snap(active, idle);
+        DisplayTargetChange change = new(active.Identity.MonitorDevicePath, null, null, null, 0, 0, 1920, 1080, null, null, null);
+
+        DisplayLayoutValidation validation = DisplayLayoutPlanner.Validate(snapshot, [change]);
+
+        Assert.True(validation.Valid, string.Join(' ', validation.Errors));
+        DisplayLayoutValidation idleOnly = DisplayLayoutPlanner.Validate(snapshot, [change with { MonitorDevicePath = null, TargetId = idle.Identity.TargetId, AdapterLuid = idle.Identity.AdapterLuid }]);
+        Assert.Contains(idleOnly.Errors, error => error.Contains("not in the active topology", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Compare_DoesNotRequireAnInactivePathToRemain()
     {
         DisplayPathLayout active = Path(source: 1, active: true);
