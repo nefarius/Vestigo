@@ -1535,15 +1535,16 @@ Captures a PNG of the console user's desktop. target 'desktop' (default) is the 
 
 ## `test_endpoint`
 
-Observes one destination from Vestigo's own network context, which can differ from an application's routing, proxy, or credentials. protocol 'dns' resolves the host, 'tcp' also connects, and 'tls' also performs a TLS handshake with certificate name and chain validation. The direct probe connection contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. TLS chain building may also contact Authority Information Access issuer servers. Revocation checks may contact revocation servers when Vestigo:Diagnostics:AllowOnlineRevocation is enabled. timeoutMs is capped by Vestigo:Diagnostics:MaxEndpointProbeDuration. includeResolvedAddress reports the addresses used. A TCP result is not a measure of media quality, jitter, or loss. No payloads, headers, or credentials are read. Requires Vestigo:Diagnostics:AllowNetworkProbes.
+Observes one destination from Vestigo's own network context, which can differ from an application's routing, proxy, or credentials. protocol 'dns' resolves the host, 'tcp' also connects, 'tls' also performs a TLS handshake with certificate name and chain validation, and 'udp' sends one datagram. udp outcome 'sent' does not prove the peer is reachable: a blocked UDP port can fail silently. stun true, only with udp, sends one STUN binding request and waits for a matching response. A missing response is not a firewall block. The mapped address is unauthenticated. quic returns protocol_unsupported. The direct probe contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. TLS chain building may also contact Authority Information Access issuer servers. Revocation checks may contact revocation servers when Vestigo:Diagnostics:AllowOnlineRevocation is enabled. timeoutMs is capped by Vestigo:Diagnostics:MaxEndpointProbeDuration, and a udp call is also capped by Vestigo:Diagnostics:MaxUdpProbeDuration. A udp datagram is at most Vestigo:Diagnostics:MaxUdpPayloadBytes. includeResolvedAddress reports the addresses used. A TCP result is not a measure of media quality, jitter, or loss. No payloads, headers, or credentials are read. Requires Vestigo:Diagnostics:AllowNetworkProbes.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `host` | `string` | yes |  | Host name or IP address. Not a URL. |
-| `port` | `int` | yes |  | TCP port, 1-65535. Ignored for protocol 'dns' except for the allow-list match. |
-| `protocol` | `string` | no | `tcp` | 'dns', 'tcp', or 'tls'. |
-| `timeoutMs` | `int` | no | `5000` | Budget in milliseconds. Capped by Vestigo:Diagnostics:MaxEndpointProbeDuration. |
+| `port` | `int` | yes |  | Port, 1-65535. Ignored for protocol 'dns' except for the allow-list match. |
+| `protocol` | `string` | no | `tcp` | 'dns', 'tcp', 'tls', or 'udp'. 'quic' is refused. |
+| `timeoutMs` | `int` | no | `5000` | Budget in milliseconds. Capped by Vestigo:Diagnostics:MaxEndpointProbeDuration. UDP is also capped by MaxUdpProbeDuration. |
 | `includeResolvedAddress` | `bool` | no | `false` | Include resolved addresses in the result. |
+| `stun` | `bool` | no | `false` | With protocol udp, send one STUN binding request and wait for a matching response. |
 
 ## `uninstall_driver`
 

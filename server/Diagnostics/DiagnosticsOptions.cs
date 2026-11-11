@@ -41,6 +41,12 @@ public sealed class DiagnosticsOptions
     /// <summary>Upper bound for one <c>test_endpoint</c> call.</summary>
     public TimeSpan MaxEndpointProbeDuration { get; set; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>Maximum bytes in one <c>test_endpoint</c> UDP datagram, including a STUN binding request. 1 to 64.</summary>
+    public int MaxUdpPayloadBytes { get; set; } = 64;
+
+    /// <summary>Upper bound for a <c>test_endpoint</c> UDP send or STUN wait. Minimum 00:00:00.100, maximum 00:00:05.</summary>
+    public TimeSpan MaxUdpProbeDuration { get; set; } = TimeSpan.FromSeconds(5);
+
     /// <summary>Upper bound for <c>list_video_encoders</c> <c>limit</c>.</summary>
     public int MaxVideoEncoders { get; set; } = 200;
 
@@ -92,6 +98,16 @@ public sealed class DiagnosticsOptions
         if (MaxEndpointProbeDuration < TimeSpan.FromMilliseconds(100) || MaxEndpointProbeDuration > TimeSpan.FromSeconds(30))
         {
             throw new InvalidOperationException("Vestigo:Diagnostics:MaxEndpointProbeDuration must be between 00:00:00.100 and 00:00:30.");
+        }
+
+        if (MaxUdpPayloadBytes is < 1 or > 64)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxUdpPayloadBytes must be between 1 and 64.");
+        }
+
+        if (MaxUdpProbeDuration < TimeSpan.FromMilliseconds(100) || MaxUdpProbeDuration > TimeSpan.FromSeconds(5))
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxUdpProbeDuration must be between 00:00:00.100 and 00:00:05.");
         }
 
         if (MaxVideoEncoders is < 1 or > 1000)
