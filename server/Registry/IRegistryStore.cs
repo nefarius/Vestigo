@@ -58,7 +58,18 @@ public interface IRegistryKey : IDisposable
 /// <param name="Key">Opened key, or null.</param>
 /// <param name="ErrorCode">Stable code when <paramref name="Key" /> is null.</param>
 /// <param name="Error">Caller-facing message when <paramref name="Key" /> is null.</param>
-public sealed record RegistryOpen(IRegistryKey? Key, string? ErrorCode, string? Error);
+/// <param name="Resolved">Canonical path actually opened after symbolic links were checked.</param>
+public sealed record RegistryOpen(
+    IRegistryKey? Key,
+    string? ErrorCode,
+    string? Error,
+    RegistryPathDecision? Resolved = null);
+
+/// <summary>
+///     Checks a symbolic-link target. <paramref name="logicalPath" /> is the path that contained the link.
+///     <paramref name="targetPath" /> is the path the link names.
+/// </summary>
+public delegate OperationResult<RegistryPathDecision> RegistryLinkConfinement(string logicalPath, string targetPath);
 
 /// <summary>Reads registry keys. Tests supply a fake.</summary>
 public interface IRegistryStore
@@ -66,6 +77,9 @@ public interface IRegistryStore
     /// <summary>Resolves the user logged on at the console.</summary>
     ConsoleUserLookup LookupConsoleUser();
 
-    /// <summary>Opens a key in an explicit view. <paramref name="subKey" /> is relative to the hive.</summary>
-    RegistryOpen Open(RegistryViewKind view, RegistryHiveKind hive, string subKey);
+    /// <summary>
+    ///     Opens a key in an explicit view. <paramref name="subKey" /> is relative to the hive.
+    ///     A symbolic link is followed only when <paramref name="confine" /> accepts its target.
+    /// </summary>
+    RegistryOpen Open(RegistryViewKind view, RegistryHiveKind hive, string subKey, RegistryLinkConfinement confine);
 }

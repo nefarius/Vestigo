@@ -25,7 +25,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Registry opt-in</span></p>
     <h2>Registry</h2>
-    <p><code>read_registry_value</code>, <code>list_registry_values</code>, and <code>get_registry_metadata</code> read one allow-listed key. An empty allow list uses built-in Windows locations. A denied prefix, including Winlogon, wins. <code>HKCU</code> is the console user. Choose <code>registry64</code> or <code>registry32</code> explicitly.</p>
+    <p><code>read_registry_value</code>, <code>list_registry_values</code>, and <code>get_registry_metadata</code> read one allow-listed key. An empty allow list uses built-in Windows locations. A denied prefix, including Winlogon, wins. A symbolic link is followed only when its target also passes those checks. <code>HKCU</code> is the console user. Choose <code>registry64</code> or <code>registry32</code> explicitly.</p>
     <p>There is no write tool. A binary larger than <code>Registry:MaxBinaryBytes</code> is not returned. Values are not written to the log.</p>
   </article>
   <article class="card">

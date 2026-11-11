@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Vestigo.RegistryProbe;
 
 /// <summary>A path that passed allow and deny checks.</summary>
@@ -12,6 +14,12 @@ public sealed record RegistryPathDecision(string Canonical, RegistryHiveKind Hiv
 /// </summary>
 public static class RegistryPathPolicy
 {
+    /// <summary>Largest symbolic-link target that will be allocated, in bytes.</summary>
+    public const int MaxLinkTargetBytes = 4096;
+
+    /// <summary>Maximum number of symbolic links followed for one open.</summary>
+    public const int MaxLinkHops = 8;
+
     private const int MaxPathLength = 4096;
 
     /// <summary>True when <paramref name="prefix" /> starts with HKLM, HKU, or HKCU and has no empty, <c>.</c>, or <c>..</c> segments.</summary>
@@ -31,6 +39,36 @@ public static class RegistryPathPolicy
 
     /// <summary>Returns a canonical path, or a stable error. Denied prefixes win over allowed ones.</summary>
     public static OperationResult<RegistryPathDecision> Check(string? path, string? consoleSid, RegistryOptions options)
+    {
+        OperationResult<RegistryPathDecision> canonical = Canonicalize(path, consoleSid);
+        if (!canonical.Success || canonical.Value is null)
+        {
+            return canonical;
+        }
+
+        IReadOnlyList<string> allowed = options.AllowedPrefixes.Count == 0
+            ? RegistryOptions.BuiltInAllowedPrefixes
+            : options.AllowedPrefixes;
+        if (MatchesAny(canonical.Value.Canonical, options.DeniedPrefixes, consoleSid)
+            || DeniedAsCurrentControlSet(canonical.Value.Canonical, options.DeniedPrefixes, consoleSid))
+        {
+            return OperationResult<RegistryPathDecision>.Fail(
+                "path_denied",
+                "Registry path is denied.");
+        }
+
+        if (!MatchesAny(canonical.Value.Canonical, allowed, consoleSid))
+        {
+            return OperationResult<RegistryPathDecision>.Fail(
+                "path_not_allowed",
+                "Registry path is outside the allowed prefixes.");
+        }
+
+        return canonical;
+    }
+
+    /// <summary>Canonicalizes a path without applying allow or deny prefixes.</summary>
+    public static OperationResult<RegistryPathDecision> Canonicalize(string? path, string? consoleSid)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Contains('\0'))
         {
@@ -70,24 +108,136 @@ public static class RegistryPathPolicy
 
         string canonical = hiveName + (rest.Length == 0 ? string.Empty : "\\" + string.Join("\\", rest));
         string subKey = string.Join("\\", rest);
-        IReadOnlyList<string> allowed = options.AllowedPrefixes.Count == 0
-            ? RegistryOptions.BuiltInAllowedPrefixes
-            : options.AllowedPrefixes;
-        if (MatchesAny(canonical, options.DeniedPrefixes, consoleSid))
-        {
-            return OperationResult<RegistryPathDecision>.Fail(
-                "path_denied",
-                "Registry path is denied.");
-        }
-
-        if (!MatchesAny(canonical, allowed, consoleSid))
-        {
-            return OperationResult<RegistryPathDecision>.Fail(
-                "path_not_allowed",
-                "Registry path is outside the allowed prefixes.");
-        }
-
         return OperationResult<RegistryPathDecision>.Ok(new RegistryPathDecision(canonical, hive, subKey));
+    }
+
+    /// <summary>
+    ///     Applies deny-wins to a link target. <c>HKLM\SYSTEM\CurrentControlSet</c> may resolve to
+    ///     <c>HKLM\SYSTEM\ControlSetNNN</c> and still matches a CurrentControlSet prefix. No other link gets that alias.
+    /// </summary>
+    public static OperationResult<RegistryPathDecision> CheckLink(
+        string logicalPath,
+        string targetPath,
+        string? consoleSid,
+        RegistryOptions options)
+    {
+        OperationResult<RegistryPathDecision> target = Check(targetPath, consoleSid, options);
+        if (target.Success || target.ErrorCode != "path_not_allowed" || !SameCurrentControlSet(logicalPath, targetPath))
+        {
+            return target;
+        }
+
+        OperationResult<RegistryPathDecision> logical = Check(logicalPath, consoleSid, options);
+        return logical.Success ? Canonicalize(targetPath, consoleSid) : logical;
+    }
+
+    /// <summary>True when <paramref name="target" /> is the <c>ControlSetNNN</c> image of a <c>CurrentControlSet</c> path.</summary>
+    public static bool SameCurrentControlSet(string logical, string target)
+    {
+        const string Current = @"HKLM\SYSTEM\CurrentControlSet";
+        const string Numbered = @"HKLM\SYSTEM\ControlSet";
+        if (!logical.Equals(Current, StringComparison.OrdinalIgnoreCase)
+            && !logical.StartsWith(Current + "\\", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!target.StartsWith(Numbered, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string logicalRest = logical.Length == Current.Length ? string.Empty : logical[(Current.Length + 1)..];
+        string after = target[Numbered.Length..];
+        int slash = after.IndexOf('\\');
+        string number = slash < 0 ? after : after[..slash];
+        string targetRest = slash < 0 ? string.Empty : after[(slash + 1)..];
+        return number.Length == 3
+            && number.All(char.IsAsciiDigit)
+            && logicalRest.Equals(targetRest, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     True when <paramref name="canonical" /> is <c>ControlSetNNN</c> and that same path under
+    ///     <c>CurrentControlSet</c> is denied. Allow matching is unchanged.
+    /// </summary>
+    private static bool DeniedAsCurrentControlSet(string canonical, IEnumerable<string> denied, string? consoleSid)
+    {
+        const string numbered = @"HKLM\SYSTEM\ControlSet";
+        if (!canonical.StartsWith(numbered, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string after = canonical[numbered.Length..];
+        int slash = after.IndexOf('\\');
+        string number = slash < 0 ? after : after[..slash];
+        if (number.Length != 3 || !number.All(char.IsAsciiDigit))
+        {
+            return false;
+        }
+
+        string rest = slash < 0 ? string.Empty : after[(slash + 1)..];
+        string image = @"HKLM\SYSTEM\CurrentControlSet" + (rest.Length == 0 ? string.Empty : "\\" + rest);
+        return MatchesAny(image, denied, consoleSid);
+    }
+
+    /// <summary>Accepts a reported <c>REG_LINK</c> size before a buffer is allocated.</summary>
+    public static OperationResult<int> LinkTargetLength(uint reportedBytes)
+    {
+        if (reportedBytes == 0 || reportedBytes > MaxLinkTargetBytes || (reportedBytes & 1) != 0)
+        {
+            return OperationResult<int>.Fail("invalid_request", "Registry symbolic link target is not a supported path.");
+        }
+
+        return OperationResult<int>.Ok(checked((int)reportedBytes));
+    }
+
+    /// <summary>Parses a <c>REG_LINK</c> value. Windows stores a UTF-16 NT path, with or without a terminator.</summary>
+    public static OperationResult<string> ParseLinkTarget(ReadOnlySpan<byte> data)
+    {
+        OperationResult<int> length = LinkTargetLength((uint)data.Length);
+        if (!length.Success)
+        {
+            return OperationResult<string>.Fail(length.ErrorCode!, length.Error!);
+        }
+
+        string text = Encoding.Unicode.GetString(data);
+        int terminator = text.IndexOf('\0');
+        if (terminator >= 0)
+        {
+            if (text[(terminator + 1)..].Any(character => character != '\0'))
+            {
+                return OperationResult<string>.Fail("invalid_request", "Registry symbolic link target is not a supported path.");
+            }
+
+            text = text[..terminator];
+        }
+
+        if (!text.StartsWith('\\'))
+        {
+            return OperationResult<string>.Fail("invalid_request", "Registry symbolic link target is not a supported path.");
+        }
+
+        string[] parts = text.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || !parts[0].Equals("Registry", StringComparison.OrdinalIgnoreCase))
+        {
+            return OperationResult<string>.Fail("invalid_request", "Registry symbolic link target is not a supported path.");
+        }
+
+        string? hive = parts[1].ToUpperInvariant() switch
+        {
+            "MACHINE" => "HKLM",
+            "USER" => "HKU",
+            _ => null
+        };
+        if (hive is null)
+        {
+            return OperationResult<string>.Fail("invalid_request", "Registry symbolic link target is not a supported path.");
+        }
+
+        string rest = string.Join('\\', parts.Skip(2));
+        return OperationResult<string>.Ok(hive + (rest.Length == 0 ? string.Empty : "\\" + rest));
     }
 
     private static bool MatchesAny(string canonical, IEnumerable<string> prefixes, string? consoleSid)

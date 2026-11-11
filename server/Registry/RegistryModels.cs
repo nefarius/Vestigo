@@ -21,7 +21,7 @@ public enum RegistryHiveKind
 }
 
 /// <summary>One registry value returned by <c>read_registry_value</c>.</summary>
-/// <param name="Path">Canonical key path.</param>
+/// <param name="Path">Requested canonical key path. This is the path to pass to another call.</param>
 /// <param name="Name">Value name. Null is the key's default value.</param>
 /// <param name="View"><c>registry64</c> or <c>registry32</c>.</param>
 /// <param name="Type">Registry type name, such as <c>REG_SZ</c> or <c>REG_DWORD</c>.</param>
@@ -32,6 +32,7 @@ public enum RegistryHiveKind
 /// <param name="Hex">REG_BINARY hex when <c>includeBinary</c> is true, or null.</param>
 /// <param name="Sha256">Uppercase SHA-256 of a binary value that was read, or null.</param>
 /// <param name="LastWriteUtc">Last write time of the key, or null when Windows did not report one.</param>
+/// <param name="ResolvedPath">Key opened after a symbolic link, or null when <paramref name="Path" /> was opened directly.</param>
 public sealed record RegistryValueResult(
     string Path,
     string? Name,
@@ -43,7 +44,8 @@ public sealed record RegistryValueResult(
     ulong? Number,
     string? Hex,
     string? Sha256,
-    DateTimeOffset? LastWriteUtc);
+    DateTimeOffset? LastWriteUtc,
+    string? ResolvedPath = null);
 
 /// <summary>One value inside a list result. Binary and oversized strings omit <see cref="DisplayValue" />.</summary>
 /// <param name="Name">Value name. An empty string is the default value.</param>
@@ -58,15 +60,17 @@ public sealed record RegistryListedValue(string Name, string Type, string? Displ
 public sealed record RegistryListedSubKey(string Name, int? ValueCount);
 
 /// <summary>One key in a list result.</summary>
-/// <param name="Path">Canonical key path.</param>
+/// <param name="Path">Requested canonical key path. This is the path to pass to another call.</param>
 /// <param name="LastWriteUtc">Last write time, or null.</param>
 /// <param name="Values">Values that fit in the entry cap.</param>
 /// <param name="SubKeys">Child names that fit in the entry cap and are not denied.</param>
+/// <param name="ResolvedPath">Key opened after a symbolic link, or null when <paramref name="Path" /> was opened directly.</param>
 public sealed record RegistryKeyListing(
     string Path,
     DateTimeOffset? LastWriteUtc,
     IReadOnlyList<RegistryListedValue> Values,
-    IReadOnlyList<RegistryListedSubKey> SubKeys);
+    IReadOnlyList<RegistryListedSubKey> SubKeys,
+    string? ResolvedPath = null);
 
 /// <summary>Result of <c>list_registry_values</c>.</summary>
 /// <param name="Keys">Keys opened, in walk order.</param>
@@ -80,9 +84,11 @@ public sealed record RegistryListResult(IReadOnlyList<RegistryKeyListing> Keys, 
 /// <param name="LastWriteUtc">Last write time, or null.</param>
 /// <param name="SubKeyCount">Number of subkeys.</param>
 /// <param name="ValueCount">Number of values.</param>
+/// <param name="ResolvedPath">Key opened after a symbolic link, or null when <paramref name="Path" /> was opened directly.</param>
 public sealed record RegistryMetadata(
     string Path,
     string View,
     DateTimeOffset? LastWriteUtc,
     int SubKeyCount,
-    int ValueCount);
+    int ValueCount,
+    string? ResolvedPath = null);
