@@ -45,6 +45,12 @@ public sealed class KernelDumpStagingTests : IDisposable
         OperationResult<KernelDumpCopied> rejected = await KernelDumpCopy.CopyAsync(source, oversized, bytes.Length, bytes.Length - 1, CancellationToken.None);
         Assert.Equal("dump_too_large", rejected.ErrorCode);
         Assert.False(File.Exists(oversized));
+
+        byte[] existing = "keep-me"u8.ToArray();
+        File.WriteAllBytes(destination, existing);
+        OperationResult<KernelDumpCopied> occupied = await KernelDumpCopy.CopyAsync(source, destination, bytes.Length, bytes.Length, CancellationToken.None);
+        Assert.Equal("dump_failed", occupied.ErrorCode);
+        Assert.Equal(existing, await File.ReadAllBytesAsync(destination));
     }
 
     [Fact]
@@ -82,8 +88,10 @@ public sealed class KernelDumpStagingTests : IDisposable
         Assert.True(staged.Value.Download!.SingleUse);
         Assert.Contains("ticket=", staged.Value.Download.Url, StringComparison.Ordinal);
         string serialized = System.Text.Json.JsonSerializer.Serialize(staged.Value);
+        string escapedSource = System.Text.Json.JsonSerializer.Serialize(source).Trim('"');
         Assert.DoesNotContain("selected-dump", serialized, StringComparison.Ordinal);
-        Assert.DoesNotContain(source, serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("source.dmp", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(escapedSource, serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(_root, "copy.dmp")));
     }
 

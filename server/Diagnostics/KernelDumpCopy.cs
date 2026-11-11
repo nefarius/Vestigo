@@ -16,11 +16,13 @@ internal static class KernelDumpCopy
         long written = 0;
         string? failure = null;
         string sha256 = "";
+        bool created = false;
         using SHA256 hash = SHA256.Create();
         try
         {
             await using FileStream input = new(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             await using FileStream output = new(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            created = true;
             while (true)
             {
                 int read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
@@ -69,7 +71,7 @@ internal static class KernelDumpCopy
                 "dump_size_changed" => "The dump length changed while it was copied.",
                 _ => "The dump could not be copied."
             };
-            if (!Delete(destination))
+            if (created && !Delete(destination))
             {
                 error += " cleanup_failed";
             }
