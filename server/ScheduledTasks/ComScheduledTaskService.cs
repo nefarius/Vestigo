@@ -60,26 +60,37 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
             using TaskDefinition? definition = CachedDefinition(task);
             try
             {
-                using RunningTask? running = task.Run(arguments.ToArray());
+                RunningTask? running = task.Run(arguments.ToArray());
                 // In TaskScheduler 2.12.2, RunningTask shares its parent's registered-task RCW and
                 // disposes both references. Transfer ownership so it is not released a second time.
                 // https://github.com/dahall/TaskScheduler/blob/v2.12.2/TaskService/Task.cs
                 if (running is null) return null;
                 task = null;
-                try
-                {
-                    return running.InstanceGuid.ToString("B");
-                }
-                catch (COMException)
-                {
-                    return null;
-                }
+                return ReadInstanceAndDispose(running);
             }
             finally
             {
                 task?.Dispose();
             }
         });
+
+    internal static string? ReadInstanceAndDispose(RunningTask running)
+    {
+        try
+        {
+            return running.InstanceGuid.ToString("B");
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        finally
+        {
+            // 2.12.2 hides Task.Dispose instead of reimplementing IDisposable. A using
+            // declaration calls the base interface slot and leaks the running-task RCW.
+            running.Dispose();
+        }
+    }
 
     public void Stop(string path) => Invoke<object?>(service =>
     {

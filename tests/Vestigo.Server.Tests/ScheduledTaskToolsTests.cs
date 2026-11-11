@@ -300,6 +300,27 @@ public sealed class ScheduledTaskToolsTests
                 Assert.Throws<System.Runtime.InteropServices.InvalidComObjectException>(() => definition.XmlText);
             }
 
+            using (Scheduler.TaskCollection tasks = folder.GetTasks())
+            {
+                Scheduler.Task task = tasks["Visible"];
+                using Scheduler.TaskDefinition? definition = ComScheduledTaskService.CachedDefinition(task);
+                Scheduler.RunningTask? running = null;
+                try
+                {
+                    running = task.Run("0");
+                    Assert.NotNull(running);
+                    Assert.Null(ComScheduledTaskService.CachedDefinition(running));
+                    Assert.True(Guid.TryParse(ComScheduledTaskService.ReadInstanceAndDispose(running), out _));
+                    Assert.Throws<System.Runtime.InteropServices.InvalidComObjectException>(() => running.InstanceGuid);
+                }
+                finally
+                {
+                    // The adapter takes ownership once running is non-null.
+                    if (running is null) task.Dispose();
+                }
+            }
+            await WaitForStopped(service, visible);
+
             Assert.Equal([visible], service.List(folder.Path, false, false).Select(t => t.Path));
             Assert.Equal(2, service.List(folder.Path, false, true).Count);
             Assert.Equal(3, service.List(folder.Path, true, true).Count);
