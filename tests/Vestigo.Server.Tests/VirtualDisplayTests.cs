@@ -30,6 +30,11 @@ public class VirtualDisplayTests : IDisposable
 
         Assert.Equal(UnavailableVirtualDisplayBackend.Code, created.ErrorCode);
         Assert.Empty(displays.Operations);
+        OperationResult<VirtualDisplayBackendStatus> status = await coordinator.StatusAsync(CancellationToken.None);
+        Assert.False(status.Value!.CanCreate);
+        Assert.Equal("none", status.Value.Backend);
+        Assert.Equal(UnavailableVirtualDisplayBackend.Prerequisite, status.Value.Prerequisite);
+        Assert.Contains("not that component", status.Value.Prerequisite, StringComparison.Ordinal);
     }
 
     [Fact]

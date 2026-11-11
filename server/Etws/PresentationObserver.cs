@@ -80,11 +80,22 @@ public sealed class PresentationObserver : IHostedService
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    public Task<OperationResult<PresentationObservation>> ObserveAsync(
+        int processId,
+        long? windowHandle,
+        TimeSpan duration,
+        CancellationToken cancellationToken) =>
+        ObserveAsync(processId, windowHandle, duration, cancellationToken, null, true);
+
+    /// <param name="sessionName">Session selected by the parent. The worker must not invent another one.</param>
+    /// <param name="manageCheckpoint">False when the parent process owns the checkpoint and orphan stop.</param>
     public async Task<OperationResult<PresentationObservation>> ObserveAsync(
         int processId,
         long? windowHandle,
         TimeSpan duration,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sessionName,
+        bool manageCheckpoint)
     {
         if (processId <= 0)
         {
@@ -104,6 +115,11 @@ public sealed class PresentationObserver : IHostedService
                 $"Duration must be greater than zero and no more than {cap:c}.");
         }
 
+        if (!string.IsNullOrWhiteSpace(sessionName) && !PresentationWorker.IsOwnedSession(sessionName))
+        {
+            return OperationResult<PresentationObservation>.Fail("invalid_request", "Presentation session name is not owned by Vestigo.");
+        }
+
         if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
             return OperationResult<PresentationObservation>.Fail(
@@ -111,7 +127,6 @@ public sealed class PresentationObserver : IHostedService
                 "A presentation observation is already running.");
         }
 
-        string sessionName = CaptureManager.SessionPrefix + "P" + Guid.NewGuid().ToString("N")[..11];
         IRealtimeTraceSession? session = null;
         List<string> enabled = [];
         List<string> failed = [];
@@ -120,10 +135,15 @@ public sealed class PresentationObserver : IHostedService
         bool truncated = false;
         bool cancelled = false;
         bool eventsLost = false;
+        string? readerFailure = null;
         DateTimeOffset started = _time.GetUtcNow();
+        sessionName ??= CaptureManager.SessionPrefix + "P" + Guid.NewGuid().ToString("N")[..11];
         try
         {
-            Remember(sessionName);
+            if (manageCheckpoint)
+            {
+                Remember(sessionName);
+            }
             try
             {
                 session = _sessions.Create(sessionName, _options);
@@ -173,6 +193,11 @@ public sealed class PresentationObserver : IHostedService
             {
                 cancelled = cancellationToken.IsCancellationRequested;
             }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                readerFailure = ex.GetType().Name + ": " + ex.Message;
+                _logger.LogWarning(ex, "Presentation decoding failed in session {SessionName}", sessionName);
+            }
         }
         finally
         {
@@ -195,7 +220,7 @@ public sealed class PresentationObserver : IHostedService
                     releaseCheckpoint = true;
                 }
 
-                if (releaseCheckpoint)
+                if (manageCheckpoint && releaseCheckpoint)
                 {
                     Forget(sessionName);
                 }
@@ -208,6 +233,11 @@ public sealed class PresentationObserver : IHostedService
             {
                 _gate.Release();
             }
+        }
+
+        if (readerFailure is not null)
+        {
+            return Unknown(processId, windowHandle, sessionName, started, "decode_failed", readerFailure);
         }
 
         return OperationResult<PresentationObservation>.Ok(PresentationClassifier.Classify(

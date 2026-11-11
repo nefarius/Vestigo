@@ -14,7 +14,12 @@ public sealed record VirtualDisplayRequest(
 public sealed record OwnedVirtualDisplay(string Id, string IdentityKey);
 
 /// <summary>Whether a released backend can create a display. <c>CanCreate</c> false means creation is not available.</summary>
-public sealed record VirtualDisplayBackendStatus(string Backend, bool CanCreate, string? ErrorCode, string? Error);
+public sealed record VirtualDisplayBackendStatus(
+    string Backend,
+    bool CanCreate,
+    string? ErrorCode,
+    string? Error,
+    string? Prerequisite = null);
 
 /// <summary>
 ///     Creates and removes only displays it created. The installed Playcast or Parsec driver is not an implementation
@@ -52,7 +57,10 @@ public sealed class UnavailableVirtualDisplayBackend : IVirtualDisplayBackend
         Task.FromResult(OperationResult<bool>.Fail(Code, Message));
 
     internal static VirtualDisplayBackendStatus Status() =>
-        new("none", false, Code, Message);
+        new("none", false, Code, Message, Prerequisite);
+
+    internal const string Prerequisite =
+        "Vestigo needs a released virtual-display backend component that implements creation, removal, and ownership. No such component is selected in this build. An installed indirect-display driver is not that component and is not controlled by Vestigo.";
 
     private const string Message =
         "No released virtual-display backend is selected. An installed indirect-display driver is not an API, and Vestigo does not create a display.";

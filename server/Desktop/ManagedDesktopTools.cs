@@ -23,13 +23,18 @@ public sealed class ManagedDesktopTools(ManagedDesktopSessionManager sessions)
 
     [McpServerTool(Name = "list_desktop_sessions", ReadOnly = true)]
     [Description("Lists managed desktop sessions, including closed sessions still remembered by this process. This does not switch desktops.")]
-    public OperationResult<IReadOnlyList<ManagedDesktopSession>> ListDesktopSessions() => sessions.List();
+    public Task<OperationResult<IReadOnlyList<ManagedDesktopSession>>> ListDesktopSessions(CancellationToken cancellationToken = default) =>
+        sessions.ListAsync(cancellationToken);
 
     [McpServerTool(Name = "get_desktop_session", ReadOnly = true)]
-    [Description("Returns one managed desktop session by the id from create_desktop_session.")]
-    public OperationResult<ManagedDesktopSession> GetDesktopSession(
-        [Description("Managed desktop session id.")] string id) =>
-        sessions.Get(id);
+    [Description(
+        "Returns one managed desktop session by the id from create_desktop_session. "
+        + "A closed session is reconciled with the window station: desktopPresence is close-time-retained, cleanup-pending, confirmed-present, confirmed-absent, or enumeration-unknown. "
+        + "A later confirmed absence clears only the obsolete retention error.")]
+    public Task<OperationResult<ManagedDesktopSession>> GetDesktopSession(
+        [Description("Managed desktop session id.")] string id,
+        CancellationToken cancellationToken = default) =>
+        sessions.GetAsync(id, cancellationToken);
 
     [McpServerTool(Name = "list_window_station_desktops", ReadOnly = true)]
     [Description(

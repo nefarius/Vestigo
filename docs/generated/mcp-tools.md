@@ -347,7 +347,7 @@ Returns status, counters, and the last error for one debug-output capture.
 
 ## `get_desktop_session`
 
-Returns one managed desktop session by the id from create_desktop_session.
+Returns one managed desktop session by the id from create_desktop_session. A closed session is reconciled with the window station: desktopPresence is close-time-retained, cleanup-pending, confirmed-present, confirmed-absent, or enumeration-unknown. A later confirmed absence clears only the obsolete retention error.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -589,7 +589,7 @@ Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-
 
 ## `get_virtual_display_backend`
 
-Reports whether Vestigo can create a temporary virtual display. canCreate false and errorCode virtual_display_backend_unavailable mean no released backend is selected. An installed indirect-display driver is not an API. This does not change the display topology.
+Reports whether Vestigo can create a temporary virtual display. canCreate false and errorCode virtual_display_backend_unavailable mean no released Vestigo backend component is selected. prerequisite names that missing component. An installed indirect-display driver is not an API and is not treated as success. This does not change the display topology.
 
 No parameters.
 
@@ -1294,13 +1294,14 @@ Applies the snapshot taken before the transaction and reads the topology again. 
 
 ## `restore_window_placement`
 
-Restores a placement saved by set_window_client_rect. The window and process identity are checked again. SetWindowPlacement can let Windows activate the window; Vestigo does not call SetForegroundWindow. Achieved is true only when the measured normal rectangle matches the saved one. Requires Vestigo:Desktop:AllowWindowPlacement.
+Restores a placement saved by set_window_client_rect. The window and process identity are checked again. SetWindowPlacement can let Windows activate the window; Vestigo does not call SetForegroundWindow. Achieved is true only when the measured normal rectangle matches the saved one. The token is rejected when the desktop session, process, or window identity does not match the saved placement. Requires Vestigo:Desktop:AllowWindowPlacement.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `token` | `string` | yes |  | Token returned by set_window_client_rect. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id used when the placement was saved. Omit for the default desktop. |
 
 ## `run_process`
 
@@ -1435,7 +1436,7 @@ Sets the kernel WHQL developer test mode policy that allows traditional cross-si
 
 ## `set_window_client_rect`
 
-Moves and sizes a window so its client area matches x,y,width,height in physical virtual-screen pixels. The call accounts for the window's current decorations and DPI, then measures the result. Achieved is true only when the measured client rectangle matches. Windows or the application may alter the request; that is reported instead of being treated as success. Activation and Z-order are preserved by SetWindowPos flags. savePlacement stores the previous placement for restore_window_placement. The token does not survive a service restart. Requires Vestigo:Desktop:AllowWindowPlacement. context service changes a window in the service session; interactive changes the console user's window and needs an elevated helper for an elevated window.
+Moves and sizes a window so its client area matches x,y,width,height in physical virtual-screen pixels. The call accounts for the window's current decorations and DPI, then measures the result. Achieved is true only when the measured client rectangle matches. Windows or the application may alter the request; that is reported instead of being treated as success. Activation and Z-order are preserved by SetWindowPos flags. savePlacement stores the previous placement for restore_window_placement. The token does not survive a service restart and is bound to the desktop session that saved it. Requires Vestigo:Desktop:AllowWindowPlacement. desktopSessionId targets a managed desktop without activating it. context service changes a window in the service session; interactive changes the console user's window and needs an elevated helper for an elevated window.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1450,6 +1451,7 @@ Moves and sizes a window so its client area matches x,y,width,height in physical
 | `savePlacement` | `bool` | no | `false` | Save the current placement and return a restore token. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Omit for the console user's default desktop. The desktop is not activated. |
 
 ## `snapshot_display_layout`
 

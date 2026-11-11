@@ -70,6 +70,8 @@ public static class WindowsDisplayConfig
         }
 
         IReadOnlyList<DisplayInfo> displays = DisplayTopology.Enumerate();
+        Dictionary<uint, (int X, int Y, uint Width, uint Height)> sharedSources = [];
+        bool changed = false;
         for (int index = 0; index < pathCount; index++)
         {
             if (!TryDescribe(paths[index], modes, displays, includeInactive: false, out DisplayPathLayout? layout))
@@ -83,24 +85,29 @@ public static class WindowsDisplayConfig
                 continue;
             }
 
-            if (!TryPatch(ref paths[index], modes, change))
+            if (!TryPatch(ref paths[index], modes, layout!, change, sharedSources, out bool pathChanged, out string? patchError))
             {
                 return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
                     false, false, request.Persistent, null, "display_mode_unavailable",
-                    "The active path has no source or target mode that can be updated.", before.Value, null));
+                    patchError ?? "The active path has no source or target mode that can be updated.", before.Value, null));
             }
+
+            changed |= pathChanged;
         }
 
-        SET_DISPLAY_CONFIG_FLAGS validateFlags = SET_DISPLAY_CONFIG_FLAGS.SDC_VALIDATE
-            | SET_DISPLAY_CONFIG_FLAGS.SDC_USE_SUPPLIED_DISPLAY_CONFIG
-            | SET_DISPLAY_CONFIG_FLAGS.SDC_ALLOW_CHANGES
-            | SET_DISPLAY_CONFIG_FLAGS.SDC_VIRTUAL_MODE_AWARE;
+        if (!changed)
+        {
+            return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
+                true, true, request.Persistent, null, null, null, before.Value, before.Value, "unchanged", null, true));
+        }
+
+        SET_DISPLAY_CONFIG_FLAGS validateFlags = ValidationFlags();
         WIN32_ERROR validated = ApplyNative(pathCount, paths, (uint)modes.Length, modes, validateFlags);
         if (validated != WIN32_ERROR.NO_ERROR)
         {
             return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
                 false, false, request.Persistent, (int)validated, "display_config_rejected",
-                "SetDisplayConfig validation failed.", before.Value, null));
+                NativeFailure("validate", validated, validateFlags), before.Value, null, "validate", validateFlags.ToString()));
         }
 
         if (request.ValidateOnly)
@@ -109,11 +116,8 @@ public static class WindowsDisplayConfig
                 false, true, request.Persistent, null, null, null, before.Value, before.Value));
         }
 
-        SET_DISPLAY_CONFIG_FLAGS applyFlags = validateFlags | SET_DISPLAY_CONFIG_FLAGS.SDC_APPLY;
-        if (request.Persistent)
-        {
-            applyFlags |= SET_DISPLAY_CONFIG_FLAGS.SDC_SAVE_TO_DATABASE;
-        }
+        // SDC_VALIDATE and SDC_APPLY together are an invalid combination and SetDisplayConfig returns 87.
+        SET_DISPLAY_CONFIG_FLAGS applyFlags = ApplicationFlags(request.Persistent);
 
         WIN32_ERROR applied = ApplyNative(pathCount, paths, (uint)modes.Length, modes, applyFlags);
         OperationResult<DisplayLayoutSnapshot> after = Capture();
@@ -121,7 +125,7 @@ public static class WindowsDisplayConfig
         {
             return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
                 false, true, request.Persistent, (int)applied, "display_config_rejected",
-                "SetDisplayConfig did not apply the layout.", before.Value, after.Success ? after.Value : null));
+                NativeFailure("apply", applied, applyFlags), before.Value, after.Success ? after.Value : null, "apply", applyFlags.ToString()));
         }
 
         return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
@@ -296,33 +300,101 @@ public static class WindowsDisplayConfig
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private static bool TryPatch(ref DISPLAYCONFIG_PATH_INFO path, DISPLAYCONFIG_MODE_INFO[] modes, DisplayTargetChange change)
+    /// <summary>Validate and apply are separate calls. Combining the two flags is ERROR_INVALID_PARAMETER.</summary>
+    public static bool SeparatesValidationFromApply(bool persistent) =>
+        !ValidationFlags().HasFlag(SET_DISPLAY_CONFIG_FLAGS.SDC_APPLY)
+        && !ApplicationFlags(persistent).HasFlag(SET_DISPLAY_CONFIG_FLAGS.SDC_VALIDATE)
+        && ApplicationFlags(persistent).HasFlag(SET_DISPLAY_CONFIG_FLAGS.SDC_APPLY)
+        && ApplicationFlags(persistent).HasFlag(SET_DISPLAY_CONFIG_FLAGS.SDC_SAVE_TO_DATABASE) == persistent;
+
+    private static SET_DISPLAY_CONFIG_FLAGS ValidationFlags() =>
+        SET_DISPLAY_CONFIG_FLAGS.SDC_VALIDATE | SuppliedFlags;
+
+    private static SET_DISPLAY_CONFIG_FLAGS ApplicationFlags(bool persistent)
     {
-        bool patched = false;
-        if (TrySourceModeIndex(path, out uint sourceIndex)
-            && sourceIndex < modes.Length
-            && modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
+        SET_DISPLAY_CONFIG_FLAGS flags = SET_DISPLAY_CONFIG_FLAGS.SDC_APPLY | SuppliedFlags;
+        return persistent ? flags | SET_DISPLAY_CONFIG_FLAGS.SDC_SAVE_TO_DATABASE : flags;
+    }
+
+    private static SET_DISPLAY_CONFIG_FLAGS SuppliedFlags =>
+        SET_DISPLAY_CONFIG_FLAGS.SDC_USE_SUPPLIED_DISPLAY_CONFIG
+        | SET_DISPLAY_CONFIG_FLAGS.SDC_ALLOW_CHANGES
+        | SET_DISPLAY_CONFIG_FLAGS.SDC_VIRTUAL_MODE_AWARE;
+
+    private static string NativeFailure(string stage, WIN32_ERROR error, SET_DISPLAY_CONFIG_FLAGS flags) =>
+        $"SetDisplayConfig {stage} failed. Stage={stage}. NativeError={(int)error}. Flags={flags}.";
+
+    private static bool TryPatch(
+        ref DISPLAYCONFIG_PATH_INFO path,
+        DISPLAYCONFIG_MODE_INFO[] modes,
+        DisplayPathLayout current,
+        DisplayTargetChange change,
+        Dictionary<uint, (int X, int Y, uint Width, uint Height)> sharedSources,
+        out bool changed,
+        out string? error)
+    {
+        changed = false;
+        error = null;
+        DisplayModePatch plan = DisplayModePatch.For(current, change);
+        if (plan.Unsupported)
         {
-            DISPLAYCONFIG_MODE_INFO mode = modes[sourceIndex];
-            DISPLAYCONFIG_SOURCE_MODE source = mode.sourceMode;
-            source.position.x = change.X;
-            source.position.y = change.Y;
-            source.width = (uint)change.Width;
-            source.height = (uint)change.Height;
-            mode.sourceMode = source;
-            modes[sourceIndex] = mode;
-            patched = true;
+            error = "The desktop size and signal size differ, so the target signal was left unchanged.";
+            return false;
         }
 
-        if (TryTargetModeIndex(path, out uint targetIndex)
-            && targetIndex < modes.Length
-            && modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
+        if (!plan.AnyChange)
         {
-            DISPLAYCONFIG_MODE_INFO mode = modes[targetIndex];
-            DISPLAYCONFIG_TARGET_MODE target = mode.targetMode;
-            target.targetVideoSignalInfo.activeSize.cx = (uint)change.Width;
-            target.targetVideoSignalInfo.activeSize.cy = (uint)change.Height;
-            if (change.RefreshNumerator is uint numerator && change.RefreshDenominator is uint denominator)
+            return true;
+        }
+
+        if (!TrySourceModeIndex(path, out uint sourceIndex)
+            || sourceIndex >= modes.Length
+            || modes[sourceIndex].infoType != DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
+        {
+            error = "The active path has no source mode that can be updated.";
+            return false;
+        }
+
+        DISPLAYCONFIG_MODE_INFO sourceMode = modes[sourceIndex];
+        DISPLAYCONFIG_SOURCE_MODE source = sourceMode.sourceMode;
+        int nextX = plan.Move ? change.X : source.position.x;
+        int nextY = plan.Move ? change.Y : source.position.y;
+        uint nextWidth = plan.ResizeSource ? (uint)change.Width : source.width;
+        uint nextHeight = plan.ResizeSource ? (uint)change.Height : source.height;
+        if (sharedSources.TryGetValue(sourceIndex, out (int X, int Y, uint Width, uint Height) previous)
+            && (previous.X != nextX || previous.Y != nextY || previous.Width != nextWidth || previous.Height != nextHeight))
+        {
+            error = "Clone paths share a source mode and requested different desktop geometry.";
+            return false;
+        }
+
+        source.position.x = nextX;
+        source.position.y = nextY;
+        source.width = nextWidth;
+        source.height = nextHeight;
+        sourceMode.sourceMode = source;
+        modes[sourceIndex] = sourceMode;
+        sharedSources[sourceIndex] = (nextX, nextY, nextWidth, nextHeight);
+
+        if (plan.ResizeSignal || plan.ChangeRefresh)
+        {
+            if (!TryTargetModeIndex(path, out uint targetIndex)
+                || targetIndex >= modes.Length
+                || modes[targetIndex].infoType != DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
+            {
+                error = "The active path has no target mode that can be updated.";
+                return false;
+            }
+
+            DISPLAYCONFIG_MODE_INFO targetMode = modes[targetIndex];
+            DISPLAYCONFIG_TARGET_MODE target = targetMode.targetMode;
+            if (plan.ResizeSignal)
+            {
+                target.targetVideoSignalInfo.activeSize.cx = (uint)change.Width;
+                target.targetVideoSignalInfo.activeSize.cy = (uint)change.Height;
+            }
+
+            if (plan.ChangeRefresh && change.RefreshNumerator is uint numerator && change.RefreshDenominator is uint denominator)
             {
                 target.targetVideoSignalInfo.vSyncFreq.Numerator = numerator;
                 target.targetVideoSignalInfo.vSyncFreq.Denominator = denominator;
@@ -330,18 +402,18 @@ public static class WindowsDisplayConfig
                 path.targetInfo.refreshRate.Denominator = denominator;
             }
 
-            mode.targetMode = target;
-            modes[targetIndex] = mode;
-            patched = true;
+            targetMode.targetMode = target;
+            modes[targetIndex] = targetMode;
         }
 
-        if (change.Rotation is not null
+        if (plan.ChangeRotation
             && Enum.TryParse("DISPLAYCONFIG_ROTATION_" + change.Rotation, true, out DISPLAYCONFIG_ROTATION rotation))
         {
             path.targetInfo.rotation = rotation;
         }
 
-        return patched;
+        changed = true;
+        return true;
     }
 
     private static bool TrySourceModeIndex(DISPLAYCONFIG_PATH_INFO path, out uint index)

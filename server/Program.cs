@@ -14,6 +14,13 @@ using Vestigo.Modules;
 using Vestigo.Processes;
 using Vestigo.Security;
 
+// Presentation decoding runs in this child so a native ETW metadata fault cannot terminate the service.
+if (args.Length > 0 && string.Equals(args[0], Vestigo.Etws.PresentationWorker.Flag, StringComparison.Ordinal))
+{
+    Environment.ExitCode = Vestigo.Etws.PresentationWorker.Run(args);
+    return;
+}
+
 // Session helper: started by the service inside the console user's session; must not boot the web host.
 if (SessionHelper.IsInvocation(args))
 {

@@ -324,11 +324,62 @@ public class InputTests
         Assert.Equal("helper_failed", ErrorCode(result));
     }
 
+    [Fact]
+    public async Task Placement_TargetsTheManagedDesktopAndRejectsAMismatchedToken()
+    {
+        RecordingLaunch launcher = new()
+        {
+            Response = """
+                {"achieved":true,"coordinateSpace":"physical-screen-pixels","requestedClient":{"x":10,"y":10,"width":20,"height":20},"measuredClient":{"x":10,"y":10,"width":20,"height":20},"activationPreserved":true,"attempts":[],"capturedPlacement":{"handle":"0x11","processId":9,"startTimeReadable":false,"showCommand":1,"normalWidth":30,"normalHeight":40}}
+                """
+        };
+        VestigoOptions options = new() { Desktop = { AllowWindowPlacement = true } };
+        WindowPlacementStore store = new(TimeProvider.System);
+        WindowPlacementTools tools = new(
+            new WindowPlacer(new UnusedPlacement(), store),
+            store,
+            new SessionHelperClient(launcher),
+            launcher,
+            options,
+            new FixedDesktop(input: false));
+
+        OperationResult<WindowPlacementResult> placed = await tools.SetWindowClientRect(
+            "0x11", 10, 10, 20, 20, savePlacement: true, desktopSessionId: "abc");
+
+        Assert.True(placed.Success, placed.Error);
+        Assert.Equal(@"winsta0\Vestigo-0123456789ab", launcher.Desktop);
+        Assert.False(string.IsNullOrWhiteSpace(placed.Value!.SavedPlacementToken));
+
+        OperationResult<WindowPlacementResult> mismatched = await tools.RestoreWindowPlacement(placed.Value.SavedPlacementToken!);
+        Assert.Equal("placement_desktop_mismatch", mismatched.ErrorCode);
+
+        OperationResult<WindowPlacementResult> restored = await tools.RestoreWindowPlacement(placed.Value.SavedPlacementToken!, desktopSessionId: "abc");
+        Assert.True(restored.Success, restored.Error);
+        Assert.Equal(@"winsta0\Vestigo-0123456789ab", launcher.Desktop);
+    }
+
     private static InputActionSpec Spec(string type) => new() { Type = type };
 
     private static InputActionSpec Wait(int ms) => new() { Type = "wait", Milliseconds = ms };
 
     private static InputActionSpec Type(string text) => new() { Type = "type", Text = text };
+
+    private sealed class UnusedPlacement : IWindowPlacementSource
+    {
+        public OperationResult<PlacementSample> Measure(string handle, int? expectedPid, DateTimeOffset? expectedStartTime) =>
+            throw new NotSupportedException();
+
+        public OperationResult<PlacementMove> MoveOuter(string handle, int? expectedPid, DateTimeOffset? expectedStartTime, DesktopRect outer) =>
+            throw new NotSupportedException();
+
+        public OperationResult<SavedWindowPlacement> ReadPlacement(string handle, int? expectedPid, DateTimeOffset? expectedStartTime) =>
+            throw new NotSupportedException();
+
+        public OperationResult<PlacementMove> ApplyPlacement(SavedWindowPlacement placement) =>
+            throw new NotSupportedException();
+
+        public string? Foreground() => null;
+    }
 
     private sealed class FixedDesktop(bool input) : IManagedDesktopDirectory
     {
@@ -354,12 +405,19 @@ public class InputTests
 
         public string? Desktop { get; private set; }
 
+        public string? Response { get; init; }
+
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
 
         public Task<int> RunAsync(LaunchRequest request, Vestigo.Jobs.JobContext output, CancellationToken cancellationToken)
         {
             Runs++;
             Desktop = request.Desktop;
+            if (Response is not null)
+            {
+                File.WriteAllText(output.OutputPath, Response);
+            }
+
             return Task.FromResult(0);
         }
     }

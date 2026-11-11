@@ -286,6 +286,76 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public async Task ReaderFailure_ReleasesTheSessionAndStaysUnknown()
+    {
+        ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)], ReadError = new InvalidOperationException("bad metadata") };
+        PresentationObserver observer = Observer(factory);
+
+        OperationResult<PresentationObservation> result = await observer.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal("decode_failed", result.Value.Reason);
+        Assert.Contains("bad metadata", result.Value.Detail);
+        Assert.Contains(result.Value.SessionName!, factory.Disposed);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task IsolatedCrash_DoesNotInventAModeAndClearsAStoppedSession()
+    {
+        ScriptedPresentation process = new() { ExitCode = unchecked((int)0xC0000005), Output = string.Empty, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal("decoder_terminated", result.Value.Reason);
+        Assert.Contains("0xC0000005", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+        Assert.Contains(process.Calls, call => call.Contains("stop"));
+    }
+
+    [Fact]
+    public async Task IsolatedMalformedOutput_IsUnknown()
+    {
+        ScriptedPresentation process = new() { ExitCode = 0, Output = "not-json", StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("decoder_terminated", result.Value!.Reason);
+        Assert.NotEqual("composed", result.Value.Mode);
+        Assert.NotEqual("independent-flip", result.Value.Mode);
+        Assert.NotEqual("exclusive", result.Value.Mode);
+    }
+
+    [Fact]
+    public async Task IsolatedCancellation_StopsTheDecoder()
+    {
+        ScriptedPresentation process = new() { WaitForCancel = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+        using CancellationTokenSource cancellation = new();
+        Task<OperationResult<PresentationObservation>> running = gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(5), cancellation.Token);
+        await cancellation.CancelAsync();
+
+        OperationResult<PresentationObservation> result = await running;
+
+        Assert.Equal("cancelled", result.Value!.Reason);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task IsolatedStartup_KeepsASessionThatFailsToStop()
+    {
+        File.WriteAllText(VestigoPaths.OwnedPresentationPath, JsonSerializer.Serialize(new[] { "Vestigo-P0123456789a", "Other Session" }));
+        ScriptedPresentation process = new() { StopExitCode = 1 };
+        await Gateway(process).StartAsync(CancellationToken.None);
+
+        Assert.Contains("Vestigo-P0123456789a", File.ReadAllText(VestigoPaths.OwnedPresentationPath), StringComparison.Ordinal);
+        Assert.DoesNotContain("Other Session", File.ReadAllText(VestigoPaths.OwnedPresentationPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WindowsObservation_IsOptIn()
     {
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_PRESENTATION_TESTS") != "1")
@@ -319,6 +389,9 @@ public class PresentationTests : IDisposable
 
     private PresentationObserver Observer(ScriptedFactory factory) =>
         new(factory, new VestigoOptions(), TimeProvider.System, NullLogger<PresentationObserver>.Instance);
+
+    private PresentationGateway Gateway(ScriptedPresentation process) =>
+        new(process, new VestigoOptions(), TimeProvider.System, NullLogger<PresentationGateway>.Instance);
 
     private static PresentationSample Parsed(string json)
     {
@@ -360,6 +433,45 @@ public class PresentationTests : IDisposable
         Assert.NotEmpty(factory.Created);
     }
 
+    private sealed class ScriptedPresentation : IPresentationProcess
+    {
+        public int? ExitCode { get; init; }
+
+        public string Output { get; init; } = string.Empty;
+
+        public bool WaitForCancel { get; init; }
+
+        public int StopExitCode { get; init; }
+
+        public List<string[]> Calls { get; } = [];
+
+        public async Task<PresentationProcessResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add(arguments.ToArray());
+            if (arguments.Contains("stop"))
+            {
+                return new PresentationProcessResult(StopExitCode, "{\"success\":true}", false, false);
+            }
+
+            if (WaitForCancel)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return new PresentationProcessResult(null, string.Empty, true, false);
+                }
+            }
+
+            return new PresentationProcessResult(ExitCode, Output, false, false);
+        }
+    }
+
     private sealed class ScriptedFactory : IRealtimeTraceSessionFactory
     {
         public string[] Events { get; init; } = [];
@@ -371,6 +483,8 @@ public class PresentationTests : IDisposable
         public bool FailDispose { get; set; }
 
         public bool FailLossQuery { get; init; }
+
+        public Exception? ReadError { get; init; }
 
         public Exception? CreateError { get; init; }
 
@@ -428,6 +542,11 @@ public class PresentationTests : IDisposable
                 Action onMissingFormat,
                 [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
             {
+                if (factory.ReadError is not null)
+                {
+                    throw factory.ReadError;
+                }
+
                 if (factory.Hold)
                 {
                     await factory._gate.Task.WaitAsync(cancellationToken);

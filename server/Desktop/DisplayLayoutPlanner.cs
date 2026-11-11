@@ -80,7 +80,10 @@ public sealed record DisplayLayoutApplyResult(
     string? ErrorCode,
     string? Error,
     DisplayLayoutSnapshot? Before,
-    DisplayLayoutSnapshot? After);
+    DisplayLayoutSnapshot? After,
+    string? Stage = null,
+    string? Flags = null,
+    bool Unchanged = false);
 
 public sealed record DisplayLayoutTransaction(
     string Id,
@@ -93,7 +96,8 @@ public sealed record DisplayLayoutTransaction(
     DisplayLayoutSnapshot? Current,
     bool RestorationVerified,
     IReadOnlyList<string> Differences,
-    string? Error);
+    string? Error,
+    bool Unchanged = false);
 
 public sealed record DisplayLayoutObservation(
     string Id,
@@ -341,5 +345,41 @@ public static class DisplayLayoutPlanner
         {
             yield return expected.Identity.Key + " mode differs";
         }
+    }
+}
+
+/// <summary>
+///     Decides which CCD fields a request may change. A position-only request leaves the target signal and refresh alone.
+/// </summary>
+public readonly record struct DisplayModePatch(
+    bool Move,
+    bool ResizeSource,
+    bool ResizeSignal,
+    bool ChangeRefresh,
+    bool ChangeRotation,
+    bool Unsupported,
+    bool AnyChange)
+{
+    public static DisplayModePatch For(DisplayPathLayout current, DisplayTargetChange change)
+    {
+        bool move = current.X != change.X || current.Y != change.Y;
+        bool resize = current.Width != change.Width || current.Height != change.Height;
+        int signalWidth = current.SignalWidth ?? current.Width;
+        int signalHeight = current.SignalHeight ?? current.Height;
+        bool coupled = signalWidth == current.Width && signalHeight == current.Height;
+        bool refresh = change.RefreshNumerator is uint numerator
+            && change.RefreshDenominator is uint denominator
+            && denominator != 0
+            && (numerator != current.RefreshNumerator || denominator != current.RefreshDenominator);
+        bool rotation = change.Rotation is not null
+            && !string.Equals(change.Rotation, current.Rotation, StringComparison.OrdinalIgnoreCase);
+        return new DisplayModePatch(
+            move,
+            resize && coupled,
+            resize && coupled,
+            refresh,
+            rotation,
+            resize && !coupled,
+            move || (resize && coupled) || refresh || rotation);
     }
 }

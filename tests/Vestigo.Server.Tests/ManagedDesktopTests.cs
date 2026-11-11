@@ -69,6 +69,37 @@ public class ManagedDesktopTests : IDisposable
     }
 
     [Fact]
+    public async Task ClosedRetention_ClearsAfterTheDesktopDisappears()
+    {
+        RecordingHost host = new() { RetainOnClose = true };
+        ManagedDesktopSessionManager manager = Manager(host, allow: true);
+        OperationResult<ManagedDesktopSession> created = await manager.CreateAsync("terminate-owned", CancellationToken.None);
+        OperationResult<ManagedDesktopSession> closed = await manager.CloseAsync(created.Value!.Id, null, CancellationToken.None);
+
+        Assert.True(closed.Value!.DesktopRetained);
+        Assert.Equal("close-time-retained", closed.Value.DesktopPresence);
+        Assert.Equal("Windows kept the desktop because another handle or thread still uses it.", closed.Value.LastError);
+
+        OperationResult<ManagedDesktopSession> pending = await manager.GetAsync(created.Value.Id);
+        Assert.True(pending.Value!.DesktopRetained);
+        Assert.Equal("cleanup-pending", pending.Value.DesktopPresence);
+        Assert.NotNull(pending.Value.LastError);
+
+        host.ExternallyPresent.Clear();
+        host.FailEnumerate = true;
+        OperationResult<ManagedDesktopSession> unknown = await manager.GetAsync(created.Value.Id);
+        Assert.Equal("enumeration-unknown", unknown.Value!.DesktopPresence);
+        Assert.True(unknown.Value.DesktopRetained);
+        Assert.NotNull(unknown.Value.LastError);
+
+        host.FailEnumerate = false;
+        OperationResult<ManagedDesktopSession> gone = await manager.GetAsync(created.Value.Id);
+        Assert.False(gone.Value!.DesktopRetained);
+        Assert.Equal("confirmed-absent", gone.Value.DesktopPresence);
+        Assert.Null(gone.Value.LastError);
+    }
+
+    [Fact]
     public async Task Create_RefusesASecureInputDesktop()
     {
         RecordingHost host = new() { Secure = true };
@@ -77,7 +108,7 @@ public class ManagedDesktopTests : IDisposable
         OperationResult<ManagedDesktopSession> created = await manager.CreateAsync("terminate-owned", CancellationToken.None);
 
         Assert.Equal("secure_desktop_active", created.ErrorCode);
-        Assert.Empty(manager.List().Value!.Where(session => session.State is "open" or "active"));
+        Assert.Empty((await manager.ListAsync()).Value!.Where(session => session.State is "open" or "active"));
     }
 
     [Fact]
@@ -113,7 +144,7 @@ public class ManagedDesktopTests : IDisposable
 
         Assert.Equal("processes_still_running", closed.ErrorCode);
         Assert.Empty(host.Operations);
-        Assert.True(manager.Get(created.Id).Value!.InputSwitched);
+        Assert.True((await manager.GetAsync(created.Id)).Value!.InputSwitched);
         Assert.Empty(cleanup.Terminated);
     }
 
@@ -148,7 +179,7 @@ public class ManagedDesktopTests : IDisposable
 
         Assert.Equal("cancelled", created.ErrorCode);
         Assert.Contains("close", host.Operations);
-        Assert.Empty(manager.List().Value!.Where(session => session.State is "open" or "active"));
+        Assert.Empty((await manager.ListAsync()).Value!.Where(session => session.State is "open" or "active"));
     }
 
     [Fact]
@@ -164,7 +195,7 @@ public class ManagedDesktopTests : IDisposable
 
         await manager.SweepAsync();
 
-        Assert.Equal("closed", manager.Get(created.Id).Value!.State);
+        Assert.Equal("closed", (await manager.GetAsync(created.Id)).Value!.State);
         Assert.Equal([7], cleanup.Terminated);
     }
 
@@ -198,7 +229,7 @@ public class ManagedDesktopTests : IDisposable
 
         Assert.Equal(["recover:restore", "recover:close"], host.Operations);
         Assert.Equal([9], cleanup.Terminated);
-        Assert.Equal("closed", manager.Get(session.Id).Value!.State);
+        Assert.Equal("closed", (await manager.GetAsync(session.Id)).Value!.State);
         Assert.DoesNotContain(host.RecoveredNames, name => name.Equals("Winlogon", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -215,7 +246,7 @@ public class ManagedDesktopTests : IDisposable
 
         await manager.StartAsync(CancellationToken.None);
 
-        ManagedDesktopSession session = manager.Get("abc123").Value!;
+        ManagedDesktopSession session = (await manager.GetAsync("abc123")).Value!;
         Assert.Equal("recovery-failed", session.State);
         Assert.True(session.InputSwitched);
         Assert.Empty(cleanup.Terminated);
@@ -227,7 +258,7 @@ public class ManagedDesktopTests : IDisposable
         ManagedDesktopSessionManager retry = Manager(host, allow: true, cleanup);
         await retry.StartAsync(CancellationToken.None);
 
-        ManagedDesktopSession recovered = retry.Get("abc123").Value!;
+        ManagedDesktopSession recovered = (await retry.GetAsync("abc123")).Value!;
         Assert.Equal("closed", recovered.State);
         Assert.False(recovered.InputSwitched);
         Assert.Equal([9], cleanup.Terminated);
@@ -265,7 +296,7 @@ public class ManagedDesktopTests : IDisposable
 
         Assert.Equal("desktop_unavailable", closed.ErrorCode);
         Assert.Equal("The original desktop could not be opened.", closed.Error);
-        Assert.Equal("active", manager.Get(created.Id).Value!.State);
+        Assert.Equal("active", (await manager.GetAsync(created.Id)).Value!.State);
     }
 
     [Fact]
@@ -278,7 +309,7 @@ public class ManagedDesktopTests : IDisposable
         OperationResult<ManagedDesktopSession> active = await manager.ActivateAsync(created.Id, CancellationToken.None);
 
         Assert.Equal("helper_timeout", active.ErrorCode);
-        ManagedDesktopSession stored = manager.Get(created.Id).Value!;
+        ManagedDesktopSession stored = (await manager.GetAsync(created.Id)).Value!;
         Assert.Equal("open", stored.State);
         Assert.True(stored.InputSwitched);
         Assert.Contains("\"inputSwitched\":true", await File.ReadAllTextAsync(VestigoPaths.OwnedDesktopsPath), StringComparison.Ordinal);
@@ -297,7 +328,7 @@ public class ManagedDesktopTests : IDisposable
         OperationResult<ManagedDesktopSession> closed = await manager.CloseAsync(created.Id, "terminate-owned", CancellationToken.None);
 
         Assert.Equal("desktop_unavailable", closed.ErrorCode);
-        ManagedDesktopSession stored = manager.Get(created.Id).Value!;
+        ManagedDesktopSession stored = (await manager.GetAsync(created.Id)).Value!;
         Assert.Equal("recovery-failed", stored.State);
         Assert.True(stored.InputSwitched);
         Assert.Empty(cleanup.Terminated);
@@ -553,6 +584,12 @@ public class ManagedDesktopTests : IDisposable
 
         public bool Secure { get; init; }
 
+        public bool RetainOnClose { get; set; }
+
+        public bool FailEnumerate { get; set; }
+
+        public HashSet<string> ExternallyPresent { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public bool FailRestore { get; set; }
 
         public string? RestoreCode { get; init; }
@@ -587,7 +624,9 @@ public class ManagedDesktopTests : IDisposable
                 DesktopHostOperations.Activate => Activate(command),
                 DesktopHostOperations.Restore => Restore(command),
                 DesktopHostOperations.Close => Close(command),
-                DesktopHostOperations.Enumerate => Enumerate(command),
+                DesktopHostOperations.Enumerate => FailEnumerate
+                    ? DesktopCommandResult.Fail(command.RequestId, "desktop_unavailable", "Enumeration failed.")
+                    : Enumerate(command),
                 DesktopHostOperations.Shutdown => new DesktopCommandResult(command.RequestId, true, null, null, null, null, null, "WinSta0", 1, "Default", _input, true, true, false, false, 1, null),
                 _ => DesktopCommandResult.Fail(command.RequestId, "invalid_request", "Unknown.")
             };
@@ -649,7 +688,12 @@ public class ManagedDesktopTests : IDisposable
                 _input = "Default";
             }
 
-            return new DesktopCommandResult(command.RequestId, true, null, null, null, command.SessionId, command.DesktopName, "WinSta0", 1, "Default", _input, true, true, false, false, 1, null);
+            if (RetainOnClose)
+            {
+                ExternallyPresent.Add(command.DesktopName!);
+            }
+
+            return new DesktopCommandResult(command.RequestId, true, null, null, null, command.SessionId, command.DesktopName, "WinSta0", 1, "Default", _input, true, true, RetainOnClose, false, 1, null);
         }
 
         private DesktopCommandResult Enumerate(DesktopCommand command)
@@ -658,7 +702,8 @@ public class ManagedDesktopTests : IDisposable
             [
                 new("Default", "user", false),
                 new("Winlogon", "secure", false),
-                .. _owned.Keys.Select(name => new EnumeratedDesktop(name, "owned", true))
+                .. _owned.Keys.Select(name => new EnumeratedDesktop(name, "owned", true)),
+                .. ExternallyPresent.Select(name => new EnumeratedDesktop(name, "owned", false))
             ];
             return new DesktopCommandResult(command.RequestId, true, null, null, null, null, null, "WinSta0", 1, "Default", _input, false, false, false, false, 1, desktops);
         }

@@ -8,7 +8,7 @@ namespace Vestigo.Tools;
 
 /// <summary>Read-only ETW observation of how a process is presenting.</summary>
 [McpServerToolType]
-public sealed class PresentationTools(PresentationObserver observer)
+public sealed class PresentationTools(PresentationGateway observer)
 {
     [McpServerTool(Name = "observe_presentation")]
     [Description(
