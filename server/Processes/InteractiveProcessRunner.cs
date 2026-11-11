@@ -53,8 +53,9 @@ internal static class InteractiveProcessRunner
         Dictionary<string, string> environment = ReadUserEnvironment(token.Handle);
         char[] block = EnvironmentBlock.Build(environment, request.Environment);
         string desktop = ResolveDesktop(request);
-        PROCESS_INFORMATION info = StartSuspended(token.Handle, request, spool, nul, block, desktop);
+        PROCESS_INFORMATION info = StartSuspended(token.Handle, request, spool, request.StandardInput ?? nul, block, desktop);
         Publish(request, info, token);
+        request.ReleaseInheritedInput?.Invoke();
 
         using SafeFileHandle process = new(info.hProcess, ownsHandle: true);
         using SafeFileHandle thread = new(info.hThread, ownsHandle: true);
@@ -142,20 +143,22 @@ internal static class InteractiveProcessRunner
 
         uint session;
         int? sessionId = PInvoke.ProcessIdToSessionId(info.dwProcessId, &session) ? (int)session : null;
+        DateTimeOffset? started = ProcessStartTime.TryRead((nint)info.hProcess, out DateTimeOffset start, out _) ? start : null;
         request.Report.Publish(new ProcessLaunchReport(
             unchecked((int)info.dwProcessId),
             sessionId,
             station,
             desktop,
             ReadTokenElevated(token.Handle),
-            token.ElevationType));
+            token.ElevationType,
+            started));
     }
 
     private static unsafe PROCESS_INFORMATION StartSuspended(
         SafeFileHandle token,
         LaunchRequest request,
-        SafeFileHandle spool,
-        SafeFileHandle nul,
+        SafeHandle spool,
+        SafeHandle nul,
         char[] block,
         string desktop)
     {

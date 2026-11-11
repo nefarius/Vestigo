@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 using Vestigo.Configuration;
@@ -18,7 +19,9 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         TimeSpan timeout,
         long maxOutputBytes,
         CancellationToken cancellationToken,
-        string? desktop = null)
+        string? desktop = null,
+        SafeHandle? standardInput = null,
+        Action? releaseInheritedInput = null)
     {
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
@@ -49,7 +52,9 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
                 new Dictionary<string, string>(),
                 LaunchContext.Interactive,
                 elevated,
-                desktop);
+                desktop,
+                StandardInput: standardInput,
+                ReleaseInheritedInput: releaseInheritedInput);
 
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             linked.CancelAfter(timeout);
@@ -90,7 +95,15 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         try
         {
             using JsonDocument document = JsonDocument.Parse(line);
-            if (document.RootElement.TryGetProperty("error", out JsonElement error))
+            if (document.RootElement.TryGetProperty("success", out _))
+            {
+                T? command = document.RootElement.Deserialize<T>(SessionHelper.Json);
+                return command is null
+                    ? OperationResult<T>.Fail("helper_failed", "The session helper returned an empty result.")
+                    : OperationResult<T>.Ok(command);
+            }
+
+            if (document.RootElement.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.String)
             {
                 string code = document.RootElement.TryGetProperty("errorCode", out JsonElement errorCode) &&
                               errorCode.GetString() is { Length: > 0 } parsed

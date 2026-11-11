@@ -389,17 +389,35 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             }
         }
 
+        string? restoreError = null;
         if (session.InputSwitched)
         {
             OperationResult<DesktopCommandResult> restored = await _host.SendAsync(
                 new DesktopCommand(Guid.NewGuid().ToString("N"), DesktopHostOperations.Restore, session.Id, session.DesktopName, null, session.OriginalInputDesktop),
                 cancellationToken).ConfigureAwait(false);
-            if (!Accepted(restored) && restored.Value?.ErrorCode != "input_desktop_changed" && restored.ErrorCode != "input_desktop_changed")
+            bool moved = restored.Value?.ErrorCode == "input_desktop_changed" || restored.ErrorCode == "input_desktop_changed";
+            if (!Accepted(restored) && !moved)
             {
-                ManagedDesktopSession failed = session with { LastError = restored.Error };
-                _sessions[id] = failed;
-                Save();
-                return restored.FailAs<ManagedDesktopSession>();
+                bool lost = restored.ErrorCode is "desktop_host_lost" or "desktop_session_not_found"
+                    || restored.Value?.ErrorCode is "desktop_host_lost" or "desktop_session_not_found";
+                if (automatic || lost)
+                {
+                    OperationResult<DesktopCommandResult> recovered = await _host.RecoverAsync(
+                        new DesktopCommand(Guid.NewGuid().ToString("N"), DesktopHostOperations.RestorePhase, session.Id, session.DesktopName, null, session.OriginalInputDesktop),
+                        cancellationToken).ConfigureAwait(false);
+                    bool recoveredMove = recovered.Value?.ErrorCode == "input_desktop_changed" || recovered.ErrorCode == "input_desktop_changed";
+                    if (!Accepted(recovered) && !recoveredMove)
+                    {
+                        restoreError = recovered.Value?.Error ?? recovered.Error ?? restored.Value?.Error ?? restored.Error;
+                    }
+                }
+                else
+                {
+                    ManagedDesktopSession failed = session with { LastError = restored.Value?.Error ?? restored.Error };
+                    _sessions[id] = failed;
+                    Save();
+                    return restored.FailAs<ManagedDesktopSession>();
+                }
             }
         }
 
@@ -420,7 +438,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             InputSwitched = false,
             HandleHeld = !released,
             DesktopRetained = retained,
-            LastError = accepted ? retained ? "Windows kept the desktop because another handle or thread still uses it." : null : closed.Value?.Error ?? closed.Error
+            LastError = restoreError ?? (accepted ? retained ? "Windows kept the desktop because another handle or thread still uses it." : null : closed.Value?.Error ?? closed.Error)
         };
         _sessions[id] = updated;
         Save();
@@ -443,9 +461,21 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
         {
             if (session.InputSwitched)
             {
-                await _host.RecoverAsync(
+                OperationResult<DesktopCommandResult> restored = await _host.RecoverAsync(
                     new DesktopCommand(session.Id + "-restore", DesktopHostOperations.RestorePhase, session.Id, session.DesktopName, null, session.OriginalInputDesktop),
                     cancellationToken).ConfigureAwait(false);
+                bool moved = restored.Value?.ErrorCode == "input_desktop_changed" || restored.ErrorCode == "input_desktop_changed";
+                if (!Accepted(restored) && !moved)
+                {
+                    _sessions[session.Id] = session with
+                    {
+                        State = "recovery-failed",
+                        InputSwitched = true,
+                        LastError = restored.Value?.Error ?? restored.Error
+                    };
+                    Save();
+                    return;
+                }
             }
 
             await _cleanup.TerminateAsync(session.Processes, cancellationToken).ConfigureAwait(false);

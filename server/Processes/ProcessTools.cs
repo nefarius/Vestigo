@@ -142,8 +142,11 @@ public sealed class ProcessTools(
             ProcessLaunchReport? launch = await WaitForLaunchAsync(report!, startedId, cancellationToken).ConfigureAwait(false);
             if (lease is not null && launch is not null)
             {
-                lease.Attach(new OwnedDesktopProcess(started.Value.Id, launch.ProcessId, launch.Elevated));
+                lease.Attach(new OwnedDesktopProcess(started.Value.Id, launch.ProcessId, launch.Elevated, launch.StartedAt));
             }
+
+            lease?.Dispose();
+            lease = null;
 
             int seconds = Math.Clamp(wait, 0, 300);
             if (seconds == 0)
@@ -166,7 +169,7 @@ public sealed class ProcessTools(
         {
             if (lease is not null && startedId is not null && report?.Value is { } published)
             {
-                lease.Attach(new OwnedDesktopProcess(startedId, published.ProcessId, published.Elevated));
+                lease.Attach(new OwnedDesktopProcess(startedId, published.ProcessId, published.Elevated, published.StartedAt));
             }
 
             throw;

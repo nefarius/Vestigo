@@ -24,9 +24,14 @@ public static class InputStateInspection
             return OperationResult<InputStateReport>.Fail("windows_required", "Input-state inspection requires Windows.");
         }
 
-        if (!ScreenCapture.IsInputDesktopAvailable(out string? desktopError, requireDesktopNames: true))
+        if (!ScreenCapture.TryReadDesktopRelation(out string? desktopError, out bool inactive, requireDesktopNames: true) || inactive)
         {
-            return OperationResult<InputStateReport>.Fail("secure_desktop_active", desktopError!);
+            return inactive
+                ? OperationResult<InputStateReport>.Fail(
+                    "unsupported_on_inactive_desktop",
+                    "The helper is not running on the input desktop.",
+                    "desktop_inactive")
+                : OperationResult<InputStateReport>.Fail("secure_desktop_active", desktopError!);
         }
 
         HWND foreground = PInvoke.GetForegroundWindow();

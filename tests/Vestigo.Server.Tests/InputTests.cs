@@ -336,6 +336,14 @@ public class InputTests
                 new DesktopHelperTarget(sessionId, @"winsta0\Vestigo-0123456789ab", "Vestigo-0123456789ab", input)));
     }
 
+    [Fact]
+    public void FocusGranted_IgnoresHexPadding()
+    {
+        Assert.True(InputInjector.FocusGranted("0x00001A2B", "0x1A2B"));
+        Assert.False(InputInjector.FocusGranted("0x1A2B", "0x1A2C"));
+        Assert.Null(InputInjector.FocusGranted("  ", "0x1A2B"));
+    }
+
     private sealed class RecordingLaunch : IProcessLauncher
     {
         public string? Desktop { get; private set; }

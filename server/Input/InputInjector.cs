@@ -41,9 +41,14 @@ public static class InputInjector
         nint previousDpi = WindowEnumerator.SetDpiAware();
         try
         {
-            if (!ScreenCapture.IsInputDesktopAvailable(out string? desktopError, requireDesktopNames: true))
+            if (!ScreenCapture.TryReadDesktopRelation(out string? desktopError, out bool inactive, requireDesktopNames: true) || inactive)
             {
-                return OperationResult<InputResult>.Fail("secure_desktop_active", desktopError!);
+                return inactive
+                    ? OperationResult<InputResult>.Fail(
+                        "unsupported_on_inactive_desktop",
+                        "The helper is not running on the input desktop.",
+                        "desktop_inactive")
+                    : OperationResult<InputResult>.Fail("secure_desktop_active", desktopError!);
             }
 
             string? warning = null;
@@ -82,9 +87,7 @@ public static class InputInjector
             }
 
             string? actualFocus = ReadForeground();
-            bool? granted = string.IsNullOrWhiteSpace(batch.FocusWindow)
-                ? null
-                : string.Equals(actualFocus, batch.FocusWindow.Trim(), StringComparison.OrdinalIgnoreCase);
+            bool? granted = FocusGranted(batch.FocusWindow, actualFocus);
             ReadCursor(out int? cursorX, out int? cursorY);
             return OperationResult<InputResult>.Ok(new InputResult(
                 performed,
@@ -101,6 +104,18 @@ public static class InputInjector
         {
             WindowEnumerator.RestoreDpi(previousDpi);
         }
+    }
+
+    internal static bool? FocusGranted(string? requested, string? actual)
+    {
+        if (string.IsNullOrWhiteSpace(requested))
+        {
+            return null;
+        }
+
+        return WindowInspection.TryParseHandle(requested, out HWND wanted)
+               && WindowInspection.TryParseHandle(actual, out HWND seen)
+               && (nint)wanted == (nint)seen;
     }
 
     private static OperationResult<string?> Focus(string handleText)
