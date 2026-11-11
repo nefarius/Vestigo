@@ -25,7 +25,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Registry opt-in</span></p>
     <h2>Registry</h2>
-    <p><code>read_registry_value</code>, <code>list_registry_values</code>, and <code>get_registry_metadata</code> read one allow-listed key. An empty allow list uses built-in Windows locations. A denied prefix, including Winlogon, wins. <code>HKCU</code> is the console user. Choose <code>registry64</code> or <code>registry32</code> explicitly.</p>
+    <p><code>read_registry_value</code>, <code>list_registry_values</code>, and <code>get_registry_metadata</code> read one allow-listed key. An empty allow list uses built-in Windows locations. A denied prefix, including Winlogon, wins. A symbolic link is followed only when its target also passes those checks. <code>HKCU</code> is the console user. Choose <code>registry64</code> or <code>registry32</code> explicitly.</p>
     <p>There is no write tool. A binary larger than <code>Registry:MaxBinaryBytes</code> is not returned. Values are not written to the log.</p>
   </article>
   <article class="card">
@@ -49,13 +49,13 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span></p>
     <h2>Devices and drivers</h2>
-    <p>Install and uninstall driver packages, create and remove ROOT device nodes, edit class filters, run <code>[DefaultInstall]</code> INFs, list the driver store, and enable, disable, or restart a device. Queries run in-process; mutating calls go through bundled nefcon.</p>
+    <p>Install and uninstall driver packages, create and remove ROOT device nodes, edit class filters, run <code>[DefaultInstall]</code> INFs, list the driver store, and enable, disable, or restart a device. <code>inspect_hid_device</code> reads HID usages, report lengths, and identity strings. It does not return a raw report descriptor or keystrokes. Queries run in-process; mutating calls go through bundled nefcon.</p>
     <p>Installing a driver is kernel-mode code execution. Enable this module only on machines you intend to debug drivers on.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Screenshots gated</span></p>
     <h2>Desktop and screenshots</h2>
-    <p>List and inspect windows, capture window creation, show, hide, foreground and location changes, and list displays on the console user's desktop. Screenshots stay off until <code>Desktop:AllowScreenshots</code> is true. Moving a window by its client rectangle stays off until <code>Desktop:AllowWindowPlacement</code> is true. Temporary display-layout changes stay off until <code>Desktop:AllowDisplayLayoutChanges</code> is true. Named test desktops stay off until <code>Desktop:AllowDesktopSessions</code> is true. Window listing can target an inactive test desktop. Input and a full-desktop capture wait until that desktop is activated. Vestigo assigns the desktop name, refuses the lock screen and UAC, and restores the recorded input desktop on close. Vestigo does not create virtual displays. <code>get_virtual_display_backend</code> reports that no released backend is selected. Capture the virtual screen, one display, one window, or a rectangle, and optionally save a PNG into a write root. <code>share: true</code> adds a 10-minute, single-use link to the downscaled preview so a person can open or copy it when the chat does not show the MCP image.</p>
+    <p>List and inspect windows, capture window creation, show, hide, foreground and location changes, and list displays on the console user's desktop. Screenshots stay off until <code>Desktop:AllowScreenshots</code> is true. Moving a window by its client rectangle stays off until <code>Desktop:AllowWindowPlacement</code> is true. <code>snapshot_display_layout</code> includes inactive connectors and names clone or extend from source identity. Temporary display-layout changes stay off until <code>Desktop:AllowDisplayLayoutChanges</code> is true. Named test desktops stay off until <code>Desktop:AllowDesktopSessions</code> is true. Window listing can target an inactive test desktop. Input and a full-desktop capture wait until that desktop is activated. Vestigo assigns the desktop name, refuses the lock screen and UAC, and restores the recorded input desktop on close. Vestigo does not create virtual displays. <code>get_virtual_display_backend</code> reports that no released backend is selected. Capture the virtual screen, one display, one window, or a rectangle, and optionally save a PNG into a write root. <code>share: true</code> adds a 10-minute, single-use link to the downscaled preview so a person can open or copy it when the chat does not show the MCP image.</p>
     <p>The lock screen and UAC secure desktop return <code>desktop_unavailable</code>. Some GPU or DRM windows capture black.</p>
   </article>
   <article class="card">
@@ -93,7 +93,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>Power</h2>
     <p><code>get_power_state</code> reports AC status, battery presence, percent, and charging separately, the active scheme, approximate last sleep and wake times, and platform capabilities. <code>get_sleep_configuration</code> reports AC and DC lid, timeout, wake-timer, and hybrid-sleep settings.</p>
-    <p>A missing policy value is null, not <code>doNothing</code>. A machine with no battery leaves the battery fields null. There is no scheme write and no list of power-request owners.</p>
+    <p><code>get_last_wake_source</code> reports the newest Power-Troubleshooter resume event. The wake-source type stays a number. A missing policy value is null, not <code>doNothing</code>. A machine with no battery leaves the battery fields null. There is no scheme write and no list of power-request owners.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span></p>
@@ -104,8 +104,8 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Online revocation gated</span></p>
     <h2>Diagnostics</h2>
-    <p><code>inspect_binary</code> reads architecture, characteristics, version, and the CodeView PDB file name. <code>verify_file_signature</code> checks an embedded or catalog Authenticode signature. <code>list_process_modules</code> lists modules loaded in a process and returns root aliases only. <code>get_device_install_history</code> reads the fixed SetupAPI dev logs. <code>explain_device_problem</code> states the documented CM_PROB meaning and cites observed evidence.</p>
-    <p>A valid signature is not permission to load a kernel driver. Online revocation stays off until <code>Diagnostics:AllowOnlineRevocation</code> is true. Absolute module paths are never returned. Install history does not rank drivers. Graphics, network, media, and crash tools below are part of this same module.</p>
+    <p><code>inspect_binary</code> reads architecture, characteristics, version, and the CodeView PDB file name. <code>verify_file_signature</code> checks an embedded or catalog Authenticode signature. <code>list_process_modules</code> lists modules loaded in a process and returns root aliases only. <code>get_device_install_history</code> reads the fixed SetupAPI dev logs. <code>explain_device_problem</code> states the documented CM_PROB meaning and cites observed evidence. <code>explain_driver_load_failure</code> adds the service image signature, matching Code Integrity events, the HVCI scenario value, and Windows lockdown mode. Hypotheses cite that evidence and do not assert a cause.</p>
+    <p>A valid signature is not permission to load a kernel driver. <code>get_driver_verifier_state</code> reads the current query and the saved settings. It does not enable verifier. Online revocation stays off until <code>Diagnostics:AllowOnlineRevocation</code> is true. Absolute module paths are never returned. Install history does not rank drivers. Graphics, network, media, and crash tools below are part of this same module.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Capture probes gated</span></p>
@@ -131,6 +131,8 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p><code>list_crash_reports</code> reads Windows Error Reporting metadata from the machine and user stores: application, event type, and signature values. A dump beside a report is a file name and length only.</p>
     <p><code>list_kernel_dumps</code> lists <code>MEMORY.DMP</code>, the dedicated dump file, and minidumps. It returns file names, lengths, and a small header prefix. Bugcheck fields and dump bytes are not returned.</p>
     <p><code>capture_process_dump</code> stays off until <code>Diagnostics:AllowProcessDumps</code> is true. It writes a minidump into a write root, refuses protected processes and processes on the fixed refusal list, and does not upload the file or create a download ticket. A full dump can contain process memory.</p>
+    <p><code>get_firewall_profiles</code> and <code>list_firewall_rules</code> stay off until <code>Diagnostics:AllowFirewallInventory</code> is true. They return stored profile flags and raw rule expressions, including application paths. A stored action is not a verdict that traffic was blocked, and a probe timeout is not reported as a firewall block. The tools do not change policy.</p>
+    <p><code>set_driver_verifier</code> stays off until <code>Diagnostics:AllowDriverVerifier</code> is true. It saves standard flags for named drivers and does not reboot. <code>reset_driver_verifier</code> stays available.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>

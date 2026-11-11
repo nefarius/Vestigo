@@ -81,6 +81,91 @@ public class PowerTests
 
         Assert.Equal("power_api_failed", service.GetPowerState().ErrorCode);
         Assert.Equal("power_api_failed", service.GetSleepConfiguration().ErrorCode);
+        Assert.Equal("power_api_failed", service.GetLastWakeSource().ErrorCode);
+    }
+
+    [Fact]
+    public void WakeSource_ReadsStructuredFieldsAndLeavesUnknownTypeNumeric()
+    {
+        string xml = """
+            <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+              <System>
+                <Provider Name="Microsoft-Windows-Power-Troubleshooter"/>
+                <EventID>1</EventID>
+                <EventRecordID>42</EventRecordID>
+              </System>
+              <EventData>
+                <Data Name="SleepTime">2026-01-02T03:00:00.0000000Z</Data>
+                <Data Name="WakeTime">2026-01-02T03:04:05.0000000Z</Data>
+                <Data Name="WakeSourceType">7</Data>
+                <Data Name="WakeSourceText">PCI Express Root Port</Data>
+                <Data Name="WakeTimerOwner">ContosoTimer.exe</Data>
+                <Data Name="WakeTimerContext">daily</Data>
+              </EventData>
+            </Event>
+            """;
+
+        WakeSourceResult parsed = WakeSourceEvent.Parse(xml);
+
+        Assert.True(parsed.EventFound);
+        Assert.Equal(new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero), parsed.WakeTimeUtc);
+        Assert.Equal(new DateTimeOffset(2026, 1, 2, 3, 0, 0, TimeSpan.Zero), parsed.SleepTimeUtc);
+        Assert.Equal(7, parsed.WakeSourceType);
+        Assert.Equal("PCI Express Root Port", parsed.WakeSourceText);
+        Assert.Equal("ContosoTimer.exe", parsed.WakeTimerOwner);
+        Assert.Equal("daily", parsed.WakeTimerContext);
+        Assert.Equal(42, parsed.EventRecordId);
+        Assert.False(parsed.TextTruncated);
+    }
+
+    [Fact]
+    public void WakeSource_OmitsMissingTextAndTruncatesALongField()
+    {
+        string longText = new('x', WakeSourceEvent.MaxTextChars + 8);
+        string xml = $"""
+            <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+              <System>
+                <Provider Name="Microsoft-Windows-Power-Troubleshooter"/>
+                <EventID>1</EventID>
+              </System>
+              <EventData>
+                <Data Name="WakeSourceType">nope</Data>
+                <Data Name="WakeSourceText">{longText}</Data>
+                <Data Name="WakeTimerOwner"> </Data>
+              </EventData>
+            </Event>
+            """;
+
+        WakeSourceResult parsed = WakeSourceEvent.Parse(xml);
+
+        Assert.True(parsed.EventFound);
+        Assert.Null(parsed.WakeTimeUtc);
+        Assert.Null(parsed.WakeSourceType);
+        Assert.Equal(WakeSourceEvent.MaxTextChars, parsed.WakeSourceText!.Length);
+        Assert.Null(parsed.WakeTimerOwner);
+        Assert.True(parsed.TextTruncated);
+        Assert.False(WakeSourceEvent.Parse("<not-an-event/>").EventFound);
+        Assert.False(WakeSourceEvent.Parse(null).EventFound);
+    }
+
+    [Fact]
+    public void WindowsPlatform_ReadsTheLastWakeSourceWithoutClassifyingIt()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Requires Windows.");
+        }
+
+        WakeSourceResult wake = new WindowsPowerPlatform().ReadLastWake();
+        if (!wake.EventFound)
+        {
+            Assert.Null(wake.WakeSourceText);
+            Assert.Null(wake.WakeSourceType);
+            return;
+        }
+
+        Assert.True(wake.WakeSourceText is null || wake.WakeSourceText.Length <= WakeSourceEvent.MaxTextChars);
+        Assert.True(wake.WakeTimerOwner is null || wake.WakeTimerOwner.Length <= WakeSourceEvent.MaxTextChars);
     }
 
     [Fact]
@@ -160,5 +245,7 @@ public class PowerTests
         public PowerStateSample ReadState() => throw new IOException("Power status could not be read.");
 
         public SleepConfigurationSample ReadSleep() => throw new IOException("Sleep policy could not be read.");
+
+        public WakeSourceResult ReadLastWake() => throw new IOException("The last wake source could not be read.");
     }
 }
