@@ -14,8 +14,21 @@ public sealed record TlsObservation(
     string? Thumbprint,
     IReadOnlyList<string> ChainStatus);
 
+/// <summary>One UDP datagram. <see cref="Reachability" /> says what the outcome does not prove.</summary>
+public sealed record UdpObservation(string Outcome, int BytesSent, int BytesReceived, string Reachability, StunObservation? Stun)
+{
+    public const string SentDoesNotProveReachability = "A sent datagram does not prove the peer is reachable. A blocked UDP port can fail silently, and a timeout is not a firewall block.";
+
+    public const string StunSilent = "No matching STUN binding response arrived. That does not prove a firewall blocked the port.";
+
+    public const string StunAnswered = "A matching STUN binding response arrived. The mapped address is unauthenticated and is not a firewall verdict.";
+}
+
+/// <summary>A STUN Binding result. <see cref="Reflexive" /> is true only for XOR-MAPPED-ADDRESS.</summary>
+public sealed record StunObservation(bool Responded, string? MappedAddress, int? MappedPort, bool Reflexive);
+
 /// <summary>
-///     DNS, TCP, or TLS observation of one selected destination. This is not a measure of media quality,
+///     DNS, TCP, TLS, or UDP observation of one selected destination. This is not a measure of media quality,
 ///     and it contains no payload, headers, or credentials.
 /// </summary>
 public sealed record EndpointProbeResult(
@@ -27,4 +40,5 @@ public sealed record EndpointProbeResult(
     string? DnsError,
     IReadOnlyList<DnsObservation> Answers,
     IReadOnlyList<TcpObservation> Tcp,
-    TlsObservation? Tls);
+    TlsObservation? Tls,
+    UdpObservation? Udp = null);
