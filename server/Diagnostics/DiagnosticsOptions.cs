@@ -20,6 +20,9 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>capture_process_dump</c>. The tool stays disabled until this is true.</summary>
     public bool AllowProcessDumps { get; set; }
 
+    /// <summary>Allows <c>set_driver_verifier</c>. <c>reset_driver_verifier</c> stays available without it.</summary>
+    public bool AllowDriverVerifier { get; set; }
+
     /// <summary>Allows <c>get_firewall_profiles</c> and <c>list_firewall_rules</c>. Both stay disabled until this is true.</summary>
     public bool AllowFirewallInventory { get; set; }
 

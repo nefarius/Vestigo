@@ -38,7 +38,8 @@ The lock screen and UAC secure desktop fail with `desktop_unavailable`. A consol
 
 1. `get_power_state` reports AC, battery charging, approximate last sleep and wake times, and whether the platform supports modern standby.
 2. `get_sleep_configuration` reports the lid-close action and the standby timeout on AC and on battery. A null value was not returned. A timeout of 0 means never.
-3. Fast Startup configuration is `get_boot_state` `fastStartupEnabled`. That setting does not prove the previous boot was hybrid.
+3. `get_last_wake_source` reads the newest Power-Troubleshooter resume event. `eventFound: false` means that event is absent. The wake-source type is a number, not a device verdict.
+4. Fast Startup configuration is `get_boot_state` `fastStartupEnabled`. That setting does not prove the previous boot was hybrid.
 
 ## Why a screenshot failed
 

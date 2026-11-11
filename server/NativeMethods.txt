@@ -304,11 +304,15 @@ UpdateSession
 SystemInformation
 UpdateServiceManager
 
-// Registry module: metadata and bounded value reads. Keys are opened with Microsoft.Win32 so the 32/64 view is explicit.
+// Registry module: metadata and bounded value reads. RegOpenKeyEx uses REG_OPTION_OPEN_LINK
+// so a symbolic link is inspected before its target is opened.
+RegOpenKeyEx
 RegQueryInfoKey
 RegEnumKeyEx
 RegEnumValue
 RegQueryValueEx
+REG_OPEN_CREATE_OPTIONS
+REG_SAM_FLAGS
 REG_VALUE_TYPE
 
 // System module: logon session inventory. Tokens stay on the service; client addresses are not logged.
@@ -410,3 +414,22 @@ NET_FW_RULE_DIRECTION
 NET_FW_IP_PROTOCOL
 NET_FW_MODIFY_STATE
 NET_FW_EDGE_TRAVERSAL_TYPE
+
+// HID capabilities. Read-only: no report reads or feature writes.
+HidD_GetHidGuid
+HidD_GetPreparsedData
+HidD_FreePreparsedData
+HidD_GetAttributes
+HidD_GetManufacturerString
+HidD_GetProductString
+HidD_GetSerialNumberString
+HidP_GetCaps
+HidP_GetButtonCaps
+HidP_GetValueCaps
+HidP_GetLinkCollectionNodes
+HIDP_REPORT_TYPE
+HIDP_CAPS
+HIDP_BUTTON_CAPS
+HIDP_VALUE_CAPS
+HIDP_LINK_COLLECTION_NODE
+HIDD_ATTRIBUTES
