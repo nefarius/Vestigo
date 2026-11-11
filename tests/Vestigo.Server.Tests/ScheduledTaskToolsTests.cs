@@ -3,6 +3,8 @@ using Vestigo.Configuration;
 using Vestigo.Modules;
 using Vestigo.ScheduledTasks;
 
+using Scheduler = Microsoft.Win32.TaskScheduler;
+
 namespace Vestigo.Server.Tests;
 
 public sealed class ScheduledTaskToolsTests
@@ -178,6 +180,196 @@ public sealed class ScheduledTaskToolsTests
         Assert.Equal(first.Path, details.Task.Path);
         Assert.Contains("<Task", details.Xml, StringComparison.Ordinal);
         Assert.Null(service.Get("\\Vestigo-does-not-exist\\nope"));
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80070002), "not_found")]
+    [InlineData(unchecked((int)0x80070003), "not_found")]
+    [InlineData(unchecked((int)0x80070005), "access_denied")]
+    [InlineData(unchecked((int)0x8007007B), "invalid_path")]
+    [InlineData(unchecked((int)0x8004131F), "already_running")]
+    [InlineData(unchecked((int)0x8004130B), "not_running")]
+    [InlineData(unchecked((int)0x80041326), "task_disabled")]
+    [InlineData(unchecked((int)0x80040154), "scheduler_unavailable")]
+    [InlineData(unchecked((int)0x80004005), "task_error")]
+    public void Adapter_PreservesNativeErrorCodes(int hresult, string code)
+    {
+        Assert.Equal(code, ComScheduledTaskService.Map(new System.Runtime.InteropServices.COMException("test", hresult)).Code);
+    }
+
+    [Fact]
+    public void Parse_KeepsOmittedValuesNullAndExplicitValuesUnchanged()
+    {
+        const string xml = """
+            <Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+              <Principals><Principal><GroupId>S-1-5-32-545</GroupId><LogonType>Group</LogonType></Principal></Principals>
+              <Settings><WakeToRun>false</WakeToRun><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy></Settings>
+              <Triggers><EventTrigger><Enabled>false</Enabled><EndBoundary>2026-12-01T00:00:00Z</EndBoundary>
+                <Repetition><Interval>PT30M</Interval><Duration>P1D</Duration></Repetition></EventTrigger></Triggers>
+              <Actions><ComHandler><ClassId>{11111111-1111-1111-1111-111111111111}</ClassId></ComHandler></Actions>
+            </Task>
+            """;
+
+        ScheduledTaskDetails details = ComScheduledTaskService.Parse(FakeScheduler.Info("\\T", ScheduledTaskStates.Ready), xml);
+
+        Assert.Equal(xml, details.Xml);
+        Assert.Null(details.Principal.UserId);
+        Assert.Null(details.Principal.RunLevel);
+        Assert.Equal("S-1-5-32-545", details.Principal.GroupId);
+        Assert.Equal("Group", details.Principal.LogonType);
+        Assert.Null(details.Settings.AllowStartOnDemand);
+        Assert.Null(details.Settings.ExecutionTimeLimit);
+        Assert.False(details.Settings.WakeToRun);
+        Assert.Equal("IgnoreNew", details.Settings.MultipleInstancesPolicy);
+        ScheduledTaskTrigger trigger = Assert.Single(details.Triggers);
+        Assert.False(trigger.Enabled);
+        Assert.Null(trigger.StartBoundary);
+        Assert.Equal("2026-12-01T00:00:00Z", trigger.EndBoundary);
+        Assert.Equal("every PT30M for P1D", trigger.Repetition);
+        ScheduledTaskAction action = Assert.Single(details.Actions);
+        Assert.Equal("ComHandler", action.Type);
+        Assert.Null(action.Command);
+        Assert.Equal("{11111111-1111-1111-1111-111111111111}", action.ClassId);
+    }
+
+    [Fact]
+    public void Adapter_PreservesNeverRunAndLocalTimeSemantics()
+    {
+        Assert.Null(ComScheduledTaskService.ToTime(new DateTime(1899, 12, 30)));
+        DateTime time = new(2026, 1, 15, 12, 30, 0, DateTimeKind.Unspecified);
+        Assert.Equal(new DateTimeOffset(DateTime.SpecifyKind(time, DateTimeKind.Local)), ComScheduledTaskService.ToTime(time));
+    }
+
+    [Fact]
+    public void RealScheduler_MissingTaskAndFolderPreserveNotFound()
+    {
+        ComScheduledTaskService service = new();
+        string path = "\\Vestigo-missing-" + Guid.NewGuid().ToString("N");
+
+        Assert.Null(service.Get(path));
+        Assert.Equal("not_found", Assert.Throws<ScheduledTaskException>(() => service.Run(path, [])).Code);
+        Assert.Equal("not_found", Assert.Throws<ScheduledTaskException>(() => service.Stop(path)).Code);
+        Assert.Equal("not_found", Assert.Throws<ScheduledTaskException>(() => service.SetEnabled(path, false)).Code);
+        Assert.Equal("not_found", Assert.Throws<ScheduledTaskException>(() => service.Delete(path)).Code);
+        Assert.Equal("not_found", Assert.Throws<ScheduledTaskException>(() => service.List(path, false, false)).Code);
+    }
+
+    [Fact]
+    public async Task RealScheduler_TemporaryTasksRoundTripAndSupportChanges()
+    {
+        Assert.SkipUnless(Environment.UserInteractive, "Temporary task execution requires an interactive logon for this account.");
+        using Scheduler.TaskService owner = new();
+        using Scheduler.TaskFolder root = owner.RootFolder;
+        string folderName = "Vestigo-test-" + Guid.NewGuid().ToString("N");
+        Scheduler.TaskFolder? folder = null;
+        try
+        {
+            try
+            {
+                folder = root.CreateFolder(folderName);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Assert.Skip("Task Scheduler does not permit this account to create a temporary test folder.");
+            }
+
+            using Scheduler.TaskFolder child = folder!.CreateFolder("Child");
+            Register(owner, folder, "Visible", hidden: false, "/c exit $(Arg0)");
+            Register(owner, folder, "Hidden", hidden: true, "/c exit 0");
+            Register(owner, child, "Nested", hidden: false, "/c ping -n 30 127.0.0.1 >nul");
+            ComScheduledTaskService service = new();
+            string visible = folder.Path + "\\Visible";
+            string nested = child.Path + "\\Nested";
+
+            Assert.Equal([visible], service.List(folder.Path, false, false).Select(t => t.Path));
+            Assert.Equal(2, service.List(folder.Path, false, true).Count);
+            Assert.Equal(3, service.List(folder.Path, true, true).Count);
+            Assert.Equal(2, service.List(folder.Path, true, false).Count);
+            Assert.True(service.Get(folder.Path + "\\Hidden")!.Task.Hidden);
+            Assert.Equal(NativeTimes(visible), (service.Get(visible)!.Task.LastRunTime, service.Get(visible)!.Task.NextRunTime));
+
+            service.SetEnabled(visible, false);
+            Assert.False(service.Get(visible)!.Task.Enabled);
+            Assert.Equal("task_disabled", Assert.Throws<ScheduledTaskException>(() => service.Run(visible, [])).Code);
+            service.SetEnabled(visible, true);
+            Assert.True(service.Get(visible)!.Task.Enabled);
+
+            Assert.True(Guid.TryParse(service.Run(visible, ["7"]), out _));
+            await WaitForStopped(service, visible);
+            Assert.Equal(7, service.Get(visible)!.Task.LastTaskResult);
+            Assert.NotNull(service.Get(visible)!.Task.LastRunTime);
+            Assert.True(Guid.TryParse(service.Run(nested, []), out _));
+            service.Stop(nested);
+            await WaitForStopped(service, nested);
+            service.Delete(visible);
+            Assert.Null(service.Get(visible));
+        }
+        finally
+        {
+            if (folder is not null)
+            {
+                using (folder)
+                {
+                    // Cleanup touches only the GUID-named folder created by this test.
+                    foreach (string path in new[] { "Visible", "Hidden", "Child\\Nested" })
+                    {
+                        using Scheduler.Task? task = owner.GetTask(folder.Path + "\\" + path);
+                        task?.Stop();
+                        folder.DeleteTask(path, exceptionOnNotExists: false);
+                    }
+                    folder.DeleteFolder("Child", exceptionOnNotExists: false);
+                }
+                root.DeleteFolder(folderName);
+            }
+        }
+    }
+
+    private static void Register(Scheduler.TaskService service, Scheduler.TaskFolder folder, string name, bool hidden, string arguments)
+    {
+        using Scheduler.TaskDefinition definition = service.NewTask();
+        definition.Settings.Hidden = hidden;
+        definition.Settings.DisallowStartIfOnBatteries = false;
+        definition.Settings.StopIfGoingOnBatteries = false;
+        definition.Settings.ExecutionTimeLimit = TimeSpan.FromMinutes(1);
+        definition.Actions.Add(new Scheduler.ExecAction(Path.Combine(Environment.SystemDirectory, "cmd.exe"), arguments));
+        using System.Security.Principal.WindowsIdentity identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        using Scheduler.Task task = folder.RegisterTaskDefinition(name, definition, Scheduler.TaskCreation.Create,
+            identity.Name, null, Scheduler.TaskLogonType.InteractiveToken);
+    }
+
+    private static async Task WaitForStopped(ComScheduledTaskService service, string path)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(15);
+        while (service.Get(path)!.Task.State is ScheduledTaskStates.Queued or ScheduledTaskStates.Running)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The temporary task did not stop in time.");
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+        }
+    }
+
+    private static (DateTimeOffset? Last, DateTimeOffset? Next) NativeTimes(string path)
+    {
+        // Compare against the old COM contract: some Windows builds report 1999-11-30 for never-run
+        // tasks, rather than the OLE zero date. Preserve those native values instead of inventing nulls.
+        dynamic service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service")!)!;
+        object? folder = null;
+        object? task = null;
+        try
+        {
+            service.Connect();
+            folder = service.GetFolder("\\");
+            task = ((dynamic)folder).GetTask(path);
+            DateTime last = ((dynamic)task).LastRunTime;
+            DateTime next = ((dynamic)task).NextRunTime;
+            return (last.Year > 1990 ? new DateTimeOffset(DateTime.SpecifyKind(last, DateTimeKind.Local)) : null,
+                next.Year > 1990 ? new DateTimeOffset(DateTime.SpecifyKind(next, DateTimeKind.Local)) : null);
+        }
+        finally
+        {
+            if (task is not null) System.Runtime.InteropServices.Marshal.ReleaseComObject(task);
+            if (folder is not null) System.Runtime.InteropServices.Marshal.ReleaseComObject(folder);
+            System.Runtime.InteropServices.Marshal.ReleaseComObject((object)service);
+        }
     }
 
     private sealed class FakeScheduler : IScheduledTaskService

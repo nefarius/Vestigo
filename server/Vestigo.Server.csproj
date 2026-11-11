@@ -40,6 +40,7 @@
     <PackageReference Include="Nefarius.Utilities.WindowsVersion" />
     <PackageReference Include="Nefarius.Vicius.Abstractions" />
     <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="TaskScheduler" />
   </ItemGroup>
 
   <ItemGroup>

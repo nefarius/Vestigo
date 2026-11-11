@@ -1,16 +1,20 @@
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
 
+using Microsoft.Win32.TaskScheduler;
+
+using Windows.Win32.Foundation;
+
+using RegisteredTask = Microsoft.Win32.TaskScheduler.Task;
+
 namespace Vestigo.ScheduledTasks;
 
 /// <summary>
-///     Task Scheduler 2.0 through late-bound COM (<c>Schedule.Service</c>). The interfaces are dual IDispatch
-///     with VARIANT arguments, so late binding avoids declaring them without adding a package. Actions,
-///     triggers, and the principal are read from the task definition XML.
+///     Task Scheduler through the maintained TaskScheduler wrapper. XML projection preserves absent optional
+///     values and duration strings instead of substituting the wrapper's defaults or enum names.
 /// </summary>
 public sealed class ComScheduledTaskService : IScheduledTaskService
 {
-    private const int EnumHidden = 1;
     private const int HResultNotFound = unchecked((int)0x80070002);
     private const int HResultPathNotFound = unchecked((int)0x80070003);
     private const int HResultAccessDenied = unchecked((int)0x80070005);
@@ -22,10 +26,10 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
     private static readonly XNamespace Ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
 
     public IReadOnlyList<ScheduledTaskInfo> List(string folder, bool recurse, bool includeHidden) =>
-        Invoke(() =>
+        Invoke(service =>
         {
             List<ScheduledTaskInfo> tasks = [];
-            dynamic root = Connect().GetFolder(folder);
+            using TaskFolder root = GetFolder(service, folder);
             Walk(root, recurse, includeHidden, tasks);
             return (IReadOnlyList<ScheduledTaskInfo>)tasks;
         });
@@ -34,9 +38,9 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
     {
         try
         {
-            return Invoke(() =>
+            return Invoke(service =>
             {
-                dynamic task = GetTask(path);
+                using RegisteredTask task = GetTask(service, path);
                 string xml = task.Xml;
                 return Parse(ToInfo(task), xml);
             });
@@ -48,53 +52,65 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
     }
 
     public string? Run(string path, IReadOnlyList<string> arguments) =>
-        Invoke(() =>
+        Invoke(service =>
         {
-            dynamic task = GetTask(path);
-            object? parameters = arguments.Count == 0 ? null : arguments.ToArray();
-            dynamic running = task.Run(parameters);
+            RegisteredTask? task = GetTask(service, path);
             try
             {
-                return (string?)running.InstanceGuid;
+                using RunningTask? running = task.Run(arguments.ToArray());
+                // In TaskScheduler 2.12.2, RunningTask shares its parent's registered-task RCW and
+                // disposes both references. Transfer ownership so it is not released a second time.
+                // https://github.com/dahall/TaskScheduler/blob/v2.12.2/TaskService/Task.cs
+                if (running is null) return null;
+                task = null;
+                try
+                {
+                    return running.InstanceGuid.ToString("B");
+                }
+                catch (COMException)
+                {
+                    return null;
+                }
             }
-            catch (COMException)
+            finally
             {
-                return null;
+                task?.Dispose();
             }
         });
 
-    public void Stop(string path) => Invoke<object?>(() =>
+    public void Stop(string path) => Invoke<object?>(service =>
     {
-        GetTask(path).Stop(0);
+        using RegisteredTask task = GetTask(service, path);
+        task.Stop();
         return null;
     });
 
-    public void SetEnabled(string path, bool enabled) => Invoke<object?>(() =>
+    public void SetEnabled(string path, bool enabled) => Invoke<object?>(service =>
     {
-        GetTask(path).Enabled = enabled;
+        using RegisteredTask task = GetTask(service, path);
+        task.Enabled = enabled;
         return null;
     });
 
-    public void Delete(string path) => Invoke<object?>(() =>
+    public void Delete(string path) => Invoke<object?>(service =>
     {
         (string folder, string name) = Split(path);
-        Connect().GetFolder(folder).DeleteTask(name, 0);
+        using TaskFolder parent = GetFolder(service, folder);
+        parent.DeleteTask(name, exceptionOnNotExists: true);
         return null;
     });
 
-    private static dynamic Connect()
-    {
-        Type type = Type.GetTypeFromProgID("Schedule.Service")
-                    ?? throw new ScheduledTaskException("scheduler_unavailable", "The Task Scheduler COM class is not registered.");
-        dynamic service = Activator.CreateInstance(type)!;
-        service.Connect();
-        return service;
-    }
+    private static TaskFolder GetFolder(TaskService service, string path) =>
+        service.GetFolder(path) ?? throw new ScheduledTaskException("not_found", "No such scheduled task or folder.");
 
-    private static dynamic GetTask(string path)
+    private static RegisteredTask GetTask(TaskService service, string path)
     {
         (string folder, string name) = Split(path);
-        return Connect().GetFolder(folder).GetTask(name);
+        using TaskFolder parent = GetFolder(service, folder);
+        using TaskCollection tasks = parent.GetTasks();
+        // TaskService.GetTask catches every native error and returns null. The collection indexer
+        // preserves HRESULTs, so access_denied must not become not_found.
+        return tasks[name];
     }
 
     private static (string Folder, string Name) Split(string path)
@@ -104,11 +120,17 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         return (folder, path[(index + 1)..]);
     }
 
-    private static void Walk(dynamic folder, bool recurse, bool includeHidden, List<ScheduledTaskInfo> output)
+    private static void Walk(TaskFolder folder, bool recurse, bool includeHidden, List<ScheduledTaskInfo> output)
     {
-        foreach (dynamic task in folder.GetTasks(includeHidden ? EnumHidden : 0))
+        using TaskCollection tasks = folder.GetTasks();
+        foreach (RegisteredTask task in tasks)
         {
-            output.Add(ToInfo(task));
+            using (task)
+            {
+                ScheduledTaskInfo info = ToInfo(task);
+                // The wrapper's task collections always include hidden tasks.
+                if (includeHidden || !info.Hidden) output.Add(info);
+            }
         }
 
         if (!recurse)
@@ -116,13 +138,14 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
             return;
         }
 
-        foreach (dynamic child in folder.GetFolders(0))
+        using TaskFolderCollection children = folder.SubFolders;
+        foreach (TaskFolder child in children)
         {
-            Walk(child, true, includeHidden, output);
+            using (child) Walk(child, true, includeHidden, output);
         }
     }
 
-    private static ScheduledTaskInfo ToInfo(dynamic task)
+    private static ScheduledTaskInfo ToInfo(RegisteredTask task)
     {
         string path = task.Path;
         int index = path.LastIndexOf('\\');
@@ -135,20 +158,20 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
             task.Name,
             index <= 0 ? "\\" : path[..index],
             ScheduledTaskStates.FromCode((int)task.State),
-            (bool)task.Enabled,
+            task.Enabled,
             string.Equals((string?)settings?.Element(Ns + "Hidden"), "true", StringComparison.OrdinalIgnoreCase),
             ToTime(task.LastRunTime),
             ToTime(task.NextRunTime),
-            (int)task.LastTaskResult,
-            (int)task.NumberOfMissedRuns,
+            task.LastTaskResult,
+            task.NumberOfMissedRuns,
             (string?)registration?.Element(Ns + "Author"),
             (string?)registration?.Element(Ns + "Description"));
     }
 
-    private static DateTimeOffset? ToTime(object value)
+    internal static DateTimeOffset? ToTime(DateTime time)
     {
-        // Never-run and unscheduled tasks report the OLE zero date (1899-12-30).
-        if (value is DateTime time && time.Year > 1990)
+        // Preserve the existing OLE zero-date handling; the wrapper may normalize it to DateTime.MinValue.
+        if (time.Year > 1990)
         {
             return new DateTimeOffset(DateTime.SpecifyKind(time, DateTimeKind.Local));
         }
@@ -221,15 +244,12 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
     private static bool? Flag(XElement? settings, string name) =>
         settings?.Element(Ns + name) is { } element ? string.Equals(element.Value, "true", StringComparison.OrdinalIgnoreCase) : null;
 
-    private static T Invoke<T>(Func<T> action)
+    private static T Invoke<T>(Func<TaskService, T> action)
     {
         try
         {
-            return action();
-        }
-        catch (ScheduledTaskException)
-        {
-            throw;
+            using TaskService service = new();
+            return action(service);
         }
         catch (UnauthorizedAccessException)
         {
@@ -237,12 +257,8 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         }
         catch (Exception ex) when (ex is COMException or IOException or ArgumentException or InvalidOperationException or NotSupportedException)
         {
-            // The runtime binder surfaces some HRESULTs as typed exceptions (for example FileNotFoundException).
+            // COM interop surfaces some HRESULTs as typed exceptions (for example FileNotFoundException).
             throw Map(ex);
-        }
-        catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException ex)
-        {
-            throw new ScheduledTaskException("task_error", ex.Message);
         }
     }
 
@@ -254,6 +270,7 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         HResultAlreadyRunning => new ScheduledTaskException("already_running", "The task is already running."),
         HResultNotRunning => new ScheduledTaskException("not_running", "The task is not running."),
         HResultTaskDisabled => new ScheduledTaskException("task_disabled", "The task is disabled; enable it first."),
+        var code when code == HRESULT.REGDB_E_CLASSNOTREG.Value => new ScheduledTaskException("scheduler_unavailable", "The Task Scheduler COM class is not registered."),
         _ => new ScheduledTaskException("task_error", $"Task Scheduler error 0x{ex.HResult:X8}: {ex.Message}")
     };
 }
