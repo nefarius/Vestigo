@@ -72,6 +72,24 @@ public class VirtualDisplayTests : IDisposable
     }
 
     [Fact]
+    public async Task Close_RemovesAnOwnedDisplayWhenTheCheckpointHasNoActivePath()
+    {
+        List<string> log = [];
+        RecordingDisplays displays = new(log) { ActivePaths = false };
+        RecordingBackend backend = new(log);
+        VirtualDisplayCoordinator coordinator = Coordinator(backend, displays, new ManualClock());
+
+        OperationResult<VirtualDisplaySession> created = await coordinator.CreateAsync(Request(), CancellationToken.None);
+        OperationResult<VirtualDisplaySession> closed = await coordinator.CloseAsync(created.Value!.Id, CancellationToken.None);
+
+        Assert.True(closed.Success, closed.Error);
+        Assert.Equal("closed", closed.Value!.State);
+        Assert.Equal(["snapshot", "create", "arrange", "remove"], log);
+        Assert.Equal(["disp-owned"], backend.Removed);
+        Assert.Empty(displays.RestoredPaths);
+    }
+
+    [Fact]
     public async Task ArrangeFailure_RestoresThenRemoves()
     {
         List<string> log = [];
@@ -287,6 +305,8 @@ public class VirtualDisplayTests : IDisposable
 
         public bool RejectRestore { get; init; }
 
+        public bool ActivePaths { get; init; } = true;
+
         public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken)
         {
             Operations.Add("snapshot");
@@ -299,12 +319,19 @@ public class VirtualDisplayTests : IDisposable
                 Height = 0,
                 Identity = new DisplayTargetIdentity(@"\\.\DISPLAY-IDLE", 1, "adapter", 8, 2)
             };
+            DisplayPathLayout[] paths = ActivePaths ? [path, idle] : [idle];
             return Task.FromResult(OperationResult<DisplayLayoutSnapshot>.Ok(
-                new DisplayLayoutSnapshot(DateTimeOffset.UnixEpoch, 1, DesktopCoordinates.PhysicalScreenPixels, "fp", [path, idle])));
+                new DisplayLayoutSnapshot(DateTimeOffset.UnixEpoch, 1, DesktopCoordinates.PhysicalScreenPixels, "fp", paths)));
         }
 
         public Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(DisplayLayoutRequest request, bool elevated, CancellationToken cancellationToken)
         {
+            if (request.Targets.Count == 0)
+            {
+                Operations.Add("restore");
+                return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Fail("invalid_request", "A layout change needs 1 to 16 targets."));
+            }
+
             bool arrange = request.Targets.Any(target => target.MonitorDevicePath == "owned-key");
             Operations.Add(arrange ? "arrange" : "restore");
             if (arrange)

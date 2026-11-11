@@ -277,11 +277,20 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
             path.RefreshNumerator,
             path.RefreshDenominator,
             path.Rotation)).ToList();
-        OperationResult<DisplayLayoutApplyResult> restored = await _displays.ApplyAsync(
-            new DisplayLayoutRequest(original, true, false),
-            false,
-            cancellationToken).ConfigureAwait(false);
-        bool restoredOk = restored.Success && restored.Value is { Applied: true };
+        OperationResult<DisplayLayoutApplyResult>? restored = null;
+        bool restoredOk;
+        if (original.Count == 0)
+        {
+            restoredOk = true;
+        }
+        else
+        {
+            restored = await _displays.ApplyAsync(
+                new DisplayLayoutRequest(original, true, false),
+                false,
+                cancellationToken).ConfigureAwait(false);
+            restoredOk = restored.Success && restored.Value is { Applied: true };
+        }
         bool removalFailed = false;
         string? removalError = null;
         if (restoredOk && !session.ForeignDisplayIds.Contains(session.OwnedIdentityKey, StringComparer.OrdinalIgnoreCase))
@@ -310,7 +319,7 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
         {
             State = retry ? "open" : "closed",
             LeaseExpiresAt = retry ? _time.GetUtcNow() : session.LeaseExpiresAt,
-            LastError = retry ? removalError ?? restored.Error ?? restored.Value?.Error : null
+            LastError = retry ? removalError ?? restored?.Error ?? restored?.Value?.Error : null
         };
         _sessions[id] = closed;
         Save();
@@ -319,14 +328,14 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
             return OperationResult<VirtualDisplaySession>.Ok(closed);
         }
 
-        if (!restored.Success)
+        if (restored is { Success: false })
         {
             return restored.FailAs<VirtualDisplaySession>();
         }
 
         return restoredOk
             ? OperationResult<VirtualDisplaySession>.Fail("virtual_display_remove_failed", closed.LastError ?? "The owned display could not be removed.")
-            : OperationResult<VirtualDisplaySession>.Fail(restored.Value?.ErrorCode ?? "display_config_rejected", closed.LastError ?? "The checkpoint could not be restored.");
+            : OperationResult<VirtualDisplaySession>.Fail(restored?.Value?.ErrorCode ?? "display_config_rejected", closed.LastError ?? "The checkpoint could not be restored.");
     }
 
     private void Load()
