@@ -49,6 +49,8 @@ public sealed class DiagnosticsModule : VestigoModule
         services.AddSingleton<IProcessDumpWriter, MiniDumpWriter>();
         services.AddSingleton<IVerifierQuery, WindowsVerifierQuery>();
         services.AddSingleton<VerifierStateService>();
+        services.AddSingleton<IVerifierControl, WindowsVerifierControl>();
+        services.AddSingleton<VerifierControlService>();
         services.AddSingleton<IVolumeSpace, DriveVolumeSpace>();
         services.AddSingleton<IDeviceProblemSource>(provider => new DeviceEvidenceGatherer(
             provider.GetRequiredService<IDeviceControl>(),

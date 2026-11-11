@@ -111,7 +111,7 @@ The installed configuration must remain at `%ProgramFiles%\Nefarius Software Sol
 
 ## Driver Verifier state
 
-`verifier_not_found` means `verifier.exe` is not in the Windows system directory. `verifier_failed` means it did not start. `verifier_timeout` means `/query` or `/querysettings` ran longer than 15 seconds. A configured driver list of `None` is the saved setting. `running.driversVerified` false is only the sentence `No drivers are currently verified.` Other running text is not a parsed flag list.
+`verifier_not_found` means `verifier.exe` is not in the Windows system directory. `verifier_failed` means it did not start. `verifier_timeout` means `/query` or `/querysettings` ran longer than 15 seconds. A configured driver list of `None` is the saved setting. `running.driversVerified` false is only the sentence `No drivers are currently verified.` Other running text is not a parsed flag list. `driver_verifier_disabled` means `set_driver_verifier` was called while `Vestigo:Diagnostics:AllowDriverVerifier` is false. `reset_driver_verifier` is still available. `verifier_acknowledgement_required` means `iUnderstandVerifierCanBugcheck` was not true. `protected_driver` means the image is on the fixed refusal list. `verifier_failed` after a change means `verifier.exe` exited non-zero or the argument list was not a fixed enable or reset command.
 
 ## JSON document query fails
 
