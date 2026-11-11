@@ -131,6 +131,20 @@ Creates a kernel driver service through nefcon. The .sys binary must be an exist
 | `binaryPath` | `string` | yes |  | Driver .sys path: root:relative\path or an absolute path inside a root that allows Execute. |
 | `displayName` | `string` | no | `null` | Display name. Defaults to the service name. |
 
+## `create_virtual_display`
+
+Would create a temporary virtual display, arrange it, and restore the original topology on close. This build has no released backend, so the call returns virtual_display_backend_unavailable and does not change the topology. It does not write a vendor registry policy and does not install a driver.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `width` | `int` | no | `1920` | Width in physical pixels. |
+| `height` | `int` | no | `1080` | Height in physical pixels. |
+| `refreshNumerator` | `uint` | no | `60` | Refresh numerator. Default 60. |
+| `refreshDenominator` | `uint` | no | `1` | Refresh denominator. Default 1. |
+| `x` | `int` | no | `0` | Desktop position X. |
+| `y` | `int` | no | `0` | Desktop position Y. |
+| `primary` | `bool` | no | `false` | Make the new display primary. Not applied while creation is unavailable. |
+
 ## `delete_file_on_reboot`
 
 Schedules a file for deletion at the next reboot (MoveFileEx delay-until-reboot). Needs Write access and administrator rights.
@@ -545,6 +559,12 @@ Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-
 | `path` | `string` | yes |  | Destination as root:relative\path. |
 | `overwrite` | `bool` | no | `false` | Replace an existing file. |
 | `deferToReboot` | `bool` | no | `false` | Replace a locked file at the next reboot instead of renaming it aside. |
+
+## `get_virtual_display_backend`
+
+Reports whether Vestigo can create a temporary virtual display. canCreate false and errorCode virtual_display_backend_unavailable mean no released backend is selected. An installed indirect-display driver is not an API. This does not change the display topology.
+
+No parameters.
 
 ## `get_window_event_capture`
 

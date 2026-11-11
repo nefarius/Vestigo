@@ -20,7 +20,7 @@ public sealed class DesktopModule : VestigoModule
     public override bool EnabledByDefault => false;
 
     public override IReadOnlyList<Type> ToolTypes { get; } =
-        [typeof(DesktopTools), typeof(PerceptionTools), typeof(WindowInspectionTools), typeof(WindowEventTools), typeof(WindowPlacementTools), typeof(DisplayLayoutTools), typeof(ManagedDesktopTools)];
+        [typeof(DesktopTools), typeof(PerceptionTools), typeof(WindowInspectionTools), typeof(WindowEventTools), typeof(WindowPlacementTools), typeof(DisplayLayoutTools), typeof(ManagedDesktopTools), typeof(VirtualDisplayTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
@@ -41,6 +41,9 @@ public sealed class DesktopModule : VestigoModule
         services.AddSingleton<IWindowPlacementSource, WindowsWindowPlacementSource>();
         services.AddSingleton<WindowPlacer>();
         services.AddSingleton<IDisplayLayoutClient, HelperDisplayLayoutClient>();
+        services.TryAddSingleton<IVirtualDisplayBackend, UnavailableVirtualDisplayBackend>();
+        services.AddSingleton<VirtualDisplayCoordinator>();
+        services.AddHostedService(provider => provider.GetRequiredService<VirtualDisplayCoordinator>());
         services.AddSingleton<DisplayLayoutTransactionManager>();
         services.AddHostedService(provider => provider.GetRequiredService<DisplayLayoutTransactionManager>());
         services.AddSingleton<HelperDesktopHostClient>();
