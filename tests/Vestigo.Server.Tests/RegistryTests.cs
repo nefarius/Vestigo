@@ -514,7 +514,8 @@ public class RegistryTests
         if (controlSet.ErrorCode is not "access_denied")
         {
             Assert.True(controlSet.Success, controlSet.Error);
-            Assert.StartsWith(@"HKLM\SYSTEM\ControlSet", controlSet.Value!.Path, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(@"HKLM\SYSTEM\CurrentControlSet\Services", controlSet.Value!.Path);
+            Assert.StartsWith(@"HKLM\SYSTEM\ControlSet", controlSet.Value.ResolvedPath, StringComparison.OrdinalIgnoreCase);
         }
 
         OperationResult<RegistryValueResult> value = tools.ReadRegistryValue(
