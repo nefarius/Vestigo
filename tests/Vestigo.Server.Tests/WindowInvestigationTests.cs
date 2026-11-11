@@ -671,7 +671,11 @@ public class DisplayLayoutContractTests : IDisposable
         OperationResult<DisplayLayoutTransaction> failed = await manager.StartAsync([Change(0, 0, 1280, 720)], true, false, CancellationToken.None);
 
         Assert.Equal("display_mode_unavailable", failed.ErrorCode);
+        Assert.Contains("A requested target was not in the active topology", failed.Error);
         Assert.DoesNotContain("Rollback", failed.Error);
+        Assert.Contains(manager.Get(null).Value!.Id, failed.Error);
+        Assert.Contains("get_display_layout_transaction", failed.Error);
+        Assert.Contains("restore_display_layout_transaction", failed.Error);
         Assert.Single(displays.Applied);
         Assert.True(File.Exists(VestigoPaths.OwnedDisplayLayoutPath));
     }

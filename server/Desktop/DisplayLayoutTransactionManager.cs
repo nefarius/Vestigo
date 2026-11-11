@@ -168,6 +168,11 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                     _current = null;
                     TryDelete();
                 }
+                else if (_current is { Id: var pendingId })
+                {
+                    message += " Transaction " + pendingId
+                        + " remains open. Use get_display_layout_transaction and restore_display_layout_transaction to recover the original topology.";
+                }
 
                 return OperationResult<DisplayLayoutTransaction>.Fail(
                     applied.Value.ErrorCode ?? "display_config_rejected",

@@ -138,7 +138,7 @@ public sealed class PresentationGateway : IHostedService
 
             if (run.HostFailed || run.TerminationUncertain || run.Cancelled || run.TimedOut)
             {
-                await StopIfCreatedAsync(sessionName, run.Started, run.TerminationUncertain).ConfigureAwait(false);
+                bool sessionStopped = await StopIfCreatedAsync(sessionName, run.Started, run.TerminationUncertain).ConfigureAwait(false);
                 string reason = run.Cancelled ? "cancelled" : run.TimedOut ? "worker_timeout" : "worker_host_failed";
                 return Unknown(
                     processId,
@@ -146,7 +146,7 @@ public sealed class PresentationGateway : IHostedService
                     sessionName,
                     started,
                     reason,
-                    TerminationDetail(run));
+                    TerminationDetail(run, sessionStopped));
             }
 
             if (!TryParse(run.Output, out OperationResult<PresentationObservation>? parsed) || parsed is null)
@@ -187,7 +187,7 @@ public sealed class PresentationGateway : IHostedService
         }
     }
 
-    private static string TerminationDetail(PresentationProcessResult run)
+    private static string TerminationDetail(PresentationProcessResult run, bool sessionStopped)
     {
         if (run.TerminationUncertain && run.Cancelled)
         {
@@ -197,6 +197,14 @@ public sealed class PresentationGateway : IHostedService
         if (run.TerminationUncertain && run.TimedOut)
         {
             return "The decoder process exceeded the observation deadline. Termination was attempted, but cleanup is unconfirmed.";
+        }
+
+        if (!sessionStopped && (run.Cancelled || run.TimedOut))
+        {
+            string lead = run.Cancelled
+                ? "The observation was cancelled and the decoder process was stopped."
+                : "The decoder process exceeded the observation deadline and was stopped.";
+            return lead + " Cleanup is unconfirmed and the ETW session may remain active.";
         }
 
         if (run.Cancelled)
@@ -209,22 +217,27 @@ public sealed class PresentationGateway : IHostedService
             return "The decoder process exceeded the observation deadline and was stopped.";
         }
 
-        return "The service could not read the decoder process.";
+        return sessionStopped
+            ? "The service could not read the decoder process."
+            : "The service could not read the decoder process. Cleanup is unconfirmed and the ETW session may remain active.";
     }
 
-    private async Task StopIfCreatedAsync(string sessionName, bool started, bool terminationUncertain)
+    private async Task<bool> StopIfCreatedAsync(string sessionName, bool started, bool terminationUncertain)
     {
         if (!started)
         {
             Forget(sessionName);
-            return;
+            return true;
         }
 
         bool stopped = await StopOwnedAsync(sessionName, CancellationToken.None).ConfigureAwait(false);
         if (stopped && !terminationUncertain)
         {
             Forget(sessionName);
+            return true;
         }
+
+        return false;
     }
 
     private async Task<bool> StopOwnedAsync(string sessionName, CancellationToken cancellationToken)

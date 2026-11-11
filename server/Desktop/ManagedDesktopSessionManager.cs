@@ -28,6 +28,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
     private readonly Dictionary<string, ManagedDesktopSession> _sessions = new(StringComparer.Ordinal);
     private readonly object _sweeps = new();
     private readonly List<Task> _sweepTasks = [];
+    private readonly CancellationTokenSource _sweepCancellation = new();
     private bool _checkpointUnsupported;
     private Timer? _timer;
     private int _lifetime;
@@ -64,6 +65,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
     {
         lock (_sweeps)
         {
+            ObserveCompletedSweeps();
             _sweepTasks.Add(SweepAsync());
         }
     }
@@ -83,6 +85,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
                 _timer = null;
             }
 
+            _sweepCancellation.Cancel();
             try
             {
                 await Task.WhenAll(ActiveSweeps()).ConfigureAwait(false);
@@ -110,6 +113,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
         finally
         {
             _gate.Dispose();
+            _sweepCancellation.Dispose();
         }
     }
 
@@ -120,8 +124,10 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             return;
         }
 
+        _sweepCancellation.Cancel();
         _timer?.Dispose();
         _gate.Dispose();
+        _sweepCancellation.Dispose();
     }
 
     private bool TryOwnLifetime() => Interlocked.CompareExchange(ref _lifetime, 1, 0) == 0;
@@ -341,7 +347,8 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
 
     internal async Task SweepAsync()
     {
-        if (!await _gate.WaitAsync(0).ConfigureAwait(false))
+        CancellationToken cancellationToken = _sweepCancellation.Token;
+        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -351,7 +358,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             DateTimeOffset now = _time.GetUtcNow();
             foreach (string id in _sessions.Values.Where(session => session.State is "open" or "active" && session.LeaseExpiresAt <= now).Select(session => session.Id).ToList())
             {
-                await CloseCoreAsync(id, DesktopSessionPolicy.TerminateOwned, automatic: true, CancellationToken.None).ConfigureAwait(false);
+                await CloseCoreAsync(id, DesktopSessionPolicy.TerminateOwned, automatic: true, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -359,7 +366,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             _gate.Release();
         }
 
-        await ReconcilePresenceAsync(CancellationToken.None, throttle: true).ConfigureAwait(false);
+        await ReconcilePresenceAsync(cancellationToken, throttle: true).ConfigureAwait(false);
     }
 
     private async Task ReconcilePresenceAsync(CancellationToken cancellationToken, bool throttle)
@@ -409,11 +416,12 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
                             continue;
                         }
 
+                        bool keepOpenForCleanup = open && session.Processes.Count > 0;
                         _sessions[session.Id] = hostExited
                             ? session with
                             {
                                 HandleHeld = false,
-                                State = open ? "recovery-failed" : session.State,
+                                State = open && !keepOpenForCleanup ? "recovery-failed" : session.State,
                                 DesktopPresence = "enumeration-unknown"
                             }
                             : session with { DesktopPresence = "enumeration-unknown" };
@@ -476,8 +484,23 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
     {
         lock (_sweeps)
         {
-            _sweepTasks.RemoveAll(static task => task.IsCompleted);
+            ObserveCompletedSweeps();
             return _sweepTasks.ToArray();
+        }
+    }
+
+    private void ObserveCompletedSweeps()
+    {
+        for (int index = _sweepTasks.Count - 1; index >= 0; index--)
+        {
+            Task task = _sweepTasks[index];
+            if (!task.IsCompleted)
+            {
+                continue;
+            }
+
+            _ = task.Exception;
+            _sweepTasks.RemoveAt(index);
         }
     }
 

@@ -416,7 +416,23 @@ public class PresentationTests : IDisposable
 
         Assert.Equal("worker_timeout", result.Value!.Reason);
         Assert.Contains("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("may remain active", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task StopFailureAfterTimeout_SaysTheSessionMayRemainActive()
+    {
+        ScriptedPresentation process = new() { TimedOut = true, StopExitCode = 1 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_timeout", result.Value!.Reason);
+        Assert.Contains("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cleanup is unconfirmed", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("may remain active", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
     }
 
     [Fact]

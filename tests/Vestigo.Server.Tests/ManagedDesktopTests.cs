@@ -114,11 +114,34 @@ public class ManagedDesktopTests : IDisposable
         }
 
         Assert.Contains(DesktopHostOperations.Enumerate, host.Operations);
-        Task stopping = manager.StopAsync(CancellationToken.None);
-        await Task.Delay(50);
-        Assert.False(stopping.IsCompleted);
-        hold.TrySetResult();
-        await stopping;
+        await manager.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(hold.Task.IsCompleted);
+    }
+
+    [Fact]
+    public async Task HostExit_KeepsSessionsWithProcessesOpenForCleanup()
+    {
+        RecordingHost host = new();
+        RunningCleanup cleanup = new();
+        ManagedDesktopSessionManager manager = Manager(host, allow: true, cleanup);
+        ManagedDesktopSession created = (await manager.CreateAsync("terminate-owned", CancellationToken.None)).Value!;
+        Assert.True((await manager.ActivateAsync(created.Id, CancellationToken.None)).Success);
+        await AttachAsync(manager, created.Id, new OwnedDesktopProcess("job1", 42, false));
+
+        host.RejectOp = DesktopHostOperations.Enumerate;
+        host.RejectCode = "desktop_host_lost";
+        ManagedDesktopSession read = (await manager.GetAsync(created.Id)).Value!;
+
+        Assert.Equal("active", read.State);
+        Assert.False(read.HandleHeld);
+        Assert.Equal("enumeration-unknown", read.DesktopPresence);
+        Assert.True(read.InputSwitched);
+        Assert.Single(read.Processes);
+
+        host.RejectOp = null;
+        await manager.StopAsync(CancellationToken.None);
+        Assert.Contains(DesktopHostOperations.Restore, host.Operations);
+        Assert.Contains(42, cleanup.Terminated);
     }
 
     [Fact]
@@ -678,7 +701,7 @@ public class ManagedDesktopTests : IDisposable
             Operations.Add(command.Op);
             if (command.Op == DesktopHostOperations.Enumerate && HoldEnumerate is not null)
             {
-                await HoldEnumerate.ConfigureAwait(false);
+                await HoldEnumerate.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (RejectOp is not null && command.Op == RejectOp)
