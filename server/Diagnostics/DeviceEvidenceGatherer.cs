@@ -22,6 +22,11 @@ internal sealed class DeviceEvidenceGatherer(
 
     public OperationResult<DeviceProblemReport> Explain(string instanceId)
     {
+        if (!InstallHistoryTools.TryInstanceId(instanceId, out _, out string? idError))
+        {
+            return OperationResult<DeviceProblemReport>.Fail("invalid_request", idError!);
+        }
+
         OperationResult<DeviceProblemEvidence> evidence = Collect(instanceId, null, false, out _);
         if (!evidence.Success)
         {

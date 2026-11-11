@@ -93,6 +93,8 @@ public sealed class DeviceProblemTests
         DeviceEvidenceGatherer gatherer = new(missing, logs, new VestigoOptions());
 
         Assert.Equal("device_not_found", gatherer.Explain(Id).ErrorCode);
+        Assert.Equal("invalid_request", gatherer.Explain("").ErrorCode);
+        Assert.Equal("invalid_request", gatherer.Explain("   ").ErrorCode);
 
         FakeDevices present = new() { Device = Device(10, service: "vestigo") };
         DeviceProblemReport report = new DeviceEvidenceGatherer(present, logs, new VestigoOptions()).Explain(Id).Value!;

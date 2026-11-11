@@ -17,6 +17,11 @@ public sealed class DriverLoadTests
         Assert.Equal(false, CodeIntegrityProjection.HvciEnabled(0));
         Assert.Null(CodeIntegrityProjection.HvciEnabled(2));
         Assert.Equal("contoso.sys", CodeIntegrityProjection.ImageFileName(@"\SystemRoot\System32\drivers\contoso.sys"));
+        string? relative = CodeIntegrityProjection.ExpandImagePath(@"System32\drivers\contoso.sys");
+        string systemRoot = Environment.GetEnvironmentVariable("SystemRoot")!;
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(systemRoot, @"System32\drivers\contoso.sys")),
+            relative);
         Assert.Equal("contoso.sys", CodeIntegrityProjection.ImageFileName("\"C:\\Windows\\System32\\drivers\\contoso.sys\" -k"));
         Assert.Null(CodeIntegrityProjection.ImageFileName(@"C:\Windows\System32\drivers\..\evil.sys"));
         Assert.Null(CodeIntegrityProjection.ImageFileName("cmd.exe"));
@@ -66,6 +71,17 @@ public sealed class DriverLoadTests
         Assert.DoesNotContain("caused", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("because", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(report.Observed, fact => fact.Source == "code-integrity" && fact.Fact.Contains("hvciEnabled=True", StringComparison.Ordinal));
+
+        CodeIntegrityEvent? byMessage = CodeIntegrityProjection.ParseEvent(null, 3077, null, "The image contoso.sys did not meet the policy.", "contoso.sys");
+        Assert.NotNull(byMessage);
+        Assert.Null(byMessage.FileName);
+        DriverLoadReport cited = DeviceProblemRules.ExplainLoad(evidence with { CodeIntegrityEvents = [byMessage] }, "contoso", "contoso.sys");
+        Assert.Contains(cited.Hypotheses, item => item.Label == "code-integrity" && item.Statement.Contains("3077", StringComparison.Ordinal));
+        DriverLoadReport other = DeviceProblemRules.ExplainLoad(
+            evidence with { CodeIntegrityEvents = [entry with { FileName = "other.sys" }] },
+            "contoso",
+            "contoso.sys");
+        Assert.DoesNotContain(other.Hypotheses, item => item.Label == "code-integrity");
     }
 
     [Fact]

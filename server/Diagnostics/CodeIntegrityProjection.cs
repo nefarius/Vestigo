@@ -71,6 +71,17 @@ internal static class CodeIntegrityProjection
         }
 
         text = Environment.ExpandEnvironmentVariables(text);
+        if (!Path.IsPathRooted(text))
+        {
+            string? root = Environment.GetEnvironmentVariable("SystemRoot");
+            if (string.IsNullOrEmpty(root))
+            {
+                return null;
+            }
+
+            text = Path.Combine(root, text);
+        }
+
         if (!text.EndsWith(".sys", StringComparison.OrdinalIgnoreCase) || text.Contains("..", StringComparison.Ordinal))
         {
             return null;
@@ -99,13 +110,12 @@ internal static class CodeIntegrityProjection
             return false;
         }
 
-        if (entry.FileName is not null &&
-            string.Equals(Path.GetFileName(entry.FileName), imageFileName, StringComparison.OrdinalIgnoreCase))
+        if (entry.FileName is null)
         {
             return true;
         }
 
-        return false;
+        return string.Equals(Path.GetFileName(entry.FileName), imageFileName, StringComparison.OrdinalIgnoreCase);
     }
 
     public static CodeIntegrityEvent? ParseEvent(string? xml, int id, DateTimeOffset? at, string? message, string imageFileName)
