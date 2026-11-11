@@ -403,6 +403,12 @@ Best-effort Restart Manager query for one existing file in a Read root. Returns 
 | `path` | `string` | yes |  | File path in a configured Read root, absolute or root:relative. |
 | `limit` | `int` | no | `100` | Maximum processes, clamped to WindowsServicing:MaxResults. |
 
+## `get_firewall_profiles`
+
+Reads Windows Firewall profile policy. Requires Vestigo:Diagnostics:AllowFirewallInventory. Returns the current profile bitmask, unknown bits outside domain, private, and public, the local policy modify state, and firewallEnabled, blockAllInboundTraffic, notification, unicast-response, and default inbound and outbound actions for the domain, private, and public profiles. Actions stay integers. A stored block or allow is not a verdict about a connection, and silence from a probe is not reported as a firewall block. This does not change policy.
+
+No parameters.
+
 ## `get_installed_software`
 
 Returns one entry by id (from list_installed_software) with the silent uninstall command Vestigo would run, or the reason none is available.
@@ -824,6 +830,14 @@ Lists Windows event log channels with record count and enabled state. Channels t
 | --- | --- | --- | --- | --- |
 | `nameContains` | `string` | no | `null` | Only channels whose name contains this text (case-insensitive). |
 | `includeCounts` | `bool` | no | `true` | Include record counts. Disable for a faster listing. |
+
+## `list_firewall_rules`
+
+Lists stored Windows Firewall rules in collection order. Requires Vestigo:Diagnostics:AllowFirewallInventory. Address, port, ICMP, interface, package, and user fields are the raw Windows expressions, capped at 512 characters. profiles is the stored profile bitmask. action is the stored action and is not a verdict about a connection. limit is clamped to 1..Vestigo:Diagnostics:MaxFirewallRules. Interface SAFEARRAYs are omitted. This does not change rules and does not report whether traffic was blocked.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | `int` | no | `50` | Maximum rules. Clamped to 1..Vestigo:Diagnostics:MaxFirewallRules. |
 
 ## `list_graphics_adapters`
 

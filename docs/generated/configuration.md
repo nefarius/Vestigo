@@ -38,6 +38,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Diagnostics:AllowAudioPlayback` | `false` |
 | `Diagnostics:AllowCaptureProbes` | `false` |
 | `Diagnostics:AllowDriverVerifier` | `false` |
+| `Diagnostics:AllowFirewallInventory` | `false` |
 | `Diagnostics:AllowNetworkProbes` | `false` |
 | `Diagnostics:AllowOnlineRevocation` | `false` |
 | `Diagnostics:AllowProcessDumps` | `false` |
@@ -48,6 +49,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Diagnostics:MaxCrashReports` | `200` |
 | `Diagnostics:MaxDumpBytes` | `536870912` |
 | `Diagnostics:MaxEndpointProbeDuration` | `00:00:05` |
+| `Diagnostics:MaxFirewallRules` | `200` |
 | `Diagnostics:MaxInspectBytes` | `268435456` |
 | `Diagnostics:MaxInstallHistoryBytes` | `16777216` |
 | `Diagnostics:MaxProbeDuration` | `00:00:05` |
