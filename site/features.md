@@ -116,8 +116,8 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Network probes gated</span></p>
     <h2>Network checks</h2>
-    <p><code>list_process_connections</code> lists the TCP endpoints and UDP bindings owned by one process. Remote addresses stay omitted unless you ask for them. <code>test_endpoint</code> resolves a host, opens TCP, or completes a TLS handshake from Vestigo's own network context.</p>
-    <p>The probe stays off until <code>Diagnostics:AllowNetworkProbes</code> is true and the host, or host and port, is listed in <code>Diagnostics:AllowedProbeDestinations</code>. It does not capture packets. Online TLS revocation uses the same revocation gate as signature checks.</p>
+    <p><code>list_process_connections</code> lists the TCP endpoints and UDP bindings owned by one process. Remote addresses stay omitted unless you ask for them. <code>test_endpoint</code> resolves a host, opens TCP, completes a TLS handshake, or sends one UDP datagram from Vestigo's own network context.</p>
+    <p>The probe stays off until <code>Diagnostics:AllowNetworkProbes</code> is true and the host, or host and port, is listed in <code>Diagnostics:AllowedProbeDestinations</code>. A sent datagram does not prove the peer is reachable. <code>stun: true</code> waits for one STUN binding response and does not treat silence as a firewall block. QUIC is not supported. It does not capture packets. Online TLS revocation uses the same revocation gate as signature checks.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Playback gated</span></p>

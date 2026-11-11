@@ -30,6 +30,8 @@ The opt-in WindowsServicing module adds read-only reboot signals, queued file op
 
 Power is on by default and read-only. `get_power_state` reports AC, battery, the active scheme, and approximate last sleep and wake times. `get_sleep_configuration` reports lid and timeout policy. See [the features](features.md) and [the QA walkthrough](qa.md#see-whether-the-machine-slept).
 
+`test_endpoint` can send one UDP datagram, or one STUN binding request, to an allow-listed host. A sent datagram does not prove the peer is reachable, and a missing STUN response is not a firewall block. See [the features](features.md) and [the QA walkthrough](qa.md#check-a-lab-endpoint).
+
 ## Quick start
 
 1. Install the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0. The MSI refuses to continue without them. Either install the ASP.NET Core 10.0 Hosting Bundle from [https://dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0), which includes both, or run these from an elevated prompt:
