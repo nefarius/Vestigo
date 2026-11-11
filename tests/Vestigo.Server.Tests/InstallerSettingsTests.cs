@@ -304,6 +304,11 @@ public class InstallerSettingsTests
     [InlineData("{\"x\":1,,}")]
     [InlineData("{} true")]
     [InlineData("/* unterminated")]
+    [InlineData("{\"\\uDC00\":1}")]
+    [InlineData("{\"\\uD800\":1}")]
+    [InlineData("{\"x\":\"\\uDC00\"}")]
+    [InlineData("{\"x\":\"\\uD800\"}")]
+    [InlineData("{\"x\":[\"\\uD800\"]}")]
     public void SettingsJson_RejectsMalformedJson(string json)
     {
         Assert.Throws<FormatException>(() => SettingsJson.Parse(json));

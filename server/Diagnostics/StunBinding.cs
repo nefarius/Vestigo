@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.IO.Hashing;
 using System.Net;
 using System.Net.Sockets;
 
@@ -70,7 +71,9 @@ internal static class StunBinding
         message.AsSpan(HeaderLength).CopyTo(full.AsSpan(HeaderLength));
         BinaryPrimitives.WriteUInt16BigEndian(full.AsSpan(full.Length - 8), Fingerprint);
         BinaryPrimitives.WriteUInt16BigEndian(full.AsSpan(full.Length - 6), 4);
-        BinaryPrimitives.WriteUInt32BigEndian(full.AsSpan(full.Length - 4), Crc32(full.AsSpan(0, full.Length - 8)) ^ FingerprintXor);
+        // HashToUInt32 keeps byte ordering explicit: Crc32.Hash returns little-endian bytes,
+        // whereas STUN writes the XOR'd fingerprint in network byte order.
+        BinaryPrimitives.WriteUInt32BigEndian(full.AsSpan(full.Length - 4), Crc32.HashToUInt32(full.AsSpan(0, full.Length - 8)) ^ FingerprintXor);
         return full;
     }
 
@@ -113,7 +116,7 @@ internal static class StunBinding
             ReadOnlySpan<byte> body = message.Slice(value, valueLength);
             if (type == Fingerprint)
             {
-                if (valueLength != 4 || value + padded != end || Crc32(message[..offset]) != (BinaryPrimitives.ReadUInt32BigEndian(body) ^ FingerprintXor))
+                if (valueLength != 4 || value + padded != end || Crc32.HashToUInt32(message[..offset]) != (BinaryPrimitives.ReadUInt32BigEndian(body) ^ FingerprintXor))
                 {
                     return default;
                 }
@@ -213,21 +216,6 @@ internal static class StunBinding
         {
             destination[index] ^= mask[index];
         }
-    }
-
-    private static uint Crc32(ReadOnlySpan<byte> data)
-    {
-        uint crc = 0xFFFF_FFFF;
-        foreach (byte value in data)
-        {
-            crc ^= value;
-            for (int bit = 0; bit < 8; bit++)
-            {
-                crc = (crc & 1) == 0 ? crc >> 1 : (crc >> 1) ^ 0xEDB8_8320;
-            }
-        }
-
-        return ~crc;
     }
 }
 

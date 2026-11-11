@@ -89,6 +89,21 @@ try {
     if ([Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting($merged).Port -ne 6001) { throw 'Merged settings could not be read.' }
     if ($null -ne [Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting('{"Vestigo":{"ListenPort":01}}')) { throw 'Malformed JSON was accepted.' }
 
+    foreach ($invalid in @('{"\uDC00":1}', '{"\uD800":1}', '{"x":"\uDC00"}', '{"x":"\uD800"}', '{"x":["\uD800"]}')) {
+        $rejected = $false
+        try { [void][Vestigo.Installer.Actions.Logic.SettingsJson]::Parse($invalid) }
+        catch {
+            $cause = $_.Exception
+            while ($null -ne $cause.InnerException -and $cause -isnot [FormatException]) { $cause = $cause.InnerException }
+            if ($cause -isnot [FormatException]) { throw }
+            $rejected = $true
+        }
+        if (-not $rejected) { throw 'Invalid Unicode was accepted by the packaged parser.' }
+        if ($null -ne [Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting($invalid)) { throw 'Invalid Unicode was accepted by listen settings.' }
+        if ($null -ne [Vestigo.Installer.Actions.Logic.RootSettings]::ReadExisting($invalid)) { throw 'Invalid Unicode was accepted by root settings.' }
+        if ([Vestigo.Installer.Actions.Logic.ModuleSelection]::ReadExisting($invalid).Count -ne 0) { throw 'Invalid Unicode was accepted by module settings.' }
+    }
+
     Write-Host "Verified net48 custom-action CAB: $($files.Count) entries; extracted settings read/merge/write passed on CLR $([Environment]::Version)."
 }
 finally {

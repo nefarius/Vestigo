@@ -30,9 +30,11 @@ namespace Vestigo.Installer.Actions.Logic
                     return ToNode(document.RootElement);
                 }
             }
-            catch (JsonException ex)
+            catch (Exception ex) when (ex is JsonException || ex is InvalidOperationException)
             {
-                // Existing callers treat invalid settings as unreadable, or fail the deferred merge.
+                // Token parsing accepts escaped unpaired surrogates; decoding a property name
+                // or string value then throws InvalidOperationException. Keep those failures
+                // on the existing unreadable-settings/backup-and-recreate path as well.
                 throw new FormatException("The settings file is not valid JSON.", ex);
             }
         }
@@ -60,6 +62,13 @@ namespace Vestigo.Installer.Actions.Logic
                 }
 
                 return result;
+            }
+
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                // Decode eagerly, even in unrelated settings, so invalid Unicode cannot
+                // survive conversion and fail later outside Parse's FormatException boundary.
+                return JsonValue.Create(element.GetString());
             }
 
             // Retain numbers as JSON tokens rather than converting through double/decimal.

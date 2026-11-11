@@ -139,6 +139,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - [Model Context Protocol C# SDK](https://csharp.sdk.modelcontextprotocol.io/)
 - [Serilog](https://github.com/serilog/serilog)
 - [CliWrap](https://github.com/Tyrrrz/CliWrap)
+- [System.IO.Hashing](https://www.nuget.org/packages/System.IO.Hashing) (MIT; STUN CRC32 fingerprints)
 - [MinVer](https://github.com/adamralph/minver)
 - [WixSharp](https://github.com/oleg-shilo/wixsharp)
 - [WiX Toolset](https://wixtoolset.org/)
