@@ -22,7 +22,7 @@ public static class WindowsDisplayConfig
                 dpi.Error ?? "The physical DPI context could not be established.");
         }
 
-        if (!TryQuery(out DISPLAYCONFIG_PATH_INFO[] paths, out DISPLAYCONFIG_MODE_INFO[] modes, out uint pathCount, out string? error))
+        if (!TryQuery(allPaths: true, out DISPLAYCONFIG_PATH_INFO[] paths, out DISPLAYCONFIG_MODE_INFO[] modes, out uint pathCount, out string? error))
         {
             return OperationResult<DisplayLayoutSnapshot>.Fail("display_query_failed", error!);
         }
@@ -31,7 +31,7 @@ public static class WindowsDisplayConfig
         List<DisplayPathLayout> layouts = [];
         for (int index = 0; index < pathCount; index++)
         {
-            if (!TryDescribe(paths[index], modes, displays, out DisplayPathLayout? layout))
+            if (!TryDescribe(paths[index], modes, displays, includeInactive: true, out DisplayPathLayout? layout))
             {
                 continue;
             }
@@ -39,12 +39,14 @@ public static class WindowsDisplayConfig
             layouts.Add(layout!);
         }
 
+        (string topology, IReadOnlyList<DisplayPathLayout> annotated) = DisplayLayoutPlanner.Annotate(layouts);
         return OperationResult<DisplayLayoutSnapshot>.Ok(DisplayLayoutPlanner.WithFingerprint(new DisplayLayoutSnapshot(
             DateTimeOffset.UtcNow,
             Process.GetCurrentProcess().SessionId,
             DesktopCoordinates.PhysicalScreenPixels,
             string.Empty,
-            layouts)));
+            annotated,
+            topology)));
     }
 
     public static OperationResult<DisplayLayoutApplyResult> Apply(DisplayLayoutRequest request)
@@ -62,7 +64,7 @@ public static class WindowsDisplayConfig
                 false, false, request.Persistent, null, "invalid_request", string.Join(' ', validation.Errors), before.Value, null));
         }
 
-        if (!TryQuery(out DISPLAYCONFIG_PATH_INFO[] paths, out DISPLAYCONFIG_MODE_INFO[] modes, out uint pathCount, out string? error))
+        if (!TryQuery(allPaths: false, out DISPLAYCONFIG_PATH_INFO[] paths, out DISPLAYCONFIG_MODE_INFO[] modes, out uint pathCount, out string? error))
         {
             return OperationResult<DisplayLayoutApplyResult>.Fail("display_query_failed", error!);
         }
@@ -70,7 +72,7 @@ public static class WindowsDisplayConfig
         IReadOnlyList<DisplayInfo> displays = DisplayTopology.Enumerate();
         for (int index = 0; index < pathCount; index++)
         {
-            if (!TryDescribe(paths[index], modes, displays, out DisplayPathLayout? layout))
+            if (!TryDescribe(paths[index], modes, displays, includeInactive: false, out DisplayPathLayout? layout))
             {
                 continue;
             }
@@ -127,6 +129,7 @@ public static class WindowsDisplayConfig
     }
 
     private static unsafe bool TryQuery(
+        bool allPaths,
         out DISPLAYCONFIG_PATH_INFO[] paths,
         out DISPLAYCONFIG_MODE_INFO[] modes,
         out uint pathCount,
@@ -136,22 +139,26 @@ public static class WindowsDisplayConfig
         modes = [];
         pathCount = 0;
         error = null;
-        WIN32_ERROR size = PInvoke.GetDisplayConfigBufferSizes(
-            QUERY_DISPLAY_CONFIG_FLAGS.QDC_ONLY_ACTIVE_PATHS | QUERY_DISPLAY_CONFIG_FLAGS.QDC_VIRTUAL_MODE_AWARE,
-            out pathCount,
-            out uint modeCount);
-        if (size != WIN32_ERROR.NO_ERROR || pathCount == 0)
+        QUERY_DISPLAY_CONFIG_FLAGS flags = QUERY_DISPLAY_CONFIG_FLAGS.QDC_VIRTUAL_MODE_AWARE
+            | (allPaths ? QUERY_DISPLAY_CONFIG_FLAGS.QDC_ALL_PATHS : QUERY_DISPLAY_CONFIG_FLAGS.QDC_ONLY_ACTIVE_PATHS);
+        WIN32_ERROR size = PInvoke.GetDisplayConfigBufferSizes(flags, out pathCount, out uint modeCount);
+        if (size != WIN32_ERROR.NO_ERROR || (!allPaths && pathCount == 0))
         {
             error = "QueryDisplayConfig did not return an active topology.";
             return false;
         }
 
+        if (pathCount == 0)
+        {
+            return true;
+        }
+
         paths = new DISPLAYCONFIG_PATH_INFO[pathCount];
-        modes = new DISPLAYCONFIG_MODE_INFO[modeCount];
+        modes = new DISPLAYCONFIG_MODE_INFO[Math.Max(modeCount, 1)];
         uint queriedPaths = pathCount;
         uint queriedModes = modeCount;
         WIN32_ERROR query = PInvoke.QueryDisplayConfig(
-            QUERY_DISPLAY_CONFIG_FLAGS.QDC_ONLY_ACTIVE_PATHS | QUERY_DISPLAY_CONFIG_FLAGS.QDC_VIRTUAL_MODE_AWARE,
+            flags,
             ref queriedPaths,
             paths,
             ref queriedModes,
@@ -176,28 +183,32 @@ public static class WindowsDisplayConfig
         DISPLAYCONFIG_PATH_INFO path,
         DISPLAYCONFIG_MODE_INFO[] modes,
         IReadOnlyList<DisplayInfo> displays,
+        bool includeInactive,
         out DisplayPathLayout? layout)
     {
         layout = null;
+        string gdi = string.Empty;
         DISPLAYCONFIG_SOURCE_DEVICE_NAME source = default;
         source.header.type = DISPLAYCONFIG_DEVICE_INFO_TYPE.DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
         source.header.size = (uint)sizeof(DISPLAYCONFIG_SOURCE_DEVICE_NAME);
         source.header.adapterId = path.sourceInfo.adapterId;
         source.header.id = path.sourceInfo.id;
-        if (PInvoke.DisplayConfigGetDeviceInfo(ref Unsafe.As<DISPLAYCONFIG_SOURCE_DEVICE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER>(ref source)) != 0)
+        if (PInvoke.DisplayConfigGetDeviceInfo(ref Unsafe.As<DISPLAYCONFIG_SOURCE_DEVICE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER>(ref source)) == 0)
+        {
+            gdi = source.viewGdiDeviceName.AsReadOnlySpan().ToString().TrimEnd('\0');
+        }
+        else if (!includeInactive)
         {
             return false;
         }
 
-        string gdi = source.viewGdiDeviceName.AsReadOnlySpan().ToString().TrimEnd('\0');
         DISPLAYCONFIG_TARGET_DEVICE_NAME target = default;
         target.header.type = DISPLAYCONFIG_DEVICE_INFO_TYPE.DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
         target.header.size = (uint)sizeof(DISPLAYCONFIG_TARGET_DEVICE_NAME);
         target.header.adapterId = path.targetInfo.adapterId;
         target.header.id = path.targetInfo.id;
-        string? devicePath = PInvoke.DisplayConfigGetDeviceInfo(ref Unsafe.As<DISPLAYCONFIG_TARGET_DEVICE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER>(ref target)) == 0
-            ? target.monitorDevicePath.AsReadOnlySpan().ToString().TrimEnd('\0')
-            : null;
+        bool named = PInvoke.DisplayConfigGetDeviceInfo(ref Unsafe.As<DISPLAYCONFIG_TARGET_DEVICE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER>(ref target)) == 0;
+        string? devicePath = named ? target.monitorDevicePath.AsReadOnlySpan().ToString().TrimEnd('\0') : null;
         if (string.IsNullOrWhiteSpace(devicePath))
         {
             devicePath = null;
@@ -207,31 +218,46 @@ public static class WindowsDisplayConfig
         int y = 0;
         int width = 0;
         int height = 0;
-        if (TrySourceModeIndex(path, out uint sourceIndex)
-            && sourceIndex < modes.Length
-            && modes[sourceIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
+        int? desktopWidth = null;
+        int? desktopHeight = null;
+        int? sourceModeIndex = TrySourceModeIndex(path, out uint sourceIndex) ? checked((int)sourceIndex) : null;
+        if (sourceModeIndex is int sourceMode
+            && (uint)sourceMode < modes.Length
+            && modes[sourceMode].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
         {
-            DISPLAYCONFIG_SOURCE_MODE sourceMode = modes[sourceIndex].sourceMode;
-            x = sourceMode.position.x;
-            y = sourceMode.position.y;
-            width = checked((int)sourceMode.width);
-            height = checked((int)sourceMode.height);
+            DISPLAYCONFIG_SOURCE_MODE sourceModeInfo = modes[sourceMode].sourceMode;
+            x = sourceModeInfo.position.x;
+            y = sourceModeInfo.position.y;
+            width = checked((int)sourceModeInfo.width);
+            height = checked((int)sourceModeInfo.height);
+            desktopWidth = width;
+            desktopHeight = height;
         }
 
-        if (TryTargetModeIndex(path, out uint targetIndex)
-            && targetIndex < modes.Length
-            && modes[targetIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
+        int? signalWidth = null;
+        int? signalHeight = null;
+        uint? signalNumerator = null;
+        uint? signalDenominator = null;
+        int? targetModeIndex = TryTargetModeIndex(path, out uint targetIndex) ? checked((int)targetIndex) : null;
+        if (targetModeIndex is int targetMode
+            && (uint)targetMode < modes.Length
+            && modes[targetMode].infoType == DISPLAYCONFIG_MODE_INFO_TYPE.DISPLAYCONFIG_MODE_INFO_TYPE_TARGET)
         {
-            DISPLAYCONFIG_2DREGION active = modes[targetIndex].targetMode.targetVideoSignalInfo.activeSize;
-            width = width == 0 ? checked((int)active.cx) : width;
-            height = height == 0 ? checked((int)active.cy) : height;
+            DISPLAYCONFIG_VIDEO_SIGNAL_INFO signal = modes[targetMode].targetMode.targetVideoSignalInfo;
+            signalWidth = DisplaySignalReader.Count(signal.activeSize.cx);
+            signalHeight = DisplaySignalReader.Count(signal.activeSize.cy);
+            signalNumerator = signal.vSyncFreq.Numerator;
+            signalDenominator = signal.vSyncFreq.Denominator;
+            width = width == 0 && signalWidth is int signalW ? signalW : width;
+            height = height == 0 && signalHeight is int signalH ? signalH : height;
         }
 
+        uint flags = path.flags;
         DisplayInfo? display = displays.FirstOrDefault(item => string.Equals(item.GdiDeviceName, gdi, StringComparison.OrdinalIgnoreCase));
         layout = new DisplayPathLayout(
             new DisplayTargetIdentity(
                 devicePath,
-                target.connectorInstance,
+                named ? target.connectorInstance : 0,
                 DisplaySignalReader.Luid(path.targetInfo.adapterId.HighPart, path.targetInfo.adapterId.LowPart) ?? "00000000:00000000",
                 path.targetInfo.id,
                 path.sourceInfo.id),
@@ -245,9 +271,30 @@ public static class WindowsDisplayConfig
             path.targetInfo.refreshRate.Denominator,
             DisplaySignalReader.TrimPrefix(path.targetInfo.rotation.ToString(), "DISPLAYCONFIG_ROTATION_") ?? "IDENTITY",
             DisplaySignalReader.TrimPrefix(path.targetInfo.scaling.ToString(), "DISPLAYCONFIG_SCALING_") ?? "IDENTITY",
-            DesktopCoordinates.PhysicalScreenPixels);
-        return width > 0 && height > 0;
+            DesktopCoordinates.PhysicalScreenPixels,
+            (flags & 0x1) != 0,
+            flags,
+            DisplayLayoutPlanner.DescribePathFlags(flags),
+            sourceModeIndex,
+            targetModeIndex,
+            desktopWidth,
+            desktopHeight,
+            signalWidth,
+            signalHeight,
+            signalNumerator,
+            signalDenominator,
+            null,
+            named && target.flags.edidIdsValid ? DisplayTopology.DecodeManufacturer(target.edidManufactureId) : null,
+            named && target.flags.edidIdsValid && target.edidProductCodeId != 0 ? "0x" + target.edidProductCodeId.ToString("X4") : null,
+            named ? target.flags.edidIdsValid : null,
+            named ? target.flags.friendlyNameFromEdid : null,
+            named ? target.flags.friendlyNameForced : null,
+            named ? target.flags.reserved : null,
+            named ? NullIfEmpty(target.monitorFriendlyDeviceName.AsReadOnlySpan().ToString().TrimEnd('\0')) : null);
+        return includeInactive || (width > 0 && height > 0);
     }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static bool TryPatch(ref DISPLAYCONFIG_PATH_INFO path, DISPLAYCONFIG_MODE_INFO[] modes, DisplayTargetChange change)
     {

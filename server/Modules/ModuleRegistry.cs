@@ -144,6 +144,8 @@ public static class ModuleRegistry
         bool diagnosticsPlayback = diagnostics && options.Diagnostics.AllowAudioPlayback;
         bool diagnosticsDumps = diagnostics && options.Diagnostics.AllowProcessDumps;
         bool diagnosticsKernelDumps = diagnostics && options.Diagnostics.AllowKernelDumpStaging;
+        bool diagnosticsFirewall = diagnostics && options.Diagnostics.AllowFirewallInventory;
+        bool diagnosticsVerifier = diagnostics && options.Diagnostics.AllowDriverVerifier;
         if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics && !servicing && !registry)
         {
             return null;
@@ -205,7 +207,7 @@ public static class ModuleRegistry
             if (diagnostics)
             {
                 names.Add("Diagnostics");
-                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps, diagnosticsKernelDumps));
+                clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps, diagnosticsFirewall, diagnosticsVerifier, diagnosticsKernelDumps));
             }
 
             string named = names.Count == 1
@@ -259,7 +261,7 @@ public static class ModuleRegistry
 
         if (diagnostics)
         {
-            extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps, diagnosticsKernelDumps) + " ";
+            extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps, diagnosticsFirewall, diagnosticsVerifier, diagnosticsKernelDumps) + " ";
         }
 
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
@@ -273,14 +275,14 @@ public static class ModuleRegistry
                "This is acceptable for an isolated lab network; otherwise configure Vestigo:ApiTokens.";
     }
 
-    private static string DiagnosticsClause(string reach, bool online, bool probes, bool network, bool playback, bool dumps, bool kernelDumps) =>
-        $"{reach} can {DiagnosticsDetail(online, probes, network, playback, dumps, kernelDumps)}";
+    private static string DiagnosticsClause(string reach, bool online, bool probes, bool network, bool playback, bool dumps, bool firewall, bool verifier, bool kernelDumps) =>
+        $"{reach} can {DiagnosticsDetail(online, probes, network, playback, dumps, firewall, verifier, kernelDumps)}";
 
-    private static string DiagnosticsDetail(bool online, bool probes, bool network, bool playback, bool dumps, bool kernelDumps)
+    private static string DiagnosticsDetail(bool online, bool probes, bool network, bool playback, bool dumps, bool firewall, bool verifier, bool kernelDumps)
     {
         string text = online
-            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, and list kernel dump file names and header metadata."
-            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, and list kernel dump file names and header metadata.";
+            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, read Driver Verifier state, and list kernel dump file names and header metadata."
+            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, read Driver Verifier state, and list kernel dump file names and header metadata.";
         if (probes)
         {
             text += " Capture probes may observe whether frames arrive, and they do not return pixels.";
@@ -304,6 +306,16 @@ public static class ModuleRegistry
         if (kernelDumps)
         {
             text += " Kernel dump staging may copy a selected kernel dump into a Write root and issue a one-time download ticket.";
+        }
+
+        if (firewall)
+        {
+            text += " Firewall inventory may list Windows Firewall profiles and rule expressions, including application paths.";
+        }
+
+        if (verifier)
+        {
+            text += " Driver Verifier changes may bugcheck after the next boot.";
         }
 
         return text;

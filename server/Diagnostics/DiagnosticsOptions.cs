@@ -20,6 +20,12 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>capture_process_dump</c>. The tool stays disabled until this is true.</summary>
     public bool AllowProcessDumps { get; set; }
 
+    /// <summary>Allows <c>set_driver_verifier</c>. <c>reset_driver_verifier</c> stays available without it.</summary>
+    public bool AllowDriverVerifier { get; set; }
+
+    /// <summary>Allows <c>get_firewall_profiles</c> and <c>list_firewall_rules</c>. Both stay disabled until this is true.</summary>
+    public bool AllowFirewallInventory { get; set; }
+
     /// <summary>Allows <c>stage_kernel_dump</c>. The tool stays disabled until this is true.</summary>
     public bool AllowKernelDumpStaging { get; set; }
 
@@ -61,6 +67,9 @@ public sealed class DiagnosticsOptions
 
     /// <summary>Upper bound for <c>list_crash_reports</c> <c>limit</c>.</summary>
     public int MaxCrashReports { get; set; } = 200;
+
+    /// <summary>Upper bound for <c>list_firewall_rules</c> <c>limit</c>.</summary>
+    public int MaxFirewallRules { get; set; } = 200;
 
     /// <summary>Maximum bytes read from one <c>Report.wer</c>.</summary>
     public long MaxCrashReportFileBytes { get; set; } = 256 * 1024;
@@ -131,6 +140,11 @@ public sealed class DiagnosticsOptions
         if (MaxCrashReports is < 1 or > 2000)
         {
             throw new InvalidOperationException("Vestigo:Diagnostics:MaxCrashReports must be between 1 and 2000.");
+        }
+
+        if (MaxFirewallRules is < 1 or > 2000)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxFirewallRules must be between 1 and 2000.");
         }
 
         if (MaxCrashReportFileBytes is < 4096 or > 1_048_576)

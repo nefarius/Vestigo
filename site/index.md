@@ -28,7 +28,7 @@ The opt-in Registry module reads allow-listed registry values. `HKCU` is the con
 
 The opt-in WindowsServicing module adds read-only reboot signals, queued file operations, Windows Update inventory and history, CBS package state, bounded failure evidence, storage metadata, and file-locker inspection. It requires Jobs and is separate from Vestigo's own Updates module. See [the features](features.md) and [the QA walkthrough](qa.md#investigate-windows-update-and-servicing). It does not install or repair Windows updates, clear queues, or reboot the PC.
 
-Power is on by default and read-only. `get_power_state` reports AC, battery, the active scheme, and approximate last sleep and wake times. `get_sleep_configuration` reports lid and timeout policy. See [the features](features.md) and [the QA walkthrough](qa.md#see-whether-the-machine-slept).
+Power is on by default and read-only. `get_power_state` reports AC, battery, the active scheme, and approximate last sleep and wake times. `get_sleep_configuration` reports lid and timeout policy. `get_last_wake_source` reports the newest Power-Troubleshooter resume event. See [the features](features.md) and [the QA walkthrough](qa.md#see-whether-the-machine-slept).
 
 `test_endpoint` can send one UDP datagram, or one STUN binding request, to an allow-listed host. A sent datagram does not prove the peer is reachable, and a missing STUN response is not a firewall block. See [the features](features.md) and [the QA walkthrough](qa.md#check-a-lab-endpoint).
 

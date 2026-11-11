@@ -90,12 +90,15 @@ public sealed record SleepConfigurationResult(
     bool? HybridSleepAc,
     bool? HybridSleepDc);
 
-/// <summary>Reads power state and sleep policy. Tests replace the Windows implementation.</summary>
+/// <summary>Reads power state, sleep policy, and the last wake event. Tests replace the Windows implementation.</summary>
 public interface IPowerPlatform
 {
     PowerStateSample ReadState();
 
     SleepConfigurationSample ReadSleep();
+
+    /// <summary>The newest Power-Troubleshooter resume event, or an empty result.</summary>
+    WakeSourceResult ReadLastWake();
 }
 
 /// <summary>Pure mapping from documented Windows power values. The clock is supplied by the caller.</summary>
