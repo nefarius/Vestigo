@@ -30,7 +30,9 @@ public sealed record SavedWindowPlacement(
     int NormalY,
     int NormalWidth,
     int NormalHeight,
-    uint Flags);
+    uint Flags,
+    string? DesktopSessionId = null,
+    string? DesktopPath = null);
 
 public sealed record WindowPlacementAttempt(
     int Number,

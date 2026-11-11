@@ -52,7 +52,7 @@ Even after a module is on, these actions stay off until their own setting is tru
 - `Diagnostics:AllowFirewallInventory`
 - `Diagnostics:AllowKernelDumpStaging`
 
-Attaching to someone else's ETW session stays off until you list the session name in `AttachableSessions`. `observe_presentation` starts and stops only its own short `Vestigo-` session.
+Attaching to someone else's ETW session stays off until you list the session name in `AttachableSessions`. `observe_presentation` starts and stops only its own short `Vestigo-` session, and decodes it outside the service process.
 
 ## Screen and input
 

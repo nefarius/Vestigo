@@ -11,8 +11,9 @@ public sealed class VirtualDisplayTools(VirtualDisplayCoordinator displays)
     [McpServerTool(Name = "get_virtual_display_backend", ReadOnly = true)]
     [Description(
         "Reports whether Vestigo can create a temporary virtual display. "
-        + "canCreate false and errorCode virtual_display_backend_unavailable mean no released backend is selected. "
-        + "An installed indirect-display driver is not an API. This does not change the display topology.")]
+        + "canCreate false and errorCode virtual_display_backend_unavailable mean no released Vestigo backend component is selected. "
+        + "prerequisite names that missing component. An installed indirect-display driver is not an API and is not treated as success. "
+        + "This does not change the display topology.")]
     public Task<OperationResult<VirtualDisplayBackendStatus>> GetVirtualDisplayBackend(CancellationToken cancellationToken = default) =>
         displays.StatusAsync(cancellationToken);
 

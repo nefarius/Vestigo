@@ -27,7 +27,8 @@ public sealed class TraceModule : VestigoModule
         services.AddSingleton<CaptureManager>();
         services.AddHostedService(provider => provider.GetRequiredService<CaptureManager>());
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<PresentationObserver>();
-        services.AddHostedService(provider => provider.GetRequiredService<PresentationObserver>());
+        services.AddSingleton<IPresentationProcess, ProcessPresentationHost>();
+        services.AddSingleton<PresentationGateway>();
+        services.AddHostedService(provider => provider.GetRequiredService<PresentationGateway>());
     }
 }

@@ -286,6 +286,192 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public async Task ReaderFailure_ReleasesTheSessionAndStaysUnknown()
+    {
+        ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)], ReadError = new InvalidOperationException("bad metadata") };
+        PresentationObserver observer = Observer(factory);
+
+        OperationResult<PresentationObservation> result = await observer.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal("decode_failed", result.Value.Reason);
+        Assert.Contains("bad metadata", result.Value.Detail);
+        Assert.Contains(result.Value.SessionName!, factory.Disposed);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task IsolatedCrash_DoesNotInventAModeAndClearsAStoppedSession()
+    {
+        ScriptedPresentation process = new() { ExitCode = unchecked((int)0xC0000005), Output = string.Empty, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal("decoder_terminated", result.Value.Reason);
+        Assert.Contains("0xC0000005", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+        Assert.Contains(process.Calls, call => call.Contains("stop"));
+    }
+
+    [Fact]
+    public async Task IsolatedMalformedOutput_IsUnknown()
+    {
+        ScriptedPresentation process = new() { ExitCode = 0, Output = "not-json", StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("decoder_terminated", result.Value!.Reason);
+        Assert.NotEqual("composed", result.Value.Mode);
+        Assert.NotEqual("independent-flip", result.Value.Mode);
+        Assert.NotEqual("exclusive", result.Value.Mode);
+    }
+
+    [Fact]
+    public async Task IsolatedCancellation_StopsTheDecoder()
+    {
+        ScriptedPresentation process = new() { WaitForCancel = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+        using CancellationTokenSource cancellation = new();
+        Task<OperationResult<PresentationObservation>> running = gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(5), cancellation.Token);
+        await cancellation.CancelAsync();
+
+        OperationResult<PresentationObservation> result = await running;
+
+        Assert.Equal("cancelled", result.Value!.Reason);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task IsolatedConfirmedRelease_ReturnsTheModeAndClearsTheCheckpoint()
+    {
+        string json = JsonSerializer.Serialize(
+            OperationResult<PresentationObservation>.Ok(new PresentationObservation(
+                "independent-flip", null, "etw", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 42, null, 1, 1, [], [], "Vestigo-P0123456789a", null)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        ScriptedPresentation process = new() { ExitCode = 0, Output = json };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("independent-flip", result.Value!.Mode);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("stop"));
+    }
+
+    [Fact]
+    public async Task IsolatedNonZeroExit_DropsTheParsedModeUntilTheSessionStops()
+    {
+        string json = JsonSerializer.Serialize(
+            OperationResult<PresentationObservation>.Ok(new PresentationObservation(
+                "independent-flip", null, "etw", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 42, null, 1, 1, [], [], "Vestigo-P0123456789a", null)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        ScriptedPresentation process = new() { ExitCode = 2, Output = json, StopExitCode = 1 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal("decoder_terminated", result.Value.Reason);
+        Assert.Contains(process.Calls, call => call.Contains("stop"));
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task HostStartFailure_ForgetsASessionThatWasNeverCreated()
+    {
+        ScriptedPresentation process = new() { HostFailed = true, Started = false };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_host_failed", result.Value!.Reason);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("stop"));
+    }
+
+    [Fact]
+    public async Task UncertainTimeout_SaysCleanupIsUnconfirmed()
+    {
+        ScriptedPresentation process = new() { TimedOut = true, TerminationUncertain = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_timeout", result.Value!.Reason);
+        Assert.Contains("cleanup is unconfirmed", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task ConfirmedTimeout_SaysTheDecoderWasStopped()
+    {
+        ScriptedPresentation process = new() { TimedOut = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_timeout", result.Value!.Reason);
+        Assert.Contains("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("may remain active", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task StopFailureAfterTimeout_SaysTheSessionMayRemainActive()
+    {
+        ScriptedPresentation process = new() { TimedOut = true, StopExitCode = 1 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_timeout", result.Value!.Reason);
+        Assert.Contains("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cleanup is unconfirmed", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("may remain active", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task UncertainCancellation_SaysCleanupIsUnconfirmed()
+    {
+        ScriptedPresentation process = new() { Cancelled = true, TerminationUncertain = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("cancelled", result.Value!.Reason);
+        Assert.Contains("cleanup is unconfirmed", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UncertainTermination_KeepsTheCheckpoint()
+    {
+        ScriptedPresentation process = new() { ExitCode = 0, Output = "{}", TerminationUncertain = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_host_failed", result.Value!.Reason);
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task IsolatedStartup_KeepsASessionThatFailsToStop()
+    {
+        File.WriteAllText(VestigoPaths.OwnedPresentationPath, JsonSerializer.Serialize(new[] { "Vestigo-P0123456789a", "Other Session" }));
+        ScriptedPresentation process = new() { StopExitCode = 1 };
+        await Gateway(process).StartAsync(CancellationToken.None);
+
+        Assert.Contains("Vestigo-P0123456789a", File.ReadAllText(VestigoPaths.OwnedPresentationPath), StringComparison.Ordinal);
+        Assert.DoesNotContain("Other Session", File.ReadAllText(VestigoPaths.OwnedPresentationPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WindowsObservation_IsOptIn()
     {
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_PRESENTATION_TESTS") != "1")
@@ -293,12 +479,12 @@ public class PresentationTests : IDisposable
             Assert.Skip("Set VESTIGO_PRESENTATION_TESTS=1 in an elevated Windows session.");
         }
 
-        PresentationObserver observer = new(
-            new EtwRealtimeTraceSessionFactory(),
+        PresentationGateway gateway = new(
+            new ProcessPresentationHost(VestigoExecutable()),
             new VestigoOptions(),
             TimeProvider.System,
-            NullLogger<PresentationObserver>.Instance);
-        OperationResult<PresentationObservation> result = await observer.ObserveAsync(
+            NullLogger<PresentationGateway>.Instance);
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(
             Environment.ProcessId,
             null,
             TimeSpan.FromSeconds(1),
@@ -310,15 +496,36 @@ public class PresentationTests : IDisposable
             Assert.Contains(result.Value.Reason, new[]
             {
                 "providers_unavailable", "no_events", "no_correlation", "insufficient_evidence",
-                "ambiguous", "events_dropped", "events_truncated", "decode_failed", "session_unavailable", "cancelled"
+                "ambiguous", "events_dropped", "events_truncated", "decode_failed", "session_unavailable", "cancelled",
+                "decoder_terminated", "worker_timeout", "worker_host_failed"
             });
         }
 
+        Assert.False(string.IsNullOrWhiteSpace(result.Value.SessionName));
         Assert.DoesNotContain(result.Value.SessionName!, new EtwRealtimeTraceSessionFactory().ListSessions());
+        if (File.Exists(VestigoPaths.OwnedPresentationPath))
+        {
+            Assert.DoesNotContain(result.Value.SessionName!, File.ReadAllText(VestigoPaths.OwnedPresentationPath), StringComparison.Ordinal);
+        }
+    }
+
+    private static string VestigoExecutable()
+    {
+        DirectoryInfo output = new(AppContext.BaseDirectory);
+        string configuration = output.Parent?.Name ?? "Debug";
+        string executable = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "server", "bin", configuration, output.Name, "Vestigo.exe"));
+        Assert.True(File.Exists(executable), executable);
+        return executable;
     }
 
     private PresentationObserver Observer(ScriptedFactory factory) =>
         new(factory, new VestigoOptions(), TimeProvider.System, NullLogger<PresentationObserver>.Instance);
+
+    private PresentationGateway Gateway(ScriptedPresentation process) =>
+        new(process, new VestigoOptions(), TimeProvider.System, NullLogger<PresentationGateway>.Instance);
 
     private static PresentationSample Parsed(string json)
     {
@@ -360,6 +567,55 @@ public class PresentationTests : IDisposable
         Assert.NotEmpty(factory.Created);
     }
 
+    private sealed class ScriptedPresentation : IPresentationProcess
+    {
+        public int? ExitCode { get; init; }
+
+        public string Output { get; init; } = string.Empty;
+
+        public bool WaitForCancel { get; init; }
+
+        public int StopExitCode { get; init; }
+
+        public bool HostFailed { get; init; }
+
+        public bool Started { get; init; } = true;
+
+        public bool TerminationUncertain { get; init; }
+
+        public bool TimedOut { get; init; }
+
+        public bool Cancelled { get; init; }
+
+        public List<string[]> Calls { get; } = [];
+
+        public async Task<PresentationProcessResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add(arguments.ToArray());
+            if (arguments.Contains("stop"))
+            {
+                return new PresentationProcessResult(StopExitCode, "{\"success\":true}", false, false);
+            }
+
+            if (WaitForCancel)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return new PresentationProcessResult(null, string.Empty, true, false);
+                }
+            }
+
+            return new PresentationProcessResult(ExitCode, Output, Cancelled, TimedOut, HostFailed, Started, TerminationUncertain);
+        }
+    }
+
     private sealed class ScriptedFactory : IRealtimeTraceSessionFactory
     {
         public string[] Events { get; init; } = [];
@@ -371,6 +627,8 @@ public class PresentationTests : IDisposable
         public bool FailDispose { get; set; }
 
         public bool FailLossQuery { get; init; }
+
+        public Exception? ReadError { get; init; }
 
         public Exception? CreateError { get; init; }
 
@@ -428,6 +686,11 @@ public class PresentationTests : IDisposable
                 Action onMissingFormat,
                 [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
             {
+                if (factory.ReadError is not null)
+                {
+                    throw factory.ReadError;
+                }
+
                 if (factory.Hold)
                 {
                     await factory._gate.Task.WaitAsync(cancellationToken);

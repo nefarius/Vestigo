@@ -103,7 +103,11 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
                     : OperationResult<T>.Ok(command);
             }
 
-            if (document.RootElement.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.String)
+            // A zero exit writes the command payload. Display apply rejections carry their own error field
+            // and snapshots; only a nonzero exit is the helper error envelope.
+            if (exitCode != 0
+                && document.RootElement.TryGetProperty("error", out JsonElement error)
+                && error.ValueKind == JsonValueKind.String)
             {
                 string code = document.RootElement.TryGetProperty("errorCode", out JsonElement errorCode) &&
                               errorCode.GetString() is { Length: > 0 } parsed

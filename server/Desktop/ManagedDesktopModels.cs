@@ -169,7 +169,8 @@ public sealed record ManagedDesktopSession(
     bool HandleHeld,
     bool DesktopRetained,
     IReadOnlyList<OwnedDesktopProcess> Processes,
-    string? LastError);
+    string? LastError,
+    string? DesktopPresence = null);
 
 /// <summary>Held across process creation so a close cannot miss the process id.</summary>
 public sealed class ManagedDesktopLease : IDisposable

@@ -124,20 +124,59 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                 new DisplayLayoutRequest(targets, persistent, false),
                 elevated,
                 cancellationToken).ConfigureAwait(false);
+            if (applied.Success && applied.Value is { Applied: true, Unchanged: true })
+            {
+                _current = null;
+                TryDelete();
+                return OperationResult<DisplayLayoutTransaction>.Ok(transaction with
+                {
+                    State = "unchanged",
+                    Current = before.Value,
+                    Unchanged = true,
+                    RestorationVerified = true
+                });
+            }
+
             if (applied.Success && applied.Value is { Applied: true })
             {
-                _current = transaction with { State = "active", Current = applied.Value.After };
+                _current = transaction with
+                {
+                    State = "active",
+                    Current = applied.Value.After,
+                    Unchanged = applied.Value.Unchanged
+                };
                 Save();
                 return OperationResult<DisplayLayoutTransaction>.Ok(_current);
             }
 
             if (applied.Value is { Applied: false })
             {
-                _current = null;
-                TryDelete();
+                string message = DescribeRejection(applied.Value);
+                bool drifted = applied.Value.Before is not null
+                    && applied.Value.After is not null
+                    && !string.Equals(applied.Value.Before.Fingerprint, applied.Value.After.Fingerprint, StringComparison.OrdinalIgnoreCase);
+                bool unknownAfter = applied.Value.Validated && applied.Value.After is null;
+                if ((drifted || unknownAfter) && applied.Value.Stage == "apply")
+                {
+                    await RestoreCoreAsync(CancellationToken.None).ConfigureAwait(false);
+                    message += _current is { RestorationVerified: true }
+                        ? " Rollback verified the original topology."
+                        : " Rollback did not verify the original topology.";
+                }
+                else if (!(drifted || unknownAfter))
+                {
+                    _current = null;
+                    TryDelete();
+                }
+                else if (_current is { Id: var pendingId })
+                {
+                    message += " Transaction " + pendingId
+                        + " remains open. Use get_display_layout_transaction and restore_display_layout_transaction to recover the original topology.";
+                }
+
                 return OperationResult<DisplayLayoutTransaction>.Fail(
                     applied.Value.ErrorCode ?? "display_config_rejected",
-                    applied.Value.Error ?? "SetDisplayConfig did not apply the layout.");
+                    message);
             }
 
             if (!applied.Success && applied.ErrorCode is "helper_timeout" or "helper_failed" or "cancelled")
@@ -289,6 +328,28 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         }
     }
 
+    private static string DescribeRejection(DisplayLayoutApplyResult result)
+    {
+        string message = result.Error ?? "SetDisplayConfig did not apply the layout.";
+        string stage = result.Stage ?? (result.Validated ? "apply" : "validate");
+        if (!message.Contains("Stage=", StringComparison.Ordinal))
+        {
+            message += $" Stage={stage}.";
+        }
+
+        if (result.NativeError is int native && !message.Contains("NativeError=", StringComparison.Ordinal))
+        {
+            message += $" NativeError={native}.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Flags) && !message.Contains("Flags=", StringComparison.Ordinal))
+        {
+            message += $" Flags={result.Flags}.";
+        }
+
+        return message;
+    }
+
     private async Task RestoreCoreAsync(CancellationToken cancellationToken)
     {
         if (_current is null)
@@ -324,7 +385,11 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             Current = after.Success ? after.Value : _current.Current,
             RestorationVerified = verified,
             Differences = differences,
-            Error = verified ? null : applied.Error ?? (differences.Count == 0 ? "restore was not verified" : string.Join(' ', differences))
+            Error = verified
+                ? null
+                : applied.Value is { Applied: false } rejection
+                    ? DescribeRejection(rejection)
+                    : applied.Error ?? (differences.Count == 0 ? "restore was not verified" : string.Join(' ', differences))
         };
         if (verified)
         {

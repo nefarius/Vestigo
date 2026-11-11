@@ -614,6 +614,8 @@ public class DisplayLayoutContractTests : IDisposable
         OperationResult<DisplayLayoutTransaction> failed = await manager.RestoreAsync(started.Value!.Id, CancellationToken.None);
         Assert.Equal("restore_failed", failed.Value!.State);
         Assert.False(failed.Value.RestorationVerified);
+        Assert.Contains("NativeError=87", failed.Value.Error);
+        Assert.Contains("rejected", failed.Value.Error);
         Assert.True(File.Exists(VestigoPaths.OwnedDisplayLayoutPath));
         Assert.Equal("display_transaction_busy", (await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None)).ErrorCode);
 
@@ -655,9 +657,29 @@ public class DisplayLayoutContractTests : IDisposable
         DisplayLayoutTransactionManager rejection = Manager(rejected);
         OperationResult<DisplayLayoutTransaction> failed = await rejection.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None);
         Assert.Equal("display_config_rejected", failed.ErrorCode);
+        Assert.Contains("NativeError=87", failed.Error);
+        Assert.Contains("Stage=apply", failed.Error);
         Assert.Single(rejected.Applied);
         Assert.False(File.Exists(VestigoPaths.OwnedDisplayLayoutPath));
         Assert.Equal("not_found", rejection.Get(null).ErrorCode);
+    }
+
+    [Fact]
+    public async Task Start_KeepsTheCheckpointWhenTheTopologyWasNotApplied()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { RejectBeforeApply = true };
+        DisplayLayoutTransactionManager manager = Manager(displays);
+
+        OperationResult<DisplayLayoutTransaction> failed = await manager.StartAsync([Change(0, 0, 1280, 720)], true, false, CancellationToken.None);
+
+        Assert.Equal("display_mode_unavailable", failed.ErrorCode);
+        Assert.Contains("A requested target was not in the active topology", failed.Error);
+        Assert.DoesNotContain("Rollback", failed.Error);
+        Assert.Contains(manager.Get(null).Value!.Id, failed.Error);
+        Assert.Contains("get_display_layout_transaction", failed.Error);
+        Assert.Contains("restore_display_layout_transaction", failed.Error);
+        Assert.Single(displays.Applied);
+        Assert.True(File.Exists(VestigoPaths.OwnedDisplayLayoutPath));
     }
 
     [Fact]
@@ -700,6 +722,54 @@ public class DisplayLayoutContractTests : IDisposable
 
         Assert.Equal("restored", again.Value!.State);
         Assert.Equal(applies, displays.Applied.Count);
+    }
+
+    [Fact]
+    public void ModePatch_PreservesSignalAndRefreshForAMove()
+    {
+        DisplayPathLayout current = Path(0, 1200, 1920, 1200) with { SignalWidth = 1920, SignalHeight = 1200 };
+        DisplayModePatch move = DisplayModePatch.For(current, Change(1920, 0, 1920, 1200));
+        DisplayModePatch same = DisplayModePatch.For(current, Change(0, 1200, 1920, 1200));
+        DisplayModePatch refresh = DisplayModePatch.For(current, Change(0, 1200, 1920, 1200) with { RefreshNumerator = 120, RefreshDenominator = 1 });
+        DisplayModePatch scaled = DisplayModePatch.For(current with { SignalWidth = 1280, SignalHeight = 720 }, Change(0, 0, 800, 600));
+
+        Assert.True(move.Move);
+        Assert.False(move.ResizeSignal);
+        Assert.False(move.ChangeRefresh);
+        Assert.True(move.AnyChange);
+        Assert.False(same.AnyChange);
+        Assert.True(refresh.ChangeRefresh);
+        Assert.False(refresh.ResizeSignal);
+        Assert.True(scaled.Unsupported);
+        Assert.True(WindowsDisplayConfig.SeparatesValidationFromApply(false));
+        Assert.True(WindowsDisplayConfig.SeparatesValidationFromApply(true));
+    }
+
+    [Fact]
+    public async Task UnchangedApply_DoesNotLeaveATransactionOpen()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 1200, 1920, 1200))) { ReportUnchanged = true };
+        DisplayLayoutTransactionManager manager = Manager(displays);
+
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 1200, 1920, 1200)], false, false, CancellationToken.None);
+
+        Assert.True(started.Success);
+        Assert.Equal("unchanged", started.Value!.State);
+        Assert.True(started.Value.Unchanged);
+        Assert.False(manager.Get(null).Success);
+    }
+
+    [Fact]
+    public async Task AppliedWithoutASnapshot_LeavesCurrentNull()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { OmitAfter = true };
+        DisplayLayoutTransactionManager manager = Manager(displays);
+
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(10, 0, 1920, 1080)], false, false, CancellationToken.None);
+
+        Assert.True(started.Success, started.Error);
+        Assert.Equal("active", started.Value!.State);
+        Assert.Null(started.Value.Current);
     }
 
     [Fact]
@@ -761,6 +831,9 @@ public class DisplayLayoutContractTests : IDisposable
         public DisplayLayoutSnapshot Current = original;
         public int SnapshotsBeforeChanged;
         public bool FailApply;
+        public bool RejectBeforeApply;
+        public bool ReportUnchanged;
+        public bool OmitAfter;
         public bool CancelFirstApply;
         public string? UncertainError;
         public List<DisplayLayoutRequest> Applied { get; } = [];
@@ -788,6 +861,12 @@ public class DisplayLayoutContractTests : IDisposable
                 return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Fail(UncertainError, "The helper did not return a result."));
             }
 
+            if (RejectBeforeApply)
+            {
+                return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Ok(
+                    new DisplayLayoutApplyResult(false, true, request.Persistent, null, "display_mode_unavailable", "A requested target was not in the active topology.", Current, null, "validate")));
+            }
+
             if (FailApply)
             {
                 return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Ok(
@@ -796,7 +875,7 @@ public class DisplayLayoutContractTests : IDisposable
 
             Current = Snap(Path(request.Targets[0].X, request.Targets[0].Y, request.Targets[0].Width, request.Targets[0].Height));
             return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Ok(
-                new DisplayLayoutApplyResult(true, true, request.Persistent, null, null, null, null, Current)));
+                new DisplayLayoutApplyResult(true, true, request.Persistent, null, null, null, null, OmitAfter ? null : Current, Unchanged: ReportUnchanged)));
         }
     }
 }
