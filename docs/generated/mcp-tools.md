@@ -143,7 +143,7 @@ Would create a temporary virtual display, arrange it, and restore the original t
 | `refreshDenominator` | `uint` | no | `1` | Refresh denominator. Default 1. |
 | `x` | `int` | no | `0` | Desktop position X. |
 | `y` | `int` | no | `0` | Desktop position Y. |
-| `primary` | `bool` | no | `false` | Make the new display primary. Not applied while creation is unavailable. |
+| `primary` | `bool` | no | `false` | Rejected with invalid_request. The display-layout request cannot select a primary yet. |
 
 ## `delete_file_on_reboot`
 
