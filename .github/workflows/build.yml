@@ -113,6 +113,10 @@ jobs:
       - name: Test
         run: dotnet test -c Release --filter-not-trait "Category=WindowsElevated"
 
+      - name: Verify net48 custom-action package
+        shell: powershell
+        run: .\tests\Verify-InstallerCustomAction.ps1 -Configuration Release
+
       # Build once: the payload staged here is the only input the installer job consumes.
       - name: Fallout publish and stage installer payload
         run: .\build.ps1 PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep

@@ -21,6 +21,8 @@ The service account needs:
 
 ## Listen mode and API token
 
+Installer settings are parsed with `System.Text.Json`. Comments, trailing commas and a leading BOM are accepted; malformed JSON (including invalid numbers) and nesting beyond 64 containers are rejected. The merge preserves unrelated values, property order and numeric spelling, and writes indented UTF-8 without a BOM using LF line endings. The JSON library and its runtime dependencies are embedded in the net48 custom-action package; no separate JSON-library installation is needed.
+
 After the license page the installer asks where the server listens, then whether it requires an API token. The combinations and their effect on `Vestigo:ListenAddress`, `ApiTokens`, and the firewall:
 
 | Mode | `ListenAddress` | `ApiTokens` | Firewall rule |

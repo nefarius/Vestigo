@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace Vestigo.Installer.Actions.Logic
 {
@@ -235,10 +236,10 @@ namespace Vestigo.Installer.Actions.Logic
                 return result;
             }
 
-            object? root;
+            JsonNode? root;
             try
             {
-                root = MiniJson.Parse(json!);
+                root = SettingsJson.Parse(json!);
             }
             catch (FormatException)
             {
@@ -246,19 +247,20 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             if (!(root is JsonObject rootObject) ||
-                !rootObject.TryGet(ListenSettings.SectionName, out object? section) ||
+                !rootObject.TryGetPropertyValue(ListenSettings.SectionName, out JsonNode? section) ||
                 !(section is JsonObject vestigo))
             {
                 return result;
             }
 
-            if (vestigo.TryGetIgnoreCase("Modules", out object? modules) && modules is JsonObject moduleObject)
+            if (vestigo.TryGetIgnoreCase("Modules", out JsonNode? modules) && modules is JsonObject moduleObject)
             {
-                foreach (KeyValuePair<string, object?> member in moduleObject.Members)
+                foreach (KeyValuePair<string, JsonNode?> member in moduleObject)
                 {
                     ModuleDefinition? module = Find(member.Key);
                     if (module != null && !IsOptionToggle(module.Name) && member.Value is JsonObject settings &&
-                        settings.TryGetIgnoreCase("Enabled", out object? enabled) && enabled is bool flag)
+                        settings.TryGetIgnoreCase("Enabled", out JsonNode? enabled) &&
+                        enabled is JsonValue enabledValue && enabledValue.TryGetValue(out bool flag))
                     {
                         result[module.Name] = flag;
                     }
@@ -267,9 +269,10 @@ namespace Vestigo.Installer.Actions.Logic
 
             foreach (OptionToggle toggle in OptionToggles)
             {
-                if (vestigo.TryGetIgnoreCase(toggle.Section, out object? sectionValue) &&
+                if (vestigo.TryGetIgnoreCase(toggle.Section, out JsonNode? sectionValue) &&
                     sectionValue is JsonObject sectionObject &&
-                    sectionObject.TryGetIgnoreCase(toggle.Key, out object? allow) && allow is bool allowFlag)
+                    sectionObject.TryGetIgnoreCase(toggle.Key, out JsonNode? allow) &&
+                    allow is JsonValue allowValue && allowValue.TryGetValue(out bool allowFlag))
                 {
                     result[toggle.Name] = allowFlag;
                 }
@@ -368,7 +371,7 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             JsonObject modules;
-            if (vestigo.TryGetIgnoreCase("Modules", out object? existing) && existing is JsonObject existingModules)
+            if (vestigo.TryGetIgnoreCase("Modules", out JsonNode? existing) && existing is JsonObject existingModules)
             {
                 modules = existingModules;
             }
@@ -388,7 +391,7 @@ namespace Vestigo.Installer.Actions.Logic
                 // Keep the member's original key casing, since configuration keys are case-insensitive.
                 string key = module.Name;
                 JsonObject? settings = null;
-                foreach (KeyValuePair<string, object?> member in modules.Members)
+                foreach (KeyValuePair<string, JsonNode?> member in modules)
                 {
                     if (string.Equals(member.Key, module.Name, StringComparison.OrdinalIgnoreCase))
                     {
@@ -401,7 +404,7 @@ namespace Vestigo.Installer.Actions.Logic
                 if (settings == null)
                 {
                     settings = new JsonObject();
-                    modules.Set(key, settings);
+                    modules[key] = settings;
                 }
 
                 settings.SetIgnoreCase("Enabled", enabled);
@@ -415,7 +418,7 @@ namespace Vestigo.Installer.Actions.Logic
                 }
 
                 JsonObject section;
-                if (vestigo.TryGetIgnoreCase(toggle.Section, out object? existingSection) &&
+                if (vestigo.TryGetIgnoreCase(toggle.Section, out JsonNode? existingSection) &&
                     existingSection is JsonObject existingSectionObject)
                 {
                     section = existingSectionObject;

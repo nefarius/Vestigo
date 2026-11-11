@@ -1,7 +1,8 @@
 #nullable enable
 using System;
-using System.Collections.Generic;
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Vestigo.Installer.Actions.Logic
 {
@@ -134,10 +135,10 @@ namespace Vestigo.Installer.Actions.Logic
                 return null;
             }
 
-            object? root;
+            JsonNode? root;
             try
             {
-                root = MiniJson.Parse(json!);
+                root = SettingsJson.Parse(json!);
             }
             catch (FormatException)
             {
@@ -145,20 +146,20 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             if (!(root is JsonObject rootObject) ||
-                !rootObject.TryGet(ListenSettings.SectionName, out object? section) ||
+                !rootObject.TryGetPropertyValue(ListenSettings.SectionName, out JsonNode? section) ||
                 !(section is JsonObject vestigo))
             {
                 return null;
             }
 
-            string? volumeRoots = ReadModeValue(vestigo.TryGetIgnoreCase("VolumeRoots", out object? mode) ? mode : null);
+            string? volumeRoots = ReadModeValue(vestigo.TryGetIgnoreCase("VolumeRoots", out JsonNode? mode) ? mode : null);
             string? volumeRootAccess = ReadAccessValue(
-                vestigo.TryGetIgnoreCase("VolumeRootAccess", out object? access) ? access : null);
+                vestigo.TryGetIgnoreCase("VolumeRootAccess", out JsonNode? access) ? access : null);
 
             bool hasCustomRoots = false;
-            if (vestigo.TryGetIgnoreCase("Roots", out object? roots) && roots is List<object?> list)
+            if (vestigo.TryGetIgnoreCase("Roots", out JsonNode? roots) && roots is JsonArray list)
             {
-                foreach (object? item in list)
+                foreach (JsonNode? item in list)
                 {
                     if (item is JsonObject)
                     {
@@ -240,15 +241,15 @@ namespace Vestigo.Installer.Actions.Logic
             vestigo.SetIgnoreCase("VolumeRootAccess", settings.VolumeRootAccessValue);
         }
 
-        private static string? ReadModeValue(object? value)
+        private static string? ReadModeValue(JsonNode? value)
         {
-            if (value is string text && text.Trim().Length > 0)
+            if (value.StringValue() is string text && text.Trim().Length > 0)
             {
                 return text.Trim();
             }
 
-            if (value is JsonNumber number &&
-                int.TryParse(number.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+            if (value?.GetValueKind() == JsonValueKind.Number &&
+                int.TryParse(value.ToJsonString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
                 parsed >= 0 && parsed <= 4)
             {
                 if (parsed == 0)
@@ -277,15 +278,15 @@ namespace Vestigo.Installer.Actions.Logic
             return null;
         }
 
-        private static string? ReadAccessValue(object? value)
+        private static string? ReadAccessValue(JsonNode? value)
         {
-            if (value is string text && text.Trim().Length > 0)
+            if (value.StringValue() is string text && text.Trim().Length > 0)
             {
                 return text.Trim();
             }
 
-            if (value is JsonNumber number &&
-                int.TryParse(number.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+            if (value?.GetValueKind() == JsonValueKind.Number &&
+                int.TryParse(value.ToJsonString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
                 parsed >= 0 && (parsed & ~7) == 0)
             {
                 if (parsed == 0)
