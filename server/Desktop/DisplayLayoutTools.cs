@@ -32,7 +32,7 @@ public sealed class DisplayLayoutTools(DisplayLayoutTransactionManager transacti
         + "Service shutdown and the next service start also attempt restore. External display changes are reported and cannot be blocked. "
         + "Windows lets only the input desktop change the display configuration (otherwise SetDisplayConfig fails with access denied, native error 5). "
         + "While a managed desktop is active, pass its desktopSessionId so the change runs there; an inactive session is refused with unsupported_on_inactive_desktop and nothing is switched. "
-        + "The transaction remembers the desktop; observe and restore use it while it is the input desktop and fall back to the default desktop once it is closed or inactive. "
+        + "The transaction remembers the desktop; observe (every sample) and restore run on whichever desktop is the input desktop at that moment, the default desktop when no managed one is. "
         + "This tool does not create or remove virtual displays. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.")]
     public Task<OperationResult<DisplayLayoutTransaction>> StartDisplayLayoutTransaction(
         [Description("Active targets to reposition or change mode. Identity must match snapshot_display_layout.")] List<DisplayTargetChange> targets,

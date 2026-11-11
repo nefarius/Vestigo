@@ -90,19 +90,12 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
     }
 
     /// <summary>
-    ///     Desktop the open transaction runs on. A managed desktop is used only while it is the input desktop; once it is
-    ///     closed or no longer active the default desktop is the input desktop, so the helper runs there. Nothing is switched.
+    ///     Desktop that can change the display now: the managed desktop that is the input desktop, whichever session that is,
+    ///     otherwise the default desktop (null). Resolved per call so a closed or switched session cannot leave a stale path.
+    ///     Nothing is switched.
     /// </summary>
-    private async Task<string?> ExecutionPathAsync(CancellationToken cancellationToken)
-    {
-        if (_current?.DesktopSessionId is not { Length: > 0 } sessionId || _desktops is null)
-        {
-            return null;
-        }
-
-        OperationResult<DesktopHelperTarget> described = await _desktops.DescribeAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return described is { Success: true, Value.IsInputDesktop: true } ? described.Value!.DesktopPath : null;
-    }
+    private Task<string?> ExecutionPathAsync(CancellationToken cancellationToken) =>
+        _desktops is null ? Task.FromResult<string?>(null) : _desktops.InputDesktopPathAsync(cancellationToken);
 
     public async Task<OperationResult<DisplayLayoutTransaction>> StartAsync(
         IReadOnlyList<DisplayTargetChange> targets,
@@ -277,13 +270,13 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             return OperationResult<DisplayLayoutObservation>.Fail("invalid_request", "timeout must be positive and at most 2 minutes, and stableSamples must be from 1 to 10.");
         }
 
-        string? desktopPath = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
         DateTimeOffset deadline = _time.GetUtcNow() + wait.Timeout;
         int stable = 0;
         string? previous = null;
         DisplayLayoutObservation? last = null;
         while (true)
         {
+            string? desktopPath = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
             OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, cancellationToken, desktopPath).ConfigureAwait(false);
             if (!snapshot.Success)
             {

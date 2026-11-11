@@ -836,6 +836,45 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task ManagedDesktop_RestoreFollowsAnotherManagedDesktopThatIsNowTheInput()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
+        FakeDesktops desktops = new(input: true);
+        DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), TimeProvider.System, desktops);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+
+        desktops.Input = false;
+        desktops.OtherInput = @"winsta0\Vestigo-ffffffffffff";
+        await manager.RestoreAsync(started.Value!.Id, CancellationToken.None);
+
+        Assert.Equal(@"winsta0\Vestigo-ffffffffffff", displays.ApplyPaths[^1]);
+    }
+
+    [Fact]
+    public async Task ManagedDesktop_ObserveResolvesTheDesktopForEverySample()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { SnapshotsBeforeChanged = 4 };
+        FakeDesktops desktops = new(input: true);
+        ManualTime time = new();
+        DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), time, desktops)
+        {
+            Delay = (span, _) =>
+            {
+                time.Now += span;
+                desktops.Input = false;
+                return Task.CompletedTask;
+            }
+        };
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+        displays.SnapshotPaths.Clear();
+
+        await manager.ObserveAsync(started.Value!.Id, new DisplayWait(TimeSpan.FromSeconds(5), 1, Change(0, 0, 1280, 720)), CancellationToken.None);
+
+        Assert.Equal(FakeDesktops.DesktopPath, displays.SnapshotPaths[0]);
+        Assert.Null(displays.SnapshotPaths[^1]);
+    }
+
+    [Fact]
     public void PlacementAndDisplayTools_ExposeDesktopSessionIdInTheirSchemas()
     {
         foreach ((Type type, string method) in new[]
@@ -859,6 +898,11 @@ public class DisplayLayoutContractTests : IDisposable
         public bool Input { get; set; } = input;
 
         public int Switches { get; }
+
+        public string? OtherInput { get; set; }
+
+        public Task<string?> InputDesktopPathAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(OtherInput ?? (Input ? DesktopPath : null));
 
         public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();

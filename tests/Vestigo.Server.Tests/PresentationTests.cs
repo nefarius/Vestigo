@@ -367,11 +367,37 @@ public class PresentationTests : IDisposable
     {
         ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)] };
         List<string> enabled = [];
+        bool readStarted = false;
+        bool readyBeforeRead = false;
+        factory.ReadStarted = () =>
+        {
+            readStarted = true;
+            readyBeforeRead = enabled.Count == PresentationProviders.All.Count;
+        };
         PresentationSessionRelease release = new() { ProvidersReady = (ok, _) => enabled.AddRange(ok) };
 
         await Observer(factory).ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None, null, true, release);
 
+        Assert.True(readStarted);
+        Assert.True(readyBeforeRead);
         Assert.Equal(PresentationProviders.All.Select(provider => provider.ToString("D")), enabled);
+    }
+
+    [Fact]
+    public async Task MalformedProgressRecord_StillReportsUnknownWithoutThrowing()
+    {
+        string provider = PresentationProviders.Dxgi.ToString("D");
+        ScriptedPresentation process = new()
+        {
+            ExitCode = unchecked((int)0xC0000005),
+            Output = "{\"progress\":{\"stage\":\"decoding\",\"providersEnabled\":[42,null,{},\"not-a-guid\",\"" + provider + "\"],\"providersFailed\":[]}}\n",
+            StopExitCode = 0
+        };
+
+        OperationResult<PresentationObservation> result = await Gateway(process).ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal([provider], result.Value.ProvidersEnabled);
     }
 
     [Fact]
@@ -681,6 +707,8 @@ public class PresentationTests : IDisposable
     {
         public string[] Events { get; init; } = [];
 
+        public Action? ReadStarted { get; set; }
+
         public bool Hold { get; init; }
 
         public bool EventsLost { get; init; }
@@ -747,6 +775,7 @@ public class PresentationTests : IDisposable
                 Action onMissingFormat,
                 [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
             {
+                factory.ReadStarted?.Invoke();
                 if (factory.ReadError is not null)
                 {
                     throw factory.ReadError;

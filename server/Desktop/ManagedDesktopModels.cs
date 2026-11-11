@@ -218,6 +218,9 @@ public interface IManagedDesktopDirectory
         Task.FromResult(OperationResult<DesktopHelperTarget>.Fail(
             "desktop_sessions_disabled",
             "Managed desktop sessions require the Desktop module and Vestigo:Desktop:AllowDesktopSessions."));
+
+    /// <summary>Path of the open managed desktop that is the input desktop now, or null when the default desktop is. Never switches.</summary>
+    Task<string?> InputDesktopPathAsync(CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 }
 
 /// <summary>Used when the Desktop module is off. It cannot see or create test desktops.</summary>

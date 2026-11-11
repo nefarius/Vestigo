@@ -326,6 +326,20 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
         }
     }
 
+    public async Task<string?> InputDesktopPathAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ManagedDesktopSession? input = _sessions.Values.FirstOrDefault(session => session.State is "open" or "active" && session.InputSwitched);
+            return input is null ? null : DesktopSessionPolicy.DesktopPath(input.DesktopName);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);

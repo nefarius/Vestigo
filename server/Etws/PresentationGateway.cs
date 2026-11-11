@@ -200,7 +200,7 @@ public sealed class PresentationGateway : IHostedService
     {
         System.Text.StringBuilder detail = new("The decoder process ended without a result. ExitCode=" + FormatExit(run.ExitCode) + ".");
         detail.Append(progress is null
-            ? " The worker did not report a stage; the fault happened before providers were enabled or the session could not be created."
+            ? " The worker reported no stage."
             : $" Last reported stage: {progress.Stage}. Providers enabled={progress.ProvidersEnabled.Count}, failed={progress.ProvidersFailed.Count}.");
         if (!string.IsNullOrWhiteSpace(run.ErrorTail))
         {
@@ -256,7 +256,13 @@ public sealed class PresentationGateway : IHostedService
 
     private static List<string> Guids(JsonElement array) =>
         array.ValueKind == JsonValueKind.Array
-            ? array.EnumerateArray().Select(item => item.GetString()).Where(text => Guid.TryParse(text, out _)).Select(text => text!).Take(16).ToList()
+            ? array.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString())
+                .Where(text => Guid.TryParse(text, out _))
+                .Select(text => text!)
+                .Take(16)
+                .ToList()
             : [];
 
     private static string TerminationDetail(PresentationProcessResult run, bool sessionStopped)
