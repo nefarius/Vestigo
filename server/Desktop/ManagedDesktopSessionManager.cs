@@ -328,10 +328,20 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
 
     public async Task<string?> InputDesktopPathAsync(CancellationToken cancellationToken)
     {
+        // The host's live answer decides which desktop is active; the cached InputSwitched flag can be stale.
+        OperationResult<WindowStationDesktopList> listed = await EnumerateAsync(cancellationToken).ConfigureAwait(false);
+        if (!listed.Success || string.IsNullOrWhiteSpace(listed.Value?.InputDesktop))
+        {
+            return null;
+        }
+
+        string inputName = listed.Value.InputDesktop;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ManagedDesktopSession? input = _sessions.Values.FirstOrDefault(session => session.State is "open" or "active" && session.InputSwitched);
+            ManagedDesktopSession? input = _sessions.Values.FirstOrDefault(session =>
+                session.State is "open" or "active"
+                && string.Equals(session.DesktopName, inputName, StringComparison.OrdinalIgnoreCase));
             return input is null ? null : DesktopSessionPolicy.DesktopPath(input.DesktopName);
         }
         finally
