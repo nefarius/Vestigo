@@ -13,6 +13,9 @@ public interface IRealtimeTraceSession : IAsyncDisposable
 
     void EnableProvider(Guid providerId, TraceLevelSelection level, ulong matchAnyKeyword, ulong matchAllKeyword);
 
+    /// <summary>True when the session has reported lost events or lost buffers. Read this before disposal.</summary>
+    bool EventsWereLost { get; }
+
     IAsyncEnumerable<ReadOnlyMemory<byte>> ReadEventsAsync(
         DecodingContext? context,
         bool rewriteProviderName,

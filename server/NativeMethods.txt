@@ -155,6 +155,13 @@ GetThreadDesktop
 GetCurrentThreadId
 GetUserObjectInformation
 USER_OBJECT_INFORMATION_INDEX
+CreateDesktop
+OpenDesktop
+SwitchDesktop
+EnumDesktops
+GetProcessWindowStation
+DESKTOP_ACCESS_FLAGS
+DESKTOP_CONTROL_FLAGS
 DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO
 DISPLAYCONFIG_SOURCE_MODE
 DISPLAYCONFIG_TARGET_MODE
@@ -170,6 +177,7 @@ KEYBD_EVENT_FLAGS
 VIRTUAL_KEY
 SetForegroundWindow
 GetForegroundWindow
+GetCursorPos
 ShowWindow
 SHOW_WINDOW_CMD
 SM_XVIRTUALSCREEN
@@ -381,3 +389,7 @@ PowerGetActiveScheme
 PowerReadFriendlyName
 PowerReadACValueIndex
 PowerReadDCValueIndex
+
+// Presentation observation: session loss counters before the session is stopped
+ControlTrace
+EVENT_TRACE_CONTROL

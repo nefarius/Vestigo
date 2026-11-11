@@ -17,7 +17,7 @@ namespace Vestigo.Vision;
 ///     text element list, and <c>find_on_screen</c> locates text or an image template.
 /// </summary>
 [McpServerToolType]
-public sealed class PerceptionTools(PerceptionService perception, VestigoOptions options, RootPolicy roots)
+public sealed class PerceptionTools(PerceptionService perception, VestigoOptions options, RootPolicy roots, IManagedDesktopDirectory? desktops = null)
 {
     public const string ImageAnnotated = "annotated";
 
@@ -39,7 +39,9 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         + "grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, "
         + "with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). "
         + "truncated, candidates and omitted report when collected elements were left out. Takes the same targets as take_screenshot. "
-        + "Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.")]
+        + "Requires Vestigo:Desktop:AllowScreenshots. desktopSessionId does not activate the desktop. "
+        + "A desktop, display, or region inspection needs that session to be the input desktop. A window inspection is best-effort while inactive. "
+        + "Interactive session only.")]
     public async Task<CallToolResult> InspectScreen(
         [Description("'desktop' (default), 'display', 'window' or 'region'.")] string target = ScreenCaptureTarget.Desktop,
         [Description("GDI device name such as \\\\.\\DISPLAY2, or 'primary'. Required for target 'display'.")] string? display = null,
@@ -59,6 +61,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         [Description("Draw the mouse cursor on the capture.")] bool includeCursor = false,
         [Description("captureId of an earlier inspection to diff against.")] string? diffAgainst = null,
         [Description("Use the elevated token when capturing as the console user.")] bool elevated = false,
+        [Description("Managed desktop session id. Desktop, display, and region views need that session to be the input desktop.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         OperationResult<(ScreenCaptureRequest Request, string Mode)> prepared =
@@ -69,8 +72,18 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         }
 
         string mode = prepared.Value.Mode;
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(
+            desktops,
+            desktopSessionId,
+            prepared.Value.Request.Target != ScreenCaptureTarget.Window,
+            cancellationToken).ConfigureAwait(false);
+        if (!targeted.Success)
+        {
+            return DesktopTools.ErrorResult(targeted.ErrorCode!, targeted.Error!, targeted.Reason);
+        }
+
         OperationResult<PerceptionOutcome> outcome = await perception.InspectAsync(
-            new PerceptionRequest(prepared.Value.Request, uia, ocr, maxEdge, grid, mode == ImageAnnotated, diffAgainst, elevated),
+            new PerceptionRequest(prepared.Value.Request, uia, ocr, maxEdge, grid, mode == ImageAnnotated, diffAgainst, elevated, Desktop: targeted.Value?.DesktopPath),
             null,
             cancellationToken).ConfigureAwait(false);
         return outcome.Success
@@ -86,7 +99,8 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         + "template matches an image with multi-scale OpenCV template matching, from a PNG or JPEG at root:relative\\file.png (needs Read access) or "
         + "from a crop of an earlier capture (templateCaptureId with templateX, templateY, templateWidth, templateHeight in that capture's image pixels). "
         + "Give text, a template, or both. Returns matches with boxes in image pixels and an elementId on the new captureId, so send_input can click a match. "
-        + "Template matches carry a confidence from 0 to 1. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.")]
+        + "Template matches carry a confidence from 0 to 1. Requires Vestigo:Desktop:AllowScreenshots. "
+        + "desktopSessionId follows the same active-desktop rules as inspect_screen and does not activate the desktop. Interactive session only.")]
     public async Task<CallToolResult> FindOnScreen(
         [Description("Text to find in element names or OCR text.")] string? text = null,
         [Description("Template image as root:relative\\file.png.")] string? template = null,
@@ -109,6 +123,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         [Description("'annotated' (default), 'raw' or 'none'.")] string imageMode = ImageAnnotated,
         [Description("Longest edge of the returned image in pixels, 320 to 3840. Default 1280.")] int maxEdge = ScreenAnalyzer.DefaultMaxEdge,
         [Description("Use the elevated token when capturing as the console user.")] bool elevated = false,
+        [Description("Managed desktop session id. Desktop, display, and region searches need that session to be the input desktop.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         bool hasTemplate = !string.IsNullOrWhiteSpace(template) || !string.IsNullOrWhiteSpace(templateCaptureId);
@@ -146,6 +161,16 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             templatePng = loaded.Value;
         }
 
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(
+            desktops,
+            desktopSessionId,
+            prepared.Value.Request.Target != ScreenCaptureTarget.Window,
+            cancellationToken).ConfigureAwait(false);
+        if (!targeted.Success)
+        {
+            return DesktopTools.ErrorResult(targeted.ErrorCode!, targeted.Error!, targeted.Reason);
+        }
+
         string mode = prepared.Value.Mode;
         IReadOnlyList<TemplateMatch> templateMatches = [];
         string? query = string.IsNullOrWhiteSpace(text) ? null : text;
@@ -159,7 +184,8 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
                 mode == ImageAnnotated,
                 null,
                 elevated,
-                query is null ? null : element => MatchesText(element, query)),
+                query is null ? null : element => MatchesText(element, query),
+                targeted.Value?.DesktopPath),
             templatePng is null
                 ? null
                 : (analysis, bounds) =>

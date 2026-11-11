@@ -96,7 +96,9 @@ public sealed record WindowInspectionReport(
     WindowVisibility Visibility,
     FieldResult<WindowRelations> Relations,
     FieldResult<WindowMonitorInfo> Monitor,
-    ProcessInspection Process);
+    ProcessInspection Process,
+    string? DesktopName = null,
+    bool? InputDesktop = null);
 
 public sealed record WindowProcessIdentity(
     int ProcessId,

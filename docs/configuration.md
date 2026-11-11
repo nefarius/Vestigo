@@ -51,6 +51,9 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Desktop:AllowScreenshots` | `false` | Enables `take_screenshot`, `inspect_screen` and `find_on_screen`. Window and display listing remains available when the Desktop module is enabled. |
 | `Desktop:AllowWindowPlacement` | `false` | Enables `set_window_client_rect` and `restore_window_placement`. |
 | `Desktop:AllowDisplayLayoutChanges` | `false` | Enables `start_display_layout_transaction` and `restore_display_layout_transaction`. Does not create virtual displays. |
+| `Desktop:AllowDesktopSessions` | `false` | Enables `create_desktop_session`, `activate_desktop_session`, `restore_desktop_session`, and `close_desktop_session`. Does not open the lock screen or UAC desktop. |
+| `Desktop:MaxDesktopSessions` | `4` | Most open managed desktops. Range 1 to 8. |
+| `Desktop:DesktopSessionLease` | `00:30:00` | How long an unreleased managed desktop may stay open. 15 seconds to 2 hours. Lease expiry restores the input desktop and stops only processes launched into that session. |
 | `Desktop:MaxWindowEventCaptures` | `2` | Most window-event captures at once. Range 1 to 8. |
 | `Desktop:MaxWindowEvents` | `20000` | Most records stored for one window-event capture. Range 1 to 100000. |
 | `Desktop:MaxWindowEventBytes` | `16777216` | Largest spool for one window-event capture. Range 65536 to 134217728. |
@@ -129,7 +132,7 @@ Serilog writes console output and daily files under the settings `logs` director
 
 `AllowedInputRoots` and `AllowedOutputRoots` apply only to ETL, PDB, TMF, zip, and conversion-output paths used by the Trace tools. When both lists are empty, Vestigo also registers a named root `traces` (Read, Write) at that folder so `get_upload_url traces:driver.pdb` works in every `VolumeRoots` mode. A configured root already named `traces` wins and a startup warning is logged. Named `Roots` and any `VolumeRoots` apply to Files, Logs, Event Log `.evtx` paths, Processes, Devices INF/driver paths, binaries for `resolve_binary_symbols`, and the `/files` endpoints.
 
-The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Desktop:AllowScreenshots`, `Desktop:AllowWindowPlacement`, `Desktop:AllowDisplayLayoutChanges`, `Input:AllowInput`, `Diagnostics:AllowCaptureProbes`, `Diagnostics:AllowNetworkProbes`, `Diagnostics:AllowAudioPlayback`, `Diagnostics:AllowProcessDumps`, and `Updates:AllowSelfUpdate` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
+The installer owns `ListenAddress`, `ListenPort`, `ApiTokens`, `VolumeRoots`, `VolumeRootAccess`, `Modules:*:Enabled`, `Software:AllowUninstall`, `ScheduledTasks:AllowChanges`, `Audio:AllowSetDefault`, `System:AllowBootConfigurationChanges`, `System:AllowUacChanges`, `Desktop:AllowScreenshots`, `Desktop:AllowWindowPlacement`, `Desktop:AllowDisplayLayoutChanges`, `Desktop:AllowDesktopSessions`, `Input:AllowInput`, `Diagnostics:AllowCaptureProbes`, `Diagnostics:AllowNetworkProbes`, `Diagnostics:AllowAudioPlayback`, `Diagnostics:AllowProcessDumps`, and `Updates:AllowSelfUpdate` in the machine settings file. Other keys you add, including hand-written `Roots`, are kept across repair and upgrade.
 
 ## Examples
 
@@ -177,7 +180,8 @@ Authenticated remote access with opt-in modules. Retrieve a generated MSI token 
     "Desktop": {
       "AllowScreenshots": false,
       "AllowWindowPlacement": false,
-      "AllowDisplayLayoutChanges": false
+      "AllowDisplayLayoutChanges": false,
+      "AllowDesktopSessions": false
     },
     "Input": {
       "AllowInput": false,

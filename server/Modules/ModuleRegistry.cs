@@ -131,6 +131,7 @@ public static class ModuleRegistry
         bool desktopScreenshots = desktop && options.Desktop.AllowScreenshots;
         bool desktopPlacement = desktop && options.Desktop.AllowWindowPlacement;
         bool desktopLayout = desktop && options.Desktop.AllowDisplayLayoutChanges;
+        bool desktopSessions = desktop && options.Desktop.AllowDesktopSessions;
         bool audio = enabled.Any(module => module.Name == "Audio");
         bool audioSetDefault = audio && options.Audio.AllowSetDefault;
         bool servicing = enabled.Any(module => module.Name == "WindowsServicing");
@@ -175,6 +176,11 @@ public static class ModuleRegistry
                 if (desktopLayout)
                 {
                     desktopClause += " They can change the active display layout.";
+                }
+
+                if (desktopSessions)
+                {
+                    desktopClause += " They can create named test desktops and switch the console user's input to one.";
                 }
 
                 clauses.Add(desktopClause);
@@ -230,6 +236,11 @@ public static class ModuleRegistry
             if (desktopLayout)
             {
                 extras += "They can change the active display layout. ";
+            }
+
+            if (desktopSessions)
+            {
+                extras += "They can create named test desktops and switch the console user's input to one. ";
             }
         }
 

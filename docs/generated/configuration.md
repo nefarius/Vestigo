@@ -19,11 +19,14 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `DebugOutput:MaxMessages` | `1000000` |
 | `DebugOutput:MaxOutputBytes` | `536870912` |
 | `DebugOutput:MaxPatternLength` | `256` |
+| `Desktop:AllowDesktopSessions` | `false` |
 | `Desktop:AllowDisplayLayoutChanges` | `false` |
 | `Desktop:AllowScreenshots` | `false` |
 | `Desktop:AllowWindowPlacement` | `false` |
+| `Desktop:DesktopSessionLease` | `00:30:00` |
 | `Desktop:DisplayObservationIntervalMilliseconds` | `200` |
 | `Desktop:DisplayTransactionLease` | `00:10:00` |
+| `Desktop:MaxDesktopSessions` | `4` |
 | `Desktop:MaxScreenshotBytes` | `134217728` |
 | `Desktop:MaxWindowEventBytes` | `16777216` |
 | `Desktop:MaxWindowEventCaptures` | `2` |

@@ -16,7 +16,8 @@ public sealed record PerceptionRequest(
     bool Annotate,
     string? DiffAgainst,
     bool Elevated,
-    Func<ScreenElement, bool>? Prioritize = null);
+    Func<ScreenElement, bool>? Prioritize = null,
+    string? Desktop = null);
 
 /// <summary>A finished inspection: the cached record, the annotated or raw image, and how each source fared.</summary>
 public sealed record PerceptionOutcome(
@@ -72,7 +73,8 @@ public sealed class PerceptionService(
             request.Elevated,
             HelperTimeout,
             maxBytes,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            request.Desktop).ConfigureAwait(false);
         if (!helperResult.Success)
         {
             return helperResult.FailAs<PerceptionOutcome>();

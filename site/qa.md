@@ -24,12 +24,13 @@ Use the Devices module when the case needs a driver stack, a filter, or a device
 
 ## Screenshot the failure
 
-1. Enable Desktop. Screenshots, window placement, and display-layout changes stay off until their gates are true.
+1. Enable Desktop. Screenshots, window placement, display-layout changes, and managed test desktops stay off until their gates are true.
 2. `list_windows` and `list_displays` to find the window or monitor. `inspect_window` adds the client rectangle, frame insets, DPI context, and per-field errors.
 3. `take_screenshot` of the desktop, one display, one window, or a region. The MCP image is for the agent and may not appear in chat. Pass `share: true` and give the person the returned URL; it shows the downscaled preview once and then expires. Pass `saveTo` in a write root when the full-resolution PNG must be kept; that result includes a one-time download link when tokens are configured. Do not use `fetch_file` to export the image.
 4. `start_window_event_capture` follows one process or window. Read it with `read_window_event_capture`. A pid filter includes later windows from that process and does not include child processes. Stop it with `stop_window_event_capture`. Closing the chat does not stop it.
 5. To move a test window, set `Desktop:AllowWindowPlacement` and call `set_window_client_rect` with `savePlacement: true`. `achieved` is true only when the measured client rectangle matches. `restore_window_placement` uses the returned token.
-6. To test a display mode, set `Desktop:AllowDisplayLayoutChanges`, call `snapshot_display_layout`, then `start_display_layout_transaction` with `persistent: false`. `observe_display_layout_transaction` waits for stable geometry. `restore_display_layout_transaction` puts the original topology back. Do not disconnect and assume the layout returned; the lease does that. These tools do not create a virtual display.
+6. To test a display mode, set `Desktop:AllowDisplayLayoutChanges`, call `snapshot_display_layout`, then `start_display_layout_transaction` with `persistent: false`. `observe_display_layout_transaction` waits for stable geometry. `restore_display_layout_transaction` puts the original topology back. Do not disconnect and assume the layout returned; the lease does that. These tools do not create a virtual display. `get_virtual_display_backend` reports `canCreate: false`. `create_virtual_display` returns `virtual_display_backend_unavailable` and leaves the topology alone.
+7. To isolate a test app, set `Desktop:AllowDesktopSessions`, call `create_desktop_session`, then `activate_desktop_session` before `run_process` with that `desktopSessionId` and `context: interactive`. `list_windows` and `inspect_window` can use the id before activation. `take_screenshot` of the desktop, `inspect_input_state`, and `send_input` return `unsupported_on_inactive_desktop` until the session is the input desktop. `send_input` `injection.status` `submitted` means Windows accepted the events. `response.status` `observed` means a later capture changed. `restore_desktop_session` or `close_desktop_session` returns the console user to the desktop recorded at creation. `fail-if-running` refuses to close while a process launched into the session is still alive. Lease expiry, cancellation, and service restart use `terminate-owned`.
 
 The lock screen and UAC secure desktop fail with `desktop_unavailable`. A console user must be logged on.
 
@@ -144,6 +145,6 @@ concurrency slot stays occupied until that work finishes.
 1. `tail_text_file` or `read_text_file_since` for a growing log under a read root.
 2. `search_text` when you need a regex across a directory tree without pulling every file. Use it for line-oriented NDJSON too.
 3. `get_json_summary` or `read_json_path` for one UTF-8 JSON snapshot. A query such as `$.status` or `$.items[*]` returns typed values; it does not filter or walk every descendant.
-4. `start_capture` / `read_capture` or `convert_etl` for WPP. `get_download_url` or the ticket on a conversion result pulls the file back without pasting the API token into the client.
+4. `start_capture` / `read_capture` or `convert_etl` for WPP. `observe_presentation` is a separate bounded read of DXGI, DWM, and DxgKrnl and returns unknown unless an event explicitly identifies the presentation mode. `get_download_url` or the ticket on a conversion result pulls the file back without pasting the API token into the client.
 
 Keep [the intro](index.md) connection steps nearby: the MSI writes the token into ProgramData, and `/` in a browser repeats the same instructions.

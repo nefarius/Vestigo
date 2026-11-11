@@ -27,6 +27,8 @@ public static partial class SessionHelper
 
     public const string SendInputCommand = "send-input";
 
+    public const string InspectInputStateCommand = "inspect-input-state";
+
     public const string ProbeCaptureCommand = "probe-capture";
 
     public const string ProbeAudioFormatCommand = "probe-audio-format";
@@ -41,7 +43,7 @@ public static partial class SessionHelper
     {
         if (args.Length < 2 || args[0] != Flag)
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}> ..." }, Json));
+            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}|{DesktopHostCommand}|{DesktopRecoverCommand}|{DesktopEnumerateCommand}|{InspectInputStateCommand}> ..." }, Json));
             return 2;
         }
 
@@ -63,13 +65,18 @@ public static partial class SessionHelper
             ApplyDisplayCommand => RunApplyDisplay(args),
             PlaceWindowCommand => RunPlaceWindow(args),
             RestoreWindowCommand => RunRestoreWindow(args),
+            DesktopHostCommand => RunDesktopHost(args),
+            DesktopRecoverCommand => RunDesktopRecover(args),
+            DesktopEnumerateCommand => RunDesktopEnumerate(args),
+            InspectInputStateCommand => RunInspectInputState(args),
             _ => Reject($"Unknown session-helper command '{args[1]}'.")
         };
     }
 
-    private static int Reject(string error, string code = "invalid_request")
+    private static int Reject(string error, string code = "invalid_request", string? reason = null)
     {
-        Console.Out.WriteLine(JsonSerializer.Serialize(new { error, errorCode = code }, Json));
+        object payload = reason is null ? new { error, errorCode = code } : new { error, errorCode = code, reason };
+        Console.Out.WriteLine(JsonSerializer.Serialize(payload, Json));
         return 2;
     }
 

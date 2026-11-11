@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using Vestigo.Configuration;
+using Vestigo.Desktop;
 using Vestigo.Processes;
 
 namespace Vestigo.Modules;
@@ -26,5 +27,7 @@ public sealed class ProcessesModule : VestigoModule
         services.TryAddSingleton<SessionHelperClient>();
         services.AddSingleton<ExecutableResolver>();
         services.AddSingleton<AppCloser>();
+        services.TryAddSingleton<IManagedDesktopDirectory, DisabledDesktopDirectory>();
+        services.AddSingleton<IOwnedProcessCleanup, JobOwnedProcessCleanup>();
     }
 }

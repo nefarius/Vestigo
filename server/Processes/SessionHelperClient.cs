@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 using Vestigo.Configuration;
@@ -17,7 +18,10 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         bool elevated,
         TimeSpan timeout,
         long maxOutputBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? desktop = null,
+        SafeHandle? standardInput = null,
+        Action? releaseInheritedInput = null)
     {
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
@@ -47,7 +51,10 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
                 Path.GetDirectoryName(executable),
                 new Dictionary<string, string>(),
                 LaunchContext.Interactive,
-                elevated);
+                elevated,
+                desktop,
+                StandardInput: standardInput,
+                ReleaseInheritedInput: releaseInheritedInput);
 
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             linked.CancelAfter(timeout);
@@ -88,13 +95,25 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         try
         {
             using JsonDocument document = JsonDocument.Parse(line);
-            if (document.RootElement.TryGetProperty("error", out JsonElement error))
+            if (document.RootElement.TryGetProperty("success", out _))
+            {
+                T? command = document.RootElement.Deserialize<T>(SessionHelper.Json);
+                return command is null
+                    ? OperationResult<T>.Fail("helper_failed", "The session helper returned an empty result.")
+                    : OperationResult<T>.Ok(command);
+            }
+
+            if (document.RootElement.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.String)
             {
                 string code = document.RootElement.TryGetProperty("errorCode", out JsonElement errorCode) &&
                               errorCode.GetString() is { Length: > 0 } parsed
                     ? parsed
                     : "invalid_request";
-                return OperationResult<T>.Fail(code, error.GetString() ?? "The session helper rejected the request.");
+                string? reason = document.RootElement.TryGetProperty("reason", out JsonElement reasonElement) &&
+                                 reasonElement.ValueKind == JsonValueKind.String
+                    ? reasonElement.GetString()
+                    : null;
+                return OperationResult<T>.Fail(code, error.GetString() ?? "The session helper rejected the request.", reason);
             }
 
             T? value = document.RootElement.Deserialize<T>(SessionHelper.Json);

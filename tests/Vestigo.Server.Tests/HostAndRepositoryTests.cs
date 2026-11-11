@@ -212,6 +212,7 @@ public class RepositoryBoundaryTests
                      "Audio:AllowSetDefault", "Audio:MeterSampleMilliseconds",
                      "Desktop:AllowScreenshots", "Desktop:MaxScreenshotBytes",
                      "Desktop:AllowWindowPlacement", "Desktop:AllowDisplayLayoutChanges",
+                     "Desktop:AllowDesktopSessions", "Desktop:MaxDesktopSessions", "Desktop:DesktopSessionLease",
                      "Desktop:MaxWindowEventCaptures", "Desktop:MaxWindowEvents", "Desktop:MaxWindowEventBytes",
                      "Desktop:MaxWindowEventDuration", "Desktop:WindowEventRetention",
                      "Desktop:DisplayTransactionLease", "Desktop:DisplayObservationIntervalMilliseconds"

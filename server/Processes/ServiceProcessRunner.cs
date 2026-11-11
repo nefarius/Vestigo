@@ -3,6 +3,7 @@ using System.Text;
 
 using CliWrap;
 
+using Vestigo.Desktop;
 using Vestigo.Jobs;
 
 namespace Vestigo.Processes;
@@ -31,17 +32,41 @@ internal static class ServiceProcessRunner
             command = command.WithWorkingDirectory(request.WorkingDirectory);
         }
 
+        if (request.Desktop is not null || request.StandardInput is not null)
+        {
+            throw new ProcessLaunchException("invalid_request", "A managed desktop session requires context 'interactive'.");
+        }
+
         try
         {
             // CliWrap kills the whole process tree when the forceful token is cancelled and throws
             // OperationCanceledException once the process is gone.
-            CommandResult result = await command.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+            CommandTask<CommandResult> running = command.ExecuteAsync(cancellationToken);
+            request.Report?.Publish(new ProcessLaunchReport(
+                running.ProcessId,
+                SessionId(running.ProcessId),
+                WindowsDesktopStation.CurrentWindowStation(),
+                null,
+                false,
+                "service"));
+            CommandResult result = await running.ConfigureAwait(false);
             return result.ExitCode;
         }
         catch (Win32Exception ex)
         {
             throw new ProcessLaunchException("start_failed", ex.Message);
         }
+    }
+
+    private static unsafe int? SessionId(int processId)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        uint session;
+        return Windows.Win32.PInvoke.ProcessIdToSessionId((uint)processId, &session) ? (int)session : null;
     }
 
     /// <summary>Decodes UTF-8 chunks and appends them to the job spool, which enforces the output cap.</summary>

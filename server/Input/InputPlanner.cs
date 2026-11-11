@@ -49,7 +49,21 @@ public static class InputPlanner
                 return Fail(step.ErrorCode!, step.Error!);
             }
 
-            totalWait += step.Value!.Milliseconds;
+            int hold = action.HoldMilliseconds ?? 0;
+            int delay = action.DelayAfterMilliseconds ?? 0;
+            if (hold is < 0 or > 5000 || delay is < 0 or > 5000)
+            {
+                return Fail("invalid_request", $"{label} holdMilliseconds and delayAfterMilliseconds must be 0 to 5000.");
+            }
+
+            if (hold > 0 && kind is not (InputKinds.Click or InputKinds.Key))
+            {
+                return Fail("invalid_request", $"{label}.holdMilliseconds applies to click and key.");
+            }
+
+            InputStep timed = step.Value! with { HoldMilliseconds = hold, DelayAfterMilliseconds = delay };
+            step = OperationResult<InputStep>.Ok(timed);
+            totalWait += timed.Milliseconds + (long)hold * timed.Count + delay;
             totalChars += step.Value.Text?.Length ?? 0;
             steps.Add(step.Value);
         }

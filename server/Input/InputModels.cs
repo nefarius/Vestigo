@@ -70,6 +70,12 @@ public sealed class InputActionSpec
 
     [Description("wait only: milliseconds to pause.")]
     public int? Milliseconds { get; set; }
+
+    [Description("click or key: milliseconds to hold the button or keys down before releasing them. 0 to 5000. Default 0.")]
+    public int? HoldMilliseconds { get; set; }
+
+    [Description("Milliseconds to wait after this action, 0 to 5000. Counted with wait and hold toward MaxWaitMilliseconds.")]
+    public int? DelayAfterMilliseconds { get; set; }
 }
 
 /// <summary>One action after the service resolved element ids and preview coordinates to physical pixels.</summary>
@@ -85,10 +91,21 @@ public sealed record InputStep(
     int DeltaY,
     string? Text,
     IReadOnlyList<KeyStroke>? Keys,
-    int Milliseconds);
+    int Milliseconds,
+    int HoldMilliseconds = 0,
+    int DelayAfterMilliseconds = 0);
 
 /// <summary>The batch handed to the session helper.</summary>
 public sealed record InputBatch(IReadOnlyList<InputStep> Steps, string? FocusWindow);
 
 /// <summary>Helper output of <c>send-input</c>.</summary>
-public sealed record InputResult(int Performed, int SessionId, string? FocusWarning);
+public sealed record InputResult(
+    int Performed,
+    int SessionId,
+    string? FocusWarning,
+    int SubmittedEvents = 0,
+    string? FocusRequested = null,
+    string? FocusActual = null,
+    bool? FocusGranted = null,
+    int? CursorX = null,
+    int? CursorY = null);

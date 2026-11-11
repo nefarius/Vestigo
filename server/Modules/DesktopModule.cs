@@ -20,7 +20,7 @@ public sealed class DesktopModule : VestigoModule
     public override bool EnabledByDefault => false;
 
     public override IReadOnlyList<Type> ToolTypes { get; } =
-        [typeof(DesktopTools), typeof(PerceptionTools), typeof(WindowInspectionTools), typeof(WindowEventTools), typeof(WindowPlacementTools), typeof(DisplayLayoutTools)];
+        [typeof(DesktopTools), typeof(PerceptionTools), typeof(WindowInspectionTools), typeof(WindowEventTools), typeof(WindowPlacementTools), typeof(DisplayLayoutTools), typeof(ManagedDesktopTools), typeof(VirtualDisplayTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
@@ -41,8 +41,17 @@ public sealed class DesktopModule : VestigoModule
         services.AddSingleton<IWindowPlacementSource, WindowsWindowPlacementSource>();
         services.AddSingleton<WindowPlacer>();
         services.AddSingleton<IDisplayLayoutClient, HelperDisplayLayoutClient>();
+        services.TryAddSingleton<IVirtualDisplayBackend, UnavailableVirtualDisplayBackend>();
+        services.AddSingleton<VirtualDisplayCoordinator>();
+        services.AddHostedService(provider => provider.GetRequiredService<VirtualDisplayCoordinator>());
         services.AddSingleton<DisplayLayoutTransactionManager>();
         services.AddHostedService(provider => provider.GetRequiredService<DisplayLayoutTransactionManager>());
+        services.AddSingleton<HelperDesktopHostClient>();
+        services.AddSingleton<IDesktopHostClient>(provider => provider.GetRequiredService<HelperDesktopHostClient>());
+        services.TryAddSingleton<IOwnedProcessCleanup, NoOwnedProcessCleanup>();
+        services.AddSingleton<ManagedDesktopSessionManager>();
+        services.AddSingleton<IManagedDesktopDirectory>(provider => provider.GetRequiredService<ManagedDesktopSessionManager>());
+        services.AddHostedService(provider => provider.GetRequiredService<ManagedDesktopSessionManager>());
         services.AddSingleton<CaptureCache>();
         services.AddSingleton<PerceptionService>();
     }

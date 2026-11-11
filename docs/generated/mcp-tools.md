@@ -2,6 +2,14 @@
 
 Generated from `McpServerTool` attributes. Do not edit by hand.
 
+## `activate_desktop_session`
+
+Makes a managed test desktop the input desktop. This is explicit: no other tool switches desktops. The previous input desktop was recorded at creation and can be restored. Refuses while the lock screen or UAC secure desktop is active. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
+
 ## `add_class_filter`
 
 Adds an existing driver service to a device class's upper or lower filter list.
@@ -62,6 +70,15 @@ Politely closes applications by posting WM_CLOSE to their top-level windows. Sel
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token so elevated windows can be closed. |
 
+## `close_desktop_session`
+
+Restores the recorded input desktop when this session switched it, applies the cleanup policy, and releases the desktop handle this service holds. terminate-owned cancels owned jobs and then kills any of those processes still running. fail-if-running returns processes_still_running and changes nothing while one is alive. Closing the handle does not stop an unowned process and does not destroy a desktop Windows still considers in use; desktopRetained reports that. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
+| `cleanupPolicy` | `string` | no | `null` | Omit to use the policy from create_desktop_session. terminate-owned or fail-if-running. |
+
 ## `convert_etl`
 
 Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access. See get_trace_settings for allowed roots.
@@ -85,6 +102,14 @@ Copies a file or directory tree. Source needs Read access, destination needs Wri
 | `destination` | `string` | yes |  | Destination path (the new name, not the parent directory). |
 | `overwrite` | `bool` | no | `false` | Replace existing destination files. |
 
+## `create_desktop_session`
+
+Creates a named test desktop on the console user's window station and returns its session id. The desktop name is assigned by Vestigo and always starts with Vestigo-. The call records the current input desktop and does not switch to the new one. Secure desktops, including the lock screen and UAC, are refused. cleanupPolicy terminate-owned (default) is used for lease expiry, cancellation, service stop, and startup recovery. fail-if-running makes an explicit close leave the session open while a process it launched is still running. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `cleanupPolicy` | `string` | no | `terminate-owned` | terminate-owned (default) or fail-if-running. Automatic cleanup always uses terminate-owned. |
+
 ## `create_device_node`
 
 Creates a ROOT-enumerated device node with a hardware ID and device class. Install a driver on it afterwards with install_driver.
@@ -105,6 +130,20 @@ Creates a kernel driver service through nefcon. The .sys binary must be an exist
 | `serviceName` | `string` | yes |  | New service name. |
 | `binaryPath` | `string` | yes |  | Driver .sys path: root:relative\path or an absolute path inside a root that allows Execute. |
 | `displayName` | `string` | no | `null` | Display name. Defaults to the service name. |
+
+## `create_virtual_display`
+
+Would create a temporary virtual display, arrange it, and restore the original topology on close. This build has no released backend, so the call returns virtual_display_backend_unavailable and does not change the topology. It does not write a vendor registry policy and does not install a driver.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `width` | `int` | no | `1920` | Width in physical pixels. |
+| `height` | `int` | no | `1080` | Height in physical pixels. |
+| `refreshNumerator` | `uint` | no | `60` | Refresh numerator. Default 60. |
+| `refreshDenominator` | `uint` | no | `1` | Refresh denominator. Default 1. |
+| `x` | `int` | no | `0` | Desktop position X. |
+| `y` | `int` | no | `0` | Desktop position Y. |
+| `primary` | `bool` | no | `false` | Rejected with invalid_request. The display-layout request cannot select a primary yet. |
 
 ## `delete_file_on_reboot`
 
@@ -234,7 +273,7 @@ Finds devices that expose a device interface GUID and returns their instance IDs
 
 ## `find_on_screen`
 
-Finds things on the console user's screen. text matches UI Automation names and OCR text (case-insensitive substring) across every collected candidate, before the 150-element cap, so a full UI Automation list cannot hide an OCR match. matchesTruncated is true when the matches themselves exceed that cap. template matches an image with multi-scale OpenCV template matching, from a PNG or JPEG at root:relative\file.png (needs Read access) or from a crop of an earlier capture (templateCaptureId with templateX, templateY, templateWidth, templateHeight in that capture's image pixels). Give text, a template, or both. Returns matches with boxes in image pixels and an elementId on the new captureId, so send_input can click a match. Template matches carry a confidence from 0 to 1. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+Finds things on the console user's screen. text matches UI Automation names and OCR text (case-insensitive substring) across every collected candidate, before the 150-element cap, so a full UI Automation list cannot hide an OCR match. matchesTruncated is true when the matches themselves exceed that cap. template matches an image with multi-scale OpenCV template matching, from a PNG or JPEG at root:relative\file.png (needs Read access) or from a crop of an earlier capture (templateCaptureId with templateX, templateY, templateWidth, templateHeight in that capture's image pixels). Give text, a template, or both. Returns matches with boxes in image pixels and an elementId on the new captureId, so send_input can click a match. Template matches carry a confidence from 0 to 1. Requires Vestigo:Desktop:AllowScreenshots. desktopSessionId follows the same active-desktop rules as inspect_screen and does not activate the desktop. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -259,6 +298,7 @@ Finds things on the console user's screen. text matches UI Automation names and 
 | `imageMode` | `string` | no | `annotated` | 'annotated' (default), 'raw' or 'none'. |
 | `maxEdge` | `int` | no | `1280` | Longest edge of the returned image in pixels, 320 to 3840. Default 1280. |
 | `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Desktop, display, and region searches need that session to be the input desktop. |
 
 ## `get_boot_security`
 
@@ -295,6 +335,14 @@ Returns status, counters, and the last error for one debug-output capture.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `captureId` | `string` | yes |  | Capture identifier. |
+
+## `get_desktop_session`
+
+Returns one managed desktop session by the id from create_desktop_session.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
 
 ## `get_device`
 
@@ -512,6 +560,12 @@ Returns the HTTP PUT URL for uploading a file into a root, with curl and Invoke-
 | `overwrite` | `bool` | no | `false` | Replace an existing file. |
 | `deferToReboot` | `bool` | no | `false` | Replace a locked file at the next reboot instead of renaming it aside. |
 
+## `get_virtual_display_backend`
+
+Reports whether Vestigo can create a temporary virtual display. canCreate false and errorCode virtual_display_backend_unavailable mean no released backend is selected. An installed indirect-display driver is not an API. This does not change the display topology.
+
+No parameters.
+
 ## `get_window_event_capture`
 
 Returns the state, counts, dropped events, truncation, and whether new windows or child processes are included.
@@ -551,9 +605,18 @@ Reads one PE file inside a root with Read access: architecture (x86, x64, arm64,
 | `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
 | `computeSha256` | `bool` | no | `true` | Compute SHA-256. Defaults to true. |
 
+## `inspect_input_state`
+
+Reads the foreground window and the cursor position on the input desktop. desktopSessionId must already be the input desktop; this tool does not activate it and returns unsupported_on_inactive_desktop otherwise. A successful read is not evidence that an application responded to input.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Omit to read the console user's current input desktop from winsta0\default. |
+| `elevated` | `bool` | no | `false` | Use the elevated token. |
+
 ## `inspect_screen`
 
-Looks at the console user's screen and describes it for an agent. Returns an annotated image with numbered boxes plus a JSON element list (id, source uia|ocr|cv, role, name or text, box in image pixels) that works without seeing the image. Elements come from UI Automation, Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId (same target and maxEdge) and lists the regions that changed. imageMode 'annotated' (default), 'raw' or 'none' controls the image. grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). truncated, candidates and omitted report when collected elements were left out. Takes the same targets as take_screenshot. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+Looks at the console user's screen and describes it for an agent. Returns an annotated image with numbered boxes plus a JSON element list (id, source uia|ocr|cv, role, name or text, box in image pixels) that works without seeing the image. Elements come from UI Automation, Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId (same target and maxEdge) and lists the regions that changed. imageMode 'annotated' (default), 'raw' or 'none' controls the image. grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). truncated, candidates and omitted report when collected elements were left out. Takes the same targets as take_screenshot. Requires Vestigo:Desktop:AllowScreenshots. desktopSessionId does not activate the desktop. A desktop, display, or region inspection needs that session to be the input desktop. A window inspection is best-effort while inactive. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -575,10 +638,11 @@ Looks at the console user's screen and describes it for an agent. Returns an ann
 | `includeCursor` | `bool` | no | `false` | Draw the mouse cursor on the capture. |
 | `diffAgainst` | `string` | no | `null` | captureId of an earlier inspection to diff against. |
 | `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Desktop, display, and region views need that session to be the input desktop. |
 
 ## `inspect_window`
 
-Reads one window in physical virtual-screen pixels. Returns the raw GetWindowRect, the DWM visible frame, and the client rectangle in screen coordinates, plus DPI, frame metrics, styles, visibility, owner relationships, display intersections, and process integrity, elevation, and LocalSystem state when those reads succeed. Each field has its own success or error. A failed read is not reported as a zero rectangle. Geometry is omitted when per-monitor DPI awareness v2 cannot be entered. expectedPid and expectedStartTime reject a reused handle or pid. context 'interactive' (default) reads the console user's desktop. This does not change the window.
+Reads one window in physical virtual-screen pixels. Returns the raw GetWindowRect, the DWM visible frame, and the client rectangle in screen coordinates, plus DPI, frame metrics, styles, visibility, owner relationships, display intersections, and process integrity, elevation, and LocalSystem state when those reads succeed. Each field has its own success or error. A failed read is not reported as a zero rectangle. Geometry is omitted when per-monitor DPI awareness v2 cannot be entered. expectedPid and expectedStartTime reject a reused handle or pid. context 'interactive' (default) reads the console user's desktop. desktopSessionId reads that managed desktop without activating it. Inspection of an inactive desktop is best-effort. This does not change the window.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -587,6 +651,7 @@ Reads one window in physical virtual-screen pixels. Returns the raw GetWindowRec
 | `expectedStartTime` | `DateTimeOffset?` | no | `null` | Process start time from list_processes. A different process fails with process_identity_mismatch. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Omit to use winsta0\default. Does not activate the desktop. |
 
 ## `inspect_wpp_pdb`
 
@@ -678,6 +743,12 @@ Lists debug-output captures owned by this Vestigo process.
 
 No parameters.
 
+## `list_desktop_sessions`
+
+Lists managed desktop sessions, including closed sessions still remembered by this process. This does not switch desktops.
+
+No parameters.
+
 ## `list_directory`
 
 Lists the entries of a directory inside a root with Read access.
@@ -695,6 +766,7 @@ Lists GDI displays (\\.\DISPLAYn) with bounds, work area, DPI, and the physical 
 | --- | --- | --- | --- | --- |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `includeModes` | `bool` | no | `false` | Include refresh, active mode, rotation, scaling, adapter LUID, and advanced color. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Omit to use the console user's default desktop. Does not activate it. |
 
 ## `list_driver_store`
 
@@ -873,9 +945,15 @@ Lists window-event captures started by this service process.
 
 No parameters.
 
+## `list_window_station_desktops`
+
+Lists desktops on the console user's window station and classifies each as owned, user, or secure. Secure desktops are not opened. This does not create, activate, or close a desktop. Interactive session only.
+
+No parameters.
+
 ## `list_windows`
 
-Lists Win32 windows on the chosen desktop with owning process, parent and owner, physical-pixel bounds, and the GDI display they are rendered on. Filters combine: pid or processName, narrowed by titleRegex and className. context 'interactive' (default) enumerates the console user's desktop through the session helper.
+Lists Win32 windows on the chosen desktop with owning process, parent and owner, physical-pixel bounds, and the GDI display they are rendered on. Filters combine: pid or processName, narrowed by titleRegex and className. context 'interactive' (default) enumerates the console user's desktop through the session helper. desktopSessionId enumerates that managed desktop without switching to it. Enumeration works while the desktop is inactive.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -888,6 +966,7 @@ Lists Win32 windows on the chosen desktop with owning process, parent and owner,
 | `limit` | `int` | no | `500` | Maximum windows to return, 1 to 5000. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when enumerating as the console user. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Omit to use winsta0\default. Does not activate the desktop. |
 
 ## `list_windows_updates`
 
@@ -936,6 +1015,16 @@ Samples the active topology until a target is active, matches the requested mode
 | `width` | `int?` | no | `null` | Requested width. |
 | `height` | `int?` | no | `null` | Requested height. |
 | `rotation` | `string` | no | `null` | Optional IDENTITY, ROTATE90, ROTATE180, or ROTATE270. |
+
+## `observe_presentation`
+
+Observes DXGI, DWM, and DxgKrnl events for one process for a bounded interval and reports composed, independent-flip, or exclusive only when an explicit event supports that mode. A DXGI present by itself, window styles, and monitor-sized bounds are not evidence. The result is unknown when any provider fails to enable, an event cannot be decoded, ETW reports lost events or buffers, events do not correlate, events were truncated, the evidence disagrees, or the call is cancelled. Creates a short Vestigo- session and stops that session when the call ends. Duration is at most 30 seconds and cannot exceed Vestigo:MaxCaptureDuration.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `processId` | `int` | yes |  | Process id to correlate. Must be positive. |
+| `windowHandle` | `long?` | no | `null` | Optional window handle. When set, only events that carry the same handle correlate. |
+| `durationMilliseconds` | `int` | no | `5000` | Observation length in milliseconds. Default 5000. Minimum 1. Maximum 30000, and also capped by Vestigo:MaxCaptureDuration. |
 
 ## `prepare_remote_debugger_computer`
 
@@ -1122,6 +1211,14 @@ Stops a service (waiting for Stopped) and starts it again (waiting for Running).
 | `stopDependents` | `bool` | no | `false` | Also stop running dependent services first. |
 | `timeoutSeconds` | `int` | no | `30` | Seconds to wait for each phase, 1 to 300. |
 
+## `restore_desktop_session`
+
+Switches the input desktop back to the one recorded before this session was activated, when this session is still the input desktop. If the user or another session has since changed the input desktop, the call returns input_desktop_changed and does not switch. Refuses while a secure desktop is active. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
+
 ## `restore_display_layout_transaction`
 
 Applies the snapshot taken before the transaction and reads the topology again. RestorationVerified is true only when the fingerprint matches. A failed restore stays open and blocks another transaction. The restore is written to the display database so a temporary test layout cannot return at logoff. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.
@@ -1142,7 +1239,7 @@ Restores a placement saved by set_window_client_rect. The window and process ide
 
 ## `run_process`
 
-Starts a process as a job. path is a file under a root with Execute access (name:relative\path or absolute), or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\default (elevated: true uses the linked administrator token). stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.
+Starts a process as a job. path is a file under a root with Execute access (name:relative\path or absolute), or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\default unless desktopSessionId selects a managed test desktop. elevated: true uses the linked administrator token. The result reports the process id, Windows session, window station, desktop, and elevation actually used. stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1152,6 +1249,7 @@ Starts a process as a job. path is a file under a root with Execute access (name
 | `env` | `Dictionary<string, string>` | no | `null` | Environment variable overrides. |
 | `context` | `string` | no | `service` | 'service' (default) or 'interactive'. |
 | `elevated` | `bool` | no | `false` | Interactive only: run with the elevated linked token. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id from create_desktop_session. Requires context interactive. Omit to keep winsta0\default. |
 | `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns the job id immediately. |
 
 ## `run_scheduled_task`
@@ -1190,7 +1288,7 @@ Searches a text file, or every file under a directory, inside a root with Read a
 
 ## `send_input`
 
-Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), drag (x,y to toX,toY), type (text as Unicode characters), key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). A point is elementId from inspect_screen or find_on_screen, or x and y: in the pixels of the returned image when captureId is set, otherwise absolute virtual-screen physical pixels. focusWindow (hex handle from list_windows) is brought to the foreground first. observe:true waits observeDelayMs, then returns a fresh inspect_screen result, so one call does act and look; it needs Vestigo:Desktop:AllowScreenshots. Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot reach elevated windows unless elevated=true. Requires Vestigo:Input:AllowInput. Interactive session only.
+Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), drag (x,y to toX,toY), type (text as Unicode characters), key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). A point is elementId from inspect_screen or find_on_screen, or x and y: in the pixels of the returned image when captureId is set, otherwise absolute virtual-screen physical pixels. focusWindow (hex handle from list_windows) is brought to the foreground first. click and key accept holdMilliseconds. Any action accepts delayAfterMilliseconds. observe:true waits observeDelayMs, then compares a fresh inspect_screen result with one taken before the input. injection.status submitted means SendInput accepted the events. response.status observed means the screen, window, or elements changed. A submitted injection is not an observed application response. observe needs Vestigo:Desktop:AllowScreenshots. desktopSessionId sends input to that managed desktop only when it is already the input desktop and does not activate it. Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot reach elevated windows unless elevated=true. Requires Vestigo:Input:AllowInput. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1203,6 +1301,7 @@ Injects mouse and keyboard input as the console user. actions run in order: move
 | `imageMode` | `string` | no | `annotated` | Observe only: 'annotated' (default), 'raw' or 'none'. |
 | `maxEdge` | `int` | no | `1280` | Observe only: longest edge of the returned image, 320 to 3840. |
 | `elevated` | `bool` | no | `false` | Use the elevated token, needed to reach elevated windows. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. The session must already be the input desktop. |
 
 ## `set_default_audio_endpoint`
 
@@ -1358,7 +1457,7 @@ Starts a service or driver and waits until it is running. Starting an unsigned d
 
 ## `start_window_event_capture`
 
-Captures window creation, destruction, show, hide, foreground, and location changes, plus exit of the selected process. A process filter includes windows that process creates later and does not include child processes. A window handle without a process filter follows only that window. Events are observed; geometry and DPI are sampled when an event arrives. DPI changes are comparisons of samples, not WM_DPICHANGED. Process exit has no inferred cause. WinEvent does not report how many events it dropped before delivery; dropped counts only the helper queue. The capture keeps running after this call returns. Read it with read_window_event_capture and stop it with stop_window_event_capture. A stateless client disconnect does not stop it. Service shutdown does. Interactive session only.
+Captures window creation, destruction, show, hide, foreground, and location changes, plus exit of the selected process. A process filter includes windows that process creates later and does not include child processes. A window handle without a process filter follows only that window. Events are observed; geometry and DPI are sampled when an event arrives. DPI changes are comparisons of samples, not WM_DPICHANGED. Process exit has no inferred cause. WinEvent does not report how many events it dropped before delivery; dropped counts only the helper queue. The capture keeps running after this call returns. Read it with read_window_event_capture and stop it with stop_window_event_capture. A stateless client disconnect does not stop it. Service shutdown does. desktopSessionId follows windows on that managed desktop without activating it. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1367,6 +1466,7 @@ Captures window creation, destruction, show, hide, foreground, and location chan
 | `expectedStartTime` | `DateTimeOffset?` | no | `null` | Start time from list_processes. Required to prove the pid was not reused when it can be read. |
 | `durationSeconds` | `int` | no | `30` | Seconds to capture, from 1 to Vestigo:Desktop:MaxWindowEventDuration. |
 | `elevated` | `bool` | no | `false` | Use the elevated token for the helper. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Events are observed on that desktop without activating it. |
 
 ## `stat_path`
 
@@ -1441,7 +1541,7 @@ Returns the last lines of a text file under a root with Read access. The file is
 
 ## `take_screenshot`
 
-Captures a PNG of the console user's desktop. target 'desktop' (default) is the virtual screen across all monitors; 'display' is one GDI display (display='primary' or \\.\DISPLAYn from list_displays); 'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel coordinates list_displays reports. Returns a downscaled preview as MCP image content for the model (maxEdge, default 1920; 0 omits it) plus JSON metadata. That image block may not be shown to the user. share:true also returns a short-lived, single-use URL and resource link for the same preview so the user can open and copy it; present that URL and do not fetch it first. saveTo stores the full-resolution PNG in a root with Write access (root:relative\file.png) and adds a download link (one-time ticket when API tokens are configured). Do not use fetch_file to export a screenshot. Requires Vestigo:Desktop:AllowScreenshots. Interactive session only.
+Captures a PNG of the console user's desktop. target 'desktop' (default) is the virtual screen across all monitors; 'display' is one GDI display (display='primary' or \\.\DISPLAYn from list_displays); 'window' is one top-level window (windowHandle from list_windows, or pid/processName/titleRegex that must match exactly one visible window); 'region' is x,y,width,height in the same physical-pixel coordinates list_displays reports. Returns a downscaled preview as MCP image content for the model (maxEdge, default 1920; 0 omits it) plus JSON metadata. That image block may not be shown to the user. share:true also returns a short-lived, single-use URL and resource link for the same preview so the user can open and copy it; present that URL and do not fetch it first. saveTo stores the full-resolution PNG in a root with Write access (root:relative\file.png) and adds a download link (one-time ticket when API tokens are configured). Do not use fetch_file to export a screenshot. Requires Vestigo:Desktop:AllowScreenshots. desktopSessionId launches the capture on that managed desktop and does not activate it. A desktop, display, or region capture returns unsupported_on_inactive_desktop until activate_desktop_session. A window capture is best-effort while inactive. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1461,6 +1561,7 @@ Captures a PNG of the console user's desktop. target 'desktop' (default) is the 
 | `overwrite` | `bool` | no | `false` | Replace an existing saveTo file. |
 | `share` | `bool` | no | `false` | When true, also return a short-lived single-use URL for the downscaled preview so a person can open and copy it. The MCP image block is for the model and may not appear in chat. Present the share URL and do not fetch it. Needs maxEdge above 0. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token when capturing as the console user. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Desktop, display, and region captures need that session to be the input desktop. |
 
 ## `test_endpoint`
 

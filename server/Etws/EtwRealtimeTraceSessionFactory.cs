@@ -65,6 +65,8 @@ public sealed class EtwRealtimeTraceSessionFactory : IRealtimeTraceSessionFactor
         public void EnableProvider(Guid providerId, TraceLevelSelection level, ulong matchAnyKeyword, ulong matchAllKeyword) =>
             throw new NotSupportedException("Attached sessions are read-only.");
 
+        public bool EventsWereLost => false;
+
         public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadEventsAsync(
             DecodingContext? context,
             bool rewriteProviderName,
@@ -90,6 +92,8 @@ public sealed class EtwRealtimeTraceSessionFactory : IRealtimeTraceSessionFactor
 
         public void EnableProvider(Guid providerId, TraceLevelSelection level, ulong matchAnyKeyword, ulong matchAllKeyword) =>
             session.EnableProvider(providerId, (TraceEventLevel)level, matchAnyKeyword, matchAllKeyword);
+
+        public bool EventsWereLost => PresentationSessionLoss.Reported(session.SessionName);
 
         public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadEventsAsync(
             DecodingContext? context,

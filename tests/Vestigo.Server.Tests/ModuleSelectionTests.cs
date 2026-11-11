@@ -183,6 +183,7 @@ public class ModuleSelectionTests
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopScreenshots));
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopWindowPlacement));
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopDisplayLayout));
+        Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopSessions));
         Assert.False(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.AudioSetDefault));
         Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopWindowPlacement, requestIsExplicit: false, currentlyInstalled: false));
         Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopDisplayLayout, requestIsExplicit: false, currentlyInstalled: false));

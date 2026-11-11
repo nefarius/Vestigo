@@ -19,13 +19,15 @@ public sealed class DesktopTools(
     RootPolicy roots,
     FileLinkIssuer? links = null,
     ScreenshotShareStore? shares = null,
-    IHttpContextAccessor? httpContext = null)
+    IHttpContextAccessor? httpContext = null,
+    IManagedDesktopDirectory? desktops = null)
 {
     [McpServerTool(Name = "list_windows")]
     [Description(
         "Lists Win32 windows on the chosen desktop with owning process, parent and owner, physical-pixel bounds, "
         + "and the GDI display they are rendered on. Filters combine: pid or processName, narrowed by titleRegex and "
-        + "className. context 'interactive' (default) enumerates the console user's desktop through the session helper.")]
+        + "className. context 'interactive' (default) enumerates the console user's desktop through the session helper. "
+        + "desktopSessionId enumerates that managed desktop without switching to it. Enumeration works while the desktop is inactive.")]
     public Task<OperationResult<WindowListResult>> ListWindows(
         [Description("Process id.")] int? pid = null,
         [Description("Process name, with or without .exe.")] string? processName = null,
@@ -36,11 +38,17 @@ public sealed class DesktopTools(
         [Description("Maximum windows to return, 1 to 5000.")] int limit = WindowSelector.DefaultLimit,
         [Description("'interactive' (default) or 'service'.")] string context = "interactive",
         [Description("Interactive only: use the elevated token when enumerating as the console user.")] bool elevated = false,
+        [Description("Managed desktop session id. Omit to use winsta0\\default. Does not activate the desktop.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         if (!ProcessTools.TryParseContext(context, out LaunchContext launchContext))
         {
             return Task.FromResult(OperationResult<WindowListResult>.Fail("invalid_request", "context must be 'service' or 'interactive'."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(desktopSessionId) && launchContext != LaunchContext.Interactive)
+        {
+            return Task.FromResult(OperationResult<WindowListResult>.Fail("invalid_request", "desktopSessionId requires context 'interactive'."));
         }
 
         WindowSelector selector = new(
@@ -51,7 +59,7 @@ public sealed class DesktopTools(
             includeHidden,
             includeChildren,
             Math.Clamp(limit, 1, WindowSelector.MaxLimit));
-        return inventory.ListWindowsAsync(selector, launchContext, elevated, cancellationToken);
+        return TargetedListWindows(selector, launchContext, elevated, desktopSessionId, cancellationToken);
     }
 
     [McpServerTool(Name = "list_displays")]
@@ -62,6 +70,7 @@ public sealed class DesktopTools(
     public Task<OperationResult<DisplayListResult>> ListDisplays(
         [Description("'interactive' (default) or 'service'.")] string context = "interactive",
         [Description("Include refresh, active mode, rotation, scaling, adapter LUID, and advanced color.")] bool includeModes = false,
+        [Description("Managed desktop session id. Omit to use the console user's default desktop. Does not activate it.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         if (!ProcessTools.TryParseContext(context, out LaunchContext launchContext))
@@ -69,7 +78,12 @@ public sealed class DesktopTools(
             return Task.FromResult(OperationResult<DisplayListResult>.Fail("invalid_request", "context must be 'service' or 'interactive'."));
         }
 
-        return inventory.ListDisplaysAsync(launchContext, elevated: false, cancellationToken, includeModes);
+        if (!string.IsNullOrWhiteSpace(desktopSessionId) && launchContext != LaunchContext.Interactive)
+        {
+            return Task.FromResult(OperationResult<DisplayListResult>.Fail("invalid_request", "desktopSessionId requires context 'interactive'."));
+        }
+
+        return TargetedListDisplays(launchContext, includeModes, desktopSessionId, cancellationToken);
     }
 
     [McpServerTool(Name = "take_screenshot")]
@@ -84,6 +98,8 @@ public sealed class DesktopTools(
         + "can open and copy it; present that URL and do not fetch it first. saveTo stores the full-resolution PNG "
         + "in a root with Write access (root:relative\\file.png) and adds a download link (one-time ticket when API "
         + "tokens are configured). Do not use fetch_file to export a screenshot. Requires Vestigo:Desktop:AllowScreenshots. "
+        + "desktopSessionId launches the capture on that managed desktop and does not activate it. A desktop, display, or region capture "
+        + "returns unsupported_on_inactive_desktop until activate_desktop_session. A window capture is best-effort while inactive. "
         + "Interactive session only.")]
     public async Task<CallToolResult> TakeScreenshot(
         [Description("'desktop' (default), 'display', 'window' or 'region'.")] string target = ScreenCaptureTarget.Desktop,
@@ -105,6 +121,7 @@ public sealed class DesktopTools(
             + "The MCP image block is for the model and may not appear in chat. Present the share URL and do not fetch it. Needs maxEdge above 0.")]
         bool share = false,
         [Description("Interactive only: use the elevated token when capturing as the console user.")] bool elevated = false,
+        [Description("Managed desktop session id. Desktop, display, and region captures need that session to be the input desktop.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         if (!options.Desktop.AllowScreenshots)
@@ -169,6 +186,13 @@ public sealed class DesktopTools(
             savePath = check.FullPath;
         }
 
+        bool rendered = parsedTarget != ScreenCaptureTarget.Window;
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(desktops, desktopSessionId, rendered, cancellationToken).ConfigureAwait(false);
+        if (!targeted.Success)
+        {
+            return ErrorResult(targeted.ErrorCode!, targeted.Error!, targeted.Reason);
+        }
+
         ScreenCaptureRequest request = new(
             parsedTarget,
             string.IsNullOrWhiteSpace(display) ? null : display.Trim(),
@@ -183,7 +207,7 @@ public sealed class DesktopTools(
             options.Desktop.MaxScreenshotBytes);
 
         OperationResult<CapturedScreenshot> captured = await inventory
-            .CaptureAsync(request, savePath, overwrite, elevated, cancellationToken)
+            .CaptureAsync(request, savePath, overwrite, elevated, cancellationToken, targeted.Value?.DesktopPath)
             .ConfigureAwait(false);
         if (!captured.Success)
         {
@@ -266,6 +290,50 @@ public sealed class DesktopTools(
 
         content.Add(new TextContentBlock { Text = node.ToJsonString(SessionHelper.Json) });
         return new CallToolResult { Content = content };
+    }
+
+    [McpServerTool(Name = "inspect_input_state", ReadOnly = true)]
+    [Description(
+        "Reads the foreground window and the cursor position on the input desktop. "
+        + "desktopSessionId must already be the input desktop; this tool does not activate it and returns unsupported_on_inactive_desktop otherwise. "
+        + "A successful read is not evidence that an application responded to input.")]
+    public async Task<OperationResult<InputStateReport>> InspectInputState(
+        [Description("Managed desktop session id. Omit to read the console user's current input desktop from winsta0\\default.")] string? desktopSessionId = null,
+        [Description("Use the elevated token.")] bool elevated = false,
+        CancellationToken cancellationToken = default)
+    {
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(desktops, desktopSessionId, requireInput: true, cancellationToken).ConfigureAwait(false);
+        if (!targeted.Success)
+        {
+            return targeted.FailAs<InputStateReport>();
+        }
+
+        return await inventory.InspectInputStateAsync(elevated, cancellationToken, targeted.Value?.DesktopPath).ConfigureAwait(false);
+    }
+
+    private async Task<OperationResult<WindowListResult>> TargetedListWindows(
+        WindowSelector selector,
+        LaunchContext context,
+        bool elevated,
+        string? desktopSessionId,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(desktops, desktopSessionId, requireInput: false, cancellationToken).ConfigureAwait(false);
+        return targeted.Success
+            ? await inventory.ListWindowsAsync(selector, context, elevated, cancellationToken, targeted.Value).ConfigureAwait(false)
+            : targeted.FailAs<WindowListResult>();
+    }
+
+    private async Task<OperationResult<DisplayListResult>> TargetedListDisplays(
+        LaunchContext context,
+        bool includeModes,
+        string? desktopSessionId,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(desktops, desktopSessionId, requireInput: false, cancellationToken).ConfigureAwait(false);
+        return targeted.Success
+            ? await inventory.ListDisplaysAsync(context, false, cancellationToken, includeModes, targeted.Value).ConfigureAwait(false)
+            : targeted.FailAs<DisplayListResult>();
     }
 
     private string BaseUrl()

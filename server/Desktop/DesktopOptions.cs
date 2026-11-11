@@ -20,6 +20,15 @@ public sealed class DesktopOptions
     /// <summary>Enables temporary or persistent display-layout transactions.</summary>
     public bool AllowDisplayLayoutChanges { get; set; }
 
+    /// <summary>Enables creating, activating, and closing named test desktops in the console user's window station.</summary>
+    public bool AllowDesktopSessions { get; set; }
+
+    /// <summary>Most managed test desktops that may be open at once.</summary>
+    public int MaxDesktopSessions { get; set; } = 4;
+
+    /// <summary>How long an unclosed managed desktop may keep the input desktop or its handles.</summary>
+    public TimeSpan DesktopSessionLease { get; set; } = TimeSpan.FromMinutes(30);
+
     /// <summary>Most window-event captures that may run at once.</summary>
     public int MaxWindowEventCaptures { get; set; } = 2;
 
@@ -88,6 +97,16 @@ public sealed class DesktopOptions
         if (DisplayObservationIntervalMilliseconds is < 50 or > 2000)
         {
             throw new InvalidOperationException("Vestigo:Desktop:DisplayObservationIntervalMilliseconds must be between 50 and 2000.");
+        }
+
+        if (MaxDesktopSessions is < 1 or > 8)
+        {
+            throw new InvalidOperationException("Vestigo:Desktop:MaxDesktopSessions must be between 1 and 8.");
+        }
+
+        if (DesktopSessionLease < TimeSpan.FromSeconds(15) || DesktopSessionLease > TimeSpan.FromHours(2))
+        {
+            throw new InvalidOperationException("Vestigo:Desktop:DesktopSessionLease must be between 15 seconds and 2 hours.");
         }
     }
 }

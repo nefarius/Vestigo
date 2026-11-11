@@ -12,7 +12,7 @@ This booklet is for developers and QA personnel who will point an MCP client at 
 ## Who it is for
 
 - **Driver and application developers** who want an agent to install a build, start a WPP session, resolve PDBs, inspect a binary, inspect a window's frame and client rectangle, read `OutputDebugString`, and attach Visual Studio's remote debugger.
-- **QA and test-rig operators** who want the same agent to install or uninstall a build, toggle devices, inspect a window's client rectangle, capture window events, apply a temporary display layout, take a screenshot, inspect the screen with OCR and click or type through the UI, query event logs, switch an audio endpoint, collect crash-report metadata, investigate Windows Update failures and pending reboot work, and pull logs and traces back as artifacts.
+- **QA and test-rig operators** who want the same agent to install or uninstall a build, toggle devices, inspect a window's client rectangle, capture window events, apply a temporary display layout, create a named test desktop, take a screenshot, inspect the screen with OCR and click or type through the UI, query event logs, switch an audio endpoint, collect crash-report metadata, investigate Windows Update failures and pending reboot work, and pull logs and traces back as artifacts.
 
 It is Windows only. There is no management UI: opening `/` in a browser shows connection instructions, and `/health` is an anonymous probe.
 

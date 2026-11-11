@@ -37,6 +37,7 @@ Even after a module is on, these actions stay off until their own setting is tru
 - `Desktop:AllowScreenshots`
 - `Desktop:AllowWindowPlacement`
 - `Desktop:AllowDisplayLayoutChanges`
+- `Desktop:AllowDesktopSessions`
 - `Input:AllowInput`
 - `Audio:AllowSetDefault`
 - `System:AllowBootConfigurationChanges`
@@ -48,7 +49,7 @@ Even after a module is on, these actions stay off until their own setting is tru
 - `Diagnostics:AllowAudioPlayback`
 - `Diagnostics:AllowProcessDumps`
 
-Attaching to someone else's ETW session stays off until you list the session name in `AttachableSessions`.
+Attaching to someone else's ETW session stays off until you list the session name in `AttachableSessions`. `observe_presentation` starts and stops only its own short `Vestigo-` session.
 
 ## Screen and input
 

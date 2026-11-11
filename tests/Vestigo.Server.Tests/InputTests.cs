@@ -249,11 +249,120 @@ public class InputTests
         return document.RootElement.GetProperty("errorCode").GetString();
     }
 
+    [Fact]
+    public void Planner_AppliesHoldAndDelayToClickAndKey()
+    {
+        CaptureCache cache = new();
+        InputOptions limits = new();
+        OperationResult<InputBatch> plan = InputPlanner.Plan(
+            [
+                new InputActionSpec { Type = "click", HoldMilliseconds = 40, DelayAfterMilliseconds = 15 },
+                new InputActionSpec { Type = "key", Keys = "enter", HoldMilliseconds = 25 }
+            ],
+            null,
+            null,
+            cache,
+            limits);
+
+        Assert.True(plan.Success, plan.Error);
+        Assert.Equal(40, plan.Value!.Steps[0].HoldMilliseconds);
+        Assert.Equal(15, plan.Value.Steps[0].DelayAfterMilliseconds);
+        Assert.Equal(25, plan.Value.Steps[1].HoldMilliseconds);
+        Assert.Equal("invalid_request", InputPlanner.Plan([new InputActionSpec { Type = "move", X = 1, Y = 2, HoldMilliseconds = 10 }], null, null, cache, limits).ErrorCode);
+        Assert.Equal(
+            "invalid_request",
+            InputPlanner.Plan([new InputActionSpec { Type = "click", Count = 3, HoldMilliseconds = 5000 }], null, null, cache, limits).ErrorCode);
+        Assert.True(InputPlanner.Plan([new InputActionSpec { Type = "click", Count = 1, HoldMilliseconds = 5000 }], null, null, cache, limits).Success);
+    }
+
+    [Fact]
+    public async Task InactiveDesktop_AllowsEnumerationAndRefusesInput()
+    {
+        FixedDesktop desktops = new(input: false);
+        OperationResult<DesktopHelperTarget?> listed = await DesktopHelperTargeting.ResolveAsync(desktops, "abc", requireInput: false, CancellationToken.None);
+        OperationResult<DesktopHelperTarget?> injected = await DesktopHelperTargeting.ResolveAsync(desktops, "abc", requireInput: true, CancellationToken.None);
+
+        Assert.True(listed.Success);
+        Assert.False(listed.Value!.IsInputDesktop);
+        Assert.Equal(DesktopHelperTargeting.Unsupported, injected.ErrorCode);
+        Assert.Equal(DesktopHelperTargeting.InactiveReason, injected.Reason);
+    }
+
+    [Fact]
+    public async Task SendInput_RefusesAnInactiveDesktopWithoutSwitchingOrLaunching()
+    {
+        RecordingLaunch launcher = new();
+        VestigoOptions options = new() { Input = { AllowInput = true } };
+        InputTools tools = new(
+            new SessionHelperClient(launcher),
+            launcher,
+            new PerceptionService(launcher, new SessionHelperClient(launcher), new CaptureCache(), options),
+            options,
+            desktops: new FixedDesktop(input: false));
+
+        CallToolResult result = await tools.SendInput([new InputActionSpec { Type = "click" }], desktopSessionId: "abc");
+
+        Assert.Equal(DesktopHelperTargeting.Unsupported, ErrorCode(result));
+        Assert.Equal(0, launcher.Runs);
+    }
+
+    [Fact]
+    public async Task SendInput_LaunchesOnTheActiveManagedDesktop()
+    {
+        RecordingLaunch launcher = new();
+        VestigoOptions options = new() { Input = { AllowInput = true } };
+        InputTools tools = new(
+            new SessionHelperClient(launcher),
+            launcher,
+            new PerceptionService(launcher, new SessionHelperClient(launcher), new CaptureCache(), options),
+            options,
+            desktops: new FixedDesktop(input: true));
+
+        CallToolResult result = await tools.SendInput([new InputActionSpec { Type = "click" }], desktopSessionId: "abc");
+
+        Assert.Equal(@"winsta0\Vestigo-0123456789ab", launcher.Desktop);
+        Assert.Equal("helper_failed", ErrorCode(result));
+    }
+
     private static InputActionSpec Spec(string type) => new() { Type = type };
 
     private static InputActionSpec Wait(int ms) => new() { Type = "wait", Milliseconds = ms };
 
     private static InputActionSpec Type(string text) => new() { Type = "type", Text = text };
+
+    private sealed class FixedDesktop(bool input) : IManagedDesktopDirectory
+    {
+        public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<OperationResult<DesktopHelperTarget>> DescribeAsync(string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult(OperationResult<DesktopHelperTarget>.Ok(
+                new DesktopHelperTarget(sessionId, @"winsta0\Vestigo-0123456789ab", "Vestigo-0123456789ab", input)));
+    }
+
+    [Fact]
+    public void FocusGranted_IgnoresHexPadding()
+    {
+        Assert.True(InputInjector.FocusGranted("0x00001A2B", "0x1A2B"));
+        Assert.False(InputInjector.FocusGranted("0x1A2B", "0x1A2C"));
+        Assert.Null(InputInjector.FocusGranted("  ", "0x1A2B"));
+    }
+
+    private sealed class RecordingLaunch : IProcessLauncher
+    {
+        public int Runs { get; private set; }
+
+        public string? Desktop { get; private set; }
+
+        public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
+
+        public Task<int> RunAsync(LaunchRequest request, Vestigo.Jobs.JobContext output, CancellationToken cancellationToken)
+        {
+            Runs++;
+            Desktop = request.Desktop;
+            return Task.FromResult(0);
+        }
+    }
 
     internal sealed class UnavailableLauncher : IProcessLauncher
     {
