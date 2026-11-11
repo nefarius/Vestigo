@@ -32,7 +32,7 @@ internal static class ServiceProcessRunner
             command = command.WithWorkingDirectory(request.WorkingDirectory);
         }
 
-        if (request.Desktop is not null)
+        if (request.Desktop is not null || request.StandardInput is not null)
         {
             throw new ProcessLaunchException("invalid_request", "A managed desktop session requires context 'interactive'.");
         }

@@ -149,7 +149,7 @@ public sealed record DesktopCommandResult(
 }
 
 /// <summary>A process Vestigo started on a managed desktop.</summary>
-public sealed record OwnedDesktopProcess(string JobId, int ProcessId, bool Elevated);
+public sealed record OwnedDesktopProcess(string JobId, int ProcessId, bool Elevated, DateTimeOffset? StartedAt = null);
 
 /// <summary>
 ///     One managed desktop. Closing the host handle does not by itself end processes or destroy a desktop that

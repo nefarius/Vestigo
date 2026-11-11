@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using Vestigo.Configuration;
 using Vestigo.Desktop;
 using Vestigo.Jobs;
@@ -201,6 +203,72 @@ public class ManagedDesktopTests : IDisposable
     }
 
     [Fact]
+    public async Task Startup_KeepsTheSessionWhenInputRestoreFails()
+    {
+        RecordingHost host = new() { FailRestore = true };
+        Directory.CreateDirectory(_settings);
+        await File.WriteAllTextAsync(
+            VestigoPaths.OwnedDesktopsPath,
+            """{"version":1,"sessions":[{"id":"abc123","desktopName":"Vestigo-abc123abc123","windowStation":"WinSta0","windowsSessionId":1,"originalInputDesktop":"Default","state":"active","cleanupPolicy":"terminate-owned","createdAt":"2026-01-01T00:00:00Z","leaseExpiresAt":"2026-01-01T00:30:00Z","inputSwitched":true,"handleHeld":true,"desktopRetained":false,"processes":[{"jobId":"job","processId":9,"elevated":false}]}]}""");
+        RunningCleanup cleanup = new();
+        ManagedDesktopSessionManager manager = Manager(host, allow: true, cleanup);
+
+        await manager.StartAsync(CancellationToken.None);
+
+        ManagedDesktopSession session = manager.Get("abc123").Value!;
+        Assert.Equal("recovery-failed", session.State);
+        Assert.True(session.InputSwitched);
+        Assert.Empty(cleanup.Terminated);
+        Assert.Equal(["recover:restore"], host.Operations);
+    }
+
+    [Fact]
+    public void RecoveryResult_WithNullError_IsSuccess()
+    {
+        string json = JsonSerializer.Serialize(DesktopCommandResult.Ready(4), SessionHelper.Json);
+        OperationResult<DesktopCommandResult> parsed = SessionHelperClient.Parse<DesktopCommandResult>(json, 0);
+
+        Assert.True(parsed.Success, parsed.Error);
+        Assert.True(parsed.Value!.Success);
+        Assert.Equal(4, parsed.Value.HostProcessId);
+    }
+
+    [Fact]
+    public async Task RunProcess_ReleasesTheDesktopLeaseBeforeWaiting()
+    {
+        string root = Directory.CreateTempSubdirectory("vestigo-lease-").FullName;
+        try
+        {
+            string executable = Path.Combine(root, "tool.exe");
+            await File.WriteAllBytesAsync(executable, [0x4D, 0x5A]);
+            RecordingLauncher launcher = new() { Hold = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously) };
+            RecordingDirectory desktops = new();
+            VestigoOptions options = new()
+            {
+                Roots = [new RootDefinition { Name = "tools", Path = root, Access = RootAccess.Read | RootAccess.Execute }],
+                Processes = new ProcessesOptions { AllowPathLookup = false }
+            };
+            RootPolicy policy = new(options);
+            ProcessTools tools = new(policy, new ExecutableResolver(policy, options), new JobManager(options, Path.Combine(root, "jobs")), launcher, new AppCloser(new SessionHelperClient(launcher)), desktops);
+            Task<OperationResult<RunProcessResult>> running = tools.RunProcess(executable, context: "interactive", desktopSessionId: "abc", wait: 30);
+
+            for (int attempt = 0; attempt < 50 && desktops.Attached.Count == 0; attempt++)
+            {
+                await Task.Delay(10);
+            }
+
+            Assert.NotEmpty(desktops.Attached);
+            Assert.True(desktops.Released);
+            launcher.Hold.TrySetResult(0);
+            Assert.True((await running).Success);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task UnsupportedCheckpoint_BlocksNewSessionsAndStaysOnDisk()
     {
         Directory.CreateDirectory(_settings);
@@ -365,6 +433,8 @@ public class ManagedDesktopTests : IDisposable
 
         public bool Secure { get; init; }
 
+        public bool FailRestore { get; init; }
+
         public CancellationTokenSource? Cancellation { get; set; }
 
         public Task<OperationResult<DesktopCommandResult>> SendAsync(DesktopCommand command, CancellationToken cancellationToken)
@@ -397,6 +467,11 @@ public class ManagedDesktopTests : IDisposable
         {
             Operations.Add("recover:" + command.Op);
             RecoveredNames.Add(command.DesktopName ?? string.Empty);
+            if (FailRestore && command.Op == DesktopHostOperations.RestorePhase)
+            {
+                return Task.FromResult(OperationResult<DesktopCommandResult>.Ok(
+                    DesktopCommandResult.Fail(command.RequestId, "desktop_unavailable", "The original desktop could not be opened.")));
+            }
             bool close = command.Op == DesktopHostOperations.ClosePhase;
             return Task.FromResult(OperationResult<DesktopCommandResult>.Ok(new DesktopCommandResult(command.RequestId, true, null, null, null, command.SessionId, command.DesktopName, "WinSta0", 1, command.OriginalInputDesktop, "Default", !close, close, false, false, 1, null)));
         }
@@ -457,9 +532,11 @@ public class ManagedDesktopTests : IDisposable
     {
         public List<OwnedDesktopProcess> Attached { get; } = [];
 
+        public bool Released { get; private set; }
+
         public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken)
         {
-            ManagedDesktopLease lease = new(sessionId, @"winsta0\Vestigo-0123456789ab", Attached.Add);
+            ManagedDesktopLease lease = new(sessionId, @"winsta0\Vestigo-0123456789ab", Attached.Add, () => Released = true);
             return Task.FromResult(OperationResult<ManagedDesktopLease>.Ok(lease));
         }
     }
@@ -468,13 +545,15 @@ public class ManagedDesktopTests : IDisposable
     {
         public string? Desktop { get; private set; }
 
+        public TaskCompletionSource<int>? Hold { get; init; }
+
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
 
-        public Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
+        public async Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
         {
             Desktop = request.Desktop;
             request.Report?.Publish(new ProcessLaunchReport(77, 2, "winsta0", "Vestigo-0123456789ab", false, "limited"));
-            return Task.FromResult(0);
+            return Hold is null ? 0 : await Hold.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 }

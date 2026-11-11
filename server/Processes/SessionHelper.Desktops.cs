@@ -15,65 +15,68 @@ public static partial class SessionHelper
 
     private static int RunDesktopHost(string[] args)
     {
-        if (!TryParsePaths(args, DesktopHostCommand, "--control", "--status", out string? control, out string? status, out string? error))
+        if (args.Length < 2 || args[0] != Flag || args[1] != DesktopHostCommand)
         {
-            return Reject(error!);
+            return Reject($"Usage: {Flag} {DesktopHostCommand}");
         }
 
         using WindowsDesktopStation station = new();
-        using StreamWriter statusWriter = new(new FileStream(status!, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)) { AutoFlush = true };
+        using StreamWriter statusWriter = new(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
+        using StreamReader commands = new(Console.OpenStandardInput(), Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
         statusWriter.WriteLine(JsonSerializer.Serialize(DesktopCommandResult.Ready(Environment.ProcessId), Json));
-        long offset = 0;
-        StringBuilder pending = new();
-        while (true)
+        string? line;
+        while ((line = commands.ReadLine()) is not null)
         {
-            string chunk = ReadNew(control!, ref offset);
-            if (chunk.Length > 0)
+            if (line.Length == 0)
             {
-                pending.Append(chunk);
-                while (TakeLine(pending, out string? line))
-                {
-                    DesktopCommand? command;
-                    try
-                    {
-                        command = JsonSerializer.Deserialize<DesktopCommand>(line!, Json);
-                    }
-                    catch (JsonException)
-                    {
-                        command = null;
-                    }
-
-                    if (command is null || string.IsNullOrWhiteSpace(command.RequestId) || string.IsNullOrWhiteSpace(command.Op))
-                    {
-                        continue;
-                    }
-
-                    DesktopCommandResult result = station.Execute(command);
-                    statusWriter.WriteLine(JsonSerializer.Serialize(result, Json));
-                    if (command.Op == DesktopHostOperations.Shutdown)
-                    {
-                        return 0;
-                    }
-                }
+                continue;
             }
 
-            Thread.Sleep(30);
+            DesktopCommand? command;
+            try
+            {
+                command = JsonSerializer.Deserialize<DesktopCommand>(line, Json);
+            }
+            catch (JsonException)
+            {
+                command = null;
+            }
+
+            if (command is null || string.IsNullOrWhiteSpace(command.RequestId) || string.IsNullOrWhiteSpace(command.Op))
+            {
+                continue;
+            }
+
+            DesktopCommandResult result = station.Execute(command);
+            statusWriter.WriteLine(JsonSerializer.Serialize(result, Json));
+            if (command.Op == DesktopHostOperations.Shutdown)
+            {
+                return 0;
+            }
         }
+
+        return 0;
     }
 
     private static int RunDesktopRecover(string[] args)
     {
-        if (!TryParseOnePath(args, DesktopRecoverCommand, "--file", out string? path, out string? error))
+        if (args.Length < 2 || args[0] != Flag || args[1] != DesktopRecoverCommand)
         {
-            return Reject(error!);
+            return Reject($"Usage: {Flag} {DesktopRecoverCommand}");
+        }
+
+        string text;
+        using (StreamReader reader = new(Console.OpenStandardInput(), Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true))
+        {
+            text = reader.ReadToEnd();
         }
 
         DesktopCommand? command;
         try
         {
-            command = JsonSerializer.Deserialize<DesktopCommand>(File.ReadAllText(path!), Json);
+            command = JsonSerializer.Deserialize<DesktopCommand>(text, Json);
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        catch (JsonException)
         {
             return Reject("The desktop recovery request could not be read.", "invalid_request");
         }
@@ -99,104 +102,4 @@ public static partial class SessionHelper
         return 0;
     }
 
-    private static bool TryParsePaths(string[] args, string command, string first, string second, out string? firstValue, out string? secondValue, out string? error)
-    {
-        firstValue = null;
-        secondValue = null;
-        error = null;
-        if (args.Length < 2 || args[0] != Flag || args[1] != command)
-        {
-            error = $"Usage: {Flag} {command} {first} <path> {second} <path>";
-            return false;
-        }
-
-        for (int index = 2; index < args.Length; index += 2)
-        {
-            if (index + 1 >= args.Length)
-            {
-                error = $"Option '{args[index]}' needs a value.";
-                return false;
-            }
-
-            if (args[index] == first)
-            {
-                firstValue = args[index + 1];
-            }
-            else if (args[index] == second)
-            {
-                secondValue = args[index + 1];
-            }
-            else
-            {
-                error = $"Invalid option '{args[index]}'.";
-                return false;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(firstValue) || string.IsNullOrWhiteSpace(secondValue))
-        {
-            error = $"Usage: {Flag} {command} {first} <path> {second} <path>";
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool TryParseOnePath(string[] args, string command, string option, out string? path, out string? error)
-    {
-        path = null;
-        error = null;
-        if (!TryParsePaths(args, command, option, option, out string? first, out string? second, out error))
-        {
-            // TryParsePaths requires two distinct occurrences when both names match. Parse the single option directly.
-            error = null;
-        }
-
-        if (args.Length == 4 && args[0] == Flag && args[1] == command && args[2] == option && !string.IsNullOrWhiteSpace(args[3]))
-        {
-            path = args[3];
-            error = null;
-            return true;
-        }
-
-        path = first ?? second;
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            error = $"Usage: {Flag} {command} {option} <path>";
-            return false;
-        }
-
-        return true;
-    }
-
-    private static string ReadNew(string path, ref long offset)
-    {
-        using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        if (offset > stream.Length)
-        {
-            offset = stream.Length;
-        }
-
-        stream.Seek(offset, SeekOrigin.Begin);
-        using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
-        string text = reader.ReadToEnd();
-        offset += Encoding.UTF8.GetByteCount(text);
-        return text;
-    }
-
-    private static bool TakeLine(StringBuilder pending, out string? line)
-    {
-        string text = pending.ToString();
-        int newline = text.IndexOf('\n');
-        if (newline < 0)
-        {
-            line = null;
-            return false;
-        }
-
-        line = text[..newline].Trim();
-        pending.Clear();
-        pending.Append(text[(newline + 1)..]);
-        return true;
-    }
 }

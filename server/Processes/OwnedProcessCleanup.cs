@@ -21,7 +21,7 @@ public sealed class JobOwnedProcessCleanup(JobManager jobs) : IOwnedProcessClean
             try
             {
                 using Process running = Process.GetProcessById(process.ProcessId);
-                if (!running.HasExited)
+                if (!running.HasExited && IsSameProcess(process, running))
                 {
                     alive.Add(process.ProcessId);
                 }
@@ -52,9 +52,27 @@ public sealed class JobOwnedProcessCleanup(JobManager jobs) : IOwnedProcessClean
             await Task.Delay(100, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (int pid in StillRunning(processes))
+        foreach (OwnedDesktopProcess process in processes)
         {
-            ProcessControl.Kill(pid, null, entireTree: true, Environment.ProcessId);
+            if (!StillRunning([process]).Contains(process.ProcessId))
+            {
+                continue;
+            }
+
+            ProcessControl.Kill(process.ProcessId, null, entireTree: true, Environment.ProcessId);
         }
+    }
+
+    private static bool IsSameProcess(OwnedDesktopProcess owned, Process running)
+    {
+        if (owned.StartedAt is null || !ProcessStartTime.TryRead(running.SafeHandle.DangerousGetHandle(), out DateTimeOffset start, out _))
+        {
+            GC.KeepAlive(running);
+            return false;
+        }
+
+        GC.KeepAlive(running);
+
+        return start.UtcDateTime == owned.StartedAt.Value.UtcDateTime;
     }
 }

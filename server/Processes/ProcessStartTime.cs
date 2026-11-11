@@ -15,15 +15,21 @@ internal static partial class ProcessStartTime
 
     public static bool TryRead(SafeFileHandle process, out DateTimeOffset start, out int error)
     {
+        bool read = TryRead(process.DangerousGetHandle(), out start, out error);
+        GC.KeepAlive(process);
+        return read;
+    }
+
+    public static bool TryRead(nint process, out DateTimeOffset start, out int error)
+    {
         start = default;
         error = 0;
-        if (GetProcessTimes(process.DangerousGetHandle(), out long creation, out _, out _, out _) == 0)
+        if (process == 0 || GetProcessTimes(process, out long creation, out _, out _, out _) == 0)
         {
             error = Marshal.GetLastWin32Error();
             return false;
         }
 
-        GC.KeepAlive(process);
         try
         {
             start = new DateTimeOffset(DateTime.FromFileTimeUtc(creation), TimeSpan.Zero);
