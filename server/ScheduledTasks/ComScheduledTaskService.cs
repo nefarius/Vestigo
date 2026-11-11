@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Xml.Linq;
 
 using Microsoft.Win32.TaskScheduler;
@@ -41,6 +42,7 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
             return Invoke(service =>
             {
                 using RegisteredTask task = GetTask(service, path);
+                using TaskDefinition? definition = CachedDefinition(task);
                 string xml = task.Xml;
                 return Parse(ToInfo(task), xml);
             });
@@ -55,6 +57,7 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         Invoke(service =>
         {
             RegisteredTask? task = GetTask(service, path);
+            using TaskDefinition? definition = CachedDefinition(task);
             try
             {
                 using RunningTask? running = task.Run(arguments.ToArray());
@@ -81,6 +84,7 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
     public void Stop(string path) => Invoke<object?>(service =>
     {
         using RegisteredTask task = GetTask(service, path);
+        using TaskDefinition? definition = CachedDefinition(task);
         task.Stop();
         return null;
     });
@@ -88,6 +92,7 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
     public void SetEnabled(string path, bool enabled) => Invoke<object?>(service =>
     {
         using RegisteredTask task = GetTask(service, path);
+        using TaskDefinition? definition = CachedDefinition(task);
         task.Enabled = enabled;
         return null;
     });
@@ -120,6 +125,15 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         return (folder, path[(index + 1)..]);
     }
 
+    // TaskScheduler 2.12.2 caches a definition when CreateTask materializes collection
+    // entries, but Task.Dispose releases only the registered-task RCW. The public
+    // Definition getter would create a new definition when none is cached. Read the
+    // existing cache without acquiring another COM object; recheck on package upgrades.
+    // RunningTask shares the registered-task RCW, but not this cached definition.
+    // https://github.com/dahall/TaskScheduler/blob/v2.12.2/TaskService/Task.cs
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "myTD")]
+    internal static extern ref TaskDefinition? CachedDefinition(RegisteredTask task);
+
     private static void Walk(TaskFolder folder, bool recurse, bool includeHidden, List<ScheduledTaskInfo> output)
     {
         using TaskCollection tasks = folder.GetTasks();
@@ -127,6 +141,7 @@ public sealed class ComScheduledTaskService : IScheduledTaskService
         {
             using (task)
             {
+                using TaskDefinition? definition = CachedDefinition(task);
                 ScheduledTaskInfo info = ToInfo(task);
                 // The wrapper's task collections always include hidden tasks.
                 if (includeHidden || !info.Hidden) output.Add(info);

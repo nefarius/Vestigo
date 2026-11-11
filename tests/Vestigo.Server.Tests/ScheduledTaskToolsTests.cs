@@ -255,6 +255,14 @@ public sealed class ScheduledTaskToolsTests
     }
 
     [Fact]
+    public void CachedDefinition_DoesNotCreateDefinitionForCleanup()
+    {
+        // No native references exist: the accessor must only read the pinned wrapper's cache.
+        Scheduler.Task task = (Scheduler.Task)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Scheduler.Task));
+        Assert.Null(ComScheduledTaskService.CachedDefinition(task));
+    }
+
+    [Fact]
     public async Task RealScheduler_TemporaryTasksRoundTripAndSupportChanges()
     {
         Assert.SkipUnless(Environment.UserInteractive, "Temporary task execution requires an interactive logon for this account.");
@@ -280,6 +288,17 @@ public sealed class ScheduledTaskToolsTests
             ComScheduledTaskService service = new();
             string visible = folder.Path + "\\Visible";
             string nested = child.Path + "\\Nested";
+
+            using (Scheduler.TaskCollection tasks = folder.GetTasks())
+            using (Scheduler.Task task = tasks["Visible"])
+            {
+                Scheduler.TaskDefinition? definition = ComScheduledTaskService.CachedDefinition(task);
+                Assert.NotNull(definition);
+                Assert.Same(definition, task.Definition);
+                Assert.Contains("Task", definition.XmlText);
+                definition.Dispose();
+                Assert.Throws<System.Runtime.InteropServices.InvalidComObjectException>(() => definition.XmlText);
+            }
 
             Assert.Equal([visible], service.List(folder.Path, false, false).Select(t => t.Path));
             Assert.Equal(2, service.List(folder.Path, false, true).Count);

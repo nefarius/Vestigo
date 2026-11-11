@@ -41,6 +41,7 @@
     <PackageReference Include="Nefarius.Vicius.Abstractions" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="TaskScheduler" />
+    <PackageReference Include="System.IO.Hashing" />
   </ItemGroup>
 
   <ItemGroup>
