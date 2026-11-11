@@ -72,6 +72,7 @@ public static class WindowsDisplayConfig
         IReadOnlyList<DisplayInfo> displays = DisplayTopology.Enumerate();
         Dictionary<uint, (int X, int Y, uint Width, uint Height)> sharedSources = [];
         bool changed = false;
+        bool[] seen = new bool[request.Targets.Count];
         for (int index = 0; index < pathCount; index++)
         {
             if (!TryDescribe(paths[index], modes, displays, includeInactive: false, out DisplayPathLayout? layout))
@@ -79,26 +80,60 @@ public static class WindowsDisplayConfig
                 continue;
             }
 
-            DisplayTargetChange? change = request.Targets.FirstOrDefault(candidate => DisplayLayoutPlanner.Matches(layout!.Identity, candidate));
-            if (change is null)
+            int targetIndex = -1;
+            for (int candidate = 0; candidate < request.Targets.Count; candidate++)
+            {
+                if (DisplayLayoutPlanner.Matches(layout!.Identity, request.Targets[candidate]))
+                {
+                    targetIndex = candidate;
+                    break;
+                }
+            }
+
+            if (targetIndex < 0)
             {
                 continue;
             }
 
-            if (!TryPatch(ref paths[index], modes, layout!, change, sharedSources, out bool pathChanged, out string? patchError))
+            if (!TryPatch(ref paths[index], modes, layout!, request.Targets[targetIndex], sharedSources, out bool pathChanged, out string? patchError))
             {
                 return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
                     false, false, request.Persistent, null, "display_mode_unavailable",
                     patchError ?? "The active path has no source or target mode that can be updated.", before.Value, null));
             }
 
+            seen[targetIndex] = true;
             changed |= pathChanged;
+        }
+
+        if (seen.Any(item => !item))
+        {
+            return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
+                false, true, request.Persistent, null, "display_mode_unavailable",
+                "A requested target was not in the active topology.", before.Value, null, "validate"));
         }
 
         if (!changed)
         {
+            if (!request.Persistent)
+            {
+                return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
+                    true, true, request.Persistent, null, null, null, before.Value, before.Value, "unchanged", null, true));
+            }
+
+            SET_DISPLAY_CONFIG_FLAGS persistFlags = ApplicationFlags(persistent: true);
+            WIN32_ERROR persisted = ApplyNative(pathCount, paths, (uint)modes.Length, modes, persistFlags);
+            OperationResult<DisplayLayoutSnapshot> persistedAfter = Capture();
+            if (persisted != WIN32_ERROR.NO_ERROR)
+            {
+                return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
+                    false, true, request.Persistent, (int)persisted, "display_config_rejected",
+                    NativeFailure("apply", persisted, persistFlags), before.Value, persistedAfter.Success ? persistedAfter.Value : null, "apply", persistFlags.ToString()));
+            }
+
             return OperationResult<DisplayLayoutApplyResult>.Ok(new DisplayLayoutApplyResult(
-                true, true, request.Persistent, null, null, null, before.Value, before.Value, "unchanged", null, true));
+                true, true, request.Persistent, null, null, null, before.Value,
+                persistedAfter.Success ? persistedAfter.Value : null, "unchanged", persistFlags.ToString(), true));
         }
 
         SET_DISPLAY_CONFIG_FLAGS validateFlags = ValidationFlags();

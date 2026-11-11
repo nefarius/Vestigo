@@ -196,15 +196,31 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
     public async Task<OperationResult<IReadOnlyList<ManagedDesktopSession>>> ListAsync(CancellationToken cancellationToken = default)
     {
         await ReconcilePresenceAsync(cancellationToken, throttle: false).ConfigureAwait(false);
-        return OperationResult<IReadOnlyList<ManagedDesktopSession>>.Ok(_sessions.Values.OrderBy(session => session.CreatedAt).ToList());
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return OperationResult<IReadOnlyList<ManagedDesktopSession>>.Ok(_sessions.Values.OrderBy(session => session.CreatedAt).ToList());
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task<OperationResult<ManagedDesktopSession>> GetAsync(string id, CancellationToken cancellationToken = default)
     {
         await ReconcilePresenceAsync(cancellationToken, throttle: false).ConfigureAwait(false);
-        return _sessions.TryGetValue(id, out ManagedDesktopSession? session)
-            ? OperationResult<ManagedDesktopSession>.Ok(session)
-            : OperationResult<ManagedDesktopSession>.Fail("desktop_session_not_found", "Managed desktop session was not found.");
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return _sessions.TryGetValue(id, out ManagedDesktopSession? session)
+                ? OperationResult<ManagedDesktopSession>.Ok(session)
+                : OperationResult<ManagedDesktopSession>.Fail("desktop_session_not_found", "Managed desktop session was not found.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task<OperationResult<WindowStationDesktopList>> EnumerateAsync(CancellationToken cancellationToken)
@@ -222,7 +238,8 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
         return OperationResult<WindowStationDesktopList>.Ok(new WindowStationDesktopList(
             value.WindowStation ?? DesktopSessionPolicy.WindowStation,
             value.InputDesktop,
-            value.Desktops ?? []));
+            value.Desktops ?? [],
+            value.WindowsSessionId));
     }
 
     public Task<OperationResult<ManagedDesktopSession>> ActivateAsync(string id, CancellationToken cancellationToken) =>
@@ -333,71 +350,102 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             return;
         }
 
-        bool pending = _sessions.Values.Any(NeedsPresenceCheck);
-        if (!pending || (throttle && _time.GetUtcNow() - _lastPresenceCheck < TimeSpan.FromSeconds(2)))
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            return;
-        }
-
-        OperationResult<WindowStationDesktopList> listed = await EnumerateAsync(cancellationToken).ConfigureAwait(false);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            _lastPresenceCheck = _time.GetUtcNow();
-            if (!listed.Success || listed.Value is null)
+            string stamp;
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
+                bool pending = _sessions.Values.Any(NeedsPresenceCheck);
+                if (!pending || (throttle && _time.GetUtcNow() - _lastPresenceCheck < TimeSpan.FromSeconds(2)))
+                {
+                    return;
+                }
+
+                stamp = PresenceStamp();
+            }
+            finally
+            {
+                _gate.Release();
+            }
+
+            OperationResult<WindowStationDesktopList> listed = await EnumerateAsync(cancellationToken).ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!string.Equals(stamp, PresenceStamp(), StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _lastPresenceCheck = _time.GetUtcNow();
+                if (!listed.Success || listed.Value is null)
+                {
+                    foreach (ManagedDesktopSession session in _sessions.Values.Where(NeedsPresenceCheck).ToList())
+                    {
+                        _sessions[session.Id] = session with { DesktopPresence = "enumeration-unknown" };
+                    }
+
+                    Save();
+                    return;
+                }
+
+                HashSet<string> names = listed.Value.Desktops.Select(desktop => desktop.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 foreach (ManagedDesktopSession session in _sessions.Values.Where(NeedsPresenceCheck).ToList())
                 {
-                    _sessions[session.Id] = session with { DesktopPresence = "enumeration-unknown" };
+                    if (listed.Value.WindowsSessionId is null
+                        || session.WindowsSessionId is null
+                        || session.WindowsSessionId != listed.Value.WindowsSessionId)
+                    {
+                        continue;
+                    }
+
+                    if (names.Contains(session.DesktopName))
+                    {
+                        _sessions[session.Id] = session with
+                        {
+                            DesktopRetained = true,
+                            DesktopPresence = session.DesktopPresence == "close-time-retained" ? "cleanup-pending" : "confirmed-present"
+                        };
+                        continue;
+                    }
+
+                    if (session.State is "open" or "active" && !session.HandleHeld)
+                    {
+                        _sessions[session.Id] = session with
+                        {
+                            State = "recovery-failed",
+                            DesktopPresence = "confirmed-absent",
+                            LastError = "The managed desktop was not in the window station enumeration."
+                        };
+                        continue;
+                    }
+
+                    _sessions[session.Id] = session with
+                    {
+                        DesktopRetained = false,
+                        DesktopPresence = "confirmed-absent",
+                        LastError = session.LastError == RetentionMessage ? null : session.LastError
+                    };
                 }
 
                 Save();
                 return;
             }
-
-            HashSet<string> names = listed.Value.Desktops.Select(desktop => desktop.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (ManagedDesktopSession session in _sessions.Values.Where(NeedsPresenceCheck).ToList())
+            finally
             {
-                if (names.Contains(session.DesktopName))
-                {
-                    _sessions[session.Id] = session with
-                    {
-                        DesktopRetained = true,
-                        DesktopPresence = session.DesktopPresence == "close-time-retained" ? "cleanup-pending" : "confirmed-present"
-                    };
-                    continue;
-                }
-
-                if (session.State is "open" or "active" && !session.HandleHeld)
-                {
-                    _sessions[session.Id] = session with
-                    {
-                        State = "recovery-failed",
-                        DesktopPresence = "confirmed-absent",
-                        LastError = "The managed desktop was not in the window station enumeration."
-                    };
-                    continue;
-                }
-
-                _sessions[session.Id] = session with
-                {
-                    DesktopRetained = false,
-                    DesktopPresence = "confirmed-absent",
-                    LastError = session.LastError == RetentionMessage ? null : session.LastError
-                };
+                _gate.Release();
             }
-
-            Save();
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 
+    private string PresenceStamp() =>
+        string.Join('\n', _sessions.Values.OrderBy(session => session.Id, StringComparer.Ordinal).Select(session =>
+            string.Join('|', session.Id, session.State, session.DesktopRetained, session.DesktopPresence, session.HandleHeld, session.WindowsSessionId, session.LastError)));
+
     private static bool NeedsPresenceCheck(ManagedDesktopSession session) =>
         session.DesktopRetained
-        || session.DesktopPresence is "close-time-retained" or "cleanup-pending" or "confirmed-present"
+        || session.DesktopPresence is "close-time-retained" or "cleanup-pending" or "confirmed-present" or "enumeration-unknown"
         || (session.State is "open" or "active" && !session.HandleHeld);
 
     private async Task<OperationResult<ManagedDesktopSession>> SwitchAsync(string id, string operation, CancellationToken cancellationToken)
@@ -721,4 +769,8 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
 }
 
 /// <summary>Desktops on the interactive window station, classified without opening a secure desktop.</summary>
-public sealed record WindowStationDesktopList(string WindowStation, string? InputDesktop, IReadOnlyList<EnumeratedDesktop> Desktops);
+public sealed record WindowStationDesktopList(
+    string WindowStation,
+    string? InputDesktop,
+    IReadOnlyList<EnumeratedDesktop> Desktops,
+    int? WindowsSessionId = null);

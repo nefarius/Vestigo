@@ -345,6 +345,66 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public async Task IsolatedConfirmedRelease_ReturnsTheModeAndClearsTheCheckpoint()
+    {
+        string json = JsonSerializer.Serialize(
+            OperationResult<PresentationObservation>.Ok(new PresentationObservation(
+                "independent-flip", null, "etw", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 42, null, 1, 1, [], [], "Vestigo-P0123456789a", null)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        ScriptedPresentation process = new() { ExitCode = 0, Output = json };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("independent-flip", result.Value!.Mode);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("stop"));
+    }
+
+    [Fact]
+    public async Task IsolatedNonZeroExit_DropsTheParsedModeUntilTheSessionStops()
+    {
+        string json = JsonSerializer.Serialize(
+            OperationResult<PresentationObservation>.Ok(new PresentationObservation(
+                "independent-flip", null, "etw", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 42, null, 1, 1, [], [], "Vestigo-P0123456789a", null)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        ScriptedPresentation process = new() { ExitCode = 2, Output = json, StopExitCode = 1 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal("decoder_terminated", result.Value.Reason);
+        Assert.Contains(process.Calls, call => call.Contains("stop"));
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task HostStartFailure_ForgetsASessionThatWasNeverCreated()
+    {
+        ScriptedPresentation process = new() { HostFailed = true, Started = false };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_host_failed", result.Value!.Reason);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("stop"));
+    }
+
+    [Fact]
+    public async Task UncertainTermination_KeepsTheCheckpoint()
+    {
+        ScriptedPresentation process = new() { ExitCode = 0, Output = "{}", TerminationUncertain = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_host_failed", result.Value!.Reason);
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
     public async Task IsolatedStartup_KeepsASessionThatFailsToStop()
     {
         File.WriteAllText(VestigoPaths.OwnedPresentationPath, JsonSerializer.Serialize(new[] { "Vestigo-P0123456789a", "Other Session" }));
@@ -363,12 +423,12 @@ public class PresentationTests : IDisposable
             Assert.Skip("Set VESTIGO_PRESENTATION_TESTS=1 in an elevated Windows session.");
         }
 
-        PresentationObserver observer = new(
-            new EtwRealtimeTraceSessionFactory(),
+        PresentationGateway gateway = new(
+            new ProcessPresentationHost(),
             new VestigoOptions(),
             TimeProvider.System,
-            NullLogger<PresentationObserver>.Instance);
-        OperationResult<PresentationObservation> result = await observer.ObserveAsync(
+            NullLogger<PresentationGateway>.Instance);
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(
             Environment.ProcessId,
             null,
             TimeSpan.FromSeconds(1),
@@ -380,11 +440,17 @@ public class PresentationTests : IDisposable
             Assert.Contains(result.Value.Reason, new[]
             {
                 "providers_unavailable", "no_events", "no_correlation", "insufficient_evidence",
-                "ambiguous", "events_dropped", "events_truncated", "decode_failed", "session_unavailable", "cancelled"
+                "ambiguous", "events_dropped", "events_truncated", "decode_failed", "session_unavailable", "cancelled",
+                "decoder_terminated", "worker_timeout", "worker_host_failed"
             });
         }
 
+        Assert.False(string.IsNullOrWhiteSpace(result.Value.SessionName));
         Assert.DoesNotContain(result.Value.SessionName!, new EtwRealtimeTraceSessionFactory().ListSessions());
+        if (File.Exists(VestigoPaths.OwnedPresentationPath))
+        {
+            Assert.DoesNotContain(result.Value.SessionName!, File.ReadAllText(VestigoPaths.OwnedPresentationPath), StringComparison.Ordinal);
+        }
     }
 
     private PresentationObserver Observer(ScriptedFactory factory) =>
@@ -443,6 +509,12 @@ public class PresentationTests : IDisposable
 
         public int StopExitCode { get; init; }
 
+        public bool HostFailed { get; init; }
+
+        public bool Started { get; init; } = true;
+
+        public bool TerminationUncertain { get; init; }
+
         public List<string[]> Calls { get; } = [];
 
         public async Task<PresentationProcessResult> RunAsync(
@@ -468,7 +540,7 @@ public class PresentationTests : IDisposable
                 }
             }
 
-            return new PresentationProcessResult(ExitCode, Output, false, false);
+            return new PresentationProcessResult(ExitCode, Output, false, false, HostFailed, Started, TerminationUncertain);
         }
     }
 

@@ -93,37 +93,69 @@ public sealed class PresentationGateway : IHostedService
         try
         {
             Remember(sessionName);
-            PresentationProcessResult run = await _process.RunAsync(
-                [PresentationWorker.Flag, "observe", sessionName, processId.ToString(), (windowHandle ?? 0).ToString(), ((int)duration.TotalMilliseconds).ToString()],
-                duration + TimeSpan.FromSeconds(15),
-                linked.Token).ConfigureAwait(false);
-            if (run.Cancelled || run.TimedOut)
+            PresentationProcessResult run;
+            try
             {
-                bool stopped = await StopOwnedAsync(sessionName, CancellationToken.None).ConfigureAwait(false);
-                if (stopped)
-                {
-                    Forget(sessionName);
-                }
-
+                run = await _process.RunAsync(
+                    [
+                        PresentationWorker.Flag,
+                        "observe",
+                        sessionName,
+                        processId.ToString(),
+                        (windowHandle ?? 0).ToString(),
+                        ((int)duration.TotalMilliseconds).ToString(),
+                        _options.BufferSizeKb.ToString(),
+                        _options.FlushTimerSeconds.ToString(),
+                        _options.ClockResolution
+                    ],
+                    duration + TimeSpan.FromSeconds(15),
+                    linked.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger.LogWarning(ex, "Presentation worker {SessionName} could not be run", sessionName);
+                await StopIfCreatedAsync(sessionName, started: true, terminationUncertain: true).ConfigureAwait(false);
                 return Unknown(
                     processId,
                     windowHandle,
                     sessionName,
                     started,
-                    run.Cancelled ? "cancelled" : "worker_timeout",
+                    "worker_host_failed",
+                    "The service could not start or read the decoder process. " + ex.GetType().Name);
+            }
+
+            if (run.HostFailed && !run.Started)
+            {
+                Forget(sessionName);
+                return Unknown(
+                    processId,
+                    windowHandle,
+                    sessionName,
+                    started,
+                    "worker_host_failed",
+                    "The decoder process could not be started.");
+            }
+
+            if (run.HostFailed || run.TerminationUncertain || run.Cancelled || run.TimedOut)
+            {
+                await StopIfCreatedAsync(sessionName, run.Started, run.TerminationUncertain).ConfigureAwait(false);
+                string reason = run.Cancelled ? "cancelled" : run.TimedOut ? "worker_timeout" : "worker_host_failed";
+                return Unknown(
+                    processId,
+                    windowHandle,
+                    sessionName,
+                    started,
+                    reason,
                     run.Cancelled
                         ? "The observation was cancelled and the decoder process was stopped."
-                        : "The decoder process exceeded the observation deadline and was stopped.");
+                        : run.TimedOut
+                            ? "The decoder process exceeded the observation deadline and was stopped."
+                            : "The service could not read the decoder process.");
             }
 
             if (!TryParse(run.Output, out OperationResult<PresentationObservation>? parsed) || parsed is null)
             {
-                bool stopped = await StopOwnedAsync(sessionName, CancellationToken.None).ConfigureAwait(false);
-                if (stopped)
-                {
-                    Forget(sessionName);
-                }
-
+                await StopIfCreatedAsync(sessionName, started: true, terminationUncertain: false).ConfigureAwait(false);
                 return Unknown(
                     processId,
                     windowHandle,
@@ -133,16 +165,22 @@ public sealed class PresentationGateway : IHostedService
                     "The decoder process ended without a result. ExitCode=" + (run.ExitCode is int exit ? "0x" + exit.ToString("X8") : "none") + ".");
             }
 
-            if (parsed.Success)
+            if (parsed.Success && run.ExitCode == 0)
             {
                 Forget(sessionName);
                 return parsed;
             }
 
-            bool cleaned = await StopOwnedAsync(sessionName, CancellationToken.None).ConfigureAwait(false);
-            if (cleaned)
+            await StopIfCreatedAsync(sessionName, started: true, terminationUncertain: false).ConfigureAwait(false);
+            if (parsed.Success)
             {
-                Forget(sessionName);
+                return Unknown(
+                    processId,
+                    windowHandle,
+                    sessionName,
+                    started,
+                    "decoder_terminated",
+                    "The decoder process exited before the session release was confirmed. ExitCode=" + (run.ExitCode is int code ? "0x" + code.ToString("X8") : "none") + ".");
             }
 
             return parsed;
@@ -150,6 +188,21 @@ public sealed class PresentationGateway : IHostedService
         finally
         {
             _gate.Release();
+        }
+    }
+
+    private async Task StopIfCreatedAsync(string sessionName, bool started, bool terminationUncertain)
+    {
+        if (!started)
+        {
+            Forget(sessionName);
+            return;
+        }
+
+        bool stopped = await StopOwnedAsync(sessionName, CancellationToken.None).ConfigureAwait(false);
+        if (stopped && !terminationUncertain)
+        {
+            Forget(sessionName);
         }
     }
 

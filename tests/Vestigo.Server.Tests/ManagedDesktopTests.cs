@@ -100,6 +100,22 @@ public class ManagedDesktopTests : IDisposable
     }
 
     [Fact]
+    public async Task EnumerationFromAnotherWindowsSession_LeavesRetentionPending()
+    {
+        RecordingHost host = new() { RetainOnClose = true, EnumeratedSessionId = 2 };
+        ManagedDesktopSessionManager manager = Manager(host, allow: true);
+        OperationResult<ManagedDesktopSession> created = await manager.CreateAsync("terminate-owned", CancellationToken.None);
+        OperationResult<ManagedDesktopSession> closed = await manager.CloseAsync(created.Value!.Id, null, CancellationToken.None);
+
+        OperationResult<ManagedDesktopSession> read = await manager.GetAsync(created.Value.Id);
+
+        Assert.True(closed.Value!.DesktopRetained);
+        Assert.Equal("close-time-retained", read.Value!.DesktopPresence);
+        Assert.True(read.Value.DesktopRetained);
+        Assert.Equal(closed.Value.LastError, read.Value.LastError);
+    }
+
+    [Fact]
     public async Task Create_RefusesASecureInputDesktop()
     {
         RecordingHost host = new() { Secure = true };
@@ -588,6 +604,8 @@ public class ManagedDesktopTests : IDisposable
 
         public bool FailEnumerate { get; set; }
 
+        public int EnumeratedSessionId { get; set; } = 1;
+
         public HashSet<string> ExternallyPresent { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public bool FailRestore { get; set; }
@@ -705,7 +723,7 @@ public class ManagedDesktopTests : IDisposable
                 .. _owned.Keys.Select(name => new EnumeratedDesktop(name, "owned", true)),
                 .. ExternallyPresent.Select(name => new EnumeratedDesktop(name, "owned", false))
             ];
-            return new DesktopCommandResult(command.RequestId, true, null, null, null, null, null, "WinSta0", 1, "Default", _input, false, false, false, false, 1, desktops);
+            return new DesktopCommandResult(command.RequestId, true, null, null, null, null, null, "WinSta0", EnumeratedSessionId, "Default", _input, false, false, false, false, 1, desktops);
         }
     }
 

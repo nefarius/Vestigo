@@ -27,14 +27,15 @@ public static class PresentationWorker
             return Stop(args[2]);
         }
 
-        if (args.Length == 6
+        if (args.Length is 6 or 9
             && args[1] == "observe"
             && IsOwnedSession(args[2])
             && int.TryParse(args[3], out int processId)
             && long.TryParse(args[4], out long window)
-            && int.TryParse(args[5], out int durationMs))
+            && int.TryParse(args[5], out int durationMs)
+            && TryReadTraceSettings(args, out uint bufferKb, out uint flushSeconds, out string clock))
         {
-            return Observe(args[2], processId, window == 0 ? null : window, durationMs);
+            return Observe(args[2], processId, window == 0 ? null : window, durationMs, bufferKb, flushSeconds, clock);
         }
 
         Console.Out.WriteLine(JsonSerializer.Serialize(OperationResult<PresentationObservation>.Fail(
@@ -43,7 +44,14 @@ public static class PresentationWorker
         return 2;
     }
 
-    private static int Observe(string sessionName, int processId, long? window, int durationMs)
+    private static int Observe(
+        string sessionName,
+        int processId,
+        long? window,
+        int durationMs,
+        uint bufferKb,
+        uint flushSeconds,
+        string clock)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -51,9 +59,15 @@ public static class PresentationWorker
             return 2;
         }
 
+        PresentationSessionRelease release = new();
         PresentationObserver observer = new(
             new EtwRealtimeTraceSessionFactory(),
-            new VestigoOptions(),
+            new VestigoOptions
+            {
+                BufferSizeKb = bufferKb,
+                FlushTimerSeconds = flushSeconds,
+                ClockResolution = clock
+            },
             TimeProvider.System,
             NullLogger<PresentationObserver>.Instance);
         OperationResult<PresentationObservation> result = observer.ObserveAsync(
@@ -62,9 +76,37 @@ public static class PresentationWorker
             TimeSpan.FromMilliseconds(durationMs),
             CancellationToken.None,
             sessionName,
-            manageCheckpoint: false).GetAwaiter().GetResult();
+            manageCheckpoint: false,
+            release).GetAwaiter().GetResult();
         Write(result);
-        return result.Success ? 0 : 2;
+        return result.Success && release.Released ? 0 : 2;
+    }
+
+    private static bool TryReadTraceSettings(string[] args, out uint bufferKb, out uint flushSeconds, out string clock)
+    {
+        bufferKb = 64;
+        flushSeconds = 1;
+        clock = "QueryPerformanceCounter";
+        if (args.Length == 6)
+        {
+            return true;
+        }
+
+        if (uint.TryParse(args[6], out bufferKb)
+            && bufferKb > 0
+            && uint.TryParse(args[7], out flushSeconds)
+            && flushSeconds > 0
+            && args[8].Length is > 0 and <= 64
+            && args[8].All(char.IsAsciiLetter))
+        {
+            clock = args[8];
+            return true;
+        }
+
+        bufferKb = 0;
+        flushSeconds = 0;
+        clock = string.Empty;
+        return false;
     }
 
     private static int Stop(string sessionName)
@@ -106,7 +148,14 @@ public interface IPresentationProcess
     Task<PresentationProcessResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken);
 }
 
-public sealed record PresentationProcessResult(int? ExitCode, string Output, bool Cancelled, bool TimedOut);
+public sealed record PresentationProcessResult(
+    int? ExitCode,
+    string Output,
+    bool Cancelled,
+    bool TimedOut,
+    bool HostFailed = false,
+    bool Started = true,
+    bool TerminationUncertain = false);
 
 /// <summary>Starts <c>Vestigo.exe --presentation-worker</c> and bounds its output.</summary>
 public sealed class ProcessPresentationHost : IPresentationProcess
@@ -131,27 +180,62 @@ public sealed class ProcessPresentationHost : IPresentationProcess
             process.StartInfo.ArgumentList.Add(argument);
         }
 
-        if (!process.Start())
-        {
-            return new PresentationProcessResult(null, string.Empty, false, false);
-        }
-
-        _ = process.StandardError.ReadToEndAsync();
-        using CancellationTokenSource timeoutSource = new(timeout);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
-        Task<string> output = ReadBoundedAsync(process.StandardOutput);
+        bool started = false;
         try
         {
-            await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            string partial = await output.ConfigureAwait(false);
-            return new PresentationProcessResult(null, partial, cancellationToken.IsCancellationRequested, !cancellationToken.IsCancellationRequested);
-        }
+            if (!process.Start())
+            {
+                return new PresentationProcessResult(null, string.Empty, false, false, HostFailed: true, Started: false);
+            }
 
-        return new PresentationProcessResult(process.ExitCode, await output.ConfigureAwait(false), false, false);
+            started = true;
+            _ = process.StandardError.ReadToEndAsync();
+            using CancellationTokenSource timeoutSource = new(timeout);
+            using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
+            Task<string> output = ReadBoundedAsync(process.StandardOutput);
+            try
+            {
+                await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                bool killed = TryKill(process);
+                (string partial, bool drained) = await DrainAsync(output).ConfigureAwait(false);
+                return new PresentationProcessResult(
+                    null,
+                    partial,
+                    cancellationToken.IsCancellationRequested,
+                    !cancellationToken.IsCancellationRequested,
+                    TerminationUncertain: !killed || !drained);
+            }
+
+            (string text, bool completed) = await DrainAsync(output).ConfigureAwait(false);
+            return new PresentationProcessResult(process.ExitCode, text, false, false, TerminationUncertain: !completed);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            bool killed = started && TryKill(process);
+            return new PresentationProcessResult(
+                null,
+                string.Empty,
+                false,
+                false,
+                HostFailed: true,
+                Started: started,
+                TerminationUncertain: started && !killed);
+        }
+    }
+
+    private static async Task<(string Output, bool Completed)> DrainAsync(Task<string> output)
+    {
+        try
+        {
+            return (await output.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false), true);
+        }
+        catch (TimeoutException)
+        {
+            return (string.Empty, false);
+        }
     }
 
     private static async Task<string> ReadBoundedAsync(StreamReader reader)
@@ -178,7 +262,7 @@ public sealed class ProcessPresentationHost : IPresentationProcess
         return writer.ToString();
     }
 
-    private static void TryKill(Process process)
+    private static bool TryKill(Process process)
     {
         try
         {
@@ -186,10 +270,12 @@ public sealed class ProcessPresentationHost : IPresentationProcess
             {
                 process.Kill(entireProcessTree: true);
             }
+
+            return true;
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
         {
-            // The child already exited or could not be signalled.
+            return false;
         }
     }
 }

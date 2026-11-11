@@ -740,6 +740,19 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task AppliedWithoutASnapshot_LeavesCurrentNull()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { OmitAfter = true };
+        DisplayLayoutTransactionManager manager = Manager(displays);
+
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(10, 0, 1920, 1080)], false, false, CancellationToken.None);
+
+        Assert.True(started.Success, started.Error);
+        Assert.Equal("active", started.Value!.State);
+        Assert.Null(started.Value.Current);
+    }
+
+    [Fact]
     public async Task Tool_RequiresTheDisplayGate()
     {
         DisplayLayoutTools tools = new(Manager(new FakeDisplays(Snap(Path(0, 0, 1920, 1080)))), new VestigoOptions());
@@ -799,6 +812,7 @@ public class DisplayLayoutContractTests : IDisposable
         public int SnapshotsBeforeChanged;
         public bool FailApply;
         public bool ReportUnchanged;
+        public bool OmitAfter;
         public bool CancelFirstApply;
         public string? UncertainError;
         public List<DisplayLayoutRequest> Applied { get; } = [];
@@ -834,7 +848,7 @@ public class DisplayLayoutContractTests : IDisposable
 
             Current = Snap(Path(request.Targets[0].X, request.Targets[0].Y, request.Targets[0].Width, request.Targets[0].Height));
             return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Ok(
-                new DisplayLayoutApplyResult(true, true, request.Persistent, null, null, null, null, Current, Unchanged: ReportUnchanged)));
+                new DisplayLayoutApplyResult(true, true, request.Persistent, null, null, null, null, OmitAfter ? null : Current, Unchanged: ReportUnchanged)));
         }
     }
 }

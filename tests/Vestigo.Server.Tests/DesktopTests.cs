@@ -241,6 +241,25 @@ public class DesktopTests
     }
 
     [Fact]
+    public void Parse_KeepsAnApplyRejectionWhenTheHelperExitsZero()
+    {
+        string json = """
+            {"applied":false,"validated":true,"persistent":false,"nativeError":87,"errorCode":"display_config_rejected","error":"SetDisplayConfig apply failed.","before":null,"after":null}
+            """;
+
+        OperationResult<DisplayLayoutApplyResult> payload = SessionHelperClient.Parse<DisplayLayoutApplyResult>(json, 0);
+        OperationResult<DisplayLayoutApplyResult> envelope = SessionHelperClient.Parse<DisplayLayoutApplyResult>(json, 2);
+
+        Assert.True(payload.Success);
+        Assert.False(payload.Value!.Applied);
+        Assert.True(payload.Value.Validated);
+        Assert.Equal(87, payload.Value.NativeError);
+        Assert.Null(payload.Value.After);
+        Assert.Equal("display_config_rejected", envelope.ErrorCode);
+        Assert.Null(envelope.Value);
+    }
+
+    [Fact]
     public void DesktopRect_ClipsToIntersection()
     {
         DesktopRect left = new(0, 0, 100, 100);

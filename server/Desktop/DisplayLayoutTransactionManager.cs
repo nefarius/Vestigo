@@ -137,25 +137,12 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                 });
             }
 
-            if (applied.Success && applied.Value is { Applied: true, Unchanged: true })
-            {
-                _current = null;
-                TryDelete();
-                return OperationResult<DisplayLayoutTransaction>.Ok(transaction with
-                {
-                    State = "unchanged",
-                    Current = before.Value,
-                    Unchanged = true,
-                    RestorationVerified = true
-                });
-            }
-
             if (applied.Success && applied.Value is { Applied: true })
             {
                 _current = transaction with
                 {
                     State = "active",
-                    Current = applied.Value.After ?? before.Value,
+                    Current = applied.Value.After,
                     Unchanged = applied.Value.Unchanged
                 };
                 Save();

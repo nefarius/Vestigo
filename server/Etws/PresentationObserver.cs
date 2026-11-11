@@ -89,13 +89,15 @@ public sealed class PresentationObserver : IHostedService
 
     /// <param name="sessionName">Session selected by the parent. The worker must not invent another one.</param>
     /// <param name="manageCheckpoint">False when the parent process owns the checkpoint and orphan stop.</param>
+    /// <param name="release">Set when the caller needs to know whether this process disposed the ETW session.</param>
     public async Task<OperationResult<PresentationObservation>> ObserveAsync(
         int processId,
         long? windowHandle,
         TimeSpan duration,
         CancellationToken cancellationToken,
         string? sessionName,
-        bool manageCheckpoint)
+        bool manageCheckpoint,
+        PresentationSessionRelease? release = null)
     {
         if (processId <= 0)
         {
@@ -128,6 +130,7 @@ public sealed class PresentationObserver : IHostedService
         }
 
         IRealtimeTraceSession? session = null;
+        bool sessionReleased = false;
         List<string> enabled = [];
         List<string> failed = [];
         List<PresentationSample> samples = [];
@@ -220,6 +223,7 @@ public sealed class PresentationObserver : IHostedService
                     releaseCheckpoint = true;
                 }
 
+                sessionReleased = releaseCheckpoint;
                 if (manageCheckpoint && releaseCheckpoint)
                 {
                     Forget(sessionName);
@@ -227,10 +231,16 @@ public sealed class PresentationObserver : IHostedService
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                sessionReleased = false;
                 _logger.LogWarning(ex, "Presentation session {SessionName} cleanup failed", sessionName);
             }
             finally
             {
+                if (release is not null)
+                {
+                    release.Released = sessionReleased;
+                }
+
                 _gate.Release();
             }
         }
@@ -310,4 +320,10 @@ public sealed class PresentationObserver : IHostedService
             File.Move(tempPath, VestigoPaths.OwnedPresentationPath);
         }
     }
+}
+
+/// <summary>Set by <see cref="PresentationObserver"/> after it attempts to dispose the ETW session.</summary>
+public sealed class PresentationSessionRelease
+{
+    public bool Released { get; set; }
 }
