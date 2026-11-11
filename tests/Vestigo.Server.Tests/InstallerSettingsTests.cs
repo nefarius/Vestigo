@@ -237,17 +237,89 @@ public class InstallerSettingsTests
     }
 
     [Fact]
-    public void MiniJson_RoundTripsEscapesAndUnicode()
+    public void SettingsJson_RoundTripsEscapesAndUnicode()
     {
         const string text = """{ "a": "line\nbreak \"quoted\" \u00e4 \\ /", "b": [true, false, null, -1.25] }""";
 
-        object? parsed = MiniJson.Parse(text);
-        string written = MiniJson.Write(parsed);
+        System.Text.Json.Nodes.JsonNode? parsed = SettingsJson.Parse(text);
+        string written = SettingsJson.Write(parsed);
 
         using System.Text.Json.JsonDocument original = System.Text.Json.JsonDocument.Parse(text);
         using System.Text.Json.JsonDocument roundTrip = System.Text.Json.JsonDocument.Parse(written);
         Assert.Equal(original.RootElement.GetProperty("a").GetString(), roundTrip.RootElement.GetProperty("a").GetString());
         Assert.Equal(4, roundTrip.RootElement.GetProperty("b").GetArrayLength());
+    }
+
+    [Fact]
+    public void Merge_PreservesRawNumbersAndPropertyOrder()
+    {
+        const string existing = """
+            {"Before": [1e3, -0, 1.2300, 123456789012345678901234567890, 1e400],
+             "Vestigo": {"Keep": {"Nested": 1.5E+03}}, "After": null}
+            """;
+
+        string merged = ListenSettings.Merge(existing, ListenSettings.Resolve("localhost", "none", "5098", null, null));
+
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(merged);
+        Assert.Equal(["Before", "Vestigo", "After"], document.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["1e3", "-0", "1.2300", "123456789012345678901234567890", "1e400"],
+            document.RootElement.GetProperty("Before").EnumerateArray().Select(n => n.GetRawText()));
+        Assert.Equal("1.5E+03", document.RootElement.GetProperty("Vestigo").GetProperty("Keep").GetProperty("Nested").GetRawText());
+    }
+
+    [Fact]
+    public void SettingsJson_ExactDuplicatesUseLastValueAtFirstPosition()
+    {
+        const string text = """{"A":{"X":1,"Y":2,"X":3},"B":0,"A":{"P":4,"Q":5,"P":6},"a":7}""";
+
+        string written = SettingsJson.Write(SettingsJson.Parse(text));
+
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(written);
+        Assert.Equal(["A", "B", "a"], document.RootElement.EnumerateObject().Select(p => p.Name));
+        System.Text.Json.JsonElement nested = document.RootElement.GetProperty("A");
+        Assert.Equal(["P", "Q"], nested.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(6, nested.GetProperty("P").GetInt32());
+        Assert.Equal(7, document.RootElement.GetProperty("a").GetInt32());
+    }
+
+    [Fact]
+    public void SettingsJson_AcceptsBomCommentsAndTrailingCommas()
+    {
+        string json = "\uFEFF/* settings */ {\"Vestigo\": {\"ListenPort\": 6000,}, \"Array\": [true,],} // end";
+
+        Assert.Equal(6000, ListenSettings.ReadExisting(json)!.Port);
+        string written = SettingsJson.Write(SettingsJson.Parse(json));
+        Assert.DoesNotContain('\uFEFF', written);
+        Assert.DoesNotContain('\r', written);
+        Assert.EndsWith("\n", written);
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(written);
+        Assert.True(document.RootElement.GetProperty("Array")[0].GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("{\"x\":01}")]
+    [InlineData("{\"x\":1.}")]
+    [InlineData("{\"x\":1e}")]
+    [InlineData("{\"x\":\"raw\nnewline\"}")]
+    [InlineData("{\"x\":1,,}")]
+    [InlineData("{} true")]
+    [InlineData("/* unterminated")]
+    public void SettingsJson_RejectsMalformedJson(string json)
+    {
+        Assert.Throws<FormatException>(() => SettingsJson.Parse(json));
+        Assert.Null(ListenSettings.ReadExisting(json));
+        Assert.Null(RootSettings.ReadExisting(json));
+        Assert.Empty(ModuleSelection.ReadExisting(json));
+        Assert.Throws<FormatException>(() => ListenSettings.Merge(json,
+            ListenSettings.Resolve("localhost", "none", "5098", null, null)));
+    }
+
+    [Fact]
+    public void SettingsJson_Enforces64ContainerDepthLimit()
+    {
+        string supported = new string('[', 64) + "0" + new string(']', 64);
+        Assert.NotNull(SettingsJson.Parse(supported));
+        Assert.Throws<FormatException>(() => SettingsJson.Parse("[" + supported + "]"));
     }
 
     private static Dictionary<string, string> Flatten(string json, string[] excluded)

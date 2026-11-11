@@ -45,7 +45,7 @@ The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopba
 
 - [`Vestigo.Server`](server) — ASP.NET Core host, MCP tools, capture manager, and feature modules.
 - [`build`](build) — Fallout build project: `build.ps1` targets, third-party pins, and the update feed.
-- [`Vestigo.Installer.Actions`](installer/Vestigo.Installer.Actions) — net48 MSI custom actions and the pure listen-settings logic shared with the tests.
+- [`Vestigo.Installer.Actions`](installer/Vestigo.Installer.Actions) — net48 MSI custom actions and settings-merge logic shared with the tests. JSON parsing and writing use the MIT-licensed System.Text.Json package, embedded with its runtime dependencies in the custom-action payload.
 - [`Vestigo.Installer`](installer) — WixSharp project that builds the per-machine x64 MSI and Windows service.
 - [`tests/Vestigo.Server.Tests`](tests/Vestigo.Server.Tests) — path, authentication, capture, module, installer, and documentation tests.
 
