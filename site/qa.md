@@ -78,6 +78,12 @@ The service context does not see user-session audio. Per-app overrides in Settin
 2. `list_processes` and keep the start time of the process you will dump.
 3. `capture_process_dump` stays off until `Diagnostics:AllowProcessDumps` is true. Pass that `expectedStartTime` and a new `.dmp` path in a write root. The dump is not uploaded and no download ticket is created. Protected processes and processes on the fixed refusal list are refused.
 
+## Explain a driver load failure
+
+1. Enable Diagnostics, and Services and EventLog when those facts should be included. Diagnostics needs Jobs. Device queries work while Devices is off.
+2. `explain_driver_load_failure` takes an instance id, a service name, or both.
+3. Confirm hypotheses cite a service, a signature outcome, or a Code Integrity event. HVCI and Windows lockdown mode are observations. `insufficientEvidence` means no load-failure signal was observed. The tool does not assert a cause.
+
 ## Read firewall policy
 
 1. Enable Diagnostics. It needs Jobs.

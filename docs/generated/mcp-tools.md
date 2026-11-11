@@ -218,6 +218,15 @@ Explains the CM_PROB code of one device from observed evidence: device node, cla
 | --- | --- | --- | --- | --- |
 | `instanceId` | `string` | yes |  | Device instance ID. |
 
+## `explain_driver_load_failure`
+
+Explains a possible driver load failure from observed evidence: the device problem code when instanceId is set, the named service state, the service image signature (cache-only, no signer), boot security, Code Integrity operational events whose message or file name matches the image file, the DeviceGuard HypervisorEnforcedCodeIntegrity Enabled value, and WldpQueryWindowsLockdownMode. hvciEnabled is null when the value is missing or neither 0 nor 1. windowsLockdownMode is the S-mode lockdown value, not a WDAC policy inventory. hypotheses cite that evidence and do not assert a cause. insufficientEvidence is true when no load-failure signal was observed. Pass instanceId, serviceName, or both. This does not rank drivers.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `instanceId` | `string` | no | `null` | Device instance ID. Optional when serviceName is set. |
+| `serviceName` | `string` | no | `null` | Service or driver name, without a path. Optional when instanceId names a device service. |
+
 ## `extract_trace_archive`
 
 Extracts .pdb, .tmf, and .etl entries from a zip inside an allowed input root into a directory inside the allowed output roots (the built-in traces folder when defaults are in use). Other entries are skipped. See get_trace_settings for allowed roots.

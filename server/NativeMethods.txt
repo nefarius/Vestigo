@@ -398,6 +398,13 @@ PowerReadDCValueIndex
 ControlTrace
 EVENT_TRACE_CONTROL
 
+// Diagnostics: documented WDAC lockdown mode and device-security information.
+// SYSTEM_CODEINTEGRITY_INFORMATION is in the metadata, but NtQuerySystemInformation is not.
+WldpQueryWindowsLockdownMode
+WLDP_WINDOWS_LOCKDOWN_MODE
+WldpQueryDeviceSecurityInformation
+WLDP_DEVICE_SECURITY_INFORMATION
+
 // Diagnostics: read-only Windows Firewall profiles and rules.
 // INetFwRules has no index. Enumeration is IEnumVARIANT from get__NewEnum.
 INetFwPolicy2
