@@ -130,6 +130,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <h2>Crash reports and dumps</h2>
     <p><code>list_crash_reports</code> reads Windows Error Reporting metadata from the machine and user stores: application, event type, and signature values. A dump beside a report is a file name and length only.</p>
     <p><code>capture_process_dump</code> stays off until <code>Diagnostics:AllowProcessDumps</code> is true. It writes a minidump into a write root, refuses protected processes and processes on the fixed refusal list, and does not upload the file or create a download ticket. A full dump can contain process memory.</p>
+    <p><code>get_firewall_profiles</code> and <code>list_firewall_rules</code> stay off until <code>Diagnostics:AllowFirewallInventory</code> is true. They return stored profile flags and raw rule expressions, including application paths. A stored action is not a verdict that traffic was blocked, and a probe timeout is not reported as a firewall block. The tools do not change policy.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>

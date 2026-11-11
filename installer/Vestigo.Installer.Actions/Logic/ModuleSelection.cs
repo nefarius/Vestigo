@@ -104,6 +104,9 @@ namespace Vestigo.Installer.Actions.Logic
 
         public const string DiagnosticsProcessDumps = "DiagnosticsProcessDumps";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Diagnostics:AllowFirewallInventory</c>.</summary>
+        public const string DiagnosticsFirewallInventory = "DiagnosticsFirewallInventory";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Updates:AllowSelfUpdate</c>.</summary>
         public const string SelfUpdate = "SelfUpdate";
 
@@ -123,6 +126,7 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(DiagnosticsNetworkProbes, "Diagnostics", "AllowNetworkProbes"),
             new OptionToggle(DiagnosticsAudioPlayback, "Diagnostics", "AllowAudioPlayback"),
             new OptionToggle(DiagnosticsProcessDumps, "Diagnostics", "AllowProcessDumps"),
+            new OptionToggle(DiagnosticsFirewallInventory, "Diagnostics", "AllowFirewallInventory"),
             new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate")
         };
 
@@ -152,11 +156,12 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, and device state via nefcon. Runs code with kernel privilege.", false, null),
             new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes, Software, and Diagnostics.", true, null),
             new ModuleDefinition("WindowsServicing", "Windows servicing", "Read-only Windows Update, reboot queues, CBS packages, servicing logs, storage and file lockers. Needs Jobs. May disclose sensitive paths and logs.", false, "Jobs"),
-            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, list media capabilities, and list Windows Error Reporting report metadata. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
+            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, list media capabilities, list Windows Error Reporting report metadata, and read Windows Firewall profiles and rules. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
             new ModuleDefinition(DiagnosticsCaptureProbes, "Capture probes", "Allow probe_capture_support to observe whether frames arrive (Vestigo:Diagnostics:AllowCaptureProbes). No pixel data is returned.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsNetworkProbes, "Network probes", "Allow test_endpoint to contact destinations listed in Vestigo:Diagnostics:AllowedProbeDestinations (Vestigo:Diagnostics:AllowNetworkProbes). The probe runs as the service and does not capture packets.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsAudioPlayback, "Audio playback probes", "Allow probe_audio_format to play a synthetic tone on a render endpoint (Vestigo:Diagnostics:AllowAudioPlayback). Format checks do not emit sound.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsProcessDumps, "Process dumps", "Allow capture_process_dump to write a minidump into a Write root (Vestigo:Diagnostics:AllowProcessDumps). Dumps are not uploaded and no download ticket is created.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsFirewallInventory, "Firewall inventory", "Allow get_firewall_profiles and list_firewall_rules (Vestigo:Diagnostics:AllowFirewallInventory). Reads stored policy and rule expressions, including application paths. Does not change rules and does not decide whether traffic was blocked.", false, "Diagnostics"),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
