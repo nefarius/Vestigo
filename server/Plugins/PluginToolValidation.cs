@@ -10,6 +10,9 @@ namespace Vestigo.Plugins;
 internal static class PluginToolValidation
 {
     public static void Validate(IReadOnlyList<VestigoModule> modules)
+        => CollectNames(modules);
+
+    public static IReadOnlySet<string> CollectNames(IReadOnlyList<VestigoModule> modules)
     {
         Dictionary<string, string> names = new(StringComparer.Ordinal);
         foreach (VestigoModule module in modules)
@@ -41,5 +44,6 @@ internal static class PluginToolValidation
                 }
             }
         }
+        return names.Keys.ToHashSet(StringComparer.Ordinal);
     }
 }

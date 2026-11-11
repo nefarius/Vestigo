@@ -105,3 +105,7 @@ RestartManagerSource uses CsWin32-generated APIs, process structs and constants.
 ## External plugin modules
 
 The explicit built-in registry is extended by manifest-selected external modules before the host provider builds. A public contracts library, one native .NET load context per plugin, deterministic dependency ordering and shared SDK contracts preserve the existing MCP transport. External modules default off. See [plugins](plugins.md) for contracts, startup failure policy and compatibility.
+
+## API 1.1 provider composition and identity
+
+Enabled modules may register singleton `IVestigoToolProvider` sources through DI. A host-owned registry reserves non-overlapping prefixes against the attributed catalog, composes list/call handlers, validates fresh catalogs before dispatch, and preserves protocol descriptors/results. Existing `ToolTypes` and API 1.0 plugins remain supported. API 1.1 request context carries opaque credential ownership and an optional explicit application session key; the HTTP MCP transport remains stateless. Resource managers, leases and interactive launchers are outside this extension. See [plugin API 1.1](plugins.md#api-11-tool-providers).

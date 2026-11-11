@@ -158,3 +158,8 @@ Third-party software included in the MSI and its applicable redistribution licen
 ## External plugins
 
 Optional trusted .NET 10 plugins can add tools to the existing MCP endpoint and authenticated HTTP routes. Loading and external modules default to disabled. Plugins run with the service's privileges; dependency isolation is not a security sandbox. See [plugin development and deployment](docs/plugins.md). The public MSI contains no private plugins.
+
+API 1.1 adds optional DI-registered tool providers with host-owned prefix validation,
+schema/result preservation and explicit authenticated application session identities.
+API 1.0 plugins remain supported. Providers own backend resources, leases and cleanup;
+this extension bundles no Playwright plugin, browser or interactive launcher.

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using ModelContextProtocol.AspNetCore;
+using ModelContextProtocol.Server;
 
 using Serilog;
 
@@ -62,6 +63,7 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 ListenEndpoint.RejectConflictingKestrelEndpoints(builder.Configuration);
 builder.WebHost.UseUrls(ListenEndpoint.Url(vestigo.ListenAddress, vestigo.ListenPort));
 builder.Services.AddSingleton(vestigo);
+builder.Services.AddSingleton<ApiTokenOwners>();
 
 if (vestigo.AuthenticationEnabled)
 {
@@ -93,10 +95,19 @@ foreach (PluginDiagnostic diagnostic in plugins.Diagnostics)
 }
 ModuleRegistry.ValidateConfiguration(vestigo, allModules);
 IReadOnlyList<VestigoModule> modules = ModuleRegistry.Enabled(vestigo, allModules);
-PluginToolValidation.Validate(modules);
+IReadOnlySet<string> staticToolNames = PluginToolValidation.CollectNames(modules);
+List<string> providerOwners = [];
 foreach (VestigoModule module in modules)
 {
+    int start = builder.Services.Count;
     module.ConfigureServices(builder.Services, vestigo);
+    foreach (ServiceDescriptor descriptor in builder.Services.Skip(start).Where(item => item.ServiceType == typeof(Vestigo.Extensibility.IVestigoToolProvider)))
+    {
+        string owner = module is ExternalModuleAdapter external ? $"plugin '{external.PluginId}', module '{module.Name}'" : $"module '{module.Name}'";
+        if (descriptor.Lifetime != ServiceLifetime.Singleton || descriptor.IsKeyedService)
+            throw new InvalidOperationException($"provider_registration_invalid: {owner} must register an unkeyed singleton IVestigoToolProvider.");
+        providerOwners.Add(owner);
+    }
 }
 
 if (modules.Any(module => module is ExternalModuleAdapter))
@@ -112,7 +123,24 @@ builder.Services.AddMcpServer()
     .AddAuthorizationFilters()
     .WithTools(modules.SelectMany(module => module.ToolTypes));
 
+if (providerOwners.Count > 0)
+{
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddSingleton<PluginRequestIdentity>();
+    builder.Services.AddSingleton(new PluginToolRegistryOptions(providerOwners.ToArray(), staticToolNames));
+    builder.Services.AddSingleton<PluginToolRegistry>();
+    builder.Services.AddOptions<McpServerOptions>().Configure<PluginToolRegistry>((options, registry) =>
+    {
+        if (options.Handlers.ListToolsHandler is not null || options.Handlers.CallToolHandler is not null)
+            throw new InvalidOperationException("provider_registration_invalid: use IVestigoToolProvider instead of replacing the host's MCP handlers.");
+        options.Handlers.ListToolsHandler = (request, cancellation) => registry.ListAsync(request.Params, cancellation);
+        options.Handlers.CallToolHandler = (request, cancellation) => registry.CallAsync(request.Params, cancellation);
+    });
+}
+
 WebApplication app = builder.Build();
+if (providerOwners.Count > 0)
+    _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<McpServerOptions>>().Value;
 Log.Information("Vestigo modules enabled: {Modules}", string.Join(", ", modules.Select(module => module.Name)));
 foreach (string repair in stateRepairs)
 {

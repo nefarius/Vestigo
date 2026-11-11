@@ -34,6 +34,11 @@ Follow the task instructions and any additional rules of the repository being ed
 - Contribute attributed MCP tool classes through `ToolTypes` to the existing `/mcp`
   pipeline. Assign stable explicit tool names; check collisions across public and
   non-public attributed methods using the SDK's resolved names, not class names.
+- For protocol-defined catalogs, require API 1.1 and register singleton
+  `IVestigoToolProvider` services. Reserve a stable prefix; let the host compose
+  handlers. Preserve schemas/results and use the full `PluginSessionIdentity`
+  owner/session key for isolation. Do not replace SDK handlers or infer sessions
+  from client names/IPs. Providers own backend leases, concurrency and cleanup.
 - Map HTTP routes through `MapEndpoints(IEndpointRouteBuilder, PluginContext)`.
   Paths are relative to `/plugins/<id>`. Preserve host authorization; never call
   `AllowAnonymous()` on an endpoint or route group. All valid host tokens can use
@@ -49,7 +54,7 @@ Follow the task instructions and any additional rules of the repository being ed
 - Ship a strict `plugin.json` with `id`, `version`, `hostApiVersion`, `entryAssembly`
   and `entryType`. IDs are 1–64 lowercase letters/digits/hyphens, starting with a
   letter, without trailing whitespace. The version is numeric; the API requirement
-  is major.minor (currently 1.0), independent of the Vestigo application version.
+  is major.minor (currently 1.1; existing API 1.0 plugins remain supported), independent of the Vestigo application version.
   Use an entry DLL filename directly in the plugin directory, never an absolute
   path or traversal. Check the target host's compatibility policy before upgrading.
 - Publish the complete dependency graph: entry DLL, `.deps.json`, manifest, private

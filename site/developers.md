@@ -71,3 +71,5 @@ The default authentication is Windows. `none` requires an explicit acknowledgeme
 ## Build external plugins
 
 Use Vestigo.Abstractions and the Vestigo.Extensibility contracts without referencing the server. Publish a .NET 10 class library with EnableDynamicLoading, a plugin.json manifest and all private dependencies. API 1.0 is versioned independently of host releases. The example and deployment/trust instructions are in the [plugin guide](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md).
+
+API 1.1 adds optional DI-registered `IVestigoToolProvider` sources for protocol-defined tools, with host-owned prefix validation and composition. `PluginToolContext` carries opaque credential ownership and an optional explicit application session identity. Existing API 1.0 modules remain supported. See the [API 1.1 provider guide](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md#api-11-tool-providers) and [agent instructions](https://github.com/nefarius/Vestigo/blob/master/examples/AGENTS.md). This extension includes no Playwright implementation.

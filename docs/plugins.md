@@ -14,7 +14,7 @@ Dependencies can name built-in modules, sibling modules or another plugin's modu
 
 ## API compatibility and assembly identity
 
-The plugin API is **1.0**, independent of the application version. `hostApiVersion` must have exactly two components. The major must match the host; the requested minor must be no newer than the host. Thus 1.0 is accepted now; 0.x, 2.x, 1.1 and missing metadata are rejected. Minor releases must preserve existing signatures and behavior and may add optional APIs; breaking changes require a new major. A plugin can use the same API across multiple Vestigo releases.
+The plugin API is **1.1**, independent of the application version. `hostApiVersion` must have exactly two components. The major must match the host; the requested minor must be no newer than the host. API 1.0 and 1.1 are accepted; 0.x, 2.x, 1.2 and missing metadata are rejected. API 1.0 plugins remain binary-compatible; the contracts assembly identity stays 1.0.0.0 while the package version is 1.1.0. New tool providers require hostApiVersion 1.1. Minor releases must preserve existing signatures and behavior and may add optional APIs; breaking changes require a new major. A plugin can use the same API across multiple Vestigo releases.
 
 Each plugin uses a noncollectible `AssemblyLoadContext` and `AssemblyDependencyResolver`. `Vestigo.Abstractions`, `ModelContextProtocol`, `ModelContextProtocol.Core`, `ModelContextProtocol.AspNetCore` and `Microsoft.Extensions.AI.Abstractions` share the host's default context. Runtime and ASP.NET Core framework assemblies are shared using an allowlist derived from their actual runtime directories. Shared names, culture, public key tokens and versions are checked. Explicit shared plugin/SDK contracts require matching major versions, and the host version must be at least the requested version. Framework assemblies may satisfy older major-version references when the host version is not older, including references from .NET Standard dependencies. Assembly references are checked recursively before instantiation. Other managed dependencies must resolve inside that plugin's published directory; they never silently fall back to arbitrary host packages. Different private versions can coexist.
 
@@ -65,7 +65,7 @@ $hash.Dispose()
 
 ## Build a plugin
 
-See `examples/Vestigo.ExamplePlugin`, which registers `EchoService` from a separate private assembly, exposes `example_plugin_echo`, and maps `/plugins/example-plugin/status`. It references the contracts project rather than the server. For an independent repository, first pack the public contracts, copy the resulting package to your local package source, and replace that project reference with `PackageReference Include="Vestigo.Abstractions" Version="1.0.0"`. No public NuGet publication of the new contract is assumed. Add a matching released `ModelContextProtocol.AspNetCore` package (currently 2.2.0) and `FrameworkReference Include="Microsoft.AspNetCore.App"`. Set `TargetFramework` to `net10.0` (or the host's Windows TFM if required) and `EnableDynamicLoading` to `true`; exclude runtime copies of the shared contract.
+See `examples/Vestigo.ExamplePlugin`, which registers `EchoService` from a separate private assembly, exposes `example_plugin_echo`, and maps `/plugins/example-plugin/status`. It references the contracts project rather than the server. For an independent repository, first pack the public contracts, copy the resulting package to your local package source, and replace that project reference with `PackageReference Include="Vestigo.Abstractions" Version="1.1.0"`. No public NuGet publication of the new contract is assumed. Add a matching released `ModelContextProtocol.AspNetCore` package (currently 2.2.0) and `FrameworkReference Include="Microsoft.AspNetCore.App"`. Set `TargetFramework` to `net10.0` (or the host's Windows TFM if required) and `EnableDynamicLoading` to `true`; exclude runtime copies of the shared contract.
 
 ```powershell
 dotnet pack server/Vestigo.Abstractions -c Release -o artifacts/contracts
@@ -73,6 +73,106 @@ dotnet publish examples/Vestigo.ExamplePlugin -c Release -o artifacts/example-pl
 ```
 
 Copy the **published output**, including private dependencies, `.deps.json`, any generated runtime configuration, manifest and `runtimes` assets, to one immediate subdirectory of the protected root. `.runtimeconfig.json` is not required for a framework-dependent class library; the host supplies the runtime. Build output alone and an isolated entry DLL are insufficient. Plugin deployment contents must not overwrite public host files.
+
+## API 1.1 tool providers
+
+An enabled module can register an optional `Vestigo.Extensibility.IVestigoToolProvider`
+singleton through its existing service hook. Provider-only modules return `[]` from
+`ToolTypes`. Declare `hostApiVersion: "1.1"` in the manifest and reference contracts
+package 1.1.0; no server assembly reference is needed. API 1.0 attributed tool classes
+remain supported unchanged. The public provider API intentionally uses the shared
+MCP SDK's `Tool`, `CallToolRequestParams` and `CallToolResult` types, rather than
+introducing another schema or content model.
+
+```csharp
+public override void ConfigureServices(IServiceCollection services, PluginContext context)
+{
+    services.AddSingleton<IVestigoToolProvider, MyToolProvider>();
+}
+```
+
+Implement `Prefix`, optional `RequiresSessionIdentity` (default false),
+`ListToolsAsync(PluginToolContext, CancellationToken)`, and
+`CallToolAsync(CallToolRequestParams, PluginToolContext, CancellationToken)`.
+The host requires unkeyed singleton registrations from enabled module hooks.
+Constructor/factory-created services follow normal DI disposal ownership; a plugin
+registering a preconstructed instance is responsible for its lifetime. Register an
+`IHostedService` for asynchronous backend startup, readiness and shutdown; do not
+perform network I/O in plugin discovery constructors or build another provider.
+
+Prefixes are exclusive, case-sensitive namespaces of 2–32 characters: a lowercase
+letter, optional lowercase letters/digits/underscores, and a trailing underscore
+(for example `example_`). Duplicate or overlapping prefixes, or a prefix covering
+any enabled attributed tool name, abort startup. Providers must not replace the
+host's MCP list/call handlers. Multiple providers compose with the built-in catalog
+on the same authenticated, stateless `/mcp` endpoint.
+
+Return the complete current catalog with unprefixed names. Names must contain only
+letters, digits, `_`, `-` or `.`, be unique within the provider, and fit the MCP
+128-character limit after prefixing; input schemas must be JSON objects. The host
+clones descriptors and changes only their names, retaining input/output schemas,
+annotations, titles, icons and metadata supported by the shared SDK. Catalogs are
+validated atomically on each list and before each call. Removed tools cannot be
+invoked through a stale advertised name. Independent provider cursors are not
+combined: the composed catalog is returned without pagination, and supplied list
+cursors are rejected. Clients must re-list to observe schema changes; stateless
+transport does not push unsolicited list-change notifications.
+
+Calls receive the unprefixed name, unchanged arguments and protocol metadata except
+the host-owned `vestigo/sessionId` field. Providers adapting another MCP server must
+handle that server's protocol negotiation, request metadata and resource links.
+The host returns the complete `CallToolResult`, including structured content,
+images, other SDK-supported content, metadata and `IsError`. Provider exceptions
+become sanitized protocol errors; raw exception messages/inner exceptions are not
+included. Cancellation is passed through and calls are never automatically retried.
+Providers must bound their own I/O, output and backend resources, honor cancellation,
+and decide whether their protocol-level errors belong in an intentional tool result.
+
+## Authenticated application session identity
+
+API 1.1 supplies `PluginToolContext.OwnerId` and nullable `SessionIdentity` to each
+provider request. Every configured bearer credential has a distinct, random opaque
+owner ID for this host process. It is not a token, token digest, username, client
+name or remote IP; it changes after restart. Reusing a credential reuses its owner
+ID. Existing tokens retain the same global tool permissions; this adds no scopes.
+
+Select an application session using either the HTTP `X-Vestigo-Session-Id` header
+or `_meta["vestigo/sessionId"]` in the MCP request parameters. Use the same value
+for listing and calling that session's tools. IDs contain 16–128 letters, digits,
+underscores or hyphens; a random UUID in `N` format is suitable. Repeated headers,
+malformed/non-string IDs, conflicting header/metadata values and unauthenticated
+session selections are rejected. Matching header and metadata values are accepted.
+
+```json
+{
+  "name": "example_echo",
+  "arguments": { "value": "hello" },
+  "_meta": { "vestigo/sessionId": "0123456789abcdef0123456789abcdef" }
+}
+```
+
+This is a tool-call parameter example; the client SDK still supplies the negotiated
+MCP protocol envelope and any protocol-required metadata/headers. The application
+ID is not `Mcp-Session-Id` and does not enable stateful transport. A missing ID is
+allowed for providers that do not require one. For `RequiresSessionIdentity=true`,
+tools are hidden without an authenticated selection and calls fail closed with
+`session_identity_required`. An open host with no tokens cannot establish such an
+identity. Built-in tools and existing API 1.0 tools retain their existing behavior.
+
+Use the entire immutable `PluginSessionIdentity(OwnerId, SessionId)` value as the
+provider's isolation key, never `SessionId` alone. Different credentials selecting
+the same ID get separate keys; one credential selecting different IDs also gets
+separate keys. Two agents sharing both a credential and ID are indistinguishable
+and deliberately share a key. Give independent agents distinct credentials and/or
+IDs. IDs select an identity only: there is no core session creation API, session
+store, lease, browser launch, backend connection manager or per-session permission
+grant. Each provider must own resource allocation, expiration, synchronization and
+cleanup, and protect all operations using the full owner/session key. Owner IDs
+changing on restart must not accidentally reconnect to another owner's resources.
+
+No Playwright implementation or interactive process-launch API is included. These
+are generic extension points for separately deployed providers, including future
+MCP gateway plugins.
 
 ## AI-assisted plugin development
 
@@ -124,7 +224,7 @@ External tools use the host's authentication/authorization filters and global to
 
 Diagnostics distinguish `disabled`, `absent`, `rejected`, `failed` entry points and `loaded` deployments, reporting version, API and module names. Disabled modules appear only among discovered modules, not enabled modules. Rejected/failed plugins contribute no modules and the host may continue if its configuration does not require them. Explicit activation of an unavailable module fails startup. Module/tool collisions, dependency errors, service-registration failures, DI constructor failures and endpoint-policy violations abort the entire startup, before any request is served. Arbitrary plugin side effects cannot be rolled back; there is no attempt to continue after partially running an activation hook. Restart after correcting the deployment. Plugin exception messages are suppressed to avoid leaking secrets.
 
-For assembly failures, check the entry filename/type, API requirement, published `.deps.json`, private dependency files, shared SDK major/version, process architecture and reparse/ACL diagnostics. Do not copy newer shared SDK contracts into the plugin to bypass compatibility checks. For MCP failures, inspect explicitly assigned tool names and the SDK's resolved default names, constructor registrations and enabled module dependencies. Duplicate C# type names do not define MCP identity. Tools appear only after the service restarts and the module is explicitly enabled.
+For assembly failures, check the entry filename/type, API requirement, published `.deps.json`, private dependency files, shared SDK major/version, process architecture and reparse/ACL diagnostics. Do not copy newer shared SDK contracts into the plugin to bypass compatibility checks. For MCP failures, inspect explicitly assigned tool names and the SDK's resolved default names, constructor registrations and enabled module dependencies. Duplicate C# type names do not define MCP identity. Plugin deployment and module activation require a service restart; an enabled API 1.1 provider can update its catalog on subsequent requests.
 
 ## MSI, updates and validation
 

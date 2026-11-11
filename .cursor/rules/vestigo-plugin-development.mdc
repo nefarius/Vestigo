@@ -13,6 +13,9 @@ for the host contract, trust policy and deployment workflow.
   the contracts NuGet, never `Vestigo.Server` or private host implementations.
 - Keep plugin loading and module activation explicitly opt-in. Use the existing
   MCP endpoint, DI and authenticated HTTP route groups; no anonymous plugin routes.
+- API 1.1 providers register as singleton `IVestigoToolProvider` services. Use host
+  composition and the full owner/session identity key; providers own backend
+  resources, leases and cleanup. Keep backend implementations out of the core.
 - Publish the full dependency graph and validate published artifacts, shared type
   identity, tool names and disabled/authenticated behavior. Do not weaken ACLs,
   path checks, trust pins or API compatibility checks to make integration pass.
