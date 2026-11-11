@@ -1378,7 +1378,7 @@ Moves and sizes a window so its client area matches x,y,width,height in physical
 
 ## `snapshot_display_layout`
 
-Captures the active display topology. Each path is identified by its monitor device path, connector instance, adapter LUID, and target id. GDI device names such as \\.\DISPLAY1 are included as operational names and are not stable across hotplug. Coordinates are physical screen pixels. This does not change the displays. Interactive session only.
+Captures every CCD path, including inactive ones. topology is single, clone, extend, mixed, or inactive, from source identity. Each path keeps raw path flags, source and target mode indexes, desktop-image size, signal size, and EDID identity when Windows says the ids are valid. Restore still compares active paths only. Each path is identified by its monitor device path, connector instance, adapter LUID, and target id. GDI device names such as \\.\DISPLAY1 are included as operational names and are not stable across hotplug. Coordinates are physical screen pixels. This does not change the displays. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
