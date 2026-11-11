@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 
@@ -36,7 +37,18 @@ internal sealed class WindowsVerifierQuery : IVerifierQuery
                 CreateNoWindow = true,
             };
             process.StartInfo.ArgumentList.Add(argument);
-            if (!process.Start())
+            try
+            {
+                if (!process.Start())
+                {
+                    throw new VerifierQueryException("verifier_failed", "verifier.exe did not start.");
+                }
+            }
+            catch (Win32Exception)
+            {
+                throw new VerifierQueryException("verifier_failed", "verifier.exe did not start.");
+            }
+            catch (InvalidOperationException)
             {
                 throw new VerifierQueryException("verifier_failed", "verifier.exe did not start.");
             }
@@ -52,9 +64,14 @@ internal sealed class WindowsVerifierQuery : IVerifierQuery
                 string bounded = VerifierStateParser.Bound(text, out bool truncated);
                 return new VerifierCommandResult(process.ExitCode, bounded, truncated || outputTruncated || errorTruncated, false);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
                 TryKill(process);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+
                 return new VerifierCommandResult(null, string.Empty, false, true);
             }
         }
