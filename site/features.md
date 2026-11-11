@@ -37,7 +37,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span> <span class="pill gated">Changes gated</span></p>
     <h2>Scheduled tasks</h2>
-    <p>List and inspect local Task Scheduler tasks, including principal, actions, triggers, and definition XML. History comes from the Task Scheduler Operational channel when that log is enabled.</p>
+    <p>List and inspect local Task Scheduler tasks, including principal, actions, triggers, and definition XML. History comes from the Task Scheduler Operational channel when that log is enabled. Recursive listings can omit folders the TaskScheduler wrapper cannot enumerate.</p>
     <p>Run, stop, enable, disable, and delete stay off until <code>ScheduledTasks:AllowChanges</code> is true. Vestigo does not create or edit task definitions. Paths under <code>\Microsoft\Windows\</code> cannot be deleted or disabled.</p>
   </article>
   <article class="card">
