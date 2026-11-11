@@ -26,6 +26,9 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>get_firewall_profiles</c> and <c>list_firewall_rules</c>. Both stay disabled until this is true.</summary>
     public bool AllowFirewallInventory { get; set; }
 
+    /// <summary>Allows <c>stage_kernel_dump</c>. The tool stays disabled until this is true.</summary>
+    public bool AllowKernelDumpStaging { get; set; }
+
     /// <summary>Hosts, or <c>host:port</c> entries, that <c>test_endpoint</c> may contact. Empty allows none.</summary>
     public string[] AllowedProbeDestinations { get; set; } = [];
 

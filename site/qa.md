@@ -76,6 +76,7 @@ The service context does not see user-session audio. Per-app overrides in Settin
 
 1. Enable Diagnostics. It needs Jobs.
 2. `list_kernel_dumps` returns `MEMORY.DMP`, the dedicated dump file, and minidumps that exist. File names and a small header prefix are included. Dump bytes and bugcheck fields are not.
+3. `stage_kernel_dump` stays off until `Diagnostics:AllowKernelDumpStaging` is true. Pass an id from the list and a new `.dmp` path in a write root. The result contains the length and SHA-256. A finished copy includes a one-time download ticket when that root also has Read access.
 
 ## Read a crash and take a dump
 

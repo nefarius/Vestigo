@@ -1459,6 +1459,16 @@ Captures every CCD path, including inactive ones. topology is single, clone, ext
 | --- | --- | --- | --- | --- |
 | `elevated` | `bool` | no | `false` | Use the elevated token. |
 
+## `stage_kernel_dump`
+
+Copies one kernel dump selected by the id from list_kernel_dumps into a new .dmp file in a root with Write access. Requires Vestigo:Diagnostics:AllowKernelDumpStaging. The caller does not supply the source path. The source must be no larger than Vestigo:Diagnostics:MaxDumpBytes, and the output volume must keep Vestigo:Diagnostics:MinDumpFreeBytes free after the copy. The job output is the byte count and SHA-256, never dump bytes. When the job has finished, the result includes a one-time download ticket from the existing file transfer path when the output root also has Read access. wait > 0 waits that many seconds.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | memory, dedicated, or minidump/<file>.dmp from list_kernel_dumps. |
+| `output` | `string` | yes |  | New .dmp path in a root with Write access. |
+| `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns the job immediately. |
+
 ## `start_capture`
 
 Starts a managed realtime WPP capture. Events are spooled locally; use read_capture (with waitSeconds to follow live) to read them. See get_trace_settings for allowed roots.

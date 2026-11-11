@@ -104,6 +104,8 @@ namespace Vestigo.Installer.Actions.Logic
 
         public const string DiagnosticsProcessDumps = "DiagnosticsProcessDumps";
 
+        public const string DiagnosticsKernelDumpStaging = "DiagnosticsKernelDumpStaging";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Diagnostics:AllowFirewallInventory</c>.</summary>
         public const string DiagnosticsFirewallInventory = "DiagnosticsFirewallInventory";
 
@@ -129,6 +131,7 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(DiagnosticsNetworkProbes, "Diagnostics", "AllowNetworkProbes"),
             new OptionToggle(DiagnosticsAudioPlayback, "Diagnostics", "AllowAudioPlayback"),
             new OptionToggle(DiagnosticsProcessDumps, "Diagnostics", "AllowProcessDumps"),
+            new OptionToggle(DiagnosticsKernelDumpStaging, "Diagnostics", "AllowKernelDumpStaging"),
             new OptionToggle(DiagnosticsFirewallInventory, "Diagnostics", "AllowFirewallInventory"),
             new OptionToggle(DiagnosticsDriverVerifier, "Diagnostics", "AllowDriverVerifier"),
             new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate")
@@ -165,6 +168,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition(DiagnosticsNetworkProbes, "Network probes", "Allow test_endpoint to contact destinations listed in Vestigo:Diagnostics:AllowedProbeDestinations (Vestigo:Diagnostics:AllowNetworkProbes). The probe runs as the service and does not capture packets.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsAudioPlayback, "Audio playback probes", "Allow probe_audio_format to play a synthetic tone on a render endpoint (Vestigo:Diagnostics:AllowAudioPlayback). Format checks do not emit sound.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsProcessDumps, "Process dumps", "Allow capture_process_dump to write a minidump into a Write root (Vestigo:Diagnostics:AllowProcessDumps). Dumps are not uploaded and no download ticket is created.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsKernelDumpStaging, "Kernel dump staging", "Allow stage_kernel_dump to copy a dump selected by list_kernel_dumps into a Write root and issue a one-time download ticket (Vestigo:Diagnostics:AllowKernelDumpStaging). The tool result does not contain dump bytes.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsFirewallInventory, "Firewall inventory", "Allow get_firewall_profiles and list_firewall_rules (Vestigo:Diagnostics:AllowFirewallInventory). Reads stored policy and rule expressions, including application paths. Does not change rules and does not decide whether traffic was blocked.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsDriverVerifier, "Driver Verifier changes", "Allow set_driver_verifier (Vestigo:Diagnostics:AllowDriverVerifier). reset_driver_verifier stays available. Vestigo does not reboot.", false, "Diagnostics"),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),

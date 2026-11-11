@@ -39,6 +39,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Diagnostics:AllowCaptureProbes` | `false` |
 | `Diagnostics:AllowDriverVerifier` | `false` |
 | `Diagnostics:AllowFirewallInventory` | `false` |
+| `Diagnostics:AllowKernelDumpStaging` | `false` |
 | `Diagnostics:AllowNetworkProbes` | `false` |
 | `Diagnostics:AllowOnlineRevocation` | `false` |
 | `Diagnostics:AllowProcessDumps` | `false` |
