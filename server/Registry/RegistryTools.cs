@@ -15,7 +15,7 @@ namespace Vestigo.RegistryProbe;
 public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
 {
     [McpServerTool(Name = "read_registry_value", ReadOnly = true, Destructive = false)]
-    [Description("Reads one value from an allow-listed registry key. HKCU is the console user's hive. view is registry64 or registry32 and does not follow the service bitness. A symbolic link is followed only when its target passes the allow and deny checks. CurrentControlSet may resolve to ControlSetNNN when that CurrentControlSet path is allowed. REG_BINARY is hashed only when it fits MaxBinaryBytes. The value is not written to the log.")]
+    [Description("Reads one value from an allow-listed registry key. HKCU is the console user's hive. view is registry64 or registry32 and does not follow the service bitness. A symbolic link is followed only when its target passes the allow and deny checks. CurrentControlSet may resolve to ControlSetNNN when that CurrentControlSet path is allowed. path is the requested path and can be passed to another call. resolvedPath is set when a symbolic link was followed. REG_BINARY is hashed only when it fits MaxBinaryBytes. The value is not written to the log.")]
     public OperationResult<RegistryValueResult> ReadRegistryValue(
         [Description("Key path: HKLM, HKU, or HKCU, then a subkey. HKLM and HKEY_LOCAL_MACHINE are the same hive.")] string path,
         [Description("Value name. Omit it to read the key's default value.")] string? value = null,
@@ -54,12 +54,20 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
                 $"Registry value is {raw.ByteLength} bytes, above the configured limit.");
         }
 
-        string canonical = opened.Resolved?.Canonical ?? decision.Value.Canonical;
-        return Render(canonical, string.IsNullOrEmpty(value) ? null : value, ViewName(kind), raw, key.LastWriteUtc, expand, includeBinary);
+        string canonical = decision.Value.Canonical;
+        return Render(
+            canonical,
+            ResolvedPath(decision.Value, opened.Resolved),
+            string.IsNullOrEmpty(value) ? null : value,
+            ViewName(kind),
+            raw,
+            key.LastWriteUtc,
+            expand,
+            includeBinary);
     }
 
     [McpServerTool(Name = "list_registry_values", ReadOnly = true, Destructive = false)]
-    [Description("Lists values and subkey names under an allow-listed registry key. recurse walks nested keys up to MaxRecursionDepth. maxEntries can only lower MaxEntries. Denied children are omitted. A symbolic link is opened only when its target passes the allow and deny checks. Values are not written to the log.")]
+    [Description("Lists values and subkey names under an allow-listed registry key. recurse walks nested keys up to MaxRecursionDepth. maxEntries can only lower MaxEntries. Denied children are omitted. A symbolic link is opened only when its target passes the allow and deny checks. path is the requested path. resolvedPath is set when a symbolic link was followed. Values are not written to the log.")]
     public OperationResult<RegistryListResult> ListRegistryValues(
         [Description("Key path: HKLM, HKU, or HKCU, then a subkey.")] string path,
         [Description("Nested levels to open. Zero lists only this key. Clamped down to MaxRecursionDepth.")] int recurse = 0,
@@ -112,7 +120,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
     }
 
     [McpServerTool(Name = "get_registry_metadata", ReadOnly = true, Destructive = false)]
-    [Description("Returns the last write time, subkey count, and value count of an allow-listed registry key. It does not read values or security descriptors. A symbolic link is followed only when its target passes the allow and deny checks.")]
+    [Description("Returns the last write time, subkey count, and value count of an allow-listed registry key. It does not read values or security descriptors. A symbolic link is followed only when its target passes the allow and deny checks. path is the requested path. resolvedPath is set when a symbolic link was followed.")]
     public OperationResult<RegistryMetadata> GetRegistryMetadata(
         [Description("Key path: HKLM, HKU, or HKCU, then a subkey.")] string path,
         [Description("registry64 or registry32. Default registry64.")] string view = "registry64")
@@ -136,11 +144,12 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
 
         using IRegistryKey key = opened.Key;
         return OperationResult<RegistryMetadata>.Ok(new RegistryMetadata(
-            opened.Resolved?.Canonical ?? decision.Value.Canonical,
+            decision.Value.Canonical,
             ViewName(kind),
             key.LastWriteUtc,
             key.SubKeyCount,
-            key.ValueCount));
+            key.ValueCount,
+            ResolvedPath(decision.Value, opened.Resolved)));
     }
 
     private OperationResult<RegistryListResult>? Walk(
@@ -168,7 +177,6 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
         }
 
         using IRegistryKey key = opened.Key;
-        RegistryPathDecision actual = opened.Resolved ?? decision;
         budget--;
         RegistryNamePage valueNames = key.ValueNames(Math.Max(budget, 0));
         if (valueNames.Truncated || key.ValueCount > valueNames.Names.Count)
@@ -240,7 +248,12 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
             truncated = true;
         }
 
-        keys.Add(new RegistryKeyListing(actual.Canonical, key.LastWriteUtc, values, subKeys));
+        keys.Add(new RegistryKeyListing(
+            decision.Canonical,
+            key.LastWriteUtc,
+            values,
+            subKeys,
+            ResolvedPath(decision, opened.Resolved)));
         if (depthLeft <= 0)
         {
             return null;
@@ -256,6 +269,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
 
     private OperationResult<RegistryValueResult> Render(
         string path,
+        string? resolvedPath,
         string? name,
         string view,
         RegistryRawValue raw,
@@ -316,7 +330,7 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
         }
 
         return OperationResult<RegistryValueResult>.Ok(new RegistryValueResult(
-            path, name, view, raw.Type, raw.ByteLength, text, multi, number, hex, sha, lastWrite));
+            path, name, view, raw.Type, raw.ByteLength, text, multi, number, hex, sha, lastWrite, resolvedPath));
     }
 
     private string? Display(RegistryRawValue raw)
@@ -352,6 +366,11 @@ public sealed class RegistryTools(VestigoOptions options, IRegistryStore store)
     }
 
     private int StringCapBytes() => checked((options.Registry.MaxValueStringLength + 1) * 2);
+
+    private static string? ResolvedPath(RegistryPathDecision requested, RegistryPathDecision? resolved) =>
+        resolved is null || resolved.Canonical.Equals(requested.Canonical, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : resolved.Canonical;
 
     private RegistryOpen Open(RegistryViewKind view, RegistryPathDecision decision, string? consoleSid) =>
         store.Open(

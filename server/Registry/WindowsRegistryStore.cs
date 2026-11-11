@@ -39,22 +39,18 @@ public sealed class WindowsRegistryStore : IRegistryStore
         string hiveName = hive == RegistryHiveKind.Users ? "HKU" : "HKLM";
         string canonical = subKey.Length == 0 ? hiveName : hiveName + "\\" + subKey;
         RegistryPathDecision requested = new(canonical, hive, subKey);
-        OperationResult<RegistryPathDecision> resolved = RegistryLinkWalker.Resolve(
-            requested,
-            (segmentHive, segmentSubKey) => Probe(view, segmentHive, segmentSubKey),
-            confine);
+        using RelativeProbe walk = new(view);
+        OperationResult<RegistryPathDecision> resolved = RegistryLinkWalker.Resolve(requested, walk.Probe, confine);
         if (!resolved.Success || resolved.Value is null)
         {
             return new RegistryOpen(null, resolved.ErrorCode, resolved.Error);
         }
 
-        RegistryKey? root = null;
-        SafeRegistryHandle? opened = null;
         try
         {
-            root = RegistryKey.OpenBaseKey(ToHive(resolved.Value.Hive), ToView(view));
             if (resolved.Value.SubKey.Length == 0)
             {
+                RegistryKey root = RegistryKey.OpenBaseKey(ToHive(resolved.Value.Hive), ToView(view));
                 RegistryLinkProbe rootLink = ReadLink(root.Handle);
                 if (rootLink.ErrorCode is not null)
                 {
@@ -71,69 +67,140 @@ public sealed class WindowsRegistryStore : IRegistryStore
                 return new RegistryOpen(new WindowsRegistryKey(root, this, view, requested, confine), null, null, resolved.Value);
             }
 
-            if (!TryOpen(root.Handle, resolved.Value.SubKey, view, queryOnly: false, out opened, out string? code, out string? error))
+            if (!walk.TryTake(resolved.Value.SubKey, out SafeRegistryHandle? opened))
             {
-                root.Dispose();
-                return new RegistryOpen(null, code, error);
+                return new RegistryOpen(null, "invalid_request", "Registry symbolic link was not followed.");
             }
 
-            RegistryLinkProbe link = ReadLink(opened!);
-            if (link.ErrorCode is not null || link.IsLink)
-            {
-                opened.Dispose();
-                root.Dispose();
-                return link.IsLink
-                    ? new RegistryOpen(null, "invalid_request", "Registry symbolic link was not followed.")
-                    : new RegistryOpen(null, link.ErrorCode, link.Error);
-            }
-
-            root.Dispose();
             return new RegistryOpen(
-                new WindowsRegistryKey(opened, this, view, requested, confine),
+                new WindowsRegistryKey(opened!, this, view, requested, confine),
                 null,
                 null,
                 resolved.Value);
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException)
         {
-            opened?.Dispose();
-            root?.Dispose();
             return new RegistryOpen(null, "access_denied", "Windows denied access to the registry key.");
         }
         catch (IOException exception)
         {
-            opened?.Dispose();
-            root?.Dispose();
             return new RegistryOpen(null, "io_error", exception.Message);
         }
     }
 
-    private RegistryLinkProbe Probe(RegistryViewKind view, RegistryHiveKind hive, string subKey)
+    /// <summary>Opens each path segment from the previous handle so an intermediate link cannot be swapped in.</summary>
+    private sealed class RelativeProbe(RegistryViewKind view) : IDisposable
     {
-        RegistryKey? root = null;
-        SafeRegistryHandle? opened = null;
-        try
+        private RegistryHiveKind _hive;
+        private RegistryKey? _root;
+        private SafeRegistryHandle? _parent;
+        private string _parentSub = string.Empty;
+        private bool _parentIsRoot;
+        private bool _started;
+
+        public RegistryLinkProbe Probe(RegistryHiveKind hive, string subKey)
         {
-            root = RegistryKey.OpenBaseKey(ToHive(hive), ToView(view));
-            if (!TryOpen(root.Handle, subKey, view, queryOnly: true, out opened, out string? code, out string? error))
+            try
             {
-                return RegistryLinkProbe.Fail(code!, error!);
+                if (!_started || hive != _hive || !IsNext(_parentSub, subKey, out string segment))
+                {
+                    Reset();
+                    Start(hive);
+                    if (!IsNext(string.Empty, subKey, out segment))
+                    {
+                        return RegistryLinkProbe.Fail("invalid_request", "Registry symbolic link was not followed.");
+                    }
+                }
+
+                if (!TryOpen(_parent!, segment, view, queryOnly: false, out SafeRegistryHandle? child, out string? code, out string? error))
+                {
+                    return RegistryLinkProbe.Fail(code!, error!);
+                }
+
+                RegistryLinkProbe link = ReadLink(child!);
+                if (link.ErrorCode is not null || link.IsLink)
+                {
+                    child!.Dispose();
+                    return link;
+                }
+
+                if (!_parentIsRoot)
+                {
+                    _parent!.Dispose();
+                }
+
+                _parent = child;
+                _parentSub = subKey;
+                _parentIsRoot = false;
+                return link;
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException)
+            {
+                return RegistryLinkProbe.Fail("access_denied", "Windows denied access to the registry key.");
+            }
+            catch (IOException exception)
+            {
+                return RegistryLinkProbe.Fail("io_error", exception.Message);
+            }
+        }
+
+        public bool TryTake(string subKey, out SafeRegistryHandle? handle)
+        {
+            if (_parent is not null && !_parentIsRoot && subKey.Equals(_parentSub, StringComparison.OrdinalIgnoreCase))
+            {
+                handle = _parent;
+                _parent = null;
+                return true;
             }
 
-            return ReadLink(opened!);
+            handle = null;
+            return false;
         }
-        catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException)
+
+        public void Dispose() => Reset();
+
+        private void Start(RegistryHiveKind hive)
         {
-            return RegistryLinkProbe.Fail("access_denied", "Windows denied access to the registry key.");
+            _root = RegistryKey.OpenBaseKey(ToHive(hive), ToView(view));
+            _parent = _root.Handle;
+            _parentIsRoot = true;
+            _parentSub = string.Empty;
+            _hive = hive;
+            _started = true;
         }
-        catch (IOException exception)
+
+        private void Reset()
         {
-            return RegistryLinkProbe.Fail("io_error", exception.Message);
+            if (_parent is not null && !_parentIsRoot)
+            {
+                _parent.Dispose();
+            }
+
+            _parent = null;
+            _root?.Dispose();
+            _root = null;
+            _parentIsRoot = false;
+            _parentSub = string.Empty;
+            _started = false;
         }
-        finally
+
+        private static bool IsNext(string parentSub, string subKey, out string segment)
         {
-            opened?.Dispose();
-            root?.Dispose();
+            if (parentSub.Length == 0)
+            {
+                segment = subKey;
+                return subKey.Length > 0 && !subKey.Contains('\\');
+            }
+
+            string prefix = parentSub + "\\";
+            if (!subKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                segment = string.Empty;
+                return false;
+            }
+
+            segment = subKey[prefix.Length..];
+            return segment.Length > 0 && !segment.Contains('\\');
         }
     }
 

@@ -370,6 +370,23 @@ public class RegistryTests
     }
 
     [Fact]
+    public void Policy_DeniesTheNumberedImageOfADeniedCurrentControlSetPath()
+    {
+        RegistryOptions broad = Allowing(@"HKLM\SYSTEM");
+
+        Assert.Equal("path_denied", RegistryPathPolicy.Check(@"HKLM\SYSTEM\ControlSet001\Control\Lsa", Sid, broad).ErrorCode);
+        Assert.Equal(
+            "path_denied",
+            RegistryPathPolicy.CheckLink(
+                @"HKLM\SYSTEM\CurrentControlSet\Control\Lsa",
+                @"HKLM\SYSTEM\ControlSet001\Control\Lsa",
+                Sid,
+                broad).ErrorCode);
+        Assert.True(RegistryPathPolicy.Check(@"HKLM\SYSTEM\ControlSet001\Control\Session Manager", Sid, broad).Success);
+        Assert.Equal("path_not_allowed", RegistryPathPolicy.Check(@"HKLM\SYSTEM\ControlSet001\Services", Sid, new RegistryOptions()).ErrorCode);
+    }
+
+    [Fact]
     public void Walker_StopsALinkCycleAndAnOverlongChain()
     {
         Dictionary<string, byte[]?> cycle = new(StringComparer.OrdinalIgnoreCase)
@@ -415,7 +432,9 @@ public class RegistryTests
             .ReadRegistryValue(@"HKLM\SOFTWARE\Contoso\Alias", "Flag").Value!;
 
         Assert.Equal(7ul, value.Number);
-        Assert.Equal(@"HKLM\SOFTWARE\Contoso\Real", value.Path);
+        Assert.Equal(@"HKLM\SOFTWARE\Contoso\Alias", value.Path);
+        Assert.Equal(@"HKLM\SOFTWARE\Contoso\Real", value.ResolvedPath);
+        Assert.Equal(7ul, Tools(store, Allowing(@"HKLM\SOFTWARE\Contoso")).ReadRegistryValue(value.Path, "Flag").Value!.Number);
     }
 
     [Fact]
@@ -452,7 +471,8 @@ public class RegistryTests
         RegistryListResult listed = Tools(store, options)
             .ListRegistryValues(@"HKLM\SYSTEM\CurrentControlSet\Control", recurse: 1).Value!;
 
-        Assert.Equal(@"HKLM\SYSTEM\ControlSet001\Control", listed.Keys[0].Path);
+        Assert.Equal(@"HKLM\SYSTEM\CurrentControlSet\Control", listed.Keys[0].Path);
+        Assert.Equal(@"HKLM\SYSTEM\ControlSet001\Control", listed.Keys[0].ResolvedPath);
         Assert.Equal(["Session Manager"], listed.Keys[0].SubKeys.Select(item => item.Name));
         Assert.DoesNotContain(listed.Keys, key => key.Path.Contains("Lsa", StringComparison.OrdinalIgnoreCase));
     }

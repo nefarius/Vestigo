@@ -49,7 +49,8 @@ public static class RegistryPathPolicy
         IReadOnlyList<string> allowed = options.AllowedPrefixes.Count == 0
             ? RegistryOptions.BuiltInAllowedPrefixes
             : options.AllowedPrefixes;
-        if (MatchesAny(canonical.Value.Canonical, options.DeniedPrefixes, consoleSid))
+        if (MatchesAny(canonical.Value.Canonical, options.DeniedPrefixes, consoleSid)
+            || DeniedAsCurrentControlSet(canonical.Value.Canonical, options.DeniedPrefixes, consoleSid))
         {
             return OperationResult<RegistryPathDecision>.Fail(
                 "path_denied",
@@ -154,6 +155,31 @@ public static class RegistryPathPolicy
         return number.Length == 3
             && number.All(char.IsAsciiDigit)
             && logicalRest.Equals(targetRest, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     True when <paramref name="canonical" /> is <c>ControlSetNNN</c> and that same path under
+    ///     <c>CurrentControlSet</c> is denied. Allow matching is unchanged.
+    /// </summary>
+    private static bool DeniedAsCurrentControlSet(string canonical, IEnumerable<string> denied, string? consoleSid)
+    {
+        const string numbered = @"HKLM\SYSTEM\ControlSet";
+        if (!canonical.StartsWith(numbered, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string after = canonical[numbered.Length..];
+        int slash = after.IndexOf('\\');
+        string number = slash < 0 ? after : after[..slash];
+        if (number.Length != 3 || !number.All(char.IsAsciiDigit))
+        {
+            return false;
+        }
+
+        string rest = slash < 0 ? string.Empty : after[(slash + 1)..];
+        string image = @"HKLM\SYSTEM\CurrentControlSet" + (rest.Length == 0 ? string.Empty : "\\" + rest);
+        return MatchesAny(image, denied, consoleSid);
     }
 
     /// <summary>Accepts a reported <c>REG_LINK</c> size before a buffer is allocated.</summary>
