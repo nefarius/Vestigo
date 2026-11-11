@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <PackageReference Include="CliWrap" />
+    <PackageReference Include="Microsoft.Dism" />
     <PackageReference Include="JsonPath.Net" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
     <PackageReference Include="Microsoft.Windows.CsWin32">

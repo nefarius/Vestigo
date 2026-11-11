@@ -1,6 +1,4 @@
-using System.Runtime.InteropServices;
-
-using Windows.Win32.Foundation;
+using Microsoft.Dism;
 
 namespace Vestigo.WindowsServicing;
 
@@ -12,31 +10,43 @@ public interface IServicingPackageSource
 /// <summary>Documented DISM package API; no localized output parsing and no repair entry points.</summary>
 public sealed class ServicingPackageSource : IServicingPackageSource
 {
+    private static readonly object LifecycleLock = new();
+
     public BoundedList<ServicingPackage> List(int limit)
     {
-        DismInitialize(0, null, null).ThrowOnFailure();
-        uint session = 0;
-        bool opened = false;
-        nint buffer = 0;
-        try
-        {
-            DismOpenSession("DISM_{53BFAE52-B167-4E2F-A258-0A37B57FF845}", null, null, out session).ThrowOnFailure();
-            opened = true;
-            DismGetPackages(session, out buffer, out uint count).ThrowOnFailure();
-            List<ServicingPackage> packages = [];
-            int size = Marshal.SizeOf<Package>();
-            for (int i = 0; i < Math.Min(count, (uint)limit); i++)
+        SystemDismLibrary.Configure();
+        return WithSession(
+            () => DismApi.Initialize(DismLogLevel.LogErrors),
+            DismApi.OpenOnlineSession,
+            session =>
             {
-                Package package = Marshal.PtrToStructure<Package>(buffer + i * size);
-                packages.Add(new(package.Name.ToString() ?? "", StateName(package.State), package.State, package.ReleaseType));
-            }
-            return new(packages, checked((int)count), count > packages.Count);
-        }
-        finally
+                // Microsoft.Dism copies the native array and frees it before returning.
+                DismPackageCollection native = DismApi.GetPackages(session);
+                List<ServicingPackage> packages = native.Take(limit).Select(package => new ServicingPackage(
+                    package.PackageName, StateName((int)package.PackageState),
+                    (int)package.PackageState, (int)package.ReleaseType)).ToList();
+                return new BoundedList<ServicingPackage>(packages, native.Count, native.Count > packages.Count);
+            },
+            DismApi.Shutdown);
+    }
+
+    // DISM initialization is process-wide. Keep the whole lifetime serialized, including
+    // disposal and shutdown, even when callers use separate source/worker instances.
+    internal static TResult WithSession<TSession, TResult>(Action initialize, Func<TSession> open,
+        Func<TSession, TResult> read, Action shutdown) where TSession : IDisposable
+    {
+        lock (LifecycleLock)
         {
-            if (buffer != 0) DismDelete(buffer);
-            if (opened) DismCloseSession(session);
-            DismShutdown();
+            initialize();
+            try
+            {
+                using TSession session = open();
+                return read(session);
+            }
+            finally
+            {
+                shutdown();
+            }
         }
     }
 
@@ -46,40 +56,4 @@ public sealed class ServicingPackageSource : IServicingPackageSource
         4 => "installed", 5 => "installPending", 6 => "superseded",
         7 => "partiallyInstalled", _ => "unknown"
     };
-
-    // CsWin32 0.3.367 with this project's pinned metadata reports PInvoke001 for
-    // DismInitialize, DismOpenSession, DismGetPackages, DismDelete, DismCloseSession,
-    // DismShutdown, DismPackage, DismPackageFeatureState, DismReleaseType, DismLogLevel
-    // and DISM_ONLINE_IMAGE. Retain only these DISM-specific ABI declarations here.
-    // DismSession is UINT; DismPackage contains a borrowed PCWSTR, two 32-bit enums and
-    // SYSTEMTIME. DismDelete releases the returned array and its package names;
-    // close the image session before DismShutdown. Shared Windows types are generated.
-    // Metadata coverage: https://github.com/microsoft/win32metadata/issues/2265
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Package
-    {
-        public PCWSTR Name;
-        public int State;
-        public int ReleaseType;
-        public SYSTEMTIME InstallTime;
-    }
-
-    [DllImport("DismApi.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern HRESULT DismInitialize(int level, string? logPath, string? scratchDirectory);
-    [DllImport("DismApi.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern HRESULT DismOpenSession(string imagePath, string? windowsDirectory, string? systemDrive, out uint session);
-    [DllImport("DismApi.dll", ExactSpelling = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern HRESULT DismGetPackages(uint session, out nint packages, out uint count);
-    [DllImport("DismApi.dll", ExactSpelling = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern HRESULT DismDelete(nint value);
-    [DllImport("DismApi.dll", ExactSpelling = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern HRESULT DismCloseSession(uint session);
-    [DllImport("DismApi.dll", ExactSpelling = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern HRESULT DismShutdown();
 }

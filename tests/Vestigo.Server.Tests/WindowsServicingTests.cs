@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Dism;
 using ModelContextProtocol.Server;
 
 using Vestigo.Configuration;
@@ -308,6 +309,12 @@ public sealed class WindowsServicingTests : IDisposable
             () => new ServicingPackageSource().List(5), TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         Assert.True(packages.Success, packages.Error);
         Assert.NotEmpty(packages.Value!.Items);
+        Assert.InRange(packages.Value.Items.Count, 1, 5);
+        // A second complete cycle detects leaked sessions and unmatched initialization.
+        OperationResult<BoundedList<ServicingPackage>> next = await new NativeDiagnosticWorker().Run(
+            () => new ServicingPackageSource().List(1), TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        Assert.True(next.Success, next.Error);
+        Assert.Single(next.Value!.Items);
     }
 
     [Fact]
@@ -326,14 +333,108 @@ public sealed class WindowsServicingTests : IDisposable
     }
 
     [Fact]
-    public void DismFallback_PackageLayoutMatchesNativeAbi()
+    public void DismLoader_RestrictsImportsToSystem32()
     {
-        Type package = typeof(ServicingPackageSource).GetNestedType("Package", BindingFlags.NonPublic)!;
-        Assert.Equal(IntPtr.Size == 8 ? 32 : 28, Marshal.SizeOf(package));
-        Assert.Equal(0, Marshal.OffsetOf(package, "Name").ToInt32());
-        Assert.Equal(IntPtr.Size, Marshal.OffsetOf(package, "State").ToInt32());
-        Assert.Equal(IntPtr.Size + 4, Marshal.OffsetOf(package, "ReleaseType").ToInt32());
-        Assert.Equal(IntPtr.Size + 8, Marshal.OffsetOf(package, "InstallTime").ToInt32());
+        SystemDismLibrary.Configure();
+        Assembly assembly = typeof(DismApi).Assembly;
+        nint handle = SystemDismLibrary.Resolve("DismApi", assembly, null);
+        Assert.NotEqual(nint.Zero, handle);
+        Assert.Equal(handle, SystemDismLibrary.Resolve("DismApi.dll", assembly, null));
+        using System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess();
+        System.Diagnostics.ProcessModule module = process.Modules.Cast<System.Diagnostics.ProcessModule>()
+            .Single(item => item.BaseAddress == handle);
+        Assert.Equal(Path.Combine(Environment.SystemDirectory, "DismApi.dll"), module.FileName, ignoreCase: true);
+        foreach (string name in new[] { "kernel32", "./DismApi.dll", @"C:\untrusted\DismApi.dll", "unknown" })
+            Assert.Throws<DllNotFoundException>(() => SystemDismLibrary.Resolve(name, assembly, null));
+    }
+
+    private sealed class DismTestSession(Action close) : IDisposable
+    {
+        public void Dispose() => close();
+    }
+
+    [Theory]
+    [InlineData("none", "initialize,open,read,close,shutdown")]
+    [InlineData("initialize", "initialize")]
+    [InlineData("open", "initialize,open,shutdown")]
+    [InlineData("read", "initialize,open,read,close,shutdown")]
+    [InlineData("close", "initialize,open,read,close,shutdown")]
+    [InlineData("shutdown", "initialize,open,read,close,shutdown")]
+    public void DismLifecycle_CleansUpInOrderAndPreservesErrors(string failure, string expected)
+    {
+        List<string> calls = [];
+        COMException error = new("private native message", unchecked((int)0x80070005));
+        void Step(string name)
+        {
+            calls.Add(name);
+            if (name == failure) throw error;
+        }
+        int Run() => ServicingPackageSource.WithSession(
+            () => Step("initialize"),
+            () => { Step("open"); return new DismTestSession(() => Step("close")); },
+            _ => { Step("read"); return 42; },
+            () => Step("shutdown"));
+        if (failure == "none") Assert.Equal(42, Run());
+        else Assert.Same(error, Assert.Throws<COMException>(() => Run()));
+        Assert.Equal(expected, string.Join(',', calls));
+        Assert.Equal(42, ServicingPackageSource.WithSession(() => { },
+            () => new DismTestSession(() => { }), _ => 42, () => { }));
+    }
+
+    [Fact]
+    public async Task DismLifecycle_SerializesSeparateCallers()
+    {
+        using ManualResetEventSlim entered = new();
+        using ManualResetEventSlim release = new();
+        using ManualResetEventSlim secondStarted = new();
+        int active = 0;
+        int cycles = 0;
+        int Run(bool first) => ServicingPackageSource.WithSession(
+            () => Assert.Equal(1, Interlocked.Increment(ref active)),
+            () => new DismTestSession(() => Assert.Equal(1, Volatile.Read(ref active))),
+            _ =>
+            {
+                if (first)
+                {
+                    entered.Set();
+                    Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+                }
+                return Interlocked.Increment(ref cycles);
+            },
+            () => Assert.Equal(0, Interlocked.Decrement(ref active)));
+        Task<int> first = Task.Run(() => Run(true), TestContext.Current.CancellationToken);
+        Task<int>? second = null;
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            second = Task.Run(() => { secondStarted.Set(); return Run(false); }, TestContext.Current.CancellationToken);
+            Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(10)));
+            Assert.False(second.Wait(TimeSpan.FromMilliseconds(100)));
+        }
+        finally
+        {
+            release.Set();
+            await first;
+            if (second is not null) await second;
+        }
+        Assert.Equal(2, cycles);
+    }
+
+    [Fact]
+    public async Task NativeSmoke_DismInitializationFailurePreservesHResultAndRecovers()
+    {
+        if (Environment.GetEnvironmentVariable("VESTIGO_SERVICING_SMOKE") != "1") return;
+        using System.Security.Principal.WindowsIdentity identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        if (new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+            Assert.Skip("This failure-path smoke test requires a non-elevated Windows token.");
+        NativeDiagnosticWorker worker = new();
+        for (int i = 0; i < 2; i++)
+        {
+            OperationResult<BoundedList<ServicingPackage>> result = await worker.Run(
+                () => new ServicingPackageSource().List(1), TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            Assert.False(result.Success);
+            Assert.Contains("0x800702E4", result.Error);
+        }
     }
 
     [Fact]

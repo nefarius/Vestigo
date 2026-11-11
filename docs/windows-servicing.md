@@ -99,8 +99,14 @@ running Windows image. It returns bounded package identities, raw state/release
 codes and state names, including installed, installPending, uninstallPending,
 staged, removed, superseded and partiallyInstalled. Native DISM enumeration itself
 is not limited by the return cap. Elevation is normally required. The API may
-write its own DISM log. The pinned CsWin32 generator lacks DISM API-specific metadata (PInvoke001); this is documented beside the minimal manual DISM declarations. Shared HRESULT, PCWSTR and SYSTEMTIME types still use generated bindings. Native buffers and sessions are released in finally
-blocks; no localized command output is parsed and no arbitrary arguments run.
+write its own DISM log. Microsoft.Dism 6.1.0 (MIT) owns native package-buffer
+marshalling and session handles. A resolver on the wrapper assembly loads only
+System32's DismApi.dll; unexpected imports fail closed. ADK generation selection
+is not used. The wrapper materializes the full package collection before Vestigo
+applies its return cap. The complete initialization/session/shutdown lifetime is
+serialized across source instances. Sessions are disposed before shutdown, including
+on enumeration failure; initialization failure does not trigger shutdown.
+No localized command output is parsed and no arbitrary arguments run.
 
 ## Failure evidence and logs
 
@@ -156,11 +162,15 @@ policies apply. All eleven tools advertise read-only, non-destructive MCP metada
 Unit tests exercise unknown/positive reboot aggregation, malformed queues and
 normalization, global bounds, fixed WUA criteria, MTA execution, timeout and
 cancellation concurrency, HRESULT preservation, Jobs output, Read-root rejection,
-module dependencies/registration and metadata. Repository tests verify generated
+module dependencies/registration and metadata, DISM cleanup ordering and
+cross-caller serialization. The DISM loader test checks the loaded module's
+System32 path and rejects unexpected imports. Repository tests verify generated
 catalogs and installer module/default parity. Set `VESTIGO_SERVICING_SMOKE=1` to
 run the optional native WUA history/status, DISM package and Restart Manager
-smoke checks on an elevated Windows test machine. The smoke check performs only
-diagnostic enumeration, without an applicability scan.
+smoke checks. An elevated Windows token is required for two consecutive DISM
+package enumeration cycles; a non-elevated token instead exercises repeated
+initialization failures and verifies the original elevation-required HRESULT.
+The smoke checks perform only diagnostic enumeration, without an applicability scan.
 Set `VESTIGO_SERVICING_SCAN_SMOKE=1` separately to exercise a bounded-result
 offline applicability search; WUA can still perform substantial local work.
 
