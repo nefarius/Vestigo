@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 using Vestigo.Jobs;
 
 namespace Vestigo.Processes;
@@ -22,7 +24,8 @@ public sealed record ProcessLaunchReport(
     string? WindowStation,
     string? Desktop,
     bool Elevated,
-    string ElevationType);
+    string ElevationType,
+    DateTimeOffset? StartedAt = null);
 
 /// <summary>Filled by the launcher as soon as the process exists, before it is waited on.</summary>
 public sealed class ProcessLaunchReportBox
@@ -49,7 +52,9 @@ public sealed record LaunchRequest(
     LaunchContext Context,
     bool Elevated,
     string? Desktop = null,
-    ProcessLaunchReportBox? Report = null);
+    ProcessLaunchReportBox? Report = null,
+    SafeHandle? StandardInput = null,
+    Action? ReleaseInheritedInput = null);
 
 /// <summary>Raised when a process cannot be started. <see cref="Code" /> is a stable error code.</summary>
 /// <param name="reason">Optional stable token, such as why no console user is available.</param>

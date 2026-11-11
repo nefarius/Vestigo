@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 
@@ -18,7 +19,8 @@ public sealed class HelperDesktopHostClient(IProcessLauncher launcher) : IDeskto
     private readonly object _state = new();
     private CancellationTokenSource? _hostCancellation;
     private Task<int>? _hostTask;
-    private string? _controlPath;
+    private AnonymousPipeServerStream? _commands;
+    private StreamWriter? _commandWriter;
     private string? _statusPath;
     private long _statusOffset;
 
@@ -33,7 +35,12 @@ public sealed class HelperDesktopHostClient(IProcessLauncher launcher) : IDeskto
                 return ready.FailAs<DesktopCommandResult>();
             }
 
-            await File.AppendAllTextAsync(_controlPath!, JsonSerializer.Serialize(command, SessionHelper.Json) + "\n", cancellationToken).ConfigureAwait(false);
+            if (_commandWriter is null)
+            {
+                return OperationResult<DesktopCommandResult>.Fail("desktop_host_lost", "The interactive desktop host is not running.");
+            }
+
+            await _commandWriter.WriteLineAsync(JsonSerializer.Serialize(command, SessionHelper.Json).AsMemory(), cancellationToken).ConfigureAwait(false);
             return await WaitForAsync(command.RequestId, TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -48,32 +55,22 @@ public sealed class HelperDesktopHostClient(IProcessLauncher launcher) : IDeskto
 
     public async Task<OperationResult<DesktopCommandResult>> RecoverAsync(DesktopCommand command, CancellationToken cancellationToken)
     {
-        string directory;
-        try
-        {
-            directory = StateDirectories.EnsureSubdirectory(Path.Combine(VestigoPaths.SpoolDirectory, "helper"));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return OperationResult<DesktopCommandResult>.Fail("untrusted_path", ex.Message);
-        }
-
-        string requestPath = Path.Combine(directory, "recover-" + Guid.NewGuid().ToString("N") + ".json");
-        await File.WriteAllTextAsync(requestPath, JsonSerializer.Serialize(command, SessionHelper.Json), cancellationToken).ConfigureAwait(false);
-        try
-        {
-            SessionHelperClient client = new(launcher);
-            return await client.RunAsync<DesktopCommandResult>(
-                [SessionHelper.Flag, SessionHelper.DesktopRecoverCommand, "--file", requestPath],
-                elevated: false,
-                TimeSpan.FromSeconds(20),
-                1024 * 1024,
-                cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            TryDelete(requestPath);
-        }
+        await using AnonymousPipeServerStream pipe = new(PipeDirection.Out, HandleInheritability.Inheritable);
+        byte[] payload = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(command, SessionHelper.Json));
+        await pipe.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+        SessionHelperClient client = new(launcher);
+        return await client.RunAsync<DesktopCommandResult>(
+            [SessionHelper.Flag, SessionHelper.DesktopRecoverCommand],
+            elevated: false,
+            TimeSpan.FromSeconds(20),
+            1024 * 1024,
+            cancellationToken,
+            standardInput: pipe.ClientSafePipeHandle,
+            releaseInheritedInput: () =>
+            {
+                pipe.DisposeLocalCopyOfClientHandle();
+                pipe.Dispose();
+            }).ConfigureAwait(false);
     }
 
     public async Task ShutdownAsync(CancellationToken cancellationToken)
@@ -132,34 +129,47 @@ public sealed class HelperDesktopHostClient(IProcessLauncher launcher) : IDeskto
         }
 
         string id = Guid.NewGuid().ToString("N");
-        string control = Path.Combine(directory, "desktop-control-" + id + ".jsonl");
-        string status = Path.Combine(directory, "desktop-status-" + id + ".jsonl");
-        await File.WriteAllTextAsync(control, string.Empty, cancellationToken).ConfigureAwait(false);
-        await File.WriteAllTextAsync(status, string.Empty, cancellationToken).ConfigureAwait(false);
         (string executable, List<string> prefix) = SessionHelperClient.Host();
-        List<string> arguments = [..prefix, SessionHelper.Flag, SessionHelper.DesktopHostCommand, "--control", control, "--status", status];
-        CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        List<string> arguments = [..prefix, SessionHelper.Flag, SessionHelper.DesktopHostCommand];
+        CancellationTokenSource cancellation = new();
         JobContext output = new("desktop-host", Path.Combine(directory, "desktop-host-" + id + ".log"), 1024 * 1024);
         await File.WriteAllBytesAsync(output.OutputPath, [], cancellationToken).ConfigureAwait(false);
-        LaunchRequest request = new(executable, arguments, Path.GetDirectoryName(executable), new Dictionary<string, string>(), LaunchContext.Interactive, false);
+        AnonymousPipeServerStream commands = new(PipeDirection.Out, HandleInheritability.Inheritable);
+        StreamWriter writer = new(commands, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
+        LaunchRequest request = new(
+            executable,
+            arguments,
+            Path.GetDirectoryName(executable),
+            new Dictionary<string, string>(),
+            LaunchContext.Interactive,
+            false,
+            StandardInput: commands.ClientSafePipeHandle,
+            ReleaseInheritedInput: commands.DisposeLocalCopyOfClientHandle);
         Task<int> run = launcher.RunAsync(request, output, cancellation.Token);
         lock (_state)
         {
             _hostCancellation = cancellation;
             _hostTask = run;
-            _controlPath = control;
-            _statusPath = status;
+            _commands = commands;
+            _commandWriter = writer;
+            _statusPath = output.OutputPath;
             _statusOffset = 0;
         }
 
-        OperationResult<DesktopCommandResult> ready = await WaitForAsync(DesktopHostOperations.Ready, TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
-        if (!ready.Success)
+        bool readyOk = false;
+        try
         {
-            CancelHost();
-            return ready.FailAs<bool>();
+            OperationResult<DesktopCommandResult> ready = await WaitForAsync(DesktopHostOperations.Ready, TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
+            readyOk = ready.Success;
+            return readyOk ? OperationResult<bool>.Ok(true) : ready.FailAs<bool>();
         }
-
-        return OperationResult<bool>.Ok(true);
+        finally
+        {
+            if (!readyOk)
+            {
+                CancelHost();
+            }
+        }
     }
 
     private async Task<OperationResult<DesktopCommandResult>> WaitForAsync(string requestId, TimeSpan timeout, CancellationToken cancellationToken)
@@ -232,6 +242,18 @@ public sealed class HelperDesktopHostClient(IProcessLauncher launcher) : IDeskto
 
         cancellation?.Cancel();
         cancellation?.Dispose();
+        StreamWriter? writer;
+        AnonymousPipeServerStream? commands;
+        lock (_state)
+        {
+            writer = _commandWriter;
+            commands = _commands;
+            _commandWriter = null;
+            _commands = null;
+        }
+
+        writer?.Dispose();
+        commands?.Dispose();
     }
 
     private static async Task<string> ReadNewAsync(string path, long offset)
@@ -280,14 +302,4 @@ public sealed class HelperDesktopHostClient(IProcessLauncher launcher) : IDeskto
         }
     }
 
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (IOException)
-        {
-        }
-    }
 }
