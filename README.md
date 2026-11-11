@@ -128,6 +128,8 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 
 ## Sources & 3rd party credits
 
+Third-party software included in the MSI and its applicable redistribution licenses and upstream notices are documented in [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt), which is also installed with Vestigo. The links below acknowledge libraries and tools used to build or run Vestigo; this list does not replace their license notices.
+
 - [Nefarius.Utilities.ETW](https://github.com/nefarius/Nefarius.Utilities.ETW)
 - [Nefarius.Utilities.DeviceManagement](https://github.com/nefarius/Nefarius.Utilities.DeviceManagement)
 - [Nefarius.Utilities.WindowsVersion](https://github.com/nefarius/Nefarius.Utilities.WindowsVersion)
@@ -141,6 +143,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - [Serilog](https://github.com/serilog/serilog)
 - [CliWrap](https://github.com/Tyrrrz/CliWrap)
 - [System.IO.Hashing](https://www.nuget.org/packages/System.IO.Hashing) (MIT; STUN CRC32 fingerprints)
+- [System.Text.Json](https://www.nuget.org/packages/System.Text.Json) (MIT; installer settings parsing and serialization)
 - [MinVer](https://github.com/adamralph/minver)
 - [WixSharp](https://github.com/oleg-shilo/wixsharp)
 - [WiX Toolset](https://wixtoolset.org/)
