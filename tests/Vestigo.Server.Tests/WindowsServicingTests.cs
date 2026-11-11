@@ -382,6 +382,24 @@ public sealed class WindowsServicingTests : IDisposable
     }
 
     [Fact]
+    public void DismLifecycle_ReportsShutdownFailureWithoutReplacingOriginalError()
+    {
+        COMException original = new("private enumeration message", unchecked((int)0x80070005));
+        COMException shutdown = new("private shutdown message", unchecked((int)0xC004000F));
+        List<string> calls = [];
+        List<Exception> secondary = [];
+        Assert.Same(original, Assert.Throws<COMException>(() =>
+            ServicingPackageSource.WithSession<DismTestSession, int>(
+                () => calls.Add("initialize"),
+                () => new DismTestSession(() => calls.Add("close")),
+                _ => throw original,
+                () => { calls.Add("shutdown"); throw shutdown; },
+                secondary.Add)));
+        Assert.Equal(["initialize", "close", "shutdown"], calls);
+        Assert.Same(shutdown, Assert.Single(secondary));
+    }
+
+    [Fact]
     public async Task DismLifecycle_SerializesSeparateCallers()
     {
         using ManualResetEventSlim entered = new();

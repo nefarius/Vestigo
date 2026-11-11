@@ -106,6 +106,8 @@ is not used. The wrapper materializes the full package collection before Vestigo
 applies its return cap. The complete initialization/session/shutdown lifetime is
 serialized across source instances. Sessions are disposed before shutdown, including
 on enumeration failure; initialization failure does not trigger shutdown.
+If shutdown also fails after an operation error, the original HRESULT is retained
+and the secondary shutdown type/HRESULT is logged without its native message.
 No localized command output is parsed and no arbitrary arguments run.
 
 ## Failure evidence and logs

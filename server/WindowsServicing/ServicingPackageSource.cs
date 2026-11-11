@@ -8,7 +8,7 @@ public interface IServicingPackageSource
 }
 
 /// <summary>Documented DISM package API; no localized output parsing and no repair entry points.</summary>
-public sealed class ServicingPackageSource : IServicingPackageSource
+public sealed class ServicingPackageSource(ILogger<ServicingPackageSource>? logger = null) : IServicingPackageSource
 {
     private static readonly object LifecycleLock = new();
 
@@ -27,25 +27,42 @@ public sealed class ServicingPackageSource : IServicingPackageSource
                     (int)package.PackageState, (int)package.ReleaseType)).ToList();
                 return new BoundedList<ServicingPackage>(packages, native.Count, native.Count > packages.Count);
             },
-            DismApi.Shutdown);
+            DismApi.Shutdown,
+            error => logger?.LogWarning("DISM shutdown failed after an earlier error: {ErrorType}: 0x{HResult:X8}",
+                error.GetType().Name, error.HResult));
     }
 
     // DISM initialization is process-wide. Keep the whole lifetime serialized, including
     // disposal and shutdown, even when callers use separate source/worker instances.
     internal static TResult WithSession<TSession, TResult>(Action initialize, Func<TSession> open,
-        Func<TSession, TResult> read, Action shutdown) where TSession : IDisposable
+        Func<TSession, TResult> read, Action shutdown, Action<Exception>? reportShutdownFailure = null) where TSession : IDisposable
     {
         lock (LifecycleLock)
         {
             initialize();
+            bool failed = false;
             try
             {
                 using TSession session = open();
                 return read(session);
             }
+            catch
+            {
+                failed = true;
+                throw;
+            }
             finally
             {
-                shutdown();
+                try
+                {
+                    shutdown();
+                }
+                catch (Exception error) when (failed)
+                {
+                    // Preserve the original HRESULT/stack; report secondary cleanup failure
+                    // without exposing native messages or replacing the operation's error.
+                    reportShutdownFailure?.Invoke(error);
+                }
             }
         }
     }
