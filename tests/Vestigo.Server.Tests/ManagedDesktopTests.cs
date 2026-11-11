@@ -220,6 +220,34 @@ public class ManagedDesktopTests : IDisposable
         Assert.True(session.InputSwitched);
         Assert.Empty(cleanup.Terminated);
         Assert.Equal(["recover:restore"], host.Operations);
+
+        await manager.StopAsync(CancellationToken.None);
+        manager.Dispose();
+        host.FailRestore = false;
+        ManagedDesktopSessionManager retry = Manager(host, allow: true, cleanup);
+        await retry.StartAsync(CancellationToken.None);
+
+        ManagedDesktopSession recovered = retry.Get("abc123").Value!;
+        Assert.Equal("closed", recovered.State);
+        Assert.False(recovered.InputSwitched);
+        Assert.Equal([9], cleanup.Terminated);
+        await retry.StopAsync(CancellationToken.None);
+        retry.Dispose();
+    }
+
+    [Fact]
+    public async Task Close_ReturnsTheHostErrorWhenRestoreIsWrapped()
+    {
+        RecordingHost host = new() { RestoreCode = "desktop_unavailable" };
+        ManagedDesktopSessionManager manager = Manager(host, allow: true);
+        ManagedDesktopSession created = (await manager.CreateAsync(null, CancellationToken.None)).Value!;
+        Assert.True((await manager.ActivateAsync(created.Id, CancellationToken.None)).Success);
+
+        OperationResult<ManagedDesktopSession> closed = await manager.CloseAsync(created.Id, "terminate-owned", CancellationToken.None);
+
+        Assert.Equal("desktop_unavailable", closed.ErrorCode);
+        Assert.Equal("The original desktop could not be opened.", closed.Error);
+        Assert.Equal("active", manager.Get(created.Id).Value!.State);
     }
 
     [Fact]
@@ -433,7 +461,9 @@ public class ManagedDesktopTests : IDisposable
 
         public bool Secure { get; init; }
 
-        public bool FailRestore { get; init; }
+        public bool FailRestore { get; set; }
+
+        public string? RestoreCode { get; init; }
 
         public CancellationTokenSource? Cancellation { get; set; }
 
@@ -496,6 +526,11 @@ public class ManagedDesktopTests : IDisposable
 
         private DesktopCommandResult Restore(DesktopCommand command)
         {
+            if (RestoreCode is not null)
+            {
+                return DesktopCommandResult.Fail(command.RequestId, RestoreCode, "The original desktop could not be opened.");
+            }
+
             if (!string.Equals(_input, command.DesktopName, StringComparison.OrdinalIgnoreCase))
             {
                 return DesktopCommandResult.Fail(command.RequestId, "input_desktop_changed", "Input moved.");
