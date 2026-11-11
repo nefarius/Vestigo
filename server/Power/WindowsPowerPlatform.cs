@@ -27,6 +27,9 @@ public sealed class WindowsPowerPlatform : IPowerPlatform
     }
 
     /// <inheritdoc />
+    public WakeSourceResult ReadLastWake() => WindowsWakeSource.Read();
+
+    /// <inheritdoc />
     public SleepConfigurationSample ReadSleep()
     {
         Guid? scheme = ReadSchemeGuid();

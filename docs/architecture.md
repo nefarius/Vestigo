@@ -48,7 +48,7 @@ The `Environment` module keeps registry access behind `IEnvironmentStore`; list 
 
 ### Power
 
-`PowerTools` reads through `IPowerPlatform` (`WindowsPowerPlatform`). `get_power_state` uses `GetSystemPowerStatus`, `PowerGetActiveScheme`, `CallNtPowerInformation` (`SystemPowerCapabilities`, `LastSleepTime`, `LastWakeTime`), and `QueryInterruptTime`. Last sleep and wake are approximate UTC times from those interrupt-time counters. `get_sleep_configuration` reads AC and DC indices with `PowerReadACValueIndex` and `PowerReadDCValueIndex` for the documented lid, timeout, wake-timer, and hybrid-sleep settings. A missing index stays null. There is no power-scheme write.
+`PowerTools` reads through `IPowerPlatform` (`WindowsPowerPlatform`). `get_power_state` uses `GetSystemPowerStatus`, `PowerGetActiveScheme`, `CallNtPowerInformation` (`SystemPowerCapabilities`, `LastSleepTime`, `LastWakeTime`), and `QueryInterruptTime`. Last sleep and wake are approximate UTC times from those interrupt-time counters. `get_sleep_configuration` reads AC and DC indices with `PowerReadACValueIndex` and `PowerReadDCValueIndex` for the documented lid, timeout, wake-timer, and hybrid-sleep settings. A missing index stays null. `get_last_wake_source` parses the newest `Microsoft-Windows-Power-Troubleshooter` event 1 through `WakeSourceEvent`; `WindowsWakeSource` supplies the System log. There is no power-scheme write and no power-request list.
 
 ### Processes
 

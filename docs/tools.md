@@ -111,6 +111,8 @@ The `Power` module is enabled by default. It is read-only. There is no scheme ch
 
 `get_sleep_configuration` returns the active scheme's AC and DC values for lid close (`doNothing`, `sleep`, `hibernate`, `shutdown`, or `unknown`), standby, hibernate, and monitor timeouts in seconds, wake timers, and hybrid sleep. A timeout of 0 means never. A value Windows did not return is null. Null is not `doNothing` and it is not zero. `doNothing` is only lid index 0 (`PowerActionNone`).
 
+`get_last_wake_source` reads the newest `Microsoft-Windows-Power-Troubleshooter` event 1 in the System log. `eventFound` is false when that event is absent, and the other fields are then null. `wakeTimeUtc` and `sleepTimeUtc` come from the event's `WakeTime` and `SleepTime`. `wakeSourceType` is the event's number; Vestigo does not translate it to a name. `wakeSourceText`, `wakeTimerOwner`, and `wakeTimerContext` are the provider's strings, each capped at 512 characters, and `textTruncated` is true when one was longer. A wake-timer owner can be a program path. The tool does not list power-request owners: `GetPowerRequestList` has no published caller-list structure. `access_denied` means the System log could not be opened. `power_api_failed` means the read threw.
+
 ## Updates
 
 The `Updates` module is enabled by default. Checking the signed Buildbot feed is always available while the module is on. Installing a release stays off until `Vestigo:Updates:AllowSelfUpdate` is `true`, and it also needs the MSI `Automatic updates` feature so `Nefarius_Vestigo_Updater.exe` is present. Read [security.md](security.md#updates) first.
