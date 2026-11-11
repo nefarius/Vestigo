@@ -666,7 +666,7 @@ public static class ScreenCapture
     internal static bool IsInputDesktopAvailable(out string? error, bool requireDesktopNames = false) =>
         TryReadDesktopRelation(out error, out bool inactive, requireDesktopNames) && !inactive;
 
-    private static unsafe bool TryReadDesktopRelation(out string? error, out bool inactive, bool requireDesktopNames = false)
+    internal static unsafe bool TryReadDesktopRelation(out string? error, out bool inactive, bool requireDesktopNames = false)
     {
         error = null;
         inactive = false;
@@ -699,7 +699,7 @@ public static class ScreenCapture
                 !string.Equals(inputName, currentName, StringComparison.OrdinalIgnoreCase))
             {
                 inactive = true;
-                error = "The input desktop is not this session's default desktop (lock screen, UAC, or a secure desktop).";
+                error = "The helper is not running on the input desktop.";
             }
 
             return true;

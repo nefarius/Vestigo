@@ -158,6 +158,28 @@ public sealed class InputTools(
 
         string? baselineId = before is { Success: true } ? before.Value!.Record.Id : null;
         OperationResult<PerceptionOutcome> observed = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, baselineId, cancellationToken).ConfigureAwait(false);
+        if (!observed.Success && observed.ErrorCode == "capture_mismatch" && before is { Success: true })
+        {
+            OperationResult<PerceptionOutcome> retry = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, cancellationToken).ConfigureAwait(false);
+            if (retry.Success && retry.Value is not null && BoundsChanged(before.Value!, retry.Value))
+            {
+                observed = retry;
+            }
+            else
+            {
+                summary["response"] = new JsonObject
+                {
+                    ["status"] = "inconclusive",
+                    ["compared"] = string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
+                };
+                summary["observeError"] = JsonSerializer.SerializeToNode(
+                    new { errorCode = observed.ErrorCode, error = observed.Error, reason = observed.Reason },
+                    VisionJson.Options);
+                content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
+                return new CallToolResult { Content = content };
+            }
+        }
+
         string responseStatus = ClassifyResponse(before, observed);
         summary["response"] = new JsonObject
         {
@@ -213,10 +235,13 @@ public sealed class InputTools(
         PerceptionOutcome earlier = before.Value!;
         PerceptionOutcome later = after.Value;
         bool pixels = later.Diff is { ChangedPercent: > 0 };
-        bool window = earlier.Capture.Bounds != later.Capture.Bounds || earlier.Capture.WindowTitle != later.Capture.WindowTitle;
+        bool window = BoundsChanged(earlier, later);
         bool elements = ElementSignature(earlier.Record.Elements) != ElementSignature(later.Record.Elements);
         return pixels || window || elements ? "observed" : "no-response";
     }
+
+    private static bool BoundsChanged(PerceptionOutcome earlier, PerceptionOutcome later) =>
+        earlier.Capture.Bounds != later.Capture.Bounds || earlier.Capture.WindowTitle != later.Capture.WindowTitle;
 
     private static string ElementSignature(IReadOnlyList<ScreenElement> elements) =>
         string.Join('\n', elements.Select(element => $"{element.Source}|{element.Role}|{element.Name}|{element.Text}|{element.Box.X},{element.Box.Y},{element.Box.Width},{element.Box.Height}"));
