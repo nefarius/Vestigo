@@ -150,7 +150,7 @@ public class VirtualDisplayTests : IDisposable
 
         OperationResult<VirtualDisplaySession> closed = await coordinator.CloseAsync(created.Value!.Id, CancellationToken.None);
 
-        Assert.False(closed.Success);
+        Assert.Equal("display_config_rejected", closed.ErrorCode);
         Assert.Contains("\"state\":\"open\"", File.ReadAllText(VestigoPaths.OwnedVirtualDisplaysPath));
         Assert.Empty(backend.Removed);
         Assert.Equal("restore", log[^1]);
@@ -166,7 +166,7 @@ public class VirtualDisplayTests : IDisposable
 
         OperationResult<VirtualDisplaySession> closed = await coordinator.CloseAsync(created.Value!.Id, CancellationToken.None);
 
-        Assert.False(closed.Success);
+        Assert.Equal("virtual_display_remove_failed", closed.ErrorCode);
         Assert.Contains("\"state\":\"open\"", File.ReadAllText(VestigoPaths.OwnedVirtualDisplaysPath));
         Assert.Empty(backend.Removed);
         Assert.Contains("remove", log);

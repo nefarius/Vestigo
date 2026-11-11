@@ -295,9 +295,14 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
             return OperationResult<VirtualDisplaySession>.Ok(closed);
         }
 
-        return restored.Success
-            ? OperationResult<VirtualDisplaySession>.Fail("display_config_rejected", closed.LastError ?? "The owned display could not be removed.")
-            : restored.FailAs<VirtualDisplaySession>();
+        if (!restored.Success)
+        {
+            return restored.FailAs<VirtualDisplaySession>();
+        }
+
+        return restoredOk
+            ? OperationResult<VirtualDisplaySession>.Fail("virtual_display_remove_failed", closed.LastError ?? "The owned display could not be removed.")
+            : OperationResult<VirtualDisplaySession>.Fail(restored.Value?.ErrorCode ?? "display_config_rejected", closed.LastError ?? "The checkpoint could not be restored.");
     }
 
     private void Load()
