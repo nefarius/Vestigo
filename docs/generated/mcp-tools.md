@@ -445,7 +445,7 @@ No parameters.
 
 ## `get_registry_metadata`
 
-Returns the last write time, subkey count, and value count of an allow-listed registry key. It does not read values or security descriptors.
+Returns the last write time, subkey count, and value count of an allow-listed registry key. It does not read values or security descriptors. A symbolic link is followed only when its target passes the allow and deny checks.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -883,7 +883,7 @@ Lists running processes with pid, name, session id and start time. Filters are o
 
 ## `list_registry_values`
 
-Lists values and subkey names under an allow-listed registry key. recurse walks nested keys up to MaxRecursionDepth. maxEntries can only lower MaxEntries. Denied children are omitted. Values are not written to the log.
+Lists values and subkey names under an allow-listed registry key. recurse walks nested keys up to MaxRecursionDepth. maxEntries can only lower MaxEntries. Denied children are omitted. A symbolic link is opened only when its target passes the allow and deny checks. Values are not written to the log.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1123,7 +1123,7 @@ Reads one JSON value, or a bounded set of values, from a UTF-8 JSON document und
 
 ## `read_registry_value`
 
-Reads one value from an allow-listed registry key. HKCU is the console user's hive. view is registry64 or registry32 and does not follow the service bitness. REG_BINARY is hashed only when it fits MaxBinaryBytes. The value is not written to the log.
+Reads one value from an allow-listed registry key. HKCU is the console user's hive. view is registry64 or registry32 and does not follow the service bitness. A symbolic link is followed only when its target passes the allow and deny checks. CurrentControlSet may resolve to ControlSetNNN when that CurrentControlSet path is allowed. REG_BINARY is hashed only when it fits MaxBinaryBytes. The value is not written to the log.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
