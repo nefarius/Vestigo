@@ -251,6 +251,42 @@ public class ManagedDesktopTests : IDisposable
     }
 
     [Fact]
+    public async Task Activate_TimeoutKeepsTheSwitchIntent()
+    {
+        RecordingHost host = new() { RejectOp = DesktopHostOperations.Activate };
+        ManagedDesktopSessionManager manager = Manager(host, allow: true);
+        ManagedDesktopSession created = (await manager.CreateAsync(null, CancellationToken.None)).Value!;
+
+        OperationResult<ManagedDesktopSession> active = await manager.ActivateAsync(created.Id, CancellationToken.None);
+
+        Assert.Equal("helper_timeout", active.ErrorCode);
+        ManagedDesktopSession stored = manager.Get(created.Id).Value!;
+        Assert.Equal("open", stored.State);
+        Assert.True(stored.InputSwitched);
+        Assert.Contains("\"inputSwitched\":true", await File.ReadAllTextAsync(VestigoPaths.OwnedDesktopsPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Close_UnrestoredInputStaysOpenAndKeepsItsProcesses()
+    {
+        RecordingHost host = new() { RejectOp = DesktopHostOperations.Restore, RejectCode = "desktop_host_lost", FailRestore = true };
+        RunningCleanup cleanup = new();
+        ManagedDesktopSessionManager manager = Manager(host, allow: true, cleanup);
+        ManagedDesktopSession created = (await manager.CreateAsync("terminate-owned", CancellationToken.None)).Value!;
+        await AttachAsync(manager, created.Id, new OwnedDesktopProcess("job1", 42, false));
+        Assert.True((await manager.ActivateAsync(created.Id, CancellationToken.None)).Success);
+
+        OperationResult<ManagedDesktopSession> closed = await manager.CloseAsync(created.Id, "terminate-owned", CancellationToken.None);
+
+        Assert.Equal("desktop_unavailable", closed.ErrorCode);
+        ManagedDesktopSession stored = manager.Get(created.Id).Value!;
+        Assert.Equal("recovery-failed", stored.State);
+        Assert.True(stored.InputSwitched);
+        Assert.Empty(cleanup.Terminated);
+        Assert.DoesNotContain("close", host.Operations);
+    }
+
+    [Fact]
     public void RecoveryResult_WithNullError_IsSuccess()
     {
         string json = JsonSerializer.Serialize(DesktopCommandResult.Ready(4), SessionHelper.Json);
@@ -289,6 +325,44 @@ public class ManagedDesktopTests : IDisposable
             Assert.True(desktops.Released);
             launcher.Hold.TrySetResult(0);
             Assert.True((await running).Success);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunProcess_CancelBeforePublishKeepsTheLeaseUntilAttach()
+    {
+        string root = Directory.CreateTempSubdirectory("vestigo-lease-cancel-").FullName;
+        try
+        {
+            string executable = Path.Combine(root, "tool.exe");
+            await File.WriteAllBytesAsync(executable, [0x4D, 0x5A]);
+            TaskCompletionSource publish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<int> hold = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            RecordingLauncher launcher = new() { PublishWhen = publish.Task, Hold = hold };
+            RecordingDirectory desktops = new();
+            VestigoOptions options = new()
+            {
+                Roots = [new RootDefinition { Name = "tools", Path = root, Access = RootAccess.Read | RootAccess.Execute }],
+                Processes = new ProcessesOptions { AllowPathLookup = false }
+            };
+            RootPolicy policy = new(options);
+            using CancellationTokenSource cancellation = new();
+            ProcessTools tools = new(policy, new ExecutableResolver(policy, options), new JobManager(options, Path.Combine(root, "jobs")), launcher, new AppCloser(new SessionHelperClient(launcher)), desktops);
+            Task<OperationResult<RunProcessResult>> running = tools.RunProcess(executable, context: "interactive", desktopSessionId: "abc", wait: 30, cancellationToken: cancellation.Token);
+            await launcher.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            cancellation.Cancel();
+
+            Assert.False(desktops.Released);
+            Assert.Empty(desktops.Attached);
+            publish.SetResult();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await running.ConfigureAwait(false));
+            Assert.NotEmpty(desktops.Attached);
+            Assert.True(desktops.Released);
+            hold.TrySetResult(0);
         }
         finally
         {
@@ -467,9 +541,18 @@ public class ManagedDesktopTests : IDisposable
 
         public CancellationTokenSource? Cancellation { get; set; }
 
+        public string? RejectOp { get; set; }
+
+        public string RejectCode { get; set; } = "helper_timeout";
+
         public Task<OperationResult<DesktopCommandResult>> SendAsync(DesktopCommand command, CancellationToken cancellationToken)
         {
             Operations.Add(command.Op);
+            if (RejectOp is not null && command.Op == RejectOp)
+            {
+                return Task.FromResult(OperationResult<DesktopCommandResult>.Fail(RejectCode, "The desktop host did not answer in time."));
+            }
+
             if (command.Op == DesktopHostOperations.Create && Cancellation is not null)
             {
                 Cancellation.Cancel();
@@ -582,11 +665,21 @@ public class ManagedDesktopTests : IDisposable
 
         public TaskCompletionSource<int>? Hold { get; init; }
 
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task? PublishWhen { get; init; }
+
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
 
         public async Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
         {
             Desktop = request.Desktop;
+            Started.TrySetResult();
+            if (PublishWhen is not null)
+            {
+                await PublishWhen.ConfigureAwait(false);
+            }
+
             request.Report?.Publish(new ProcessLaunchReport(77, 2, "winsta0", "Vestigo-0123456789ab", false, "limited"));
             return Hold is null ? 0 : await Hold.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }

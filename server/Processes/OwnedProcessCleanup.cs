@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 using Vestigo.Desktop;
@@ -54,12 +55,30 @@ public sealed class JobOwnedProcessCleanup(JobManager jobs) : IOwnedProcessClean
 
         foreach (OwnedDesktopProcess process in processes)
         {
-            if (!StillRunning([process]).Contains(process.ProcessId))
+            if (process.ProcessId <= 4 || process.ProcessId == Environment.ProcessId)
             {
                 continue;
             }
 
-            ProcessControl.Kill(process.ProcessId, null, entireTree: true, Environment.ProcessId);
+            Process? running = null;
+            try
+            {
+                running = Process.GetProcessById(process.ProcessId);
+                if (running.HasExited || !IsSameProcess(process, running))
+                {
+                    continue;
+                }
+
+                running.Kill(true);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception or NotSupportedException)
+            {
+                // The verified process exited, or Windows refused the tree kill. The next pass can see it.
+            }
+            finally
+            {
+                running?.Dispose();
+            }
         }
     }
 
