@@ -15,4 +15,8 @@ public sealed class PowerTools(PowerService service)
     [McpServerTool(Name = "get_sleep_configuration", ReadOnly = true)]
     [Description("Returns the active scheme's AC and DC lid-close action (doNothing, sleep, hibernate, shutdown, or unknown), standby, hibernate, and monitor timeouts in seconds (0 means never), wake-timer enablement, and hybrid sleep. A value Windows did not return is null, not doNothing and not zero. There is no write.")]
     public OperationResult<SleepConfigurationResult> GetSleepConfiguration() => service.GetSleepConfiguration();
+
+    [McpServerTool(Name = "get_last_wake_source", ReadOnly = true)]
+    [Description("Returns the newest Microsoft-Windows-Power-Troubleshooter event 1 from the System log: WakeTime, SleepTime, the WakeSourceType number, WakeSourceText, and any wake-timer owner and context. eventFound is false when that event is absent, and the other fields are then null. WakeSourceType is not translated to a name. Text fields are capped at 512 characters. This does not list power-request owners. There is no write.")]
+    public OperationResult<WakeSourceResult> GetLastWakeSource() => service.GetLastWakeSource();
 }

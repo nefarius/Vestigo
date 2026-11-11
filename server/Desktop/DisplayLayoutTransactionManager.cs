@@ -297,7 +297,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         }
 
         _lastRestoreAttempt = _time.GetUtcNow();
-        List<DisplayTargetChange> original = _current.Original.Paths.Select(path => new DisplayTargetChange(
+        List<DisplayTargetChange> original = _current.Original.Paths.Where(path => path.Active).Select(path => new DisplayTargetChange(
             path.Identity.MonitorDevicePath,
             path.Identity.ConnectorInstance,
             path.Identity.AdapterLuid,

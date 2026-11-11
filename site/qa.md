@@ -38,7 +38,8 @@ The lock screen and UAC secure desktop fail with `desktop_unavailable`. A consol
 
 1. `get_power_state` reports AC, battery charging, approximate last sleep and wake times, and whether the platform supports modern standby.
 2. `get_sleep_configuration` reports the lid-close action and the standby timeout on AC and on battery. A null value was not returned. A timeout of 0 means never.
-3. Fast Startup configuration is `get_boot_state` `fastStartupEnabled`. That setting does not prove the previous boot was hybrid.
+3. `get_last_wake_source` reads the newest Power-Troubleshooter resume event. `eventFound: false` means that event is absent. The wake-source type is a number, not a device verdict.
+4. Fast Startup configuration is `get_boot_state` `fastStartupEnabled`. That setting does not prove the previous boot was hybrid.
 
 ## Why a screenshot failed
 
@@ -82,6 +83,12 @@ The service context does not see user-session audio. Per-app overrides in Settin
 1. Enable Diagnostics, and Services and EventLog when those facts should be included. Diagnostics needs Jobs. Device queries work while Devices is off.
 2. `explain_driver_load_failure` takes an instance id, a service name, or both.
 3. Confirm hypotheses cite a service, a signature outcome, or a Code Integrity event. HVCI and Windows lockdown mode are observations. `insufficientEvidence` means no load-failure signal was observed. The tool does not assert a cause.
+
+## Read firewall policy
+
+1. Enable Diagnostics. It needs Jobs.
+2. `get_firewall_profiles` and `list_firewall_rules` stay off until `Diagnostics:AllowFirewallInventory` is true.
+3. Confirm the profile bitmask and raw rule expressions come back, and that neither tool reports a connection as blocked by the firewall.
 
 ## Check a lab endpoint
 
