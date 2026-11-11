@@ -17,7 +17,8 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         bool elevated,
         TimeSpan timeout,
         long maxOutputBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? desktop = null)
     {
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
@@ -47,7 +48,8 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
                 Path.GetDirectoryName(executable),
                 new Dictionary<string, string>(),
                 LaunchContext.Interactive,
-                elevated);
+                elevated,
+                desktop);
 
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             linked.CancelAfter(timeout);

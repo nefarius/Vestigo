@@ -87,6 +87,23 @@ public static partial class SessionHelper
         return 0;
     }
 
+    private static int RunInspectInputState(string[] args)
+    {
+        if (args.Length < 2 || args[0] != Flag || args[1] != InspectInputStateCommand)
+        {
+            return Reject($"Usage: {Flag} {InspectInputStateCommand}");
+        }
+
+        OperationResult<InputStateReport> result = InputStateInspection.Read();
+        if (!result.Success)
+        {
+            return Reject(result.Error!, result.ErrorCode!);
+        }
+
+        Console.Out.WriteLine(JsonSerializer.Serialize(result.Value, Json));
+        return 0;
+    }
+
     private static int RunDesktopEnumerate(string[] args)
     {
         if (args.Length < 2 || args[0] != Flag || args[1] != DesktopEnumerateCommand)

@@ -26,7 +26,8 @@ public sealed class DesktopInventory(
         WindowSelector selector,
         LaunchContext context,
         bool elevated,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DesktopHelperTarget? desktop = null)
     {
         try
         {
@@ -46,8 +47,8 @@ public sealed class DesktopInventory(
 
             try
             {
-                return OperationResult<WindowListResult>.Ok(
-                    await Task.Run(() => WindowEnumerator.List(selector), cancellationToken).ConfigureAwait(false));
+                WindowListResult listed = await Task.Run(() => WindowEnumerator.List(selector), cancellationToken).ConfigureAwait(false);
+                return OperationResult<WindowListResult>.Ok(Stamp(listed, desktop));
             }
             catch (RegexMatchTimeoutException ex)
             {
@@ -61,12 +62,16 @@ public sealed class DesktopInventory(
             return available.FailAs<WindowListResult>();
         }
 
-        return await helper.RunAsync<WindowListResult>(
+        OperationResult<WindowListResult> listedWindows = await helper.RunAsync<WindowListResult>(
             SessionHelper.BuildListWindowsArguments(selector),
             elevated,
             HelperTimeout,
             HelperMaxOutputBytes,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            desktop?.DesktopPath).ConfigureAwait(false);
+        return listedWindows.Success
+            ? OperationResult<WindowListResult>.Ok(Stamp(listedWindows.Value!, desktop))
+            : listedWindows;
     }
 
     public async Task<OperationResult<WindowInspectionReport>> InspectWindowAsync(
@@ -75,7 +80,8 @@ public sealed class DesktopInventory(
         DateTimeOffset? expectedStart,
         LaunchContext context,
         bool elevated,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DesktopHelperTarget? desktop = null)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -95,19 +101,24 @@ public sealed class DesktopInventory(
             return available.FailAs<WindowInspectionReport>();
         }
 
-        return await helper.RunAsync<WindowInspectionReport>(
+        OperationResult<WindowInspectionReport> inspected = await helper.RunAsync<WindowInspectionReport>(
             SessionHelper.BuildInspectWindowArguments(handle, expectedPid, expectedStart),
             elevated,
             HelperTimeout,
             HelperMaxOutputBytes,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            desktop?.DesktopPath).ConfigureAwait(false);
+        return inspected.Success
+            ? OperationResult<WindowInspectionReport>.Ok(inspected.Value! with { DesktopName = desktop?.DesktopName, InputDesktop = desktop?.IsInputDesktop })
+            : inspected;
     }
 
     public async Task<OperationResult<DisplayListResult>> ListDisplaysAsync(
         LaunchContext context,
         bool elevated,
         CancellationToken cancellationToken,
-        bool includeModes = false)
+        bool includeModes = false,
+        DesktopHelperTarget? desktop = null)
     {
         if (context == LaunchContext.Service)
         {
@@ -116,8 +127,8 @@ public sealed class DesktopInventory(
                 return OperationResult<DisplayListResult>.Fail("windows_required", "Display enumeration requires Windows.");
             }
 
-            return OperationResult<DisplayListResult>.Ok(
-                await Task.Run(() => DisplayTopology.List(includeModes), cancellationToken).ConfigureAwait(false));
+            DisplayListResult serviceDisplays = await Task.Run(() => DisplayTopology.List(includeModes), cancellationToken).ConfigureAwait(false);
+            return OperationResult<DisplayListResult>.Ok(Stamp(serviceDisplays, desktop));
         }
 
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
@@ -126,12 +137,16 @@ public sealed class DesktopInventory(
             return available.FailAs<DisplayListResult>();
         }
 
-        return await helper.RunAsync<DisplayListResult>(
+        OperationResult<DisplayListResult> listedDisplays = await helper.RunAsync<DisplayListResult>(
             SessionHelper.BuildListDisplaysArguments(includeModes),
             elevated,
             HelperTimeout,
             HelperMaxOutputBytes,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            desktop?.DesktopPath).ConfigureAwait(false);
+        return listedDisplays.Success
+            ? OperationResult<DisplayListResult>.Ok(Stamp(listedDisplays.Value!, desktop))
+            : listedDisplays;
     }
 
     public async Task<OperationResult<CapturedScreenshot>> CaptureAsync(
@@ -139,7 +154,8 @@ public sealed class DesktopInventory(
         string? savePath,
         bool overwrite,
         bool elevated,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? desktop = null)
     {
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
@@ -155,7 +171,8 @@ public sealed class DesktopInventory(
             elevated,
             HelperTimeout,
             maxBytes,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            desktop).ConfigureAwait(false);
         if (!helperResult.Success)
         {
             return helperResult.FailAs<CapturedScreenshot>();
@@ -220,9 +237,28 @@ public sealed class DesktopInventory(
                 savedSize,
                 savedSha256,
                 replaced,
-                value.SessionId),
+                value.SessionId,
+                value.CaptureFidelity),
             preview));
     }
+
+    public Task<OperationResult<InputStateReport>> InspectInputStateAsync(
+        bool elevated,
+        CancellationToken cancellationToken,
+        string? desktop = null) =>
+        helper.RunAsync<InputStateReport>(
+            [SessionHelper.Flag, SessionHelper.InspectInputStateCommand],
+            elevated,
+            TimeSpan.FromSeconds(15),
+            HelperMaxOutputBytes,
+            cancellationToken,
+            desktop);
+
+    private static WindowListResult Stamp(WindowListResult result, DesktopHelperTarget? desktop) =>
+        desktop is null ? result : result with { DesktopName = desktop.DesktopName, InputDesktop = desktop.IsInputDesktop };
+
+    private static DisplayListResult Stamp(DisplayListResult result, DesktopHelperTarget? desktop) =>
+        desktop is null ? result : result with { DesktopName = desktop.DesktopName, InputDesktop = desktop.IsInputDesktop };
 
     private static byte[]? DecodePng(string? base64, out string? error)
     {

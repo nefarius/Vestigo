@@ -9,7 +9,7 @@ namespace Vestigo.Desktop;
 
 /// <summary>Bounded, observational window-event capture.</summary>
 [McpServerToolType]
-public sealed class WindowEventTools(WindowEventCaptureManager captures, VestigoOptions options)
+public sealed class WindowEventTools(WindowEventCaptureManager captures, VestigoOptions options, IManagedDesktopDirectory? desktops = null)
 {
     [McpServerTool(Name = "start_window_event_capture")]
     [Description(
@@ -18,13 +18,14 @@ public sealed class WindowEventTools(WindowEventCaptureManager captures, Vestigo
         + "follows only that window. Events are observed; geometry and DPI are sampled when an event arrives. DPI changes are comparisons of samples, not WM_DPICHANGED. "
         + "Process exit has no inferred cause. WinEvent does not report how many events it dropped before delivery; dropped counts only the helper queue. "
         + "The capture keeps running after this call returns. Read it with read_window_event_capture and stop it with stop_window_event_capture. "
-        + "A stateless client disconnect does not stop it. Service shutdown does. Interactive session only.")]
+        + "A stateless client disconnect does not stop it. Service shutdown does. desktopSessionId follows windows on that managed desktop without activating it. Interactive session only.")]
     public Task<OperationResult<WindowEventCaptureStatus>> StartWindowEventCapture(
         [Description("Hex window handle. Omit to follow a process.")] string? windowHandle = null,
         [Description("Process id. Later windows from this process are included; child processes are not.")] int? pid = null,
         [Description("Start time from list_processes. Required to prove the pid was not reused when it can be read.")] DateTimeOffset? expectedStartTime = null,
         [Description("Seconds to capture, from 1 to Vestigo:Desktop:MaxWindowEventDuration.")] int durationSeconds = 30,
         [Description("Use the elevated token for the helper.")] bool elevated = false,
+        [Description("Managed desktop session id. Events are observed on that desktop without activating it.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         if (durationSeconds <= 0)
@@ -38,14 +39,33 @@ public sealed class WindowEventTools(WindowEventCaptureManager captures, Vestigo
             duration = options.Desktop.MaxWindowEventDuration;
         }
 
+        return StartTargeted(windowHandle, pid, expectedStartTime, duration, elevated, desktopSessionId, cancellationToken);
+    }
+
+    private async Task<OperationResult<WindowEventCaptureStatus>> StartTargeted(
+        string? windowHandle,
+        int? pid,
+        DateTimeOffset? expectedStartTime,
+        TimeSpan duration,
+        bool elevated,
+        string? desktopSessionId,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(desktops, desktopSessionId, requireInput: false, cancellationToken).ConfigureAwait(false);
+        if (!targeted.Success)
+        {
+            return targeted.FailAs<WindowEventCaptureStatus>();
+        }
+
         WindowEventStart start = new(
             string.IsNullOrWhiteSpace(windowHandle) ? null : windowHandle.Trim(),
             pid,
             expectedStartTime,
             duration,
             options.Desktop.MaxWindowEvents,
-            elevated);
-        return captures.StartAsync(start, cancellationToken);
+            elevated,
+            targeted.Value?.DesktopPath);
+        return await captures.StartAsync(start, cancellationToken).ConfigureAwait(false);
     }
 
     [McpServerTool(Name = "read_window_event_capture", ReadOnly = true)]

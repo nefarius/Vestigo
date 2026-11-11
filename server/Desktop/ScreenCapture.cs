@@ -39,10 +39,19 @@ public static class ScreenCapture
         nint previousDpi = WindowEnumerator.SetDpiAware();
         try
         {
-            if (!IsInputDesktopAvailable(out string? desktopError))
+            if (!TryReadDesktopRelation(out string? desktopError, out bool inactiveDesktop))
             {
                 return OperationResult<ScreenCaptureResult>.Fail("desktop_unavailable", desktopError!);
             }
+
+            if (inactiveDesktop && request.Target != ScreenCaptureTarget.Window)
+            {
+                return OperationResult<ScreenCaptureResult>.Fail(
+                    "desktop_unavailable",
+                    "A desktop, display, or region capture needs the input desktop. Activate the test desktop first.");
+            }
+
+            string fidelity = inactiveDesktop ? "best-effort" : "input-desktop";
 
             IReadOnlyList<DisplayInfo> displays = DisplayTopology.Enumerate();
             OperationResult<ResolvedCapture> resolved = Resolve(request, displays);
@@ -88,7 +97,8 @@ public static class ScreenCapture
                 target.WindowTitle,
                 previewBase64,
                 fullBase64,
-                Process.GetCurrentProcess().SessionId));
+                Process.GetCurrentProcess().SessionId,
+                fidelity));
         }
         catch (Exception ex) when (ex is COMException or InvalidOperationException or ExternalException)
         {
@@ -653,9 +663,13 @@ public static class ScreenCapture
     ///     Checks that the input desktop is this session's default desktop. With <paramref name="requireDesktopNames" />
     ///     unreadable desktop names count as unavailable, which input injection needs; screenshots tolerate them.
     /// </summary>
-    internal static unsafe bool IsInputDesktopAvailable(out string? error, bool requireDesktopNames = false)
+    internal static bool IsInputDesktopAvailable(out string? error, bool requireDesktopNames = false) =>
+        TryReadDesktopRelation(out error, out bool inactive, requireDesktopNames) && !inactive;
+
+    private static unsafe bool TryReadDesktopRelation(out string? error, out bool inactive, bool requireDesktopNames = false)
     {
         error = null;
+        inactive = false;
         HDESK input = Win32PInvoke.OpenInputDesktop(0, false, (DESKTOP_ACCESS_FLAGS)DesktopReadObjects);
         if (input.IsNull)
         {
@@ -674,12 +688,18 @@ public static class ScreenCapture
                 return false;
             }
 
+            if (DesktopSessionPolicy.IsSecure(inputName))
+            {
+                error = "The input desktop is not available (lock screen, UAC, or a secure desktop).";
+                return false;
+            }
+
             if (!string.IsNullOrEmpty(inputName) &&
                 !string.IsNullOrEmpty(currentName) &&
                 !string.Equals(inputName, currentName, StringComparison.OrdinalIgnoreCase))
             {
+                inactive = true;
                 error = "The input desktop is not this session's default desktop (lock screen, UAC, or a secure desktop).";
-                return false;
             }
 
             return true;

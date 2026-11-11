@@ -204,10 +204,19 @@ public sealed class ManagedDesktopLease : IDisposable
     }
 }
 
+/// <summary>Where a helper should run. <see cref="DesktopPath" /> is the only value passed to <c>CreateProcess</c>.</summary>
+public sealed record DesktopHelperTarget(string SessionId, string DesktopPath, string DesktopName, bool IsInputDesktop);
+
 /// <summary>Resolves a managed session for <c>run_process</c> without accepting an arbitrary desktop name.</summary>
 public interface IManagedDesktopDirectory
 {
     Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken);
+
+    /// <summary>Reads an open session. Does not switch desktops and does not hold the session lock afterwards.</summary>
+    Task<OperationResult<DesktopHelperTarget>> DescribeAsync(string sessionId, CancellationToken cancellationToken) =>
+        Task.FromResult(OperationResult<DesktopHelperTarget>.Fail(
+            "desktop_sessions_disabled",
+            "Managed desktop sessions require the Desktop module and Vestigo:Desktop:AllowDesktopSessions."));
 }
 
 /// <summary>Used when the Desktop module is off. It cannot see or create test desktops.</summary>

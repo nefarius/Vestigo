@@ -177,6 +177,7 @@ KEYBD_EVENT_FLAGS
 VIRTUAL_KEY
 SetForegroundWindow
 GetForegroundWindow
+GetCursorPos
 ShowWindow
 SHOW_WINDOW_CMD
 SM_XVIRTUALSCREEN

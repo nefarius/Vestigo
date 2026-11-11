@@ -228,6 +228,28 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
         }
     }
 
+    public async Task<OperationResult<DesktopHelperTarget>> DescribeAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_sessions.TryGetValue(sessionId, out ManagedDesktopSession? session) || session.State is not ("open" or "active"))
+            {
+                return OperationResult<DesktopHelperTarget>.Fail("desktop_session_not_found", "Managed desktop session was not found or is no longer open.");
+            }
+
+            return OperationResult<DesktopHelperTarget>.Ok(new DesktopHelperTarget(
+                session.Id,
+                DesktopSessionPolicy.DesktopPath(session.DesktopName),
+                session.DesktopName,
+                session.InputSwitched));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);

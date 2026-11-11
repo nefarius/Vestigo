@@ -14,7 +14,8 @@ public sealed record WindowEventStart(
     DateTimeOffset? ExpectedStartTime,
     TimeSpan Duration,
     int MaxEvents,
-    bool Elevated = false)
+    bool Elevated = false,
+    string? Desktop = null)
 {
     /// <summary>True only for a process filter with no window filter. Those windows may be created after the capture starts.</summary>
     public bool IncludesNewWindows => ProcessId is not null && string.IsNullOrWhiteSpace(Handle);

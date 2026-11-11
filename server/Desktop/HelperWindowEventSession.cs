@@ -37,7 +37,7 @@ public sealed class HelperWindowEventSessionFactory(IProcessLauncher launcher) :
         File.WriteAllBytes(output, []);
         (string executable, List<string> prefix) = SessionHelperClient.Host();
         List<string> arguments = [..prefix, ..SessionHelper.BuildWindowEventArguments(start)];
-        LaunchRequest request = new(executable, arguments, Path.GetDirectoryName(executable), new Dictionary<string, string>(), LaunchContext.Interactive, start.Elevated);
+        LaunchRequest request = new(executable, arguments, Path.GetDirectoryName(executable), new Dictionary<string, string>(), LaunchContext.Interactive, start.Elevated, start.Desktop);
         CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         JobContext context = new("window-events", output, long.MaxValue / 4);
         Task<int> run = launcher.RunAsync(request, context, cancellation.Token);

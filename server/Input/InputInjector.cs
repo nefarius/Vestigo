@@ -18,6 +18,9 @@ namespace Vestigo.Input;
 /// </summary>
 public static class InputInjector
 {
+    [ThreadStatic]
+    private static int Submitted;
+
     private const int StepPauseMilliseconds = 30;
 
     private const int ClickPauseMilliseconds = 40;
@@ -55,6 +58,7 @@ public static class InputInjector
                 warning = focused.Value;
             }
 
+            Submitted = 0;
             int performed = 0;
             foreach (InputStep step in batch.Steps)
             {
@@ -63,17 +67,35 @@ public static class InputInjector
                 {
                     return OperationResult<InputResult>.Fail(
                         done.ErrorCode!,
-                        $"{done.Error} ({performed} of {batch.Steps.Count} actions were performed first.)");
+                        $"{done.Error} ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
                 }
 
                 performed++;
-                if (step.Kind != InputKinds.Wait)
+                if (step.DelayAfterMilliseconds > 0)
+                {
+                    Thread.Sleep(step.DelayAfterMilliseconds);
+                }
+                else if (step.Kind != InputKinds.Wait)
                 {
                     Thread.Sleep(StepPauseMilliseconds);
                 }
             }
 
-            return OperationResult<InputResult>.Ok(new InputResult(performed, System.Diagnostics.Process.GetCurrentProcess().SessionId, warning));
+            string? actualFocus = ReadForeground();
+            bool? granted = string.IsNullOrWhiteSpace(batch.FocusWindow)
+                ? null
+                : string.Equals(actualFocus, batch.FocusWindow.Trim(), StringComparison.OrdinalIgnoreCase);
+            ReadCursor(out int? cursorX, out int? cursorY);
+            return OperationResult<InputResult>.Ok(new InputResult(
+                performed,
+                System.Diagnostics.Process.GetCurrentProcess().SessionId,
+                warning,
+                Submitted,
+                string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim(),
+                actualFocus,
+                granted,
+                cursorX,
+                cursorY));
         }
         finally
         {
@@ -130,9 +152,17 @@ public static class InputInjector
                 return Type(step.Text!);
 
             case InputKinds.Key:
-                return SendKeys(step.Keys!, release: false) is { Success: false } pressFailure
-                    ? pressFailure
-                    : SendKeys(step.Keys!.Reverse().ToList(), release: true);
+                if (SendKeys(step.Keys!, release: false) is { Success: false } pressFailure)
+                {
+                    return pressFailure;
+                }
+
+                if (step.HoldMilliseconds > 0)
+                {
+                    Thread.Sleep(step.HoldMilliseconds);
+                }
+
+                return SendKeys(step.Keys!.Reverse().ToList(), release: true);
 
             default:
                 return OperationResult<bool>.Fail("invalid_request", $"Unknown action '{step.Kind}'.");
@@ -152,6 +182,11 @@ public static class InputInjector
             if (!down.Success)
             {
                 return down;
+            }
+
+            if (step.HoldMilliseconds > 0)
+            {
+                Thread.Sleep(step.HoldMilliseconds);
             }
 
             OperationResult<bool> up = SendMouse(ButtonFlag(step.Button, up: true), 0, 0, 0);
@@ -373,6 +408,7 @@ public static class InputInjector
 
         INPUT[] array = [.. inputs];
         uint sent = PInvoke.SendInput(array, Marshal.SizeOf<INPUT>());
+        Submitted += (int)sent;
         if (sent == array.Length)
         {
             return Done();
@@ -385,4 +421,21 @@ public static class InputInjector
     }
 
     private static OperationResult<bool> Done() => OperationResult<bool>.Ok(true);
+
+    private static unsafe string? ReadForeground()
+    {
+        HWND foreground = PInvoke.GetForegroundWindow();
+        return foreground.IsNull ? null : "0x" + ((nint)foreground.Value).ToString("X");
+    }
+
+    private static void ReadCursor(out int? x, out int? y)
+    {
+        x = null;
+        y = null;
+        if (PInvoke.GetCursorPos(out System.Drawing.Point cursor))
+        {
+            x = cursor.X;
+            y = cursor.Y;
+        }
+    }
 }

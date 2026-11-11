@@ -90,10 +90,16 @@ public sealed record WindowListResult(
     IReadOnlyList<WindowInfo> Windows,
     IReadOnlyList<DisplayInfo> Displays,
     bool Truncated,
-    int SessionId);
+    int SessionId,
+    string? DesktopName = null,
+    bool? InputDesktop = null);
 
 /// <summary>The GDI and physical display topology of the calling session.</summary>
-public sealed record DisplayListResult(IReadOnlyList<DisplayInfo> Displays, int SessionId);
+public sealed record DisplayListResult(
+    IReadOnlyList<DisplayInfo> Displays,
+    int SessionId,
+    string? DesktopName = null,
+    bool? InputDesktop = null);
 
 /// <summary>Filters applied together (AND) to decide which windows a listing returns.</summary>
 public sealed record WindowSelector(
@@ -220,7 +226,8 @@ public sealed record ScreenCaptureResult(
     string? WindowTitle,
     string? PreviewPngBase64,
     string? FullPngBase64,
-    int SessionId);
+    int SessionId,
+    string CaptureFidelity = "input-desktop");
 
 /// <summary>Screenshot metadata returned to the MCP client. Image bytes travel as MCP image content, not here.</summary>
 public sealed record ScreenCaptureInfo(
@@ -236,7 +243,8 @@ public sealed record ScreenCaptureInfo(
     long? SavedSize,
     string? SavedSha256,
     bool? ReplacedExisting,
-    int SessionId);
+    int SessionId,
+    string CaptureFidelity = "input-desktop");
 
 /// <summary>Decoded helper capture ready to become a <c>CallToolResult</c>.</summary>
 public sealed record CapturedScreenshot(ScreenCaptureInfo Info, byte[]? PreviewPng);

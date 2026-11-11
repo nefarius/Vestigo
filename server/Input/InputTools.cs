@@ -19,7 +19,8 @@ public sealed class InputTools(
     IProcessLauncher launcher,
     PerceptionService perception,
     VestigoOptions options,
-    ILogger<InputTools>? logger = null)
+    ILogger<InputTools>? logger = null,
+    IManagedDesktopDirectory? desktops = null)
 {
     private const long HelperMaxOutputBytes = 64 * 1024;
 
@@ -28,8 +29,12 @@ public sealed class InputTools(
         "Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), "
         + "drag (x,y to toX,toY), type (text as Unicode characters), key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). "
         + "A point is elementId from inspect_screen or find_on_screen, or x and y: in the pixels of the returned image when captureId is set, otherwise absolute virtual-screen physical pixels. "
-        + "focusWindow (hex handle from list_windows) is brought to the foreground first. observe:true waits observeDelayMs, then returns a fresh inspect_screen result, "
-        + "so one call does act and look; it needs Vestigo:Desktop:AllowScreenshots. Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot "
+        + "focusWindow (hex handle from list_windows) is brought to the foreground first. click and key accept holdMilliseconds. Any action accepts delayAfterMilliseconds. "
+        + "observe:true waits observeDelayMs, then compares a fresh inspect_screen result with one taken before the input. "
+        + "injection.status submitted means SendInput accepted the events. response.status observed means the screen, window, or elements changed. "
+        + "A submitted injection is not an observed application response. observe needs Vestigo:Desktop:AllowScreenshots. "
+        + "desktopSessionId sends input to that managed desktop only when it is already the input desktop and does not activate it. "
+        + "Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot "
         + "reach elevated windows unless elevated=true. Requires Vestigo:Input:AllowInput. Interactive session only.")]
     public async Task<CallToolResult> SendInput(
         [Description("Actions to perform in order.")] List<InputActionSpec> actions,
@@ -41,6 +46,7 @@ public sealed class InputTools(
         [Description("Observe only: 'annotated' (default), 'raw' or 'none'.")] string imageMode = PerceptionTools.ImageAnnotated,
         [Description("Observe only: longest edge of the returned image, 320 to 3840.")] int maxEdge = ScreenAnalyzer.DefaultMaxEdge,
         [Description("Use the elevated token, needed to reach elevated windows.")] bool elevated = false,
+        [Description("Managed desktop session id. The session must already be the input desktop.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         if (!options.Input.AllowInput)
@@ -86,11 +92,24 @@ public sealed class InputTools(
         }
 
         // Helper startup allowance plus the time every planned step takes, including waits and drag pauses.
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting.ResolveAsync(desktops, desktopSessionId, requireInput: true, cancellationToken).ConfigureAwait(false);
+        if (!targeted.Success)
+        {
+            return DesktopTools.ErrorResult(targeted.ErrorCode!, targeted.Error!, targeted.Reason);
+        }
+
         double stepMilliseconds = plan.Value!.Steps.Sum(step =>
-            250d + step.Milliseconds + step.Count * 100d + (step.Text?.Length ?? 0) * 5d + (step.Kind == InputKinds.Drag ? 2000d : 0d));
+            250d + step.Milliseconds + step.HoldMilliseconds + step.DelayAfterMilliseconds + step.Count * 100d + (step.Text?.Length ?? 0) * 5d + (step.Kind == InputKinds.Drag ? 2000d : 0d));
         TimeSpan timeout = TimeSpan.FromSeconds(30) + TimeSpan.FromMilliseconds(stepMilliseconds);
+        string? desktopPath = targeted.Value?.DesktopPath;
+        OperationResult<PerceptionOutcome>? before = null;
+        if (observe)
+        {
+            before = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, cancellationToken).ConfigureAwait(false);
+        }
+
         OperationResult<InputResult> sent = await helper
-            .RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken)
+            .RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath)
             .ConfigureAwait(false);
         if (!sent.Success)
         {
@@ -105,14 +124,25 @@ public sealed class InputTools(
             plan.Value.Steps.Sum(step => step.Text?.Length ?? 0),
             observe);
 
+        InputResult evidence = sent.Value!;
         JsonObject summary = new()
         {
-            ["performed"] = sent.Value!.Performed,
-            ["sessionId"] = sent.Value.SessionId
+            ["performed"] = evidence.Performed,
+            ["sessionId"] = evidence.SessionId,
+            ["injection"] = new JsonObject
+            {
+                ["status"] = "submitted",
+                ["submittedEvents"] = evidence.SubmittedEvents,
+                ["focusRequested"] = evidence.FocusRequested,
+                ["focusActual"] = evidence.FocusActual,
+                ["focusGranted"] = evidence.FocusGranted,
+                ["cursorActual"] = evidence.CursorX is null ? null : new JsonObject { ["x"] = evidence.CursorX, ["y"] = evidence.CursorY }
+            },
+            ["response"] = new JsonObject { ["status"] = observe ? "pending" : "not-requested" }
         };
-        if (sent.Value.FocusWarning is not null)
+        if (evidence.FocusWarning is not null)
         {
-            summary["focusWarning"] = sent.Value.FocusWarning;
+            summary["focusWarning"] = evidence.FocusWarning;
         }
 
         List<ContentBlock> content = [new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) }];
@@ -126,6 +156,38 @@ public sealed class InputTools(
             await Task.Delay(observeDelayMs, cancellationToken).ConfigureAwait(false);
         }
 
+        string? baselineId = before is { Success: true } ? before.Value!.Record.Id : null;
+        OperationResult<PerceptionOutcome> observed = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, baselineId, cancellationToken).ConfigureAwait(false);
+        string responseStatus = ClassifyResponse(before, observed);
+        summary["response"] = new JsonObject
+        {
+            ["status"] = responseStatus,
+            ["compared"] = string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
+        };
+        if (!observed.Success)
+        {
+            summary["observeError"] = JsonSerializer.SerializeToNode(
+                new { errorCode = observed.ErrorCode, error = observed.Error, reason = observed.Reason },
+                VisionJson.Options);
+            content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
+            return new CallToolResult { Content = content };
+        }
+
+        content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
+        CallToolResult perceived = PerceptionTools.Describe(observed.Value!, mode, null);
+        content.AddRange(perceived.Content);
+        return new CallToolResult { Content = content };
+    }
+
+    private Task<OperationResult<PerceptionOutcome>> ObserveAsync(
+        string? observeWindowHandle,
+        string mode,
+        int maxEdge,
+        bool elevated,
+        string? desktop,
+        string? diffAgainst,
+        CancellationToken cancellationToken)
+    {
         bool window = !string.IsNullOrWhiteSpace(observeWindowHandle);
         ScreenCaptureRequest capture = ScreenCaptureRequest.DesktopPreview with
         {
@@ -135,22 +197,27 @@ public sealed class InputTools(
             IncludeFullImage = true,
             MaxBytes = options.Desktop.MaxScreenshotBytes
         };
-        OperationResult<PerceptionOutcome> observed = await perception.InspectAsync(
-            new PerceptionRequest(capture, true, true, maxEdge, false, mode == PerceptionTools.ImageAnnotated, null, elevated),
+        return perception.InspectAsync(
+            new PerceptionRequest(capture, true, true, maxEdge, false, mode == PerceptionTools.ImageAnnotated, diffAgainst, elevated, Desktop: desktop),
             null,
-            cancellationToken).ConfigureAwait(false);
-        if (!observed.Success)
+            cancellationToken);
+    }
+
+    private static string ClassifyResponse(OperationResult<PerceptionOutcome>? before, OperationResult<PerceptionOutcome> after)
+    {
+        if (before is not { Success: true } || !after.Success || after.Value is null)
         {
-            // The input already happened, so report the failure next to the success instead of as an error.
-            summary["observeError"] = JsonSerializer.SerializeToNode(
-                new { errorCode = observed.ErrorCode, error = observed.Error, reason = observed.Reason },
-                VisionJson.Options);
-            content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
-            return new CallToolResult { Content = content };
+            return "inconclusive";
         }
 
-        CallToolResult perceived = PerceptionTools.Describe(observed.Value!, mode, null);
-        content.AddRange(perceived.Content);
-        return new CallToolResult { Content = content };
+        PerceptionOutcome earlier = before.Value!;
+        PerceptionOutcome later = after.Value;
+        bool pixels = later.Diff is { ChangedPercent: > 0 };
+        bool window = earlier.Capture.Bounds != later.Capture.Bounds || earlier.Capture.WindowTitle != later.Capture.WindowTitle;
+        bool elements = ElementSignature(earlier.Record.Elements) != ElementSignature(later.Record.Elements);
+        return pixels || window || elements ? "observed" : "no-response";
     }
+
+    private static string ElementSignature(IReadOnlyList<ScreenElement> elements) =>
+        string.Join('\n', elements.Select(element => $"{element.Source}|{element.Role}|{element.Name}|{element.Text}|{element.Box.X},{element.Box.Y},{element.Box.Width},{element.Box.Height}"));
 }
