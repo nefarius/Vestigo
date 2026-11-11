@@ -27,7 +27,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
             using ComScope com = new();
             return OperationResult<FirewallProfiles>.Ok(ReadProfiles(com.CreatePolicy()));
         }
-        catch (Exception ex) when (ex is COMException or InvalidOperationException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or InvalidOperationException)
         {
             return Fail<FirewallProfiles>(ex);
         }
@@ -41,7 +41,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
             INetFwPolicy2* policy = com.CreatePolicy();
             return OperationResult<FirewallRuleList>.Ok(ReadRules(com, com.Own(policy->Rules), limit));
         }
-        catch (Exception ex) when (ex is COMException or InvalidOperationException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or InvalidOperationException)
         {
             return Fail<FirewallRuleList>(ex);
         }
@@ -57,7 +57,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
             modify = (int)policy->LocalPolicyModifyState;
             modifyName = FirewallProjection.ModifyStateName(modify.Value);
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
         {
         }
 
@@ -95,7 +95,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
         {
             total = rules->Count;
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
         {
         }
 
@@ -261,7 +261,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
         {
             value = read();
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
         {
             return null;
         }
@@ -282,7 +282,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
         {
             return read();
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
         {
             return null;
         }
@@ -294,7 +294,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
         {
             return read();
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
         {
             return null;
         }
@@ -306,7 +306,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
         {
             return (int)read();
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
         {
             return null;
         }

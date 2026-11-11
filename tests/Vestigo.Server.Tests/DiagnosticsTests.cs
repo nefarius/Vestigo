@@ -300,6 +300,7 @@ public class DiagnosticsTests : IDisposable
         Assert.Contains("Media Foundation video encoders", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("Windows Error Reporting", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("Process dumps", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.DoesNotContain("Firewall inventory", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("Capture probes", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("Network probes", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("synthetic tone", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
@@ -329,6 +330,12 @@ public class DiagnosticsTests : IDisposable
             Diagnostics = { AllowProcessDumps = true }
         };
         Assert.Contains("Process dumps", ModuleRegistry.GetPrivilegedModuleWarning(dumps));
+        VestigoOptions firewall = new()
+        {
+            Modules = { ["Diagnostics"] = new ModuleSettings { Enabled = true } },
+            Diagnostics = { AllowFirewallInventory = true }
+        };
+        Assert.Contains("Firewall inventory", ModuleRegistry.GetPrivilegedModuleWarning(firewall));
         Assert.False(ModuleSelection.Defaults()["Diagnostics"]);
         Assert.Equal("Jobs", ModuleSelection.Find("Diagnostics")!.Parent);
         Assert.Equal(["Jobs"], new DiagnosticsModule().Dependencies);
