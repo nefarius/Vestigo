@@ -26,14 +26,34 @@ public sealed record DisplayPathLayout(
     uint RefreshDenominator,
     string Rotation,
     string Scaling,
-    string CoordinateSpace);
+    string CoordinateSpace,
+    bool Active = true,
+    uint PathFlags = 0,
+    string? PathFlagNames = null,
+    int? SourceModeIndex = null,
+    int? TargetModeIndex = null,
+    int? DesktopImageWidth = null,
+    int? DesktopImageHeight = null,
+    int? SignalWidth = null,
+    int? SignalHeight = null,
+    uint? SignalRefreshNumerator = null,
+    uint? SignalRefreshDenominator = null,
+    string? TopologyRole = null,
+    string? EdidManufacturer = null,
+    string? EdidProductCode = null,
+    bool? EdidIdsValid = null,
+    bool? FriendlyNameFromEdid = null,
+    bool? FriendlyNameForced = null,
+    uint? TargetNameReservedFlags = null,
+    string? FriendlyName = null);
 
 public sealed record DisplayLayoutSnapshot(
     DateTimeOffset CapturedAt,
     int SessionId,
     string CoordinateSpace,
     string Fingerprint,
-    IReadOnlyList<DisplayPathLayout> Paths);
+    IReadOnlyList<DisplayPathLayout> Paths,
+    string? Topology = null);
 
 public sealed record DisplayTargetChange(
     string? MonitorDevicePath,
@@ -130,7 +150,7 @@ public static class DisplayLayoutPlanner
                 continue;
             }
 
-            DisplayPathLayout[] matches = snapshot.Paths.Where(path => Matches(path.Identity, change)).ToArray();
+            DisplayPathLayout[] matches = snapshot.Paths.Where(path => path.Active && Matches(path.Identity, change)).ToArray();
             if (matches.Length == 0)
             {
                 errors.Add("A requested target is not in the active topology.");
@@ -179,10 +199,69 @@ public static class DisplayLayoutPlanner
     {
         string canonical = string.Join(
             '\n',
-            paths.OrderBy(path => path.Identity.Key, StringComparer.Ordinal).Select(path =>
+            paths.Where(path => path.Active).OrderBy(path => path.Identity.Key, StringComparer.Ordinal).Select(path =>
                 string.Join('|', path.Identity.Key, path.X, path.Y, path.Width, path.Height, path.RefreshNumerator, path.RefreshDenominator, path.Rotation, path.Scaling)));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
+
+    /// <summary>
+    ///     Names the active arrangement from source identity. Clone means every active path shares one source.
+    ///     Extend means each active path has its own source. Mixed means at least one shared source and another source.
+    /// </summary>
+    public static (string Topology, IReadOnlyList<DisplayPathLayout> Paths) Annotate(IReadOnlyList<DisplayPathLayout> paths)
+    {
+        List<DisplayPathLayout> active = paths.Where(path => path.Active).ToList();
+        ILookup<string, DisplayPathLayout> groups = active.ToLookup(SourceKey);
+        string topology = active.Count switch
+        {
+            0 => "inactive",
+            1 => "single",
+            _ when groups.Count == 1 => "clone",
+            _ when groups.All(group => group.Count() == 1) => "extend",
+            _ => "mixed",
+        };
+        List<DisplayPathLayout> annotated = [];
+        foreach (DisplayPathLayout path in paths)
+        {
+            string role = path.Active
+                ? groups[SourceKey(path)].Count() > 1 ? "clone" : topology == "single" ? "single" : "extend"
+                : "inactive";
+            annotated.Add(path with { TopologyRole = role });
+        }
+
+        return (topology, annotated);
+    }
+
+    /// <summary>Known CCD path flags. Bits outside the published mask are kept as hex.</summary>
+    public static string DescribePathFlags(uint flags)
+    {
+        List<string> names = [];
+        uint known = 0;
+        void Take(uint bit, string name)
+        {
+            if ((flags & bit) == 0)
+            {
+                return;
+            }
+
+            names.Add(name);
+            known |= bit;
+        }
+
+        Take(0x1, "active");
+        Take(0x4, "preferredUnscaled");
+        Take(0x8, "virtualMode");
+        Take(0x10, "boostRefresh");
+        uint unknown = flags & ~known;
+        if (unknown != 0)
+        {
+            names.Add("0x" + unknown.ToString("X"));
+        }
+
+        return string.Join(',', names);
+    }
+
+    private static string SourceKey(DisplayPathLayout path) => path.Identity.AdapterLuid + "|" + path.Identity.SourceId;
 
     public static IReadOnlyList<string> Compare(DisplayLayoutSnapshot expected, DisplayLayoutSnapshot actual)
     {
@@ -192,7 +271,7 @@ public static class DisplayLayoutPlanner
             differences.Add("topology fingerprint differs");
         }
 
-        foreach (DisplayPathLayout path in expected.Paths)
+        foreach (DisplayPathLayout path in expected.Paths.Where(path => path.Active))
         {
             DisplayPathLayout? found = actual.Paths.FirstOrDefault(candidate => candidate.Identity.Key == path.Identity.Key);
             if (found is null)
@@ -209,7 +288,8 @@ public static class DisplayLayoutPlanner
 
     public static IReadOnlyList<string> Compare(DisplayTargetChange expected, DisplayLayoutSnapshot actual)
     {
-        DisplayPathLayout? found = actual.Paths.FirstOrDefault(path => Matches(path.Identity, expected));
+        DisplayPathLayout? found = actual.Paths.FirstOrDefault(path => path.Active && Matches(path.Identity, expected))
+            ?? actual.Paths.FirstOrDefault(path => Matches(path.Identity, expected));
         if (found is null)
         {
             return ["target is not active"];

@@ -379,6 +379,12 @@ Returns an HTTP GET URL, not the file bytes, for downloading an existing file fr
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
 
+## `get_driver_verifier_state`
+
+Reads Driver Verifier with the fixed commands verifier /query and verifier /querysettings. running is the current query. configured is the saved settings, which can differ until a reboot. An active statistics dump stays text and is not turned into flags. Unknown settings lines are kept. This does not enable, change, or reset verifier.
+
+No parameters.
+
 ## `get_environment_variable`
 
 Reads one environment variable. Machine scope reads the Session Manager registry key and user scope reads the environment of the user logged on at the console; both return the unexpanded value and whether it is REG_EXPAND_SZ. Fails with user_not_available when nobody is logged on.
@@ -451,7 +457,7 @@ No parameters.
 
 ## `get_registry_metadata`
 
-Returns the last write time, subkey count, and value count of an allow-listed registry key. It does not read values or security descriptors.
+Returns the last write time, subkey count, and value count of an allow-listed registry key. It does not read values or security descriptors. A symbolic link is followed only when its target passes the allow and deny checks. path is the requested path. resolvedPath is set when a symbolic link was followed.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -889,7 +895,7 @@ Lists running processes with pid, name, session id and start time. Filters are o
 
 ## `list_registry_values`
 
-Lists values and subkey names under an allow-listed registry key. recurse walks nested keys up to MaxRecursionDepth. maxEntries can only lower MaxEntries. Denied children are omitted. Values are not written to the log.
+Lists values and subkey names under an allow-listed registry key. recurse walks nested keys up to MaxRecursionDepth. maxEntries can only lower MaxEntries. Denied children are omitted. A symbolic link is opened only when its target passes the allow and deny checks. path is the requested path. resolvedPath is set when a symbolic link was followed. Values are not written to the log.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1129,7 +1135,7 @@ Reads one JSON value, or a bounded set of values, from a UTF-8 JSON document und
 
 ## `read_registry_value`
 
-Reads one value from an allow-listed registry key. HKCU is the console user's hive. view is registry64 or registry32 and does not follow the service bitness. REG_BINARY is hashed only when it fits MaxBinaryBytes. The value is not written to the log.
+Reads one value from an allow-listed registry key. HKCU is the console user's hive. view is registry64 or registry32 and does not follow the service bitness. A symbolic link is followed only when its target passes the allow and deny checks. CurrentControlSet may resolve to ControlSetNNN when that CurrentControlSet path is allowed. path is the requested path and can be passed to another call. resolvedPath is set when a symbolic link was followed. REG_BINARY is hashed only when it fits MaxBinaryBytes. The value is not written to the log.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1190,6 +1196,12 @@ Removes driver store packages by original INF file name (for example mydriver.in
 | `infName` | `string` | yes |  | Original INF base name, no directory, for example mydriver.inf. |
 | `classGuid` | `string` | no | `null` | Optional device class GUID to narrow the match. |
 | `serviceName` | `string` | no | `null` | Optional driver service name to narrow the match. |
+
+## `reset_driver_verifier`
+
+Runs verifier /reset and reads the saved settings back. This stays available when AllowDriverVerifier is false. A reboot is required before the clear takes effect. Vestigo does not reboot.
+
+No parameters.
 
 ## `resolve_binary_symbols`
 
@@ -1319,6 +1331,16 @@ Sets the default audio playback or recording endpoint. role 'default' is Windows
 | `role` | `string` | no | `default` | 'default' (Default Device), 'communications' (Default Communication Device) or 'all'. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 
+## `set_driver_verifier`
+
+Saves standard Driver Verifier flags for 1 to 8 named .sys drivers. Requires Vestigo:Diagnostics:AllowDriverVerifier and iUnderstandVerifierCanBugcheck. Omitting flags uses /standard. There is no /all mode, and kernel images are refused. The saved settings are read back. A reboot is required and is not performed.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `drivers` | `List<string>` | yes |  | Driver image names, such as contoso.sys. 1 to 8. No paths or wildcards. |
+| `flags` | `List<string>` | no | `null` | Standard flag names. Omit them to use verifier /standard. |
+| `iUnderstandVerifierCanBugcheck` | `bool` | no | `false` | Must be true. Verifier can bugcheck after the next boot. |
+
 ## `set_environment_variable`
 
 Changes a persistent environment variable and broadcasts WM_SETTINGCHANGE. Machine scope is a machine-wide configuration change. Names in Vestigo:Environment:ProtectedNames are refused. Append and prepend treat the value as ';'-separated entries and skip entries already present. The value is not echoed back.
@@ -1384,7 +1406,7 @@ Moves and sizes a window so its client area matches x,y,width,height in physical
 
 ## `snapshot_display_layout`
 
-Captures the active display topology. Each path is identified by its monitor device path, connector instance, adapter LUID, and target id. GDI device names such as \\.\DISPLAY1 are included as operational names and are not stable across hotplug. Coordinates are physical screen pixels. This does not change the displays. Interactive session only.
+Captures every CCD path, including inactive ones. topology is single, clone, extend, mixed, or inactive, from source identity. Each path keeps raw path flags, source and target mode indexes, desktop-image size, signal size, and EDID identity when Windows says the ids are valid. Restore applies and compares active paths only. Each path is identified by its monitor device path, connector instance, adapter LUID, and target id. GDI device names such as \\.\DISPLAY1 are included as operational names and are not stable across hotplug. Coordinates are physical screen pixels. This does not change the displays. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
