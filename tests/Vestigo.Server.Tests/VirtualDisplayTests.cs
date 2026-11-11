@@ -126,6 +126,64 @@ public class VirtualDisplayTests : IDisposable
         Assert.Contains(@"\\.\DISPLAY1", displays.RestoredPaths);
     }
 
+    [Fact]
+    public async Task InvalidRequest_DoesNotTouchTheTopology()
+    {
+        List<string> log = [];
+        RecordingDisplays displays = new(log);
+        VirtualDisplayCoordinator coordinator = Coordinator(new RecordingBackend(log), displays, new ManualClock());
+
+        Assert.Equal("invalid_request", (await coordinator.CreateAsync(new VirtualDisplayRequest(0, 1080, 60, 1, 0, 0, false), CancellationToken.None)).ErrorCode);
+        Assert.Equal("invalid_request", (await coordinator.CreateAsync(Request() with { Primary = true }, CancellationToken.None)).ErrorCode);
+        Assert.Empty(log);
+    }
+
+    [Fact]
+    public async Task RestoreFailure_KeepsTheSessionAndDoesNotRemove()
+    {
+        List<string> log = [];
+        RecordingDisplays displays = new(log) { RejectRestore = true };
+        RecordingBackend backend = new(log);
+        VirtualDisplayCoordinator coordinator = Coordinator(backend, displays, new ManualClock());
+        OperationResult<VirtualDisplaySession> created = await coordinator.CreateAsync(Request(), CancellationToken.None);
+        Assert.True(created.Success, created.Error);
+
+        OperationResult<VirtualDisplaySession> closed = await coordinator.CloseAsync(created.Value!.Id, CancellationToken.None);
+
+        Assert.False(closed.Success);
+        Assert.Contains("\"state\":\"open\"", File.ReadAllText(VestigoPaths.OwnedVirtualDisplaysPath));
+        Assert.Empty(backend.Removed);
+        Assert.Equal("restore", log[^1]);
+    }
+
+    [Fact]
+    public async Task RemoveFailure_KeepsTheSessionForRetry()
+    {
+        List<string> log = [];
+        RecordingBackend backend = new(log) { FailRemove = true };
+        VirtualDisplayCoordinator coordinator = Coordinator(backend, new RecordingDisplays(log), new ManualClock());
+        OperationResult<VirtualDisplaySession> created = await coordinator.CreateAsync(Request(), CancellationToken.None);
+
+        OperationResult<VirtualDisplaySession> closed = await coordinator.CloseAsync(created.Value!.Id, CancellationToken.None);
+
+        Assert.False(closed.Success);
+        Assert.Contains("\"state\":\"open\"", File.ReadAllText(VestigoPaths.OwnedVirtualDisplaysPath));
+        Assert.Empty(backend.Removed);
+        Assert.Contains("remove", log);
+    }
+
+    [Fact]
+    public async Task UnreadableCheckpoint_DoesNotStopStartup()
+    {
+        Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
+        await File.WriteAllTextAsync(VestigoPaths.OwnedVirtualDisplaysPath, """{"version":"nope"}""");
+        VirtualDisplayCoordinator coordinator = Coordinator(new RecordingBackend(), new RecordingDisplays(), new ManualClock());
+
+        await coordinator.StartAsync(CancellationToken.None);
+
+        Assert.Equal("virtual_display_checkpoint_unsupported", (await coordinator.CreateAsync(Request(), CancellationToken.None)).ErrorCode);
+    }
+
     private static VirtualDisplayCoordinator Coordinator(IVirtualDisplayBackend backend, RecordingDisplays displays, TimeProvider time) =>
         new(backend, displays, new VestigoOptions(), time);
 
@@ -145,6 +203,8 @@ public class VirtualDisplayTests : IDisposable
         public List<string> Removed { get; } = [];
 
         public bool CancelOnCreate { get; init; }
+
+        public bool FailRemove { get; init; }
 
         public CancellationTokenSource? Cancellation { get; set; }
 
@@ -169,6 +229,11 @@ public class VirtualDisplayTests : IDisposable
         public Task<OperationResult<bool>> RemoveAsync(string displayId, CancellationToken cancellationToken)
         {
             Operations.Add("remove");
+            if (FailRemove)
+            {
+                return Task.FromResult(OperationResult<bool>.Fail("remove_failed", "The backend kept the display."));
+            }
+
             Removed.Add(displayId);
             return Task.FromResult(OperationResult<bool>.Ok(true));
         }
@@ -183,6 +248,8 @@ public class VirtualDisplayTests : IDisposable
         public List<string?> RestoredPaths { get; } = [];
 
         public bool RejectArrange { get; init; }
+
+        public bool RejectRestore { get; init; }
 
         public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken)
         {
@@ -209,6 +276,10 @@ public class VirtualDisplayTests : IDisposable
             else
             {
                 RestoredPaths.AddRange(request.Targets.Select(target => target.MonitorDevicePath));
+                if (RejectRestore)
+                {
+                    return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Fail("display_config_rejected", "The checkpoint could not be restored."));
+                }
             }
 
             return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Ok(

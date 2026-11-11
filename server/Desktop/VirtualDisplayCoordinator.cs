@@ -1,5 +1,7 @@
 using System.Text.Json;
 
+using Microsoft.Extensions.Logging;
+
 using Vestigo.Configuration;
 using Vestigo.Processes;
 
@@ -17,6 +19,7 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
     private readonly IDisplayLayoutClient _displays;
     private readonly VestigoOptions _options;
     private readonly TimeProvider _time;
+    private readonly ILogger<VirtualDisplayCoordinator>? _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, VirtualDisplaySession> _sessions = new(StringComparer.Ordinal);
     private bool _checkpointUnsupported;
@@ -26,12 +29,14 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
         IVirtualDisplayBackend backend,
         IDisplayLayoutClient displays,
         VestigoOptions options,
-        TimeProvider time)
+        TimeProvider time,
+        ILogger<VirtualDisplayCoordinator>? logger = null)
     {
         _backend = backend;
         _displays = displays;
         _options = options;
         _time = time;
+        _logger = logger;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -53,12 +58,22 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
             _timer = null;
         }
 
-        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(TimeSpan.FromSeconds(20));
+        try
+        {
+            await _gate.WaitAsync(bounded.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
         try
         {
             foreach (string id in _sessions.Values.Where(item => item.State is "open").Select(item => item.Id).ToList())
             {
-                await CloseCoreAsync(id, automatic: true, CancellationToken.None).ConfigureAwait(false);
+                await CloseCoreAsync(id, automatic: true, bounded.Token).ConfigureAwait(false);
             }
         }
         finally
@@ -76,6 +91,18 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
         VirtualDisplayRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.Width <= 0 || request.Height <= 0 || request.RefreshNumerator == 0 || request.RefreshDenominator == 0)
+        {
+            return OperationResult<VirtualDisplaySession>.Fail("invalid_request", "Width, height, and refresh must be positive.");
+        }
+
+        if (request.Primary)
+        {
+            return OperationResult<VirtualDisplaySession>.Fail(
+                "invalid_request",
+                "primary is rejected. The display-layout request cannot select a primary display yet.");
+        }
+
         if (_checkpointUnsupported)
         {
             return OperationResult<VirtualDisplaySession>.Fail(
@@ -230,25 +257,46 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
             new DisplayLayoutRequest(original, true, false),
             false,
             cancellationToken).ConfigureAwait(false);
-        foreach (string owned in session.OwnedDisplayIds)
+        bool restoredOk = restored.Success && restored.Value is { Applied: true };
+        bool removalFailed = false;
+        string? removalError = null;
+        if (restoredOk && !session.ForeignDisplayIds.Contains(session.OwnedIdentityKey, StringComparer.OrdinalIgnoreCase))
         {
-            if (session.ForeignDisplayIds.Contains(owned, StringComparer.OrdinalIgnoreCase))
+            foreach (string owned in session.OwnedDisplayIds)
             {
-                continue;
+                try
+                {
+                    OperationResult<bool> removed = await _backend.RemoveAsync(owned, cancellationToken).ConfigureAwait(false);
+                    if (!removed.Success)
+                    {
+                        removalFailed = true;
+                        removalError = removed.Error;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or TimeoutException)
+                {
+                    removalFailed = true;
+                    removalError = ex.Message;
+                }
             }
-
-            await _backend.RemoveAsync(owned, CancellationToken.None).ConfigureAwait(false);
         }
 
+        bool retry = !restoredOk || removalFailed;
         VirtualDisplaySession closed = session with
         {
-            State = restored.Success ? "closed" : "recovery-failed",
-            LastError = restored.Success ? null : restored.Error
+            State = retry ? "open" : "closed",
+            LeaseExpiresAt = retry ? _time.GetUtcNow() : session.LeaseExpiresAt,
+            LastError = retry ? removalError ?? restored.Error ?? restored.Value?.Error : null
         };
         _sessions[id] = closed;
         Save();
-        return restored.Success || automatic
-            ? OperationResult<VirtualDisplaySession>.Ok(closed)
+        if (!retry || automatic)
+        {
+            return OperationResult<VirtualDisplaySession>.Ok(closed);
+        }
+
+        return restored.Success
+            ? OperationResult<VirtualDisplaySession>.Fail("display_config_rejected", closed.LastError ?? "The owned display could not be removed.")
             : restored.FailAs<VirtualDisplaySession>();
     }
 
@@ -262,9 +310,12 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
         try
         {
             using JsonDocument document = JsonDocument.Parse(File.ReadAllText(VestigoPaths.OwnedVirtualDisplaysPath));
-            if (!document.RootElement.TryGetProperty("version", out JsonElement version) || version.GetInt32() != CheckpointVersion)
+            if (!document.RootElement.TryGetProperty("version", out JsonElement version)
+                || !version.TryGetInt32(out int parsedVersion)
+                || parsedVersion != CheckpointVersion)
             {
                 _checkpointUnsupported = true;
+                _logger?.LogWarning("Leaving {Path} in place because its version is not supported.", VestigoPaths.OwnedVirtualDisplaysPath);
                 return;
             }
 
@@ -274,9 +325,10 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
                 _sessions[session.Id] = session;
             }
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or IOException or UnauthorizedAccessException)
         {
             _checkpointUnsupported = true;
+            _logger?.LogWarning(ex, "Leaving {Path} in place because it could not be read.", VestigoPaths.OwnedVirtualDisplaysPath);
         }
     }
 

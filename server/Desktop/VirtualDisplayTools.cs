@@ -28,7 +28,7 @@ public sealed class VirtualDisplayTools(VirtualDisplayCoordinator displays)
         [Description("Refresh denominator. Default 1.")] uint refreshDenominator = 1,
         [Description("Desktop position X.")] int x = 0,
         [Description("Desktop position Y.")] int y = 0,
-        [Description("Make the new display primary. Not applied while creation is unavailable.")] bool primary = false,
+        [Description("Rejected with invalid_request. The display-layout request cannot select a primary yet.")] bool primary = false,
         CancellationToken cancellationToken = default) =>
         displays.CreateAsync(
             new VirtualDisplayRequest(width, height, refreshNumerator, refreshDenominator, x, y, primary),
