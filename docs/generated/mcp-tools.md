@@ -428,6 +428,12 @@ Returns the root type, SHA-256, and top-level shape of a UTF-8 JSON document und
 | `path` | `string` | yes |  | File path: root:relative\path or an absolute path inside a root. |
 | `maxBytes` | `int?` | no | `null` | Optional byte cap, clamped down to Vestigo:Logs:MaxJsonBytes. The file is not read when it is larger. |
 
+## `get_last_wake_source`
+
+Returns the newest Microsoft-Windows-Power-Troubleshooter event 1 from the System log: WakeTime, SleepTime, the WakeSourceType number, WakeSourceText, and any wake-timer owner and context. eventFound is false when that event is absent, and the other fields are then null. WakeSourceType is not translated to a name. Text fields are capped at 512 characters. This does not list power-request owners. There is no write.
+
+No parameters.
+
 ## `get_logon_session`
 
 Returns one Windows logon session, including token elevation, local Administrators membership, and the logon id when the session token can be opened. Those token fields are null when the token cannot be read. includeClientAddresses adds the client name and address; otherwise those fields are null and are not written to the log.

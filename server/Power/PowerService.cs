@@ -27,4 +27,20 @@ public sealed class PowerService(IPowerPlatform platform)
             return OperationResult<SleepConfigurationResult>.Fail("power_api_failed", "Windows sleep policy could not be read.");
         }
     }
+
+    public OperationResult<WakeSourceResult> GetLastWakeSource()
+    {
+        try
+        {
+            return OperationResult<WakeSourceResult>.Ok(platform.ReadLastWake());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return OperationResult<WakeSourceResult>.Fail("access_denied", "Windows denied access to the System event log.");
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return OperationResult<WakeSourceResult>.Fail("power_api_failed", "The last wake source could not be read.");
+        }
+    }
 }

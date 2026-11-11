@@ -93,7 +93,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>Power</h2>
     <p><code>get_power_state</code> reports AC status, battery presence, percent, and charging separately, the active scheme, approximate last sleep and wake times, and platform capabilities. <code>get_sleep_configuration</code> reports AC and DC lid, timeout, wake-timer, and hybrid-sleep settings.</p>
-    <p>A missing policy value is null, not <code>doNothing</code>. A machine with no battery leaves the battery fields null. There is no scheme write and no list of power-request owners.</p>
+    <p><code>get_last_wake_source</code> reports the newest Power-Troubleshooter resume event. The wake-source type stays a number. A missing policy value is null, not <code>doNothing</code>. A machine with no battery leaves the battery fields null. There is no scheme write and no list of power-request owners.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span></p>

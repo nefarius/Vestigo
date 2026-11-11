@@ -114,7 +114,7 @@ Controls: uninstall strings are split into an executable and an argument list an
 
 ## Power
 
-`get_power_state` and `get_sleep_configuration` are read-only. They disclose AC status, battery percent and charging, the active scheme name, approximate last sleep and wake times, and the AC/DC lid, timeout, wake-timer, and hybrid-sleep settings. They do not name processes and they do not change the scheme. The module is on by default; disable it with `Vestigo:Modules:Power:Enabled=false`.
+`get_power_state` and `get_sleep_configuration` are read-only. They disclose AC status, battery percent and charging, the active scheme name, approximate last sleep and wake times, and the AC/DC lid, timeout, wake-timer, and hybrid-sleep settings. They do not list power-request owners and they do not change the scheme. `get_last_wake_source` can return the provider's wake-source text and a wake-timer owner, which may be a program path. Those strings are returned to the client and are not written to the Vestigo log. The module is on by default; disable it with `Vestigo:Modules:Power:Enabled=false`.
 
 ## Remote debugger
 
