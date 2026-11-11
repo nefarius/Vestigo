@@ -661,6 +661,32 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Restore_SkipsInactivePathsFromTheOriginalSnapshot()
+    {
+        DisplayPathLayout active = Path(0, 0, 1920, 1080);
+        DisplayPathLayout idle = active with
+        {
+            Active = false,
+            Width = 0,
+            Height = 0,
+            Identity = new DisplayTargetIdentity(@"\\?\DISPLAY#IDLE", 1, "00000000:00000001", 9, 0)
+        };
+        FakeDisplays displays = new(DisplayLayoutPlanner.WithFingerprint(new DisplayLayoutSnapshot(
+            DateTimeOffset.UnixEpoch,
+            1,
+            DesktopCoordinates.PhysicalScreenPixels,
+            string.Empty,
+            [active, idle])));
+        DisplayLayoutTransactionManager manager = Manager(displays);
+
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None);
+        OperationResult<DisplayLayoutTransaction> restored = await manager.RestoreAsync(started.Value!.Id, CancellationToken.None);
+
+        Assert.Equal("restored", restored.Value!.State);
+        Assert.Equal([@"\\?\DISPLAY#TEST"], displays.Applied[^1].Targets.Select(target => target.MonitorDevicePath));
+    }
+
+    [Fact]
     public async Task Restore_LeavesAnAlreadyRestoredTransactionUntouched()
     {
         FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));

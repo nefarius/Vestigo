@@ -109,6 +109,10 @@ Vicius exit `202` means already up to date, `207` means the install was handed t
 
 The installed configuration must remain at `%ProgramFiles%\Nefarius Software Solutions\Vestigo\Nefarius_Vestigo_Updater.json`. Missing updater files or the version registry value are expected when the `Updater` feature was deselected; use Modify to add Automatic updates, or reinstall without `REMOVE=Updater`. The registry value `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version` must be the installed MSI product version. A manifest whose `manifestVersion` is older than the last one this user accepted is rejected. Exit code 104 means the manifest or its `.minisig` sidecar could not be verified. Exit code 116 means the downloaded MSI checksum or Authenticode publisher check failed.
 
+## Driver Verifier state
+
+`verifier_not_found` means `verifier.exe` is not in the Windows system directory. `verifier_failed` means it did not start. `verifier_timeout` means `/query` or `/querysettings` ran longer than 15 seconds. A configured driver list of `None` is the saved setting. `running.driversVerified` false is only the sentence `No drivers are currently verified.` Other running text is not a parsed flag list. `driver_verifier_disabled` means `set_driver_verifier` was called while `Vestigo:Diagnostics:AllowDriverVerifier` is false. `reset_driver_verifier` is still available. `verifier_acknowledgement_required` means `iUnderstandVerifierCanBugcheck` was not true. `protected_driver` means the image is on the fixed refusal list. `verifier_failed` after a change means `verifier.exe` exited non-zero or the argument list was not a fixed enable or reset command.
+
 ## JSON document query fails
 
 `read_json_path` and `get_json_summary` read one UTF-8 JSON document, for example a service snapshot `logs:state.json` containing `{"status":"pending","items":[{"name":"device"}]}`. `get_json_summary` reports the top-level names and types. `read_json_path` with `$.status` returns the string `pending`, and `$.items[*]` returns each array element. A line-oriented `.jsonl` file is not one document; search it with `search_text`.
