@@ -49,6 +49,8 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Diagnostics:MaxProbeDuration` | `00:00:05` |
 | `Diagnostics:MaxProcessConnections` | `500` |
 | `Diagnostics:MaxProcessModules` | `500` |
+| `Diagnostics:MaxUdpPayloadBytes` | `64` |
+| `Diagnostics:MaxUdpProbeDuration` | `00:00:05` |
 | `Diagnostics:MaxVideoEncoders` | `200` |
 | `Diagnostics:MinDumpFreeBytes` | `1073741824` |
 | `Environment:ProtectedNames` | `COMSPEC, SystemRoot, windir` |

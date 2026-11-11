@@ -2,13 +2,14 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 using Vestigo.Configuration;
 
 namespace Vestigo.Diagnostics;
 
-/// <summary>DNS, TCP, and TLS observations using the process that hosts Vestigo. Certificate validation is not bypassed.</summary>
+/// <summary>DNS, TCP, TLS, and UDP observations using the process that hosts Vestigo. Certificate validation is not bypassed.</summary>
 public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
 {
     public const int MaxAnswers = 8;
@@ -19,6 +20,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         string protocol,
         TimeSpan timeout,
         bool includeResolvedAddress,
+        bool stun,
         CancellationToken cancellationToken)
     {
         using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -35,6 +37,11 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         if (protocol == "dns" || answers.Count == 0)
         {
             return new EndpointProbeResult(host, port, protocol, observedAt, resolved.timedOut, resolved.dnsError, answers, [], null);
+        }
+
+        if (protocol == "udp")
+        {
+            return await SendUdp(host, port, protocol, observedAt, resolved.addresses, resolved.timedOut, resolved.dnsError, answers, stun, token, cancellationToken).ConfigureAwait(false);
         }
 
         List<TcpObservation> attempts = [];
@@ -74,6 +81,125 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
 
         return new EndpointProbeResult(host, port, protocol, observedAt, timedOut, resolved.dnsError, answers, attempts, tls);
     }
+
+    private async Task<EndpointProbeResult> SendUdp(
+        string host,
+        int port,
+        string protocol,
+        DateTimeOffset observedAt,
+        IReadOnlyList<IPAddress> addresses,
+        bool timedOut,
+        string? dnsError,
+        IReadOnlyList<DnsObservation> answers,
+        bool stun,
+        CancellationToken token,
+        CancellationToken caller)
+    {
+        byte[] transaction = new byte[StunBinding.TransactionLength];
+        RandomNumberGenerator.Fill(transaction);
+        byte[] payload = stun ? StunBinding.CreateRequest(transaction) : [0x00];
+        if (payload.Length > options.Diagnostics.MaxUdpPayloadBytes)
+        {
+            return Result(host, port, protocol, observedAt, false, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+        }
+
+        foreach (IPAddress address in addresses)
+        {
+            caller.ThrowIfCancellationRequested();
+            if (token.IsCancellationRequested)
+            {
+                return Result(host, port, protocol, observedAt, true, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+            }
+
+            try
+            {
+                using Socket socket = new(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+                int sent = await socket.SendToAsync(payload, SocketFlags.None, new IPEndPoint(address, port), token).ConfigureAwait(false);
+                if (sent != payload.Length)
+                {
+                    continue;
+                }
+
+                if (!stun)
+                {
+                    return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("sent", sent, 0, UdpObservation.SentDoesNotProveReachability, null));
+                }
+
+                return await WaitForStun(socket, address, port, host, protocol, observedAt, dnsError, answers, transaction, sent, token, caller).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!caller.IsCancellationRequested)
+            {
+                return Result(host, port, protocol, observedAt, true, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+            }
+            catch (SocketException)
+            {
+                // Try the next resolved address. A socket error is not a firewall verdict.
+            }
+        }
+
+        return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+    }
+
+    private static async Task<EndpointProbeResult> WaitForStun(
+        Socket socket,
+        IPAddress address,
+        int port,
+        string host,
+        string protocol,
+        DateTimeOffset observedAt,
+        string? dnsError,
+        IReadOnlyList<DnsObservation> answers,
+        byte[] transaction,
+        int sent,
+        CancellationToken token,
+        CancellationToken caller)
+    {
+        byte[] buffer = new byte[2048];
+        EndPoint remote = new IPEndPoint(address.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0);
+        bool timedOut = false;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                SocketReceiveFromResult received = await socket.ReceiveFromAsync(buffer, SocketFlags.None, remote, token).ConfigureAwait(false);
+                if (received.RemoteEndPoint is not IPEndPoint from || from.Port != port || !from.Address.Equals(address))
+                {
+                    continue;
+                }
+
+                StunDecode decoded = StunBinding.Read(buffer.AsSpan(0, received.ReceivedBytes), transaction);
+                if (!decoded.Success)
+                {
+                    continue;
+                }
+
+                StunObservation stun = new(true, decoded.MappedAddress?.ToString(), decoded.MappedPort, decoded.Reflexive);
+                return Result(host, port, protocol, observedAt, false, dnsError, answers, new UdpObservation("sent", sent, received.ReceivedBytes, UdpObservation.StunAnswered, stun));
+            }
+        }
+        catch (OperationCanceledException) when (!caller.IsCancellationRequested)
+        {
+            timedOut = true;
+        }
+        catch (SocketException)
+        {
+            // An ICMP error after a successful send is still not a firewall verdict.
+        }
+
+        StunObservation silent = new(false, null, null, false);
+        return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("sent", sent, 0, UdpObservation.StunSilent, silent));
+    }
+
+    private static EndpointProbeResult Result(
+        string host,
+        int port,
+        string protocol,
+        DateTimeOffset observedAt,
+        bool timedOut,
+        string? dnsError,
+        IReadOnlyList<DnsObservation> answers,
+        UdpObservation udp) =>
+        new(host, port, protocol, observedAt, timedOut, dnsError, answers, [], null, udp);
 
     private static async Task<(IReadOnlyList<IPAddress> Addresses, string? Error, bool TimedOut)> Resolve(
         string host,

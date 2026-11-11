@@ -135,6 +135,10 @@ Messages from a process that has a debugger attached go to the debugger, not to 
 `MissingFormatCount` counts WPP events whose message format was not in the loaded PDB or TMF sources. Point `binaryPaths` at the installed binary, add the matching PDB or TMF under `traces`, or enable symbol resolution for offline ETL. Enum names for `%!ItemEnum!` and `%!ItemFlagsEnum!` stay numeric. `symbol_auth_failed` means the configured symbol server rejected the request.
 
 
+## A UDP check says sent, but media still fails
+
+`test_endpoint` with `protocol: udp` reports `outcome: sent` when the datagram left this host. That does not prove the peer received it, and a missing reply is not a firewall block. `stun: true` sends one STUN binding request. `stun.responded: true` means a matching success response arrived, including an unauthenticated mapped address. `stun.responded: false` means no matching response arrived before the cap. `protocol: quic` returns `protocol_unsupported`. The datagram stays within `Diagnostics:MaxUdpPayloadBytes`.
+
 ## The machine stops responding overnight
 
 `get_power_state` reports whether the machine is on AC, whether a battery is present and charging, and approximate `lastSleepTimeUtc` and `lastWakeTimeUtc`. Those times move if the clock changes, and a zero interrupt-time counter is null. `capabilities.modernStandby` means the platform supports S0 low-power idle. `get_sleep_configuration` reports the lid-close action and the standby, hibernate, and monitor timeouts for AC and DC. A null lid action was not returned; it is not `doNothing`. A timeout of 0 means never. Vestigo does not list power-request owners and does not name the device that woke the machine. `power_api_failed` means the power read threw. A denied or missing policy index is a null field.

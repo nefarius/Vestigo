@@ -37,6 +37,8 @@ Property defaults are generated in [generated/configuration.md](generated/config
 | `Diagnostics:MaxProbeDuration` | `00:00:05` | Upper bound for one capture probe. Minimum `00:00:00.100`, maximum `00:00:30`. |
 | `Diagnostics:MaxProcessConnections` | `500` | Upper bound for `list_process_connections` `limit`. Minimum `1`, maximum `5000`. |
 | `Diagnostics:MaxEndpointProbeDuration` | `00:00:05` | Upper bound for one `test_endpoint` call. Minimum `00:00:00.100`, maximum `00:00:30`. |
+| `Diagnostics:MaxUdpPayloadBytes` | `64` | Maximum bytes in one `test_endpoint` UDP datagram, including a STUN binding request. Minimum 1, maximum 64. |
+| `Diagnostics:MaxUdpProbeDuration` | `00:00:05` | Upper bound for a `test_endpoint` UDP send or STUN wait. Minimum `00:00:00.100`, maximum `00:00:05`. |
 | `Diagnostics:MaxVideoEncoders` | `200` | Upper bound for `list_video_encoders` `limit`. Minimum `1`, maximum `1000`. |
 | `Diagnostics:MaxCameraFormats` | `64` | Upper bound for `list_camera_formats` `limit`. Minimum `1`, maximum `500`. |
 | `Diagnostics:MaxAudioProbeDuration` | `00:00:02` | Upper bound for one audible `probe_audio_format` call. Minimum `00:00:00.100`, maximum `00:00:05`. |

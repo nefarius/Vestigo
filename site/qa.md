@@ -80,7 +80,7 @@ The service context does not see user-session audio. Per-app overrides in Settin
 
 1. Enable Diagnostics and set `Diagnostics:AllowNetworkProbes` to true.
 2. Add the host, or the host and port, to `Diagnostics:AllowedProbeDestinations`. The installer does not write that list.
-3. `test_endpoint` with `dns`, `tcp`, or `tls`. The probe uses Vestigo's own network context and does not capture packets.
+3. `test_endpoint` with `dns`, `tcp`, `tls`, or `udp`. A UDP `sent` result does not prove the peer is reachable. `stun: true` sends one STUN binding request; a missing response is not a firewall block. The probe uses Vestigo's own network context and does not capture packets.
 
 ## Read a registry value
 

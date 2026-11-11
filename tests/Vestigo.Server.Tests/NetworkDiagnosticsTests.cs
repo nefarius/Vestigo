@@ -113,6 +113,7 @@ public class NetworkDiagnosticsTests
         OperationResult<EndpointProbeResult> other = await tools.TestEndpoint("other.example", 443);
         Assert.Equal("destination_not_allowed", other.ErrorCode);
         Assert.Equal("destination_not_allowed", (await tools.TestEndpoint("example.com", 80)).ErrorCode);
+        Assert.Equal("destination_not_allowed", (await tools.TestEndpoint("other.example", 3478, protocol: "udp")).ErrorCode);
         Assert.Equal(0, probe.Calls);
         Assert.DoesNotContain("other.example", other.Error, StringComparison.Ordinal);
 
@@ -158,7 +159,7 @@ public class NetworkDiagnosticsTests
         Task accepted = AcceptAsync(listener);
         SocketEndpointProbe probe = new(new VestigoOptions());
 
-        EndpointProbeResult tcp = await probe.ProbeAsync("127.0.0.1", port, "tcp", TimeSpan.FromSeconds(3), includeResolvedAddress: true, CancellationToken.None);
+        EndpointProbeResult tcp = await probe.ProbeAsync("127.0.0.1", port, "tcp", TimeSpan.FromSeconds(3), includeResolvedAddress: true, stun: false, CancellationToken.None);
         await accepted;
         Assert.True(tcp.Tcp[0].Connected);
         Assert.Equal("127.0.0.1", tcp.Tcp[0].Address);
@@ -170,12 +171,123 @@ public class NetworkDiagnosticsTests
         tlsListener.Start();
         int tlsPort = ((IPEndPoint)tlsListener.LocalEndpoint).Port;
         Task tlsAccepted = AcceptTlsAsync(tlsListener, certificate);
-        EndpointProbeResult tls = await probe.ProbeAsync("127.0.0.1", tlsPort, "tls", TimeSpan.FromSeconds(5), includeResolvedAddress: false, CancellationToken.None);
+        EndpointProbeResult tls = await probe.ProbeAsync("127.0.0.1", tlsPort, "tls", TimeSpan.FromSeconds(5), includeResolvedAddress: false, stun: false, CancellationToken.None);
         await tlsAccepted;
         Assert.NotNull(tls.Tls);
         Assert.False(tls.Tls!.Authenticated);
         Assert.Null(tls.Tcp[0].Address);
         Assert.DoesNotContain("127.0.0.1", tls.Tcp[0].Error ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StunBinding_MatchesTheIpv4TestVector()
+    {
+        byte[] transaction = Convert.FromHexString("b7e7a701bc34d686fa87dfae");
+        byte[] request = StunBinding.CreateRequest(transaction);
+        Assert.Equal(Convert.FromHexString("000100002112a442b7e7a701bc34d686fa87dfae"), request);
+
+        byte[] success = StunBinding.CreateSuccess(transaction, IPAddress.Parse("192.0.2.1"), 32853);
+        Assert.Equal(Convert.FromHexString("0101000c2112a442b7e7a701bc34d686fa87dfae002000080001a147e112a643"), success);
+        StunDecode decoded = StunBinding.Read(success, transaction);
+        Assert.True(decoded.Success);
+        Assert.Equal("192.0.2.1", decoded.MappedAddress!.ToString());
+        Assert.Equal(32853, decoded.MappedPort);
+        Assert.True(decoded.Reflexive);
+        Assert.False(StunBinding.Read(success, new byte[12]).Success);
+
+        byte[] signed = StunBinding.WithFingerprint(success);
+        Assert.True(StunBinding.Read(signed, transaction).Success);
+        signed[^1] ^= 0xFF;
+        Assert.False(StunBinding.Read(signed, transaction).Success);
+    }
+
+    [Fact]
+    public void StunBinding_RoundTripsAnIpv6MappedAddressAndRejectsAnUnknownAttribute()
+    {
+        byte[] transaction = new byte[12];
+        transaction[0] = 9;
+        IPAddress address = IPAddress.Parse("2001:db8::9");
+        byte[] success = StunBinding.CreateSuccess(transaction, address, 3478);
+        StunDecode decoded = StunBinding.Read(success, transaction);
+        Assert.Equal(address, decoded.MappedAddress);
+        Assert.Equal(3478, decoded.MappedPort);
+        Assert.True(decoded.Reflexive);
+
+        byte[] unknown = new byte[success.Length + 4];
+        success.AsSpan(0, 20).CopyTo(unknown);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(unknown.AsSpan(2), (ushort)(success.Length - 20 + 4));
+        success.AsSpan(20).CopyTo(unknown.AsSpan(20));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(unknown.AsSpan(unknown.Length - 4), 0x0007);
+        Assert.False(StunBinding.Read(unknown, transaction).Success);
+        Assert.Contains("does not prove the peer is reachable", UdpObservation.SentDoesNotProveReachability, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TestEndpoint_RefusesQuicAndStunOnTcpWithoutSending()
+    {
+        FakeProbe probe = new();
+        VestigoOptions options = new() { Diagnostics = { AllowNetworkProbes = true, AllowedProbeDestinations = ["example.com"], MaxUdpPayloadBytes = 8 } };
+        EndpointProbeTools tools = new(probe, options, NullLogger<EndpointProbeTools>.Instance);
+
+        Assert.Equal("protocol_unsupported", (await tools.TestEndpoint("example.com", 443, protocol: "quic")).ErrorCode);
+        Assert.Equal("invalid_request", (await tools.TestEndpoint("example.com", 443, protocol: "tcp", stun: true)).ErrorCode);
+        Assert.Equal("invalid_request", (await tools.TestEndpoint("example.com", 3478, protocol: "udp", stun: true)).ErrorCode);
+        Assert.Equal(0, probe.Calls);
+        Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Diagnostics = { MaxUdpPayloadBytes = 0 } }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new VestigoOptions { Diagnostics = { MaxUdpProbeDuration = TimeSpan.FromSeconds(30) } }.Validate());
+    }
+
+    [Fact]
+    public async Task SocketProbe_SendsOneUdpDatagramAndDoesNotTreatSilenceAsABlock()
+    {
+        using UdpClient server = new(new IPEndPoint(IPAddress.Loopback, 0));
+        int port = ((IPEndPoint)server.Client.LocalEndPoint!).Port;
+        Task<UdpReceiveResult> received = server.ReceiveAsync();
+        SocketEndpointProbe probe = new(new VestigoOptions());
+
+        EndpointProbeResult sent = await probe.ProbeAsync("127.0.0.1", port, "udp", TimeSpan.FromSeconds(2), includeResolvedAddress: false, stun: false, CancellationToken.None);
+        UdpReceiveResult packet = await received.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("sent", sent.Udp!.Outcome);
+        Assert.Equal(1, sent.Udp.BytesSent);
+        Assert.Equal(0, sent.Udp.BytesReceived);
+        Assert.Null(sent.Udp.Stun);
+        Assert.Equal(UdpObservation.SentDoesNotProveReachability, sent.Udp.Reachability);
+        Assert.Equal(new byte[] { 0x00 }, packet.Buffer);
+
+        EndpointProbeResult silent = await probe.ProbeAsync("127.0.0.1", port, "udp", TimeSpan.FromMilliseconds(200), includeResolvedAddress: false, stun: true, CancellationToken.None);
+        Assert.Equal("sent", silent.Udp!.Outcome);
+        Assert.False(silent.Udp.Stun!.Responded);
+        Assert.Equal(UdpObservation.StunSilent, silent.Udp.Reachability);
+        Assert.Null(silent.Udp.Stun.MappedAddress);
+        string json = JsonSerializer.Serialize(silent, SessionHelper.Json);
+        Assert.DoesNotContain("blockedByFirewall", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SocketProbe_ReadsAMatchingStunBindingResponse()
+    {
+        using UdpClient server = new(new IPEndPoint(IPAddress.Loopback, 0));
+        int port = ((IPEndPoint)server.Client.LocalEndPoint!).Port;
+        Task responder = ReplyWithMappedAddress(server);
+        SocketEndpointProbe probe = new(new VestigoOptions());
+
+        EndpointProbeResult result = await probe.ProbeAsync("127.0.0.1", port, "udp", TimeSpan.FromSeconds(3), includeResolvedAddress: false, stun: true, CancellationToken.None);
+        await responder.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal("sent", result.Udp!.Outcome);
+        Assert.Equal(StunBinding.HeaderLength, result.Udp.BytesSent);
+        Assert.True(result.Udp.Stun!.Responded);
+        Assert.True(result.Udp.Stun.Reflexive);
+        Assert.Equal("203.0.113.8", result.Udp.Stun.MappedAddress);
+        Assert.Equal(40000, result.Udp.Stun.MappedPort);
+        Assert.Equal(UdpObservation.StunAnswered, result.Udp.Reachability);
+        Assert.False(result.TimedOut);
+    }
+
+    private static async Task ReplyWithMappedAddress(UdpClient server)
+    {
+        UdpReceiveResult incoming = await server.ReceiveAsync();
+        byte[] response = StunBinding.CreateSuccess(incoming.Buffer.AsSpan(8, 12), IPAddress.Parse("203.0.113.8"), 40000);
+        await server.SendAsync(response, response.Length, incoming.RemoteEndPoint);
     }
 
     private static async Task AcceptAsync(TcpListener listener)
@@ -216,7 +328,7 @@ public class NetworkDiagnosticsTests
     {
         public int Calls { get; private set; }
 
-        public Task<EndpointProbeResult> ProbeAsync(string host, int port, string protocol, TimeSpan timeout, bool includeResolvedAddress, CancellationToken cancellationToken)
+        public Task<EndpointProbeResult> ProbeAsync(string host, int port, string protocol, TimeSpan timeout, bool includeResolvedAddress, bool stun, CancellationToken cancellationToken)
         {
             Calls++;
             cancellationToken.ThrowIfCancellationRequested();
