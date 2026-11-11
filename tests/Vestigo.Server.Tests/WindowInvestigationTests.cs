@@ -614,6 +614,8 @@ public class DisplayLayoutContractTests : IDisposable
         OperationResult<DisplayLayoutTransaction> failed = await manager.RestoreAsync(started.Value!.Id, CancellationToken.None);
         Assert.Equal("restore_failed", failed.Value!.State);
         Assert.False(failed.Value.RestorationVerified);
+        Assert.Contains("NativeError=87", failed.Value.Error);
+        Assert.Contains("rejected", failed.Value.Error);
         Assert.True(File.Exists(VestigoPaths.OwnedDisplayLayoutPath));
         Assert.Equal("display_transaction_busy", (await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None)).ErrorCode);
 

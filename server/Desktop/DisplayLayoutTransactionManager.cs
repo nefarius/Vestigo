@@ -385,7 +385,11 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             Current = after.Success ? after.Value : _current.Current,
             RestorationVerified = verified,
             Differences = differences,
-            Error = verified ? null : applied.Error ?? (differences.Count == 0 ? "restore was not verified" : string.Join(' ', differences))
+            Error = verified
+                ? null
+                : applied.Value is { Applied: false } rejection
+                    ? DescribeRejection(rejection)
+                    : applied.Error ?? (differences.Count == 0 ? "restore was not verified" : string.Join(' ', differences))
         };
         if (verified)
         {
