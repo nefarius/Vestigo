@@ -222,6 +222,40 @@ public class NetworkDiagnosticsTests
         Assert.Null(addressless.MappedAddress);
     }
 
+    [Theory]
+    // Published response bytes from RFC 5769 sections 2.2 and 2.3 (including the CRC32 fingerprints):
+    // https://www.rfc-editor.org/rfc/rfc5769.html#section-2.2
+    // https://www.rfc-editor.org/rfc/rfc5769.html#section-2.3
+    [InlineData("0101003c2112a442b7e7a701bc34d686fa87dfae8022000b7465737420766563746f7220002000080001a147e112a643000800142b91f599fd9e90c38c7489f92af9ba53f06be7d780280004c07d4c96", "192.0.2.1")]
+    [InlineData("010100482112a442b7e7a701bc34d686fa87dfae8022000b7465737420766563746f7220002000140002a1470113a9faa5d3f179bc25f4b5bed2b9d900080014a382954e4be67bf11784c97c8292c275bfe3ed4180280004c8fb0b4c", "2001:db8:1234:5678:11:2233:4455:6677")]
+    public void StunBinding_FingerprintsMatchPublishedResponses(string hex, string mappedAddress)
+    {
+        byte[] response = Convert.FromHexString(hex);
+        byte[] transaction = response.AsSpan(8, StunBinding.TransactionLength).ToArray();
+
+        StunDecode decoded = StunBinding.Read(response, transaction);
+        Assert.True(decoded.Success);
+        Assert.True(decoded.Reflexive);
+        Assert.Equal(IPAddress.Parse(mappedAddress), decoded.MappedAddress);
+        Assert.Equal(32853, decoded.MappedPort);
+
+        byte[] unsigned = response[..^8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(unsigned.AsSpan(2), (ushort)(unsigned.Length - StunBinding.HeaderLength));
+        Assert.Equal(response, StunBinding.WithFingerprint(unsigned));
+
+        byte[] corrupt = (byte[])response.Clone();
+        corrupt[^1] ^= 1;
+        Assert.False(StunBinding.Read(corrupt, transaction).Success);
+
+        byte[] swapped = (byte[])response.Clone();
+        Array.Reverse(swapped, swapped.Length - 4, 4);
+        Assert.False(StunBinding.Read(swapped, transaction).Success);
+
+        byte[] changedPayload = (byte[])response.Clone();
+        changedPayload[24] ^= 1; // Change SOFTWARE bytes while leaving the packet structurally valid.
+        Assert.False(StunBinding.Read(changedPayload, transaction).Success);
+    }
+
     [Fact]
     public void StunBinding_RoundTripsAnIpv6MappedAddressAndRejectsAnUnknownAttribute()
     {
