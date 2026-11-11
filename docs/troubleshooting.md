@@ -137,7 +137,7 @@ Messages from a process that has a debugger attached go to the debugger, not to 
 
 ## A UDP check says sent, but media still fails
 
-`test_endpoint` with `protocol: udp` reports `outcome: sent` when the datagram left this host. That does not prove the peer received it, and a missing reply is not a firewall block. `stun: true` sends one STUN binding request. `stun.responded: true` means a matching success response arrived, including an unauthenticated mapped address. `stun.responded: false` means no matching response arrived before the cap. `protocol: quic` returns `protocol_unsupported`. The datagram stays within `Diagnostics:MaxUdpPayloadBytes`.
+`test_endpoint` with `protocol: udp` reports `outcome: sent` when the local network stack accepted the datagram. That does not prove the datagram left the host or that the peer received it, and a missing reply is not a firewall block. `send_failed` means a socket error, or the probe budget expiring, stopped the send before the stack accepted the datagram. A budget that expires after acceptance stays `outcome: sent`. `stun: true` sends one STUN binding request. It requires `protocol: udp` and `Diagnostics:MaxUdpPayloadBytes` of at least 20. Another protocol, or a smaller cap, returns `invalid_request` and does not send. `stun.responded: true` means a matching success response arrived, including an unauthenticated mapped address. `stun.responded: false` means no matching response arrived before the cap. `protocol: quic` returns `protocol_unsupported`. The datagram stays within `Diagnostics:MaxUdpPayloadBytes`.
 
 ## The machine stops responding overnight
 
