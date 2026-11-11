@@ -47,8 +47,9 @@ public static class ScreenCapture
             if (inactiveDesktop && request.Target != ScreenCaptureTarget.Window)
             {
                 return OperationResult<ScreenCaptureResult>.Fail(
-                    "desktop_unavailable",
-                    "A desktop, display, or region capture needs the input desktop. Activate the test desktop first.");
+                    "unsupported_on_inactive_desktop",
+                    "A desktop, display, or region capture needs the input desktop. Activate the test desktop first.",
+                    "desktop_inactive");
             }
 
             string fidelity = inactiveDesktop ? "best-effort" : "input-desktop";
