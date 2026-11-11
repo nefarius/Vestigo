@@ -18,7 +18,7 @@ public sealed class DiagnosticsModule : VestigoModule
     public override string Name => "Diagnostics";
 
     public override string Description =>
-        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, explain a device problem code, list graphics adapters, list process connections, list media capabilities, and list Windows Error Reporting report metadata. Opt-in. Needs Jobs. Capture probes, network probes, audible audio probes, and process dumps are separate gates. A valid Authenticode signature is not permission to load a kernel driver.";
+        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list process connections, list media capabilities, and list Windows Error Reporting report metadata. Opt-in. Needs Jobs. Capture probes, network probes, audible audio probes, and process dumps are separate gates. A valid Authenticode signature is not permission to load a kernel driver.";
 
     /// <summary>Module lists, signature subjects, SetupAPI logs, and crash metadata are information disclosure, so the module is opt-in.</summary>
     public override bool EnabledByDefault => false;
@@ -48,12 +48,15 @@ public sealed class DiagnosticsModule : VestigoModule
         services.AddSingleton<ICrashReportSource, WerCrashReportSource>();
         services.AddSingleton<IProcessDumpWriter, MiniDumpWriter>();
         services.AddSingleton<IVolumeSpace, DriveVolumeSpace>();
+        services.AddSingleton<ICodeIntegrityProbe, WindowsCodeIntegrity>();
         services.AddSingleton<IDeviceProblemSource>(provider => new DeviceEvidenceGatherer(
             provider.GetRequiredService<IDeviceControl>(),
             provider.GetRequiredService<ISetupApiLogSource>(),
             options,
             provider.GetService<IServiceControl>(),
             provider.GetService<SystemService>(),
-            provider.GetService<EventLogService>()));
+            provider.GetService<EventLogService>(),
+            provider.GetService<ISignatureVerifier>(),
+            provider.GetService<ICodeIntegrityProbe>()));
     }
 }

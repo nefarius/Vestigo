@@ -30,7 +30,11 @@ internal static class DeviceProblemRules
 
     public static DeviceProblemReport Assess(DeviceProblemEvidence evidence)
     {
-        DeviceDetails device = evidence.Device;
+        if (evidence.Device is not { } device)
+        {
+            return new DeviceProblemReport("", null, [], null, [], true);
+        }
+
         List<ObservedFact> observed = Facts(evidence);
         uint? code = device.ProblemCode;
         if (code is null)
@@ -51,7 +55,7 @@ internal static class DeviceProblemRules
         List<ProblemHypothesis> hypotheses = [];
         if (ServiceCodes.Contains(code.Value))
         {
-            AddService(evidence, hypotheses);
+            AddService(evidence, hypotheses, null);
         }
 
         if (code is 18 or 28 or 31)
@@ -72,9 +76,134 @@ internal static class DeviceProblemRules
         return new DeviceProblemReport(device.InstanceId, code, observed, explanation, hypotheses, false);
     }
 
+    private static readonly uint[] LoadCodes = [10, 31, 37, 39, 52];
+
+    /// <summary>
+    ///     Load report. A hypothesis is added only when an observation supports it.
+    ///     HVCI and Windows lockdown mode are facts, not causes.
+    /// </summary>
+    public static DriverLoadReport ExplainLoad(DeviceProblemEvidence evidence, string? serviceName, string? imageFileName)
+    {
+        List<ObservedFact> observed = [];
+        List<ProblemHypothesis> hypotheses = [];
+        string? explanation = null;
+        uint? code = evidence.Device?.ProblemCode;
+        bool loadCode = code is not null && LoadCodes.Contains(code.Value);
+        if (evidence.Device is not null)
+        {
+            DeviceProblemReport deviceReport = Assess(evidence);
+            observed.AddRange(deviceReport.Observed);
+            if (loadCode)
+            {
+                explanation = deviceReport.Explanation;
+                hypotheses.AddRange(deviceReport.Hypotheses);
+            }
+        }
+        else
+        {
+            AddLooseService(evidence, serviceName, observed);
+            AddLooseBoot(evidence, observed);
+            AddService(evidence, hypotheses, serviceName);
+        }
+
+        observed.Add(new ObservedFact(
+            "code-integrity",
+            $"hvciEnabledValue={evidence.HvciEnabledValue?.ToString() ?? "null"}; hvciEnabled={evidence.HvciEnabled?.ToString() ?? "null"}; windowsLockdownMode={evidence.WindowsLockdownMode?.ToString() ?? "null"}; windowsLockdownModeName={evidence.WindowsLockdownModeName ?? "null"}",
+            null));
+        if (evidence.HvciNote is not null || evidence.LockdownNote is not null)
+        {
+            observed.Add(new ObservedFact("code-integrity", $"hvci={evidence.HvciNote ?? "ok"}; lockdown={evidence.LockdownNote ?? "ok"}", null));
+        }
+
+        if (imageFileName is not null)
+        {
+            observed.Add(new ObservedFact("image", $"file={imageFileName}", null));
+        }
+
+        if (evidence.Signature is { } signature)
+        {
+            observed.Add(new ObservedFact("signature", $"outcome={signature.Outcome}; source={signature.Source}; revocation={signature.RevocationMode}", signature.ObservedAt));
+        }
+        else if (evidence.SignatureNote is not null)
+        {
+            observed.Add(new ObservedFact("signature", evidence.SignatureNote, null));
+        }
+
+        bool matched = false;
+        foreach (CodeIntegrityEvent entry in evidence.CodeIntegrityEvents)
+        {
+            if (!CodeIntegrityProjection.NamesFile(entry, imageFileName))
+            {
+                continue;
+            }
+
+            matched = true;
+            observed.Add(new ObservedFact(
+                "code-integrity-event",
+                $"id={entry.Id}; file={entry.FileName ?? imageFileName}; requestedPolicy={entry.RequestedPolicy ?? "null"}; status={entry.Status ?? "null"}",
+                entry.At));
+            hypotheses.Add(new ProblemHypothesis(
+                "code-integrity",
+                $"Microsoft-Windows-CodeIntegrity event {entry.Id} names '{imageFileName}'.",
+                [$"code-integrity:{entry.Id}"]));
+        }
+
+        if (evidence.CodeIntegrityEventNote is not null)
+        {
+            observed.Add(new ObservedFact("code-integrity-event", evidence.CodeIntegrityEventNote, null));
+        }
+
+        if (evidence.Signature?.Outcome is "unsigned" or "invalid" or "untrusted" && (loadCode || matched))
+        {
+            hypotheses.Add(new ProblemHypothesis(
+                "image-signature",
+                $"The service image signature outcome is {evidence.Signature.Outcome}.",
+                [$"signature:{evidence.Signature.Outcome}"]));
+        }
+
+        bool serviceHit = hypotheses.Exists(item => item.Label == "service-state");
+        bool insufficient = !loadCode && !matched && !serviceHit;
+        return new DriverLoadReport(
+            evidence.Device?.InstanceId,
+            serviceName ?? evidence.Device?.Service,
+            imageFileName,
+            code,
+            observed,
+            insufficient ? null : explanation,
+            hypotheses,
+            insufficient);
+    }
+
+    private static void AddLooseService(DeviceProblemEvidence evidence, string? serviceName, List<ObservedFact> observed)
+    {
+        if (evidence.Service is { } service)
+        {
+            observed.Add(new ObservedFact("service", $"{service.Name} state={service.State}; startType={service.StartType ?? "null"}", null));
+        }
+        else if (evidence.ServiceNote is not null)
+        {
+            observed.Add(new ObservedFact("service", serviceName is null ? evidence.ServiceNote : $"{evidence.ServiceNote}:{serviceName}", null));
+        }
+    }
+
+    private static void AddLooseBoot(DeviceProblemEvidence evidence, List<ObservedFact> observed)
+    {
+        if (evidence.BootSecurity is { } boot)
+        {
+            observed.Add(new ObservedFact(
+                "boot-security",
+                $"secureBoot={boot.SecureBoot?.ToString() ?? "null"}; testSigningActive={boot.TestSigningActive?.ToString() ?? "null"}; testSigningConfigured={boot.TestSigningConfigured?.ToString() ?? "null"}",
+                null));
+        }
+        else if (evidence.BootSecurityNote is not null)
+        {
+            observed.Add(new ObservedFact("boot-security", evidence.BootSecurityNote, null));
+        }
+    }
+
     private static List<ObservedFact> Facts(DeviceProblemEvidence evidence)
     {
-        DeviceDetails device = evidence.Device;
+        DeviceDetails device = evidence.Device!;
         List<ObservedFact> facts =
         [
             new("device", $"problemCode={device.ProblemCode?.ToString() ?? "null"}; devNodeStatus={device.DevNodeStatus?.ToString() ?? "null"}; present={device.IsPresent?.ToString() ?? "null"}", null),
@@ -149,13 +278,15 @@ internal static class DeviceProblemRules
         return facts;
     }
 
-    private static void AddService(DeviceProblemEvidence evidence, List<ProblemHypothesis> hypotheses)
+    private static void AddService(DeviceProblemEvidence evidence, List<ProblemHypothesis> hypotheses, string? namedService)
     {
         if (evidence.Service is not { } service)
         {
-            if (evidence.ServiceNote == "not_found" && evidence.Device.Service is { } name)
+            string? name = evidence.Device?.Service ?? namedService;
+            if (evidence.ServiceNote == "not_found" && name is not null)
             {
-                hypotheses.Add(new ProblemHypothesis("service-state", $"The service '{name}' named by the device was not found.", [$"service:{name}"]));
+                string named = evidence.Device is null ? "was not found" : "named by the device was not found";
+                hypotheses.Add(new ProblemHypothesis("service-state", $"The service '{name}' {named}.", [$"service:{name}"]));
             }
 
             return;
