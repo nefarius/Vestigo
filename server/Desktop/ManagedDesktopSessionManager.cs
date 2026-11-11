@@ -44,7 +44,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
         Load();
         if (!_checkpointUnsupported)
         {
-            foreach (ManagedDesktopSession session in _sessions.Values.Where(session => session.State is "open" or "active").ToList())
+            foreach (ManagedDesktopSession session in _sessions.Values.Where(session => session.State is "open" or "active" or "recovery-failed").ToList())
             {
                 await RecoverStoredAsync(session, CancellationToken.None).ConfigureAwait(false);
             }
@@ -416,7 +416,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
                     ManagedDesktopSession failed = session with { LastError = restored.Value?.Error ?? restored.Error };
                     _sessions[id] = failed;
                     Save();
-                    return restored.FailAs<ManagedDesktopSession>();
+                    return HostFailure(restored);
                 }
             }
         }
@@ -518,6 +518,18 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
 
     private static bool Accepted(OperationResult<DesktopCommandResult> result) =>
         result.Success && result.Value is { Success: true };
+
+    private static OperationResult<ManagedDesktopSession> HostFailure(OperationResult<DesktopCommandResult> result)
+    {
+        if (result.Value is { Success: false } value)
+        {
+            return OperationResult<ManagedDesktopSession>.Fail(
+                value.ErrorCode ?? "desktop_unavailable",
+                value.Error ?? "The desktop host rejected the command.");
+        }
+
+        return result.FailAs<ManagedDesktopSession>();
+    }
 
     private OperationResult<ManagedDesktopSession> Disabled() =>
         OperationResult<ManagedDesktopSession>.Fail(

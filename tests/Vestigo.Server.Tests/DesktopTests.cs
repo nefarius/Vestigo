@@ -231,6 +231,11 @@ public class DesktopTests
     {
         OperationResult<ScreenCaptureResult> named = SessionHelperClient.Parse<ScreenCaptureResult>("""{"error":"gone","errorCode":"window_not_found"}""", 2);
         Assert.Equal("window_not_found", named.ErrorCode);
+        OperationResult<ScreenCaptureResult> inactive = SessionHelperClient.Parse<ScreenCaptureResult>(
+            """{"error":"Activate the test desktop first.","errorCode":"unsupported_on_inactive_desktop","reason":"desktop_inactive"}""",
+            2);
+        Assert.Equal("unsupported_on_inactive_desktop", inactive.ErrorCode);
+        Assert.Equal("desktop_inactive", inactive.Reason);
         Assert.Equal("gone", named.Error);
         Assert.Equal("invalid_request", SessionHelperClient.Parse<ScreenCaptureResult>("""{"error":"bad"}""", 2).ErrorCode);
     }

@@ -138,10 +138,10 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
             OwnedVirtualDisplay owned = created.Value!;
             if (foreign.Contains(owned.IdentityKey))
             {
-                await _backend.RemoveAsync(owned.Id, CancellationToken.None).ConfigureAwait(false);
+                // The reported identity was already present. Removing by id could delete that display.
                 return OperationResult<VirtualDisplaySession>.Fail(
                     "virtual_display_identity_conflict",
-                    "The backend reported a display that was already in the topology. It was removed and the checkpoint was not changed.");
+                    "The backend reported a display that was already in the topology. It was not removed and the checkpoint was not changed.");
             }
 
             id = Guid.NewGuid().ToString("N");

@@ -100,7 +100,7 @@ public static partial class SessionHelper
         OperationResult<InputStateReport> result = InputStateInspection.Read();
         if (!result.Success)
         {
-            return Reject(result.Error!, result.ErrorCode!);
+            return Reject(result.Error!, result.ErrorCode!, result.Reason);
         }
 
         Console.Out.WriteLine(JsonSerializer.Serialize(result.Value, Json));
