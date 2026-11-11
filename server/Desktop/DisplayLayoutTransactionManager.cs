@@ -284,6 +284,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         int stable = 0;
         string? previous = null;
         DisplayLayoutObservation? last = null;
+        bool rerouted = false;
         while (true)
         {
             OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, cancellationToken, desktopPath).ConfigureAwait(false);
@@ -291,8 +292,9 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             {
                 // The desktop may have closed or lost input since the last lookup; look once more before giving up.
                 OperationResult<string?> refreshed = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
-                if (refreshed.Success && refreshed.Value != desktopPath)
+                if (!rerouted && refreshed.Success && refreshed.Value != desktopPath && _time.GetUtcNow() < deadline)
                 {
+                    rerouted = true;
                     desktopPath = refreshed.Value;
                     continue;
                 }
@@ -300,6 +302,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                 return snapshot.FailAs<DisplayLayoutObservation>();
             }
 
+            rerouted = false;
             IReadOnlyList<string> differences = wait.Target is null
                 ? DisplayLayoutPlanner.Compare(existing.Value!.Original, snapshot.Value!)
                 : DisplayLayoutPlanner.Compare(wait.Target, snapshot.Value!);

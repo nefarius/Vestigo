@@ -873,6 +873,24 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task ManagedDesktop_ObserveRetriesAFailedSnapshotOnceAndStaysWithinTheDeadline()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
+        FakeDesktops desktops = new(input: true);
+        DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), TimeProvider.System, desktops);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+        displays.FailSnapshots = true;
+        displays.SnapshotPaths.Clear();
+        desktops.AfterLookup = () => desktops.Input = !desktops.Input;
+
+        OperationResult<DisplayLayoutObservation> observed = await manager.ObserveAsync(
+            started.Value!.Id, new DisplayWait(TimeSpan.FromSeconds(5), 1, null), CancellationToken.None);
+
+        Assert.False(observed.Success);
+        Assert.Equal([FakeDesktops.DesktopPath, null], displays.SnapshotPaths);
+    }
+
+    [Fact]
     public async Task ManagedDesktop_FailedLookupIsNotTreatedAsTheDefaultDesktop()
     {
         FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
@@ -926,12 +944,16 @@ public class DisplayLayoutContractTests : IDisposable
 
         public bool FailLookup { get; set; }
 
+        public Action? AfterLookup { get; set; }
+
         public Task<OperationResult<string?>> InputDesktopPathAsync(CancellationToken cancellationToken)
         {
             Lookups++;
-            return Task.FromResult(FailLookup
+            OperationResult<string?> result = FailLookup
                 ? OperationResult<string?>.Fail("desktop_unavailable", "The input desktop could not be read.")
-                : OperationResult<string?>.Ok(OtherInput ?? (Input ? DesktopPath : null)));
+                : OperationResult<string?>.Ok(OtherInput ?? (Input ? DesktopPath : null));
+            AfterLookup?.Invoke();
+            return Task.FromResult(result);
         }
 
         public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>
@@ -992,6 +1014,7 @@ public class DisplayLayoutContractTests : IDisposable
         public DisplayLayoutSnapshot Current = original;
         public int SnapshotsBeforeChanged;
         public bool FailApply;
+        public bool FailSnapshots;
         public bool RejectBeforeApply;
         public bool ReportUnchanged;
         public bool OmitAfter;
@@ -1005,6 +1028,11 @@ public class DisplayLayoutContractTests : IDisposable
         public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken, string? desktopPath = null)
         {
             SnapshotPaths.Add(desktopPath);
+            if (FailSnapshots)
+            {
+                return Task.FromResult(OperationResult<DisplayLayoutSnapshot>.Fail("helper_failed", "snapshot failed"));
+            }
+
             _snapshots++;
             DisplayLayoutSnapshot snapshot = _snapshots <= SnapshotsBeforeChanged ? original : Current;
             return Task.FromResult(OperationResult<DisplayLayoutSnapshot>.Ok(snapshot));
