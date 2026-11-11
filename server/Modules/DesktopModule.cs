@@ -45,13 +45,15 @@ public sealed class DesktopModule : VestigoModule
         services.AddSingleton<VirtualDisplayCoordinator>();
         services.AddHostedService(provider => provider.GetRequiredService<VirtualDisplayCoordinator>());
         services.AddSingleton<DisplayLayoutTransactionManager>();
-        services.AddHostedService(provider => provider.GetRequiredService<DisplayLayoutTransactionManager>());
         services.AddSingleton<HelperDesktopHostClient>();
         services.AddSingleton<IDesktopHostClient>(provider => provider.GetRequiredService<HelperDesktopHostClient>());
         services.TryAddSingleton<IOwnedProcessCleanup, NoOwnedProcessCleanup>();
         services.AddSingleton<ManagedDesktopSessionManager>();
         services.AddSingleton<IManagedDesktopDirectory>(provider => provider.GetRequiredService<ManagedDesktopSessionManager>());
         services.AddHostedService(provider => provider.GetRequiredService<ManagedDesktopSessionManager>());
+        // Registered after the desktop manager: hosted services stop in reverse order, so an open display transaction
+        // restores through a desktop manager that is still running.
+        services.AddHostedService(provider => provider.GetRequiredService<DisplayLayoutTransactionManager>());
         services.AddSingleton<CaptureCache>();
         services.AddSingleton<PerceptionService>();
     }

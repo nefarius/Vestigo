@@ -152,13 +152,16 @@ public sealed class PresentationGateway : IHostedService
             if (!TryParse(run.Output, out OperationResult<PresentationObservation>? parsed) || parsed is null)
             {
                 await StopIfCreatedAsync(sessionName, started: true, terminationUncertain: false).ConfigureAwait(false);
+                WorkerProgress? progress = ReadProgress(run.Output);
                 return Unknown(
                     processId,
                     windowHandle,
                     sessionName,
                     started,
                     "decoder_terminated",
-                    "The decoder process ended without a result. ExitCode=" + (run.ExitCode is int exit ? "0x" + exit.ToString("X8") : "none") + ".");
+                    DescribeTermination(run, progress),
+                    progress?.ProvidersEnabled,
+                    progress?.ProvidersFailed);
             }
 
             if (parsed.Success && run.ExitCode == 0)
@@ -176,7 +179,7 @@ public sealed class PresentationGateway : IHostedService
                     sessionName,
                     started,
                     "decoder_terminated",
-                    "The decoder process exited before the session release was confirmed. ExitCode=" + (run.ExitCode is int code ? "0x" + code.ToString("X8") : "none") + ".");
+                    "The decoder process exited before the session release was confirmed. ExitCode=" + FormatExit(run.ExitCode) + ".");
             }
 
             return parsed;
@@ -186,6 +189,81 @@ public sealed class PresentationGateway : IHostedService
             _gate.Release();
         }
     }
+
+    internal sealed record WorkerProgress(string Stage, IReadOnlyList<string> ProvidersEnabled, IReadOnlyList<string> ProvidersFailed);
+
+    /// <summary>
+    ///     Facts only: the exit code, the last stage the worker reported, and a bounded, control-character-free tail of its stderr.
+    ///     Provider outcomes come from the worker's own progress line; none are inferred.
+    /// </summary>
+    internal static string DescribeTermination(PresentationProcessResult run, WorkerProgress? progress)
+    {
+        System.Text.StringBuilder detail = new("The decoder process ended without a result. ExitCode=" + FormatExit(run.ExitCode) + ".");
+        detail.Append(progress is null
+            ? " The worker reported no stage."
+            : $" Last reported stage: {progress.Stage}. Providers enabled={progress.ProvidersEnabled.Count}, failed={progress.ProvidersFailed.Count}.");
+        if (!string.IsNullOrWhiteSpace(run.ErrorTail))
+        {
+            string tail = new(run.ErrorTail.Where(character => !char.IsControl(character) || character is '\n' or '\t').ToArray());
+            tail = string.Join(" | ", tail.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            if (tail.Length > 600)
+            {
+                tail = tail[..600] + "...";
+            }
+
+            detail.Append(" Worker stderr (untrusted text): ").Append(tail);
+        }
+
+        return detail.ToString();
+    }
+
+    private static string FormatExit(int? exitCode) => exitCode switch
+    {
+        null => "none",
+        unchecked((int)0xC0000005) => "0xC0000005 (access violation)",
+        { } code => "0x" + code.ToString("X8")
+    };
+
+    internal static WorkerProgress? ReadProgress(string output)
+    {
+        foreach (string line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Reverse())
+        {
+            if (!line.StartsWith('{') || !line.Contains("\"progress\"", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(line);
+                if (document.RootElement.TryGetProperty("progress", out JsonElement progress)
+                    && progress.TryGetProperty("providersEnabled", out JsonElement enabled)
+                    && progress.TryGetProperty("providersFailed", out JsonElement failed))
+                {
+                    string stage = progress.TryGetProperty("stage", out JsonElement stageElement) && stageElement.ValueKind == JsonValueKind.String
+                        ? stageElement.GetString()!
+                        : "decoding";
+                    return new WorkerProgress(stage, Guids(enabled), Guids(failed));
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static List<string> Guids(JsonElement array) =>
+        array.ValueKind == JsonValueKind.Array
+            ? array.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString())
+                .Where(text => Guid.TryParse(text, out _))
+                .Select(text => text!)
+                .Take(16)
+                .ToList()
+            : [];
 
     private static string TerminationDetail(PresentationProcessResult run, bool sessionStopped)
     {
@@ -269,7 +347,9 @@ public sealed class PresentationGateway : IHostedService
         string sessionName,
         DateTimeOffset started,
         string reason,
-        string detail) =>
+        string detail,
+        IReadOnlyList<string>? enabled = null,
+        IReadOnlyList<string>? failed = null) =>
         OperationResult<PresentationObservation>.Ok(new PresentationObservation(
             PresentationProviders.Unknown,
             reason,
@@ -280,8 +360,8 @@ public sealed class PresentationGateway : IHostedService
             windowHandle,
             0,
             0,
-            [],
-            [],
+            enabled ?? [],
+            failed ?? [],
             sessionName,
             detail));
 
@@ -289,7 +369,7 @@ public sealed class PresentationGateway : IHostedService
     {
         result = null;
         string? line = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .LastOrDefault(candidate => candidate.StartsWith('{'));
+            .LastOrDefault(candidate => candidate.StartsWith('{') && !candidate.StartsWith("{\"progress\"", StringComparison.Ordinal));
         if (line is null)
         {
             return false;

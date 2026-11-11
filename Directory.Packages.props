@@ -18,7 +18,7 @@
     <PackageVersion Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
     <PackageVersion Include="PeNet" Version="6.1.2" />
     <PackageVersion Include="Nefarius.Utilities.DeviceManagement" Version="6.2.0" />
-    <PackageVersion Include="Nefarius.Utilities.ETW" Version="2.20.0" />
+    <PackageVersion Include="Nefarius.Utilities.ETW" Version="2.20.1" />
     <PackageVersion Include="Nefarius.Utilities.WindowsVersion" Version="2.5.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.14" />

@@ -170,6 +170,7 @@ public sealed class PresentationObserver : IHostedService
                 }
             }
 
+            release?.ProvidersReady?.Invoke([.. enabled], [.. failed]);
             using CancellationTokenSource durationSource = new(duration);
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, durationSource.Token);
             try
@@ -326,4 +327,7 @@ public sealed class PresentationObserver : IHostedService
 public sealed class PresentationSessionRelease
 {
     public bool Released { get; set; }
+
+    /// <summary>Called once with the enable outcomes the session actually reported, before any event is decoded.</summary>
+    public Action<IReadOnlyList<string>, IReadOnlyList<string>>? ProvidersReady { get; set; }
 }
