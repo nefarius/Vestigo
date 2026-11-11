@@ -91,3 +91,7 @@ List every desired feature when using ADDLOCAL. With no ADDLOCAL/REMOVE,
 `VESTIGO_MOD_WINDOWSSERVICING=1` seeds its feature selection. The elevated service
 can query DISM packages; a non-elevated development session may receive elevation
 errors. See [Windows servicing diagnostics](windows-servicing.md).
+
+## Independently deployed plugins
+
+The public MSI's feature tree continues to select built-in modules only. Administrators deploy external plugins separately under the protected ProgramData Vestigo plugins directory (or an absolute configured root). No plugin directory is created by the host. Loading defaults off; enable a trust policy and individual modules in protected settings. Public upgrades/update payloads leave external directories outside the application installation intact and preserve plugin configuration. Stop the service before replacing plugins and restart to activate; API incompatibilities are diagnosed at startup. See [plugins](plugins.md) for ACL provisioning, silent administrative configuration and verification.

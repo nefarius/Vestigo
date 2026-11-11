@@ -1,0 +1,24 @@
+---
+description: Develop independently distributed Vestigo plugins using the public API and protected deployment model
+globs: "examples/**,server/Vestigo.Abstractions/**,tests/fixtures/plugins/**"
+alwaysApply: false
+---
+
+# Plugin development
+
+Read `examples/AGENTS.md` for the plugin authoring instructions and `docs/plugins.md`
+for the host contract, trust policy and deployment workflow.
+
+- Use the public `Vestigo.Extensibility` contracts; independent plugins reference
+  the contracts NuGet, never `Vestigo.Server` or private host implementations.
+- Keep plugin loading and module activation explicitly opt-in. Use the existing
+  MCP endpoint, DI and authenticated HTTP route groups; no anonymous plugin routes.
+- Publish the full dependency graph and validate published artifacts, shared type
+  identity, tool names and disabled/authenticated behavior. Do not weaken ACLs,
+  path checks, trust pins or API compatibility checks to make integration pass.
+- Keep corporate code and binaries out of the public host and installer. Plugins
+  run with service privileges; dependency isolation is not a security sandbox.
+
+The portable instructions in `examples/AGENTS.md` can also be copied into a separate
+plugin repository. Repository-wide branch, interop and documentation rules still
+apply to contributions in this checkout.

@@ -156,7 +156,7 @@ public sealed class PathPolicy(VestigoOptions options, RootPolicy? roots = null)
             requestedPath = expanded.FullPath!;
         }
 
-        return Locate(requestedPath, roots, rootKind);
+        return PluginPathGuard.Check(Locate(requestedPath, roots, rootKind), namedAccess, options);
     }
 
     private bool TryExpandNamedRoot(string requestedPath, RootAccess namedAccess, out PathCheck expanded)

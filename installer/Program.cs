@@ -111,6 +111,7 @@ static class Program
 
             // One child feature per module; nesting follows the module dependencies. Each owns only a registry marker
             // so Windows Installer tracks its state; the binaries all live in the Server feature.
+            // External plugins are independently deployed in protected ProgramData storage, never MSI features.
             Dictionary<string, Feature> moduleFeatures = new(StringComparer.OrdinalIgnoreCase);
             List<RegKey> moduleRegistry = [];
             foreach (ModuleDefinition module in ModuleSelection.All)

@@ -188,3 +188,6 @@ Per-source unknown/errors are not a clean bill of health. Log tails need Read
 roots covering the fixed CBS/DISM paths; missing/disabled event channels can
 return source errors. Failure evidence is bounded and does not prove causation.
 See [Windows servicing diagnostics](windows-servicing.md) for the exact limits.
+## External plugin startup failures
+
+Startup reports disabled, absent, rejected, failed and loaded plugins. Check plugin.json required fields, API 1.0 compatibility, protected ACLs, reparse points, package hashes, published .deps.json/private dependencies and the shared SDK version. An explicitly enabled unavailable module, module/tool name collision, missing or disabled dependency, cycle, DI error, failed activation hook or anonymous HTTP endpoint aborts startup. Plugin exception text is suppressed to protect secrets. See [plugin troubleshooting](plugins.md#authentication-and-failure-policy).

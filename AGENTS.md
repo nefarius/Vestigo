@@ -29,6 +29,14 @@ apply to Codex, even if the client does not automatically load `.mdc` files:
 Consume released NuGet packages, preserve package boundaries, confine client
 paths to configured roots, never log tokens, and save UTF-8 without BOM.
 
+## Developing external plugins
+
+When authoring plugins, their examples, or public plugin contracts, also read
+[`examples/AGENTS.md`](examples/AGENTS.md) and the scoped
+[plugin development rule](.cursor/rules/vestigo-plugin-development.mdc).
+The example instructions are portable to independent plugin repositories;
+[`docs/plugins.md`](docs/plugins.md) is the host API and deployment reference.
+
 ## Windows native interop
 
 Prefer CsWin32-generated APIs, COM interfaces, structs, enums and constants from

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../server/Vestigo.Abstractions/Vestigo.Abstractions.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="../Vestigo.ExamplePlugin.Dependency/Vestigo.ExamplePlugin.Dependency.csproj" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

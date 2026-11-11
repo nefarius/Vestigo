@@ -170,3 +170,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p>The module needs Processes and Jobs. A running monitor lets a remote debugger execute code on the machine; treat the token as administrator-equivalent.</p>
   </article>
 </div>
+
+## External .NET plugins
+
+Optional independently published plugins extend the existing MCP endpoint and add authenticated HTTP routes. Each plugin can supply multiple modules, services and private managed/native dependencies. External modules default off; the public MSI includes no proprietary extensions. See the [plugin guide](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md).

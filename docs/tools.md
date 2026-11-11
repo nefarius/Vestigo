@@ -422,3 +422,6 @@ waiting, and the slot remains held until Windows returns. See
 [Windows servicing diagnostics](windows-servicing.md) for exact sources, caps,
 job semantics, data disclosure and limitations. No install, repair, online scan,
 queue cancellation, cache reset or reboot operations are exposed.
+## External plugin tools
+
+Trusted external modules can contribute MCP tool classes to the existing /mcp endpoint. The separately published example exposes example_plugin_echo through an injected private service. It is absent from clean installations and the built-in generated catalog. Module activation, resolved tool-name collision checks and authentication use the host pipeline. See [plugins](plugins.md).

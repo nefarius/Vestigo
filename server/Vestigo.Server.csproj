@@ -45,6 +45,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="Vestigo.Abstractions\**\*.cs" />
+    <Content Remove="Vestigo.Abstractions\**" />
+    <None Remove="Vestigo.Abstractions\**" />
+    <ProjectReference Include="Vestigo.Abstractions\Vestigo.Abstractions.csproj" />
     <InternalsVisibleTo Include="Vestigo.Server.Tests" />
   </ItemGroup>
 

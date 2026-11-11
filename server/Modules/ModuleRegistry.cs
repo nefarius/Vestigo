@@ -35,34 +35,51 @@ public static class ModuleRegistry
         new UpdatesModule()
     ];
 
-    public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options) =>
-        All.Where(module => module.IsEnabled(options)).ToList();
+    public static IReadOnlyList<VestigoModule> Enabled(VestigoOptions options, IReadOnlyList<VestigoModule>? modules = null)
+    {
+        IReadOnlyList<VestigoModule> all = modules ?? All;
+        List<VestigoModule> ordered = [];
+        HashSet<string> visited = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> visiting = new(StringComparer.OrdinalIgnoreCase);
+        foreach (VestigoModule module in all.Where(module => module.IsEnabled(options))) Visit(module);
+        return ordered;
+
+        void Visit(VestigoModule module)
+        {
+            if (visited.Contains(module.Name)) return;
+            if (!visiting.Add(module.Name))
+                throw new InvalidOperationException($"Module dependency cycle involving '{module.Name}'.");
+            foreach (string name in module.Dependencies)
+            {
+                VestigoModule? dependency = all.FirstOrDefault(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (dependency is null || !dependency.IsEnabled(options))
+                    throw new InvalidOperationException($"Vestigo:Modules:{module.Name} requires the {name} module, which is missing or disabled.");
+                Visit(dependency);
+            }
+            visiting.Remove(module.Name);
+            visited.Add(module.Name);
+            ordered.Add(module);
+        }
+    }
 
     /// <summary>Rejects configuration entries that name no known module.</summary>
-    public static void ValidateConfiguration(VestigoOptions options)
+    public static void ValidateConfiguration(VestigoOptions options, IReadOnlyList<VestigoModule>? modules = null)
     {
+        IReadOnlyList<VestigoModule> all = modules ?? All;
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        foreach (VestigoModule module in all)
+            if (string.IsNullOrWhiteSpace(module.Name) || !System.Text.RegularExpressions.Regex.IsMatch(module.Name, "^[A-Za-z][A-Za-z0-9_-]*$") || !names.Add(module.Name))
+                throw new InvalidOperationException($"Invalid or duplicate module name '{module.Name}' ({(module is Plugins.ExternalModuleAdapter external ? "plugin '" + external.PluginId + "'" : module.GetType().FullName)}).");
         foreach (string name in options.Modules.Keys)
         {
-            if (!All.Any(module => string.Equals(module.Name, name, StringComparison.OrdinalIgnoreCase)))
+            if (!all.Any(module => string.Equals(module.Name, name, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new InvalidOperationException(
-                    $"Vestigo:Modules:{name} does not match a known module ({string.Join(", ", All.Select(module => module.Name))}).");
+                    $"Vestigo:Modules:{name} does not match a known module ({string.Join(", ", all.Select(module => module.Name))}). Check plugin startup diagnostics if this is an external module.");
             }
         }
 
-        foreach (VestigoModule module in Enabled(options))
-        {
-            foreach (string dependency in module.Dependencies)
-            {
-                VestigoModule? required = All.FirstOrDefault(item => string.Equals(item.Name, dependency, StringComparison.OrdinalIgnoreCase));
-                if (required is null || !required.IsEnabled(options))
-                {
-                    throw new InvalidOperationException(
-                        $"Vestigo:Modules:{module.Name} requires the {dependency} module, which is disabled.");
-                }
-            }
-        }
-
+        _ = Enabled(options, all); // Also validates required dependencies and cycles.
     }
 
     /// <summary>
@@ -72,15 +89,17 @@ public static class ModuleRegistry
     ///     never a failure: an operator may deliberately run an open server on an isolated network. The message
     ///     never contains token values.
     /// </summary>
-    public static string? GetPrivilegedModuleWarning(VestigoOptions options)
+    public static string? GetPrivilegedModuleWarning(VestigoOptions options, IReadOnlyList<VestigoModule>? modules = null)
     {
         if (options.AuthenticationEnabled)
         {
             return null;
         }
 
-        IReadOnlyList<VestigoModule> enabled = Enabled(options);
+        IReadOnlyList<VestigoModule> enabled = Enabled(options, modules);
         List<string> capabilities = [];
+        capabilities.AddRange(enabled.Where(module => module.Capabilities.Count > 0)
+            .Select(module => $"{module.Name} ({string.Join(", ", module.Capabilities)})"));
         // Services is on by default, so it only counts once the server is reachable from the network;
         // otherwise every default loopback install would warn.
         foreach (string name in new[] { "Processes", "RemoteDebugger", "Devices", "Services" })

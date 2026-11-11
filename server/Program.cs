@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using ModelContextProtocol.AspNetCore;
 
@@ -12,6 +13,7 @@ using Vestigo.Etws;
 using Vestigo.Hosting;
 using Vestigo.Modules;
 using Vestigo.Processes;
+using Vestigo.Plugins;
 using Vestigo.Security;
 
 // Presentation decoding runs in this child so a native ETW metadata fault cannot terminate the service.
@@ -82,11 +84,27 @@ builder.Services.AddSingleton<VolumeRootSource>();
 builder.Services.AddSingleton<RootPolicy>();
 builder.Services.AddDevices();
 
-ModuleRegistry.ValidateConfiguration(vestigo);
-IReadOnlyList<VestigoModule> modules = ModuleRegistry.Enabled(vestigo);
+PluginManager plugins = new();
+IReadOnlyList<VestigoModule> allModules = [.. ModuleRegistry.All, .. plugins.LoadModules(vestigo, builder.Configuration)];
+// Emit diagnostics before validation: an explicitly enabled rejected plugin must fail startup visibly.
+foreach (PluginDiagnostic diagnostic in plugins.Diagnostics)
+{
+    Console.Error.WriteLine($"Plugin {diagnostic.Plugin}: {diagnostic.Status}: {diagnostic.Detail}");
+}
+ModuleRegistry.ValidateConfiguration(vestigo, allModules);
+IReadOnlyList<VestigoModule> modules = ModuleRegistry.Enabled(vestigo, allModules);
+PluginToolValidation.Validate(modules);
 foreach (VestigoModule module in modules)
 {
     module.ConfigureServices(builder.Services, vestigo);
+}
+
+if (modules.Any(module => module is ExternalModuleAdapter))
+{
+    // Validate constructor injection before serving any requests, using the one host provider.
+    foreach (Type tool in modules.OfType<ExternalModuleAdapter>().SelectMany(module => module.ToolTypes))
+        if (!tool.IsAbstract) builder.Services.TryAddTransient(tool);
+    builder.Host.UseDefaultServiceProvider(options => options.ValidateOnBuild = true);
 }
 
 builder.Services.AddMcpServer()
@@ -129,7 +147,7 @@ if (vestigo.GetSymbolServerQueryWarning() is { } symbolQueryWarning)
 {
     app.Logger.LogWarning("{SymbolServerQueryWarning}", symbolQueryWarning);
 }
-if (ModuleRegistry.GetPrivilegedModuleWarning(vestigo) is { } privilegedWarning)
+if (ModuleRegistry.GetPrivilegedModuleWarning(vestigo, allModules) is { } privilegedWarning)
 {
     app.Logger.LogWarning("{PrivilegedWarning}", privilegedWarning);
 }

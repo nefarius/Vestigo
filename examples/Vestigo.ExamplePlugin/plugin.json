@@ -1,0 +1,7 @@
+{
+  "id": "example-plugin",
+  "version": "1.0.0",
+  "hostApiVersion": "1.0",
+  "entryAssembly": "Vestigo.ExamplePlugin.dll",
+  "entryType": "Vestigo.ExamplePlugin.Plugin"
+}

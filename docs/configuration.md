@@ -218,3 +218,7 @@ for tools, data disclosure, Read roots and cancellation limits. It is separate f
 | `WindowsServicing:MaxLogBytes` | 262144 | Bytes examined per fixed log tail (16 to 4194304); Logs caps also apply. |
 | `WindowsServicing:MaxLogLines` | 200 | Lines returned per fixed log tail (1 to 2000); Logs caps also apply. |
 | `WindowsServicing:NativeCallTimeout` | `00:02:00` | Maximum wait for native diagnostics (positive, at most 30 minutes). A timed-out call retains its concurrency slot until completion. |
+
+## External plugins
+
+`Vestigo:Plugins:Enabled` defaults to `false`. `Plugins:TrustMode` defaults to `Disabled`; explicitly select `AdministratorManaged` or `PinnedSha256` to enable loading. `Plugins:Root` is an optional absolute protected root; its default is the settings directory's `plugins` subfolder. `Plugins:PackageHashes` maps plugin IDs to complete deployment SHA-256 pins. External modules always require explicit `Modules:<Name>:Enabled=true`. These administrator-owned keys are preserved by MSI settings merge and are not selected by the built-in module feature tree. See [plugins](plugins.md) for manifest schema and deployment examples.

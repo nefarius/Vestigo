@@ -23,6 +23,8 @@ public sealed class VestigoOptions
 {
     public const string SectionName = "Vestigo";
 
+    public PluginOptions Plugins { get; set; } = new();
+
     public string ListenAddress { get; set; } = "127.0.0.1";
 
     public int ListenPort { get; set; } = 5098;
@@ -222,6 +224,7 @@ public sealed class VestigoOptions
 
     public void Validate()
     {
+        Plugins.Validate();
         if (!IPAddress.TryParse(ListenAddress, out IPAddress? address) || address.AddressFamily == AddressFamily.Unspecified)
         {
             throw new InvalidOperationException($"Vestigo:ListenAddress '{ListenAddress}' is not an IP address.");

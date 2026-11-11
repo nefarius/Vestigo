@@ -67,3 +67,7 @@ Enable Desktop and Input, and turn on `Desktop:AllowScreenshots` and `Input:Allo
 5. `start_remote_debugger` (default port 4026), then attach Visual Studio to `host:4026`. `stop_remote_debugger` when you are done.
 
 The default authentication is Windows. `none` requires an explicit acknowledgement and is insecure on any reachable network.
+
+## Build external plugins
+
+Use Vestigo.Abstractions and the Vestigo.Extensibility contracts without referencing the server. Publish a .NET 10 class library with EnableDynamicLoading, a plugin.json manifest and all private dependencies. API 1.0 is versioned independently of host releases. The example and deployment/trust instructions are in the [plugin guide](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md).

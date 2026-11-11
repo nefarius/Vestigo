@@ -167,3 +167,7 @@ concurrency slot stays occupied until that work finishes.
 4. `start_capture` / `read_capture` or `convert_etl` for WPP. `observe_presentation` is a separate bounded read of DXGI, DWM, and DxgKrnl and returns unknown unless an event explicitly identifies the presentation mode. `get_download_url` or the ticket on a conversion result pulls the file back without pasting the API token into the client.
 
 Keep [the intro](index.md) connection steps nearby: the MSI writes the token into ProgramData, and `/` in a browser repeats the same instructions.
+
+## Plugin validation
+
+The server tests publish real plugin fixtures and exercise shared contract identity, private dependency versions, manifest and trust rejection, dependency graphs, HTTP authentication and MCP discovery/echo invocation. Service restart and MSI upgrade preservation need an elevated deployment smoke test. See the [plugin deployment checklist](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md#msi-updates-and-validation).
