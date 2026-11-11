@@ -85,6 +85,22 @@ public sealed class VerifierStateTests
     }
 
     [Fact]
+    public void Settings_ParkUnknownSectionRowsOutsideVerifiedDrivers()
+    {
+        string text = IdleSettings + """
+
+              Future Section:
+
+                not-a-driver.sys
+
+            """;
+        DriverVerifierSettings settings = VerifierStateParser.ParseSettings(text);
+        Assert.Equal(["None"], settings.Drivers);
+        Assert.Contains("Future Section:", settings.Unparsed);
+        Assert.Contains("not-a-driver.sys", settings.Unparsed);
+    }
+
+    [Fact]
     public void Running_RecognizesOnlyTheIdleSentence()
     {
         DriverVerifierQuery idle = VerifierStateParser.ParseRunning("No drivers are currently verified.\r\n");

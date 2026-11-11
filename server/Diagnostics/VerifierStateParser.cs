@@ -70,6 +70,13 @@ internal static partial class VerifierStateParser
                 continue;
             }
 
+            if (line.EndsWith(':'))
+            {
+                unparsed.Add(line);
+                section = "unknown";
+                continue;
+            }
+
             if (section is "standard" or "additional" && FlagPattern().Match(line) is { Success: true } flag)
             {
                 uint? value = TryHex(flag.Groups[2].Value);

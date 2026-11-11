@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace Vestigo.Diagnostics;
@@ -32,7 +33,18 @@ internal static class VerifierInvocation
                 process.StartInfo.ArgumentList.Add(argument);
             }
 
-            if (!process.Start())
+            try
+            {
+                if (!process.Start())
+                {
+                    throw new VerifierQueryException("verifier_failed", "verifier.exe did not start.");
+                }
+            }
+            catch (Win32Exception)
+            {
+                throw new VerifierQueryException("verifier_failed", "verifier.exe did not start.");
+            }
+            catch (InvalidOperationException)
             {
                 throw new VerifierQueryException("verifier_failed", "verifier.exe did not start.");
             }
@@ -50,7 +62,7 @@ internal static class VerifierInvocation
                 string bounded = VerifierStateParser.Bound(text, out bool truncated);
                 return new VerifierCommandResult(process.ExitCode, bounded, truncated, false);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
                 try
                 {
@@ -61,6 +73,11 @@ internal static class VerifierInvocation
                 }
                 catch (InvalidOperationException)
                 {
+                }
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
                 }
 
                 return new VerifierCommandResult(null, string.Empty, false, true);
