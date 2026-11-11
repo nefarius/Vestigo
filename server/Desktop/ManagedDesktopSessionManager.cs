@@ -306,6 +306,13 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
                 return OperationResult<ManagedDesktopSession>.Fail("desktop_session_not_found", "Managed desktop session was not found or is no longer open.");
             }
 
+            if (operation == DesktopHostOperations.Activate)
+            {
+                session = session with { InputSwitched = true };
+                _sessions[id] = session;
+                Save();
+            }
+
             OperationResult<DesktopCommandResult> result = await _host.SendAsync(
                 new DesktopCommand(Guid.NewGuid().ToString("N"), operation, session.Id, session.DesktopName, session.CleanupPolicy, session.OriginalInputDesktop),
                 cancellationToken).ConfigureAwait(false);
@@ -389,7 +396,6 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             }
         }
 
-        string? restoreError = null;
         if (session.InputSwitched)
         {
             OperationResult<DesktopCommandResult> restored = await _host.SendAsync(
@@ -408,7 +414,15 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
                     bool recoveredMove = recovered.Value?.ErrorCode == "input_desktop_changed" || recovered.ErrorCode == "input_desktop_changed";
                     if (!Accepted(recovered) && !recoveredMove)
                     {
-                        restoreError = recovered.Value?.Error ?? recovered.Error ?? restored.Value?.Error ?? restored.Error;
+                        ManagedDesktopSession failed = session with
+                        {
+                            State = "recovery-failed",
+                            InputSwitched = true,
+                            LastError = recovered.Value?.Error ?? recovered.Error ?? restored.Value?.Error ?? restored.Error
+                        };
+                        _sessions[id] = failed;
+                        Save();
+                        return HostFailure(recovered.Success ? recovered : restored.Success ? restored : recovered);
                     }
                 }
                 else
@@ -438,7 +452,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             InputSwitched = false,
             HandleHeld = !released,
             DesktopRetained = retained,
-            LastError = restoreError ?? (accepted ? retained ? "Windows kept the desktop because another handle or thread still uses it." : null : closed.Value?.Error ?? closed.Error)
+            LastError = accepted ? retained ? "Windows kept the desktop because another handle or thread still uses it." : null : closed.Value?.Error ?? closed.Error
         };
         _sessions[id] = updated;
         Save();
