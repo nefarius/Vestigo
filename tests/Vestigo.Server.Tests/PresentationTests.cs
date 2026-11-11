@@ -316,6 +316,65 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public async Task IsolatedCrash_ReportsOnlyWhatTheWorkerSaidBeforeItDied()
+    {
+        string provider = PresentationProviders.Dxgi.ToString("D");
+        string failedProvider = PresentationProviders.DwmCore.ToString("D");
+        ScriptedPresentation process = new()
+        {
+            ExitCode = unchecked((int)0xC0000005),
+            Output = "{\"progress\":{\"stage\":\"decoding\",\"providersEnabled\":[\"" + provider + "\"],\"providersFailed\":[\"" + failedProvider + "\"]}}\n",
+            ErrorTail = "Fatal error.\u001b[31m System.AccessViolationException\n   at String.Ctor(Char*)\n",
+            StopExitCode = 0
+        };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("unknown", result.Value!.Mode);
+        Assert.Equal("decoder_terminated", result.Value.Reason);
+        Assert.Equal([provider], result.Value.ProvidersEnabled);
+        Assert.Equal([failedProvider], result.Value.ProvidersFailed);
+        Assert.Equal(0, result.Value.CorrelatedEvents);
+        Assert.Contains("access violation", result.Value.Detail);
+        Assert.Contains("Last reported stage: decoding", result.Value.Detail);
+        Assert.Contains("AccessViolationException | at String.Ctor(Char*)", result.Value.Detail);
+        Assert.DoesNotContain('\u001b', result.Value.Detail!);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task WorkerProgressLine_IsNotMistakenForTheResult()
+    {
+        string provider = PresentationProviders.Dxgi.ToString("D");
+        string json = JsonSerializer.Serialize(
+            OperationResult<PresentationObservation>.Ok(new PresentationObservation(
+                "independent-flip", null, "etw", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 42, null, 1, 1, [provider], [], "Vestigo-P0123456789a", null)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        ScriptedPresentation process = new()
+        {
+            ExitCode = 0,
+            Output = "{\"progress\":{\"stage\":\"decoding\",\"providersEnabled\":[],\"providersFailed\":[]}}\n" + json
+        };
+
+        OperationResult<PresentationObservation> result = await Gateway(process).ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("independent-flip", result.Value!.Mode);
+    }
+
+    [Fact]
+    public async Task Observer_ReportsProviderOutcomesBeforeDecoding()
+    {
+        ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)] };
+        List<string> enabled = [];
+        PresentationSessionRelease release = new() { ProvidersReady = (ok, _) => enabled.AddRange(ok) };
+
+        await Observer(factory).ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None, null, true, release);
+
+        Assert.Equal(PresentationProviders.All.Select(provider => provider.ToString("D")), enabled);
+    }
+
+    [Fact]
     public async Task IsolatedMalformedOutput_IsUnknown()
     {
         ScriptedPresentation process = new() { ExitCode = 0, Output = "not-json", StopExitCode = 0 };
@@ -587,6 +646,8 @@ public class PresentationTests : IDisposable
 
         public bool Cancelled { get; init; }
 
+        public string? ErrorTail { get; init; }
+
         public List<string[]> Calls { get; } = [];
 
         public async Task<PresentationProcessResult> RunAsync(
@@ -612,7 +673,7 @@ public class PresentationTests : IDisposable
                 }
             }
 
-            return new PresentationProcessResult(ExitCode, Output, Cancelled, TimedOut, HostFailed, Started, TerminationUncertain);
+            return new PresentationProcessResult(ExitCode, Output, Cancelled, TimedOut, HostFailed, Started, TerminationUncertain, ErrorTail);
         }
     }
 

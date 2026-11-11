@@ -780,6 +780,93 @@ public class DisplayLayoutContractTests : IDisposable
         Assert.Equal("display_layout_disabled", (await tools.StartDisplayLayoutTransaction([Change(0, 0, 1280, 720)])).ErrorCode);
     }
 
+    [Fact]
+    public async Task ManagedDesktop_RunsApplyObserveAndRestoreOnTheInputDesktop()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { RejectWithAccessDeniedOffDesktop = true };
+        FakeDesktops desktops = new(input: true);
+        DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), TimeProvider.System, desktops);
+
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+        Assert.True(started.Success, started.Error);
+        Assert.Equal("abc", started.Value!.DesktopSessionId);
+        Assert.All(displays.ApplyPaths, path => Assert.Equal(FakeDesktops.DesktopPath, path));
+        Assert.All(displays.SnapshotPaths, path => Assert.Equal(FakeDesktops.DesktopPath, path));
+
+        OperationResult<DisplayLayoutObservation> observed = await manager.ObserveAsync(
+            started.Value.Id, new DisplayWait(TimeSpan.FromSeconds(5), 1, Change(0, 0, 1280, 720)), CancellationToken.None);
+        Assert.True(observed.Value!.Stable);
+        Assert.Equal(FakeDesktops.DesktopPath, displays.SnapshotPaths[^1]);
+
+        OperationResult<DisplayLayoutTransaction> restored = await manager.RestoreAsync(started.Value.Id, CancellationToken.None);
+        Assert.True(restored.Value!.RestorationVerified);
+        Assert.Equal(FakeDesktops.DesktopPath, displays.ApplyPaths[^1]);
+        Assert.Equal(0, desktops.Switches);
+    }
+
+    [Fact]
+    public async Task ManagedDesktop_RefusesAnInactiveDesktopAndHintsWhenTheDefaultDesktopIsDenied()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { RejectWithAccessDeniedOffDesktop = true };
+        DisplayLayoutTransactionManager inactive = new(displays, new VestigoOptions(), TimeProvider.System, new FakeDesktops(input: false));
+        OperationResult<DisplayLayoutTransaction> refused = await inactive.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+        Assert.Equal(DesktopHelperTargeting.Unsupported, refused.ErrorCode);
+        Assert.Empty(displays.Applied);
+
+        OperationResult<DisplayLayoutTransaction> denied = await inactive.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None);
+        Assert.Equal("display_config_rejected", denied.ErrorCode);
+        Assert.Contains("NativeError=5", denied.Error);
+        Assert.Contains("desktopSessionId", denied.Error);
+        Assert.Null(inactive.Get(null).Value);
+    }
+
+    [Fact]
+    public async Task ManagedDesktop_RestoreFallsBackToTheDefaultDesktopAfterTheSessionEnds()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
+        FakeDesktops desktops = new(input: true);
+        DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), TimeProvider.System, desktops);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+
+        desktops.Input = false;
+        OperationResult<DisplayLayoutTransaction> restored = await manager.RestoreAsync(started.Value!.Id, CancellationToken.None);
+
+        Assert.True(restored.Value!.RestorationVerified);
+        Assert.Null(displays.ApplyPaths[^1]);
+    }
+
+    [Fact]
+    public void PlacementAndDisplayTools_ExposeDesktopSessionIdInTheirSchemas()
+    {
+        foreach ((Type type, string method) in new[]
+        {
+            (typeof(WindowPlacementTools), nameof(WindowPlacementTools.SetWindowClientRect)),
+            (typeof(WindowPlacementTools), nameof(WindowPlacementTools.RestoreWindowPlacement)),
+            (typeof(DisplayLayoutTools), nameof(DisplayLayoutTools.SnapshotDisplayLayout)),
+            (typeof(DisplayLayoutTools), nameof(DisplayLayoutTools.StartDisplayLayoutTransaction))
+        })
+        {
+            ModelContextProtocol.Server.McpServerTool tool = ModelContextProtocol.Server.McpServerTool.Create(
+                type.GetMethod(method)!, RuntimeHelpers.GetUninitializedObject(type), new ModelContextProtocol.Server.McpServerToolCreateOptions { Services = null });
+            Assert.True(tool.ProtocolTool.InputSchema.GetProperty("properties").TryGetProperty("desktopSessionId", out _), method);
+        }
+    }
+
+    private sealed class FakeDesktops(bool input) : IManagedDesktopDirectory
+    {
+        public const string DesktopPath = @"winsta0\Vestigo-0123456789ab";
+
+        public bool Input { get; set; } = input;
+
+        public int Switches { get; }
+
+        public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<OperationResult<DesktopHelperTarget>> DescribeAsync(string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult(OperationResult<DesktopHelperTarget>.Ok(new DesktopHelperTarget(sessionId, DesktopPath, "Vestigo-0123456789ab", Input)));
+    }
+
     private static DisplayLayoutTransactionManager Manager(FakeDisplays displays, TimeProvider? time = null) =>
         new(displays, new VestigoOptions(), time ?? TimeProvider.System);
 
@@ -836,10 +923,14 @@ public class DisplayLayoutContractTests : IDisposable
         public bool OmitAfter;
         public bool CancelFirstApply;
         public string? UncertainError;
+        public bool RejectWithAccessDeniedOffDesktop;
         public List<DisplayLayoutRequest> Applied { get; } = [];
+        public List<string?> ApplyPaths { get; } = [];
+        public List<string?> SnapshotPaths { get; } = [];
 
-        public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken)
+        public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken, string? desktopPath = null)
         {
+            SnapshotPaths.Add(desktopPath);
             _snapshots++;
             DisplayLayoutSnapshot snapshot = _snapshots <= SnapshotsBeforeChanged ? original : Current;
             return Task.FromResult(OperationResult<DisplayLayoutSnapshot>.Ok(snapshot));
@@ -848,9 +939,17 @@ public class DisplayLayoutContractTests : IDisposable
         public Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(
             DisplayLayoutRequest request,
             bool elevated,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            string? desktopPath = null)
         {
             Applied.Add(request);
+            ApplyPaths.Add(desktopPath);
+            if (RejectWithAccessDeniedOffDesktop && desktopPath is null)
+            {
+                return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Ok(
+                    new DisplayLayoutApplyResult(false, false, request.Persistent, 5, "display_config_rejected", "SetDisplayConfig validate failed.", Current, null, "validate")));
+            }
+
             if (CancelFirstApply && Applied.Count == 1)
             {
                 throw new OperationCanceledException();

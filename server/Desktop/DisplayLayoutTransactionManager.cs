@@ -8,9 +8,10 @@ namespace Vestigo.Desktop;
 
 public interface IDisplayLayoutClient
 {
-    Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken);
+    /// <param name="desktopPath">Desktop the helper runs on. Null keeps <c>winsta0\default</c>.</param>
+    Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken, string? desktopPath = null);
 
-    Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(DisplayLayoutRequest request, bool elevated, CancellationToken cancellationToken);
+    Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(DisplayLayoutRequest request, bool elevated, CancellationToken cancellationToken, string? desktopPath = null);
 }
 
 /// <summary>
@@ -22,11 +23,13 @@ public interface IDisplayLayoutClient
 public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposable
 {
     private const int CheckpointVersion = 1;
+    private const int AccessDenied = 5;
 
     private readonly IDisplayLayoutClient _client;
     private readonly VestigoOptions _options;
     private readonly TimeProvider _time;
     private readonly ILogger<DisplayLayoutTransactionManager>? _logger;
+    private readonly IManagedDesktopDirectory? _desktops;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DisplayLayoutTransaction? _current;
     private bool _elevated;
@@ -37,8 +40,10 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         IDisplayLayoutClient client,
         VestigoOptions options,
         TimeProvider time,
+        IManagedDesktopDirectory? desktops = null,
         ILogger<DisplayLayoutTransactionManager>? logger = null)
     {
+        _desktops = desktops;
         _client = client;
         _options = options;
         _time = time;
@@ -72,14 +77,39 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         }
     }
 
-    public async Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken) =>
-        await _client.SnapshotAsync(elevated, cancellationToken).ConfigureAwait(false);
+    public async Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(
+        bool elevated,
+        CancellationToken cancellationToken,
+        string? desktopSessionId = null)
+    {
+        OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting
+            .ResolveAsync(_desktops, desktopSessionId, requireInput: false, cancellationToken).ConfigureAwait(false);
+        return targeted.Success
+            ? await _client.SnapshotAsync(elevated, cancellationToken, targeted.Value?.DesktopPath).ConfigureAwait(false)
+            : targeted.FailAs<DisplayLayoutSnapshot>();
+    }
+
+    /// <summary>
+    ///     Desktop the open transaction runs on. A managed desktop is used only while it is the input desktop; once it is
+    ///     closed or no longer active the default desktop is the input desktop, so the helper runs there. Nothing is switched.
+    /// </summary>
+    private async Task<string?> ExecutionPathAsync(CancellationToken cancellationToken)
+    {
+        if (_current?.DesktopSessionId is not { Length: > 0 } sessionId || _desktops is null)
+        {
+            return null;
+        }
+
+        OperationResult<DesktopHelperTarget> described = await _desktops.DescribeAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        return described is { Success: true, Value.IsInputDesktop: true } ? described.Value!.DesktopPath : null;
+    }
 
     public async Task<OperationResult<DisplayLayoutTransaction>> StartAsync(
         IReadOnlyList<DisplayTargetChange> targets,
         bool persistent,
         bool elevated,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? desktopSessionId = null)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         string? ownedId = null;
@@ -92,7 +122,15 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                     "A display-layout transaction is already open. Restore it before starting another.");
             }
 
-            OperationResult<DisplayLayoutSnapshot> before = await _client.SnapshotAsync(elevated, cancellationToken).ConfigureAwait(false);
+            OperationResult<DesktopHelperTarget?> targeted = await DesktopHelperTargeting
+                .ResolveAsync(_desktops, desktopSessionId, requireInput: true, cancellationToken).ConfigureAwait(false);
+            if (!targeted.Success)
+            {
+                return targeted.FailAs<DisplayLayoutTransaction>();
+            }
+
+            string? desktopPath = targeted.Value?.DesktopPath;
+            OperationResult<DisplayLayoutSnapshot> before = await _client.SnapshotAsync(elevated, cancellationToken, desktopPath).ConfigureAwait(false);
             if (!before.Success)
             {
                 return before.FailAs<DisplayLayoutTransaction>();
@@ -115,7 +153,8 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                 null,
                 false,
                 [],
-                null);
+                null,
+                DesktopSessionId: targeted.Value?.SessionId);
             ownedId = transaction.Id;
             _current = transaction;
             _elevated = elevated;
@@ -123,7 +162,8 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             OperationResult<DisplayLayoutApplyResult> applied = await _client.ApplyAsync(
                 new DisplayLayoutRequest(targets, persistent, false),
                 elevated,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                desktopPath).ConfigureAwait(false);
             if (applied.Success && applied.Value is { Applied: true, Unchanged: true })
             {
                 _current = null;
@@ -152,6 +192,11 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             if (applied.Value is { Applied: false })
             {
                 string message = DescribeRejection(applied.Value);
+                if (applied.Value.NativeError == AccessDenied && desktopPath is null)
+                {
+                    message += " Windows only lets the input desktop change the display configuration. If a managed desktop is active, pass its desktopSessionId; nothing was switched.";
+                }
+
                 bool drifted = applied.Value.Before is not null
                     && applied.Value.After is not null
                     && !string.Equals(applied.Value.Before.Fingerprint, applied.Value.After.Fingerprint, StringComparison.OrdinalIgnoreCase);
@@ -232,13 +277,14 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             return OperationResult<DisplayLayoutObservation>.Fail("invalid_request", "timeout must be positive and at most 2 minutes, and stableSamples must be from 1 to 10.");
         }
 
+        string? desktopPath = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
         DateTimeOffset deadline = _time.GetUtcNow() + wait.Timeout;
         int stable = 0;
         string? previous = null;
         DisplayLayoutObservation? last = null;
         while (true)
         {
-            OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, cancellationToken).ConfigureAwait(false);
+            OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, cancellationToken, desktopPath).ConfigureAwait(false);
             if (!snapshot.Success)
             {
                 return snapshot.FailAs<DisplayLayoutObservation>();
@@ -358,6 +404,7 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         }
 
         _lastRestoreAttempt = _time.GetUtcNow();
+        string? desktopPath = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
         List<DisplayTargetChange> original = _current.Original.Paths.Where(path => path.Active).Select(path => new DisplayTargetChange(
             path.Identity.MonitorDevicePath,
             path.Identity.ConnectorInstance,
@@ -373,8 +420,9 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         OperationResult<DisplayLayoutApplyResult> applied = await _client.ApplyAsync(
             new DisplayLayoutRequest(original, true, false),
             _elevated,
-            cancellationToken).ConfigureAwait(false);
-        OperationResult<DisplayLayoutSnapshot> after = await _client.SnapshotAsync(_elevated, cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            desktopPath).ConfigureAwait(false);
+        OperationResult<DisplayLayoutSnapshot> after = await _client.SnapshotAsync(_elevated, cancellationToken, desktopPath).ConfigureAwait(false);
         IReadOnlyList<string> differences = after.Success
             ? DisplayLayoutPlanner.Compare(_current.Original, after.Value!)
             : [after.Error ?? "The topology could not be read after restore."];

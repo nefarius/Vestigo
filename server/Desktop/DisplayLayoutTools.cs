@@ -19,8 +19,9 @@ public sealed class DisplayLayoutTools(DisplayLayoutTransactionManager transacti
         + "Coordinates are physical screen pixels. This does not change the displays. Interactive session only.")]
     public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotDisplayLayout(
         [Description("Use the elevated token.")] bool elevated = false,
+        [Description("Managed desktop session id the helper runs on. Omit for winsta0\\default. The desktop is not activated.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default) =>
-        transactions.SnapshotAsync(elevated, cancellationToken);
+        transactions.SnapshotAsync(elevated, cancellationToken, desktopSessionId);
 
     [McpServerTool(Name = "start_display_layout_transaction", Destructive = true)]
     [Description(
@@ -29,11 +30,15 @@ public sealed class DisplayLayoutTools(DisplayLayoutTransactionManager transacti
         + "Only one transaction can be open. Cancellation of this call attempts to restore the original layout. "
         + "A later client disconnect does not, because MCP is stateless; the lease restores it. "
         + "Service shutdown and the next service start also attempt restore. External display changes are reported and cannot be blocked. "
+        + "Windows lets only the input desktop change the display configuration (otherwise SetDisplayConfig fails with access denied, native error 5). "
+        + "While a managed desktop is active, pass its desktopSessionId so the change runs there; an inactive session is refused with unsupported_on_inactive_desktop and nothing is switched. "
+        + "The transaction remembers the desktop; observe and restore use it while it is the input desktop and fall back to the default desktop once it is closed or inactive. "
         + "This tool does not create or remove virtual displays. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.")]
     public Task<OperationResult<DisplayLayoutTransaction>> StartDisplayLayoutTransaction(
         [Description("Active targets to reposition or change mode. Identity must match snapshot_display_layout.")] List<DisplayTargetChange> targets,
         [Description("Write the change to the display database. Leave false for a temporary test layout.")] bool persistent = false,
         [Description("Use the elevated token.")] bool elevated = false,
+        [Description("Managed desktop session id that is the input desktop. Omit for winsta0\\default, which Windows refuses while a managed desktop is active. Nothing is switched.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         if (!options.Desktop.AllowDisplayLayoutChanges)
@@ -43,7 +48,7 @@ public sealed class DisplayLayoutTools(DisplayLayoutTransactionManager transacti
                 "Display layout changes are disabled. Set Vestigo:Desktop:AllowDisplayLayoutChanges to true."));
         }
 
-        return transactions.StartAsync(targets, persistent, elevated, cancellationToken);
+        return transactions.StartAsync(targets, persistent, elevated, cancellationToken, desktopSessionId);
     }
 
     [McpServerTool(Name = "get_display_layout_transaction", ReadOnly = true)]

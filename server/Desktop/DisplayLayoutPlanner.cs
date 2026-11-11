@@ -97,7 +97,8 @@ public sealed record DisplayLayoutTransaction(
     bool RestorationVerified,
     IReadOnlyList<string> Differences,
     string? Error,
-    bool Unchanged = false);
+    bool Unchanged = false,
+    string? DesktopSessionId = null);
 
 public sealed record DisplayLayoutObservation(
     string Id,
