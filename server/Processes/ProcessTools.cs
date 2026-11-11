@@ -140,6 +140,11 @@ public sealed class ProcessTools(
 
             startedId = started.Value!.Id;
             ProcessLaunchReport? launch = await WaitForLaunchAsync(report!, startedId, cancellationToken).ConfigureAwait(false);
+            if (lease is not null && launch is null)
+            {
+                launch = await WaitUntilPublishedOrStoppedAsync(report!, startedId, cancellationToken).ConfigureAwait(false);
+            }
+
             if (lease is not null && launch is not null)
             {
                 lease.Attach(new OwnedDesktopProcess(started.Value.Id, launch.ProcessId, launch.Elevated, launch.StartedAt));
@@ -167,9 +172,14 @@ public sealed class ProcessTools(
         }
         catch (OperationCanceledException)
         {
-            if (lease is not null && startedId is not null && report?.Value is { } published)
+            if (lease is not null && startedId is not null && report is not null)
             {
-                lease.Attach(new OwnedDesktopProcess(startedId, published.ProcessId, published.Elevated, published.StartedAt));
+                ProcessLaunchReport? published = report.Value
+                    ?? await WaitUntilPublishedOrStoppedAsync(report, startedId, CancellationToken.None).ConfigureAwait(false);
+                if (published is not null)
+                {
+                    lease.Attach(new OwnedDesktopProcess(startedId, published.ProcessId, published.Elevated, published.StartedAt));
+                }
             }
 
             throw;
@@ -199,6 +209,28 @@ public sealed class ProcessTools(
         }
 
         return report.Value;
+    }
+
+    private async Task<ProcessLaunchReport?> WaitUntilPublishedOrStoppedAsync(
+        ProcessLaunchReportBox report,
+        string jobId,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            if (report.Value is { } published)
+            {
+                return published;
+            }
+
+            OperationResult<JobInfo> current = jobs.Get(jobId);
+            if (current.Value is not { State: JobState.Running })
+            {
+                return report.Value;
+            }
+
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     [McpServerTool(Name = "list_processes")]
