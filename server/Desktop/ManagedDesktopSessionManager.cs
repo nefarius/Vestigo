@@ -24,6 +24,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
     private readonly Dictionary<string, ManagedDesktopSession> _sessions = new(StringComparer.Ordinal);
     private bool _checkpointUnsupported;
     private Timer? _timer;
+    private int _lifetime;
 
     public ManagedDesktopSessionManager(
         IDesktopHostClient host,
@@ -55,29 +56,52 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_timer is not null)
+        if (!TryOwnLifetime())
         {
-            await _timer.DisposeAsync().ConfigureAwait(false);
-            _timer = null;
+            return;
         }
 
-        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            foreach (string id in _sessions.Values.Where(session => session.State is "open" or "active").Select(session => session.Id).ToList())
+            if (_timer is not null)
             {
-                await CloseCoreAsync(id, DesktopSessionPolicy.TerminateOwned, automatic: true, CancellationToken.None).ConfigureAwait(false);
+                await _timer.DisposeAsync().ConfigureAwait(false);
+                _timer = null;
             }
+
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                foreach (string id in _sessions.Values.Where(session => session.State is "open" or "active").Select(session => session.Id).ToList())
+                {
+                    await CloseCoreAsync(id, DesktopSessionPolicy.TerminateOwned, automatic: true, CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
+
+            await _host.ShutdownAsync(CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
-            _gate.Release();
+            _gate.Dispose();
         }
-
-        await _host.ShutdownAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
-    public void Dispose() => _gate.Dispose();
+    public void Dispose()
+    {
+        if (!TryOwnLifetime())
+        {
+            return;
+        }
+
+        _timer?.Dispose();
+        _gate.Dispose();
+    }
+
+    private bool TryOwnLifetime() => Interlocked.CompareExchange(ref _lifetime, 1, 0) == 0;
 
     public async Task<OperationResult<ManagedDesktopSession>> CreateAsync(string? cleanupPolicy, CancellationToken cancellationToken)
     {
