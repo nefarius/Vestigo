@@ -278,8 +278,8 @@ public static class ModuleRegistry
     private static string DiagnosticsDetail(bool online, bool probes, bool network, bool playback, bool dumps)
     {
         string text = online
-            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, and list Windows Error Reporting report metadata."
-            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, and list Windows Error Reporting report metadata.";
+            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, and read Driver Verifier state."
+            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, and read Driver Verifier state.";
         if (probes)
         {
             text += " Capture probes may observe whether frames arrive, and they do not return pixels.";

@@ -105,7 +105,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Online revocation gated</span></p>
     <h2>Diagnostics</h2>
     <p><code>inspect_binary</code> reads architecture, characteristics, version, and the CodeView PDB file name. <code>verify_file_signature</code> checks an embedded or catalog Authenticode signature. <code>list_process_modules</code> lists modules loaded in a process and returns root aliases only. <code>get_device_install_history</code> reads the fixed SetupAPI dev logs. <code>explain_device_problem</code> states the documented CM_PROB meaning and cites observed evidence.</p>
-    <p>A valid signature is not permission to load a kernel driver. Online revocation stays off until <code>Diagnostics:AllowOnlineRevocation</code> is true. Absolute module paths are never returned. Install history does not rank drivers. Graphics, network, media, and crash tools below are part of this same module.</p>
+    <p>A valid signature is not permission to load a kernel driver. <code>get_driver_verifier_state</code> reads the current query and the saved settings. It does not enable verifier. Online revocation stays off until <code>Diagnostics:AllowOnlineRevocation</code> is true. Absolute module paths are never returned. Install history does not rank drivers. Graphics, network, media, and crash tools below are part of this same module.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Capture probes gated</span></p>

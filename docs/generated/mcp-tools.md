@@ -379,6 +379,12 @@ Returns an HTTP GET URL, not the file bytes, for downloading an existing file fr
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
 
+## `get_driver_verifier_state`
+
+Reads Driver Verifier with the fixed commands verifier /query and verifier /querysettings. running is the current query. configured is the saved settings, which can differ until a reboot. An active statistics dump stays text and is not turned into flags. Unknown settings lines are kept. This does not enable, change, or reset verifier.
+
+No parameters.
+
 ## `get_environment_variable`
 
 Reads one environment variable. Machine scope reads the Session Manager registry key and user scope reads the environment of the user logged on at the console; both return the unexpanded value and whether it is REG_EXPAND_SZ. Fails with user_not_available when nobody is logged on.
