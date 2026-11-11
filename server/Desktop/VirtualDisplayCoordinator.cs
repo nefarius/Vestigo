@@ -24,6 +24,7 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
     private readonly Dictionary<string, VirtualDisplaySession> _sessions = new(StringComparer.Ordinal);
     private bool _checkpointUnsupported;
     private Timer? _timer;
+    private int _lifetime;
 
     public VirtualDisplayCoordinator(
         IVirtualDisplayBackend backend,
@@ -52,37 +53,60 @@ public sealed class VirtualDisplayCoordinator : IHostedService, IDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_timer is not null)
-        {
-            await _timer.DisposeAsync().ConfigureAwait(false);
-            _timer = null;
-        }
-
-        using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        bounded.CancelAfter(TimeSpan.FromSeconds(20));
-        try
-        {
-            await _gate.WaitAsync(bounded.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
+        if (!TryOwnLifetime())
         {
             return;
         }
 
         try
         {
-            foreach (string id in _sessions.Values.Where(item => item.State is "open").Select(item => item.Id).ToList())
+            if (_timer is not null)
             {
-                await CloseCoreAsync(id, automatic: true, bounded.Token).ConfigureAwait(false);
+                await _timer.DisposeAsync().ConfigureAwait(false);
+                _timer = null;
+            }
+
+            using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            bounded.CancelAfter(TimeSpan.FromSeconds(20));
+            try
+            {
+                await _gate.WaitAsync(bounded.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (string id in _sessions.Values.Where(item => item.State is "open").Select(item => item.Id).ToList())
+                {
+                    await CloseCoreAsync(id, automatic: true, bounded.Token).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _gate.Release();
             }
         }
         finally
         {
-            _gate.Release();
+            _gate.Dispose();
         }
     }
 
-    public void Dispose() => _gate.Dispose();
+    public void Dispose()
+    {
+        if (!TryOwnLifetime())
+        {
+            return;
+        }
+
+        _timer?.Dispose();
+        _gate.Dispose();
+    }
+
+    private bool TryOwnLifetime() => Interlocked.CompareExchange(ref _lifetime, 1, 0) == 0;
 
     public Task<OperationResult<VirtualDisplayBackendStatus>> StatusAsync(CancellationToken cancellationToken) =>
         _backend.StatusAsync(cancellationToken);
