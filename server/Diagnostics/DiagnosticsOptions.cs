@@ -20,6 +20,9 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>capture_process_dump</c>. The tool stays disabled until this is true.</summary>
     public bool AllowProcessDumps { get; set; }
 
+    /// <summary>Allows <c>stage_kernel_dump</c>. The tool stays disabled until this is true.</summary>
+    public bool AllowKernelDumpStaging { get; set; }
+
     /// <summary>Hosts, or <c>host:port</c> entries, that <c>test_endpoint</c> may contact. Empty allows none.</summary>
     public string[] AllowedProbeDestinations { get; set; } = [];
 

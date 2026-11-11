@@ -35,8 +35,13 @@ public sealed record KernelDumpList(
     bool Truncated,
     IReadOnlyList<KernelDump> Dumps);
 
+/// <summary>A dump selected by the id from <c>list_kernel_dumps</c>. The path is not a tool result.</summary>
+public sealed record KernelDumpLocation(string Id, string Path, long Bytes, DateTimeOffset? LastWriteTimeUtc);
+
 /// <summary>Finds the fixed kernel-dump locations and reads only the proven header prefix.</summary>
 public interface IKernelDumpInventory
 {
     OperationResult<KernelDumpList> List(int limit);
+
+    OperationResult<KernelDumpLocation> Resolve(string id);
 }

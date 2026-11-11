@@ -37,6 +37,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Devices:NefconTimeout` | `00:02:00` |
 | `Diagnostics:AllowAudioPlayback` | `false` |
 | `Diagnostics:AllowCaptureProbes` | `false` |
+| `Diagnostics:AllowKernelDumpStaging` | `false` |
 | `Diagnostics:AllowNetworkProbes` | `false` |
 | `Diagnostics:AllowOnlineRevocation` | `false` |
 | `Diagnostics:AllowProcessDumps` | `false` |

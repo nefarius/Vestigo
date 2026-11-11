@@ -48,6 +48,8 @@ public class ModuleSelectionTests
         Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsAudioPlayback)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.DiagnosticsProcessDumps]);
         Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsProcessDumps)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.DiagnosticsKernelDumpStaging]);
+        Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsKernelDumpStaging)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SelfUpdate]);
         Assert.Equal("Updates", ModuleSelection.Find(ModuleSelection.SelfUpdate)?.Parent);
         Assert.True(ModuleSelection.Defaults()["Updates"]);

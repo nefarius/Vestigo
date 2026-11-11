@@ -131,6 +131,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p><code>list_crash_reports</code> reads Windows Error Reporting metadata from the machine and user stores: application, event type, and signature values. A dump beside a report is a file name and length only.</p>
     <p><code>list_kernel_dumps</code> lists <code>MEMORY.DMP</code>, the dedicated dump file, and minidumps. It returns file names, lengths, and a small header prefix. Bugcheck fields and dump bytes are not returned.</p>
     <p><code>capture_process_dump</code> stays off until <code>Diagnostics:AllowProcessDumps</code> is true. It writes a minidump into a write root, refuses protected processes and processes on the fixed refusal list, and does not upload the file or create a download ticket. A full dump can contain process memory.</p>
+    <p><code>stage_kernel_dump</code> stays off until <code>Diagnostics:AllowKernelDumpStaging</code> is true. It copies the dump selected by <code>list_kernel_dumps</code> into a write root. The result contains the length, SHA-256, and a one-time download ticket when the root also has Read access. Dump bytes are not in the tool result.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>

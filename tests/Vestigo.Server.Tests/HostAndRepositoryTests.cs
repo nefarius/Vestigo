@@ -206,7 +206,7 @@ public class RepositoryBoundaryTests
                      "Diagnostics:MaxUdpPayloadBytes", "Diagnostics:MaxUdpProbeDuration",
                      "Diagnostics:AllowAudioPlayback", "Diagnostics:MaxVideoEncoders",
                      "Diagnostics:MaxCameraFormats", "Diagnostics:MaxAudioProbeDuration",
-                     "Diagnostics:AllowProcessDumps", "Diagnostics:MaxCrashReports",
+                     "Diagnostics:AllowProcessDumps", "Diagnostics:AllowKernelDumpStaging", "Diagnostics:MaxCrashReports",
                      "Diagnostics:MaxCrashReportFileBytes", "Diagnostics:MaxDumpBytes",
                      "Diagnostics:MinDumpFreeBytes",
                      "Audio:AllowSetDefault", "Audio:MeterSampleMilliseconds",

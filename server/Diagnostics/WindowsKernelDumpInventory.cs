@@ -14,8 +14,73 @@ internal sealed class WindowsKernelDumpInventory(ICrashReportSource reports) : I
     public OperationResult<KernelDumpList> List(int limit)
     {
         int bounded = Math.Clamp(limit, 1, MaxDumps);
-        int? enabled = null;
-        string? enabledNote = null;
+        List<Discovered> found = Collect(out int? enabled, out string? enabledNote, out bool directoryCapped);
+        bool truncated = found.Count > bounded || directoryCapped;
+        Discovered[] page = found.Take(bounded).ToArray();
+        Dictionary<string, List<KernelDumpWerMatch>> matches = MatchWer(page, out string? werNote);
+        List<KernelDump> dumps = [];
+        foreach (Discovered item in page)
+        {
+            dumps.Add(Describe(item, matches));
+        }
+
+        return OperationResult<KernelDumpList>.Ok(new KernelDumpList(
+            enabled,
+            enabled is int modeValue ? KernelDumpHeaderReader.CrashDumpEnabledName(modeValue) : null,
+            enabledNote,
+            werNote,
+            dumps.Count,
+            truncated,
+            dumps));
+    }
+
+    public OperationResult<KernelDumpLocation> Resolve(string id)
+    {
+        if (!IsInventoryId(id))
+        {
+            return OperationResult<KernelDumpLocation>.Fail(
+                "invalid_request",
+                "id must be memory, dedicated, or minidump/<file>.dmp from list_kernel_dumps.");
+        }
+
+        Discovered? match = Collect(out _, out _, out _).FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+        if (match is null)
+        {
+            return OperationResult<KernelDumpLocation>.Fail("not_found", "No kernel dump has that id.");
+        }
+
+        if (match.Bytes is null)
+        {
+            return OperationResult<KernelDumpLocation>.Fail("dump_unavailable", "The dump file could not be read.");
+        }
+
+        return OperationResult<KernelDumpLocation>.Ok(new KernelDumpLocation(match.Id, match.Path, match.Bytes.Value, match.LastWriteTimeUtc));
+    }
+
+    internal static bool IsInventoryId(string id)
+    {
+        if (id is "memory" or "dedicated")
+        {
+            return true;
+        }
+
+        const string prefix = "minidump/";
+        if (!id.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string name = id[prefix.Length..];
+        return name.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase)
+            && name.Length is > 4 and <= 255
+            && name.IndexOfAny(['/', '\\', ':']) < 0
+            && !name.Contains("..", StringComparison.Ordinal);
+    }
+
+    private List<Discovered> Collect(out int? enabled, out string? enabledNote, out bool directoryCapped)
+    {
+        enabled = null;
+        enabledNote = null;
         string? dumpFile = null;
         string? minidumpDir = null;
         try
@@ -49,7 +114,7 @@ internal sealed class WindowsKernelDumpInventory(ICrashReportSource reports) : I
         }
 
         string? miniDirectory = Expand(minidumpDir) ?? Path.Combine(windows, "Minidump");
-        bool directoryCapped = false;
+        directoryCapped = false;
         try
         {
             if (Directory.Exists(miniDirectory))
@@ -80,23 +145,7 @@ internal sealed class WindowsKernelDumpInventory(ICrashReportSource reports) : I
             enabledNote ??= "minidump_unavailable";
         }
 
-        bool truncated = found.Count > bounded || directoryCapped;
-        Discovered[] page = found.Take(bounded).ToArray();
-        Dictionary<string, List<KernelDumpWerMatch>> matches = MatchWer(page, out string? werNote);
-        List<KernelDump> dumps = [];
-        foreach (Discovered item in page)
-        {
-            dumps.Add(Describe(item, matches));
-        }
-
-        return OperationResult<KernelDumpList>.Ok(new KernelDumpList(
-            enabled,
-            enabled is int modeValue ? KernelDumpHeaderReader.CrashDumpEnabledName(modeValue) : null,
-            enabledNote,
-            werNote,
-            dumps.Count,
-            truncated,
-            dumps));
+        return found;
     }
 
     private static void AddFile(List<Discovered> found, string id, string path)
