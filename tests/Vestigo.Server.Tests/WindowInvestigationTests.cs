@@ -891,6 +891,23 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Observe_BoundsAHungSnapshotByTheWaitButStillHonoursCallerCancellation()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
+        DisplayLayoutTransactionManager manager = Manager(displays);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None);
+        displays.HangSnapshots = true;
+
+        OperationResult<DisplayLayoutObservation> timedOut = await manager.ObserveAsync(
+            started.Value!.Id, new DisplayWait(TimeSpan.FromMilliseconds(100), 1, null), CancellationToken.None);
+        Assert.Equal("helper_timeout", timedOut.ErrorCode);
+
+        using CancellationTokenSource caller = new(TimeSpan.FromMilliseconds(50));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => manager.ObserveAsync(
+            started.Value.Id, new DisplayWait(TimeSpan.FromSeconds(30), 1, null), caller.Token));
+    }
+
+    [Fact]
     public async Task ManagedDesktop_FailedLookupIsNotTreatedAsTheDefaultDesktop()
     {
         FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
@@ -1015,6 +1032,7 @@ public class DisplayLayoutContractTests : IDisposable
         public int SnapshotsBeforeChanged;
         public bool FailApply;
         public bool FailSnapshots;
+        public bool HangSnapshots;
         public bool RejectBeforeApply;
         public bool ReportUnchanged;
         public bool OmitAfter;
@@ -1025,17 +1043,22 @@ public class DisplayLayoutContractTests : IDisposable
         public List<string?> ApplyPaths { get; } = [];
         public List<string?> SnapshotPaths { get; } = [];
 
-        public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken, string? desktopPath = null)
+        public async Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken, string? desktopPath = null)
         {
             SnapshotPaths.Add(desktopPath);
+            if (HangSnapshots)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
             if (FailSnapshots)
             {
-                return Task.FromResult(OperationResult<DisplayLayoutSnapshot>.Fail("helper_failed", "snapshot failed"));
+                return OperationResult<DisplayLayoutSnapshot>.Fail("helper_failed", "snapshot failed");
             }
 
             _snapshots++;
             DisplayLayoutSnapshot snapshot = _snapshots <= SnapshotsBeforeChanged ? original : Current;
-            return Task.FromResult(OperationResult<DisplayLayoutSnapshot>.Ok(snapshot));
+            return OperationResult<DisplayLayoutSnapshot>.Ok(snapshot);
         }
 
         public Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(

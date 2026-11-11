@@ -273,67 +273,81 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             return OperationResult<DisplayLayoutObservation>.Fail("invalid_request", "timeout must be positive and at most 2 minutes, and stableSamples must be from 1 to 10.");
         }
 
-        OperationResult<string?> resolved = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
-        if (!resolved.Success)
-        {
-            return resolved.FailAs<DisplayLayoutObservation>();
-        }
-
-        string? desktopPath = resolved.Value;
-        DateTimeOffset deadline = _time.GetUtcNow() + wait.Timeout;
-        int stable = 0;
-        string? previous = null;
+        // Every host lookup and helper snapshot is bounded by the observation time. Only the caller's own
+        // cancellation propagates; running out of time ends the observation instead.
+        using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(wait.Timeout);
+        CancellationToken token = bounded.Token;
         DisplayLayoutObservation? last = null;
-        bool rerouted = false;
-        while (true)
+        try
         {
-            OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, cancellationToken, desktopPath).ConfigureAwait(false);
-            if (!snapshot.Success)
+            OperationResult<string?> resolved = await ExecutionPathAsync(token).ConfigureAwait(false);
+            if (!resolved.Success)
             {
-                // The desktop may have closed or lost input since the last lookup; look once more before giving up.
-                OperationResult<string?> refreshed = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
-                if (!rerouted && refreshed.Success && refreshed.Value != desktopPath && _time.GetUtcNow() < deadline)
+                return resolved.FailAs<DisplayLayoutObservation>();
+            }
+
+            string? desktopPath = resolved.Value;
+            DateTimeOffset deadline = _time.GetUtcNow() + wait.Timeout;
+            int stable = 0;
+            string? previous = null;
+                bool rerouted = false;
+            while (true)
+            {
+                OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, token, desktopPath).ConfigureAwait(false);
+                if (!snapshot.Success)
                 {
-                    rerouted = true;
-                    desktopPath = refreshed.Value;
-                    continue;
+                    // The desktop may have closed or lost input since the last lookup; look once more before giving up.
+                    OperationResult<string?> refreshed = await ExecutionPathAsync(token).ConfigureAwait(false);
+                    if (!rerouted && refreshed.Success && refreshed.Value != desktopPath && _time.GetUtcNow() < deadline)
+                    {
+                        rerouted = true;
+                        desktopPath = refreshed.Value;
+                        continue;
+                    }
+
+                    return snapshot.FailAs<DisplayLayoutObservation>();
                 }
 
-                return snapshot.FailAs<DisplayLayoutObservation>();
-            }
+                rerouted = false;
+                IReadOnlyList<string> differences = wait.Target is null
+                    ? DisplayLayoutPlanner.Compare(existing.Value!.Original, snapshot.Value!)
+                    : DisplayLayoutPlanner.Compare(wait.Target, snapshot.Value!);
+                string sample = snapshot.Value!.Fingerprint + string.Join('\n', differences);
+                stable = sample == previous && differences.Count == 0 ? stable + 1 : differences.Count == 0 ? 1 : 0;
+                previous = sample;
+                DisplayPathLayout? target = wait.Target is null
+                    ? null
+                    : snapshot.Value.Paths.FirstOrDefault(path => DisplayLayoutPlanner.Matches(path.Identity, wait.Target));
+                last = new DisplayLayoutObservation(
+                    id,
+                    differences.Count == 0,
+                    stable >= wait.StableSamples,
+                    stable,
+                    wait.StableSamples,
+                    false,
+                    target,
+                    differences,
+                    snapshot.Value);
+                if (last.Stable)
+                {
+                    return OperationResult<DisplayLayoutObservation>.Ok(last);
+                }
 
-            rerouted = false;
-            IReadOnlyList<string> differences = wait.Target is null
-                ? DisplayLayoutPlanner.Compare(existing.Value!.Original, snapshot.Value!)
-                : DisplayLayoutPlanner.Compare(wait.Target, snapshot.Value!);
-            string sample = snapshot.Value!.Fingerprint + string.Join('\n', differences);
-            stable = sample == previous && differences.Count == 0 ? stable + 1 : differences.Count == 0 ? 1 : 0;
-            previous = sample;
-            DisplayPathLayout? target = wait.Target is null
-                ? null
-                : snapshot.Value.Paths.FirstOrDefault(path => DisplayLayoutPlanner.Matches(path.Identity, wait.Target));
-            last = new DisplayLayoutObservation(
-                id,
-                differences.Count == 0,
-                stable >= wait.StableSamples,
-                stable,
-                wait.StableSamples,
-                false,
-                target,
-                differences,
-                snapshot.Value);
-            if (last.Stable)
-            {
-                return OperationResult<DisplayLayoutObservation>.Ok(last);
-            }
+                if (_time.GetUtcNow() >= deadline)
+                {
+                    return OperationResult<DisplayLayoutObservation>.Ok(last with { TimedOut = true });
+                }
 
-            if (_time.GetUtcNow() >= deadline)
-            {
-                return OperationResult<DisplayLayoutObservation>.Ok(last with { TimedOut = true });
+                await (Delay ?? Task.Delay)(TimeSpan.FromMilliseconds(_options.Desktop.DisplayObservationIntervalMilliseconds), token)
+                    .ConfigureAwait(false);
             }
-
-            await (Delay ?? Task.Delay)(TimeSpan.FromMilliseconds(_options.Desktop.DisplayObservationIntervalMilliseconds), cancellationToken)
-                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return last is null
+                ? OperationResult<DisplayLayoutObservation>.Fail("helper_timeout", "The display observation ran out of time before a sample completed.")
+                : OperationResult<DisplayLayoutObservation>.Ok(last with { TimedOut = true });
         }
     }
 
