@@ -136,6 +136,7 @@ The MSI is `publish-x64\installer\Vestigo-v<version>.msi`. Its access and authen
 - [json-everything](https://github.com/json-everything/json-everything) (`JsonPath.Net`)
 - [OpenCvSharp](https://github.com/shimat/opencvsharp) (Apache-2.0) and [OpenCV](https://opencv.org/)
 - [CsWin32](https://github.com/microsoft/CsWin32)
+- [ManagedDism](https://github.com/jeffkl/ManagedDism) (`Microsoft.Dism`, MIT)
 - [Model Context Protocol C# SDK](https://csharp.sdk.modelcontextprotocol.io/)
 - [Serilog](https://github.com/serilog/serilog)
 - [CliWrap](https://github.com/Tyrrrz/CliWrap)

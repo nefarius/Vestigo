@@ -165,7 +165,9 @@ CBS/DISM log content and caller-selected file-locker queries require existing
 Read roots. No additional roots are granted automatically. Logs can contain
 sensitive machine/user data. Event evidence uses bounded existing event-log
 queries. Native DLL imports are restricted to System32 and COM objects are
-released on the MTA that acquired them.
+released on the MTA that acquired them. Microsoft.Dism's imports use an
+assembly-scoped resolver that loads DismApi.dll from System32 only and rejects
+unexpected native libraries; ADK discovery/loading is not used.
 
 Offline WUA applicability queries can perform local work and update WUA caches
 or logs; DISM enumeration can write its own logs. No installation, repair,
