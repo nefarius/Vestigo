@@ -851,9 +851,9 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
-    public async Task ManagedDesktop_ObserveResolvesTheDesktopForEverySample()
+    public async Task ManagedDesktop_ObserveLooksUpOnceAndAgainOnlyAfterAFailedSnapshot()
     {
-        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { SnapshotsBeforeChanged = 4 };
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { SnapshotsBeforeChanged = 3 };
         FakeDesktops desktops = new(input: true);
         ManualTime time = new();
         DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), time, desktops)
@@ -861,17 +861,38 @@ public class DisplayLayoutContractTests : IDisposable
             Delay = (span, _) =>
             {
                 time.Now += span;
-                desktops.Input = false;
                 return Task.CompletedTask;
             }
         };
         OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
-        displays.SnapshotPaths.Clear();
+        int before = desktops.Lookups;
 
         await manager.ObserveAsync(started.Value!.Id, new DisplayWait(TimeSpan.FromSeconds(5), 1, Change(0, 0, 1280, 720)), CancellationToken.None);
 
-        Assert.Equal(FakeDesktops.DesktopPath, displays.SnapshotPaths[0]);
-        Assert.Null(displays.SnapshotPaths[^1]);
+        Assert.Equal(before + 1, desktops.Lookups);
+    }
+
+    [Fact]
+    public async Task ManagedDesktop_FailedLookupIsNotTreatedAsTheDefaultDesktop()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080)));
+        FakeDesktops desktops = new(input: true);
+        DisplayLayoutTransactionManager manager = new(displays, new VestigoOptions(), TimeProvider.System, desktops);
+        OperationResult<DisplayLayoutTransaction> started = await manager.StartAsync([Change(0, 0, 1280, 720)], false, false, CancellationToken.None, "abc");
+        desktops.FailLookup = true;
+        int applies = displays.Applied.Count;
+
+        OperationResult<DisplayLayoutObservation> observed = await manager.ObserveAsync(
+            started.Value!.Id, new DisplayWait(TimeSpan.FromSeconds(1), 1, null), CancellationToken.None);
+        OperationResult<DisplayLayoutTransaction> restored = await manager.RestoreAsync(started.Value.Id, CancellationToken.None);
+
+        Assert.Equal("desktop_unavailable", observed.ErrorCode);
+        Assert.Equal("restore_failed", restored.Value!.State);
+        Assert.Contains("could not be determined", restored.Value.Error);
+        Assert.Equal(applies, displays.Applied.Count);
+
+        desktops.FailLookup = false;
+        Assert.True((await manager.RestoreAsync(started.Value.Id, CancellationToken.None)).Value!.RestorationVerified);
     }
 
     [Fact]
@@ -901,8 +922,17 @@ public class DisplayLayoutContractTests : IDisposable
 
         public string? OtherInput { get; set; }
 
-        public Task<string?> InputDesktopPathAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(OtherInput ?? (Input ? DesktopPath : null));
+        public int Lookups { get; private set; }
+
+        public bool FailLookup { get; set; }
+
+        public Task<OperationResult<string?>> InputDesktopPathAsync(CancellationToken cancellationToken)
+        {
+            Lookups++;
+            return Task.FromResult(FailLookup
+                ? OperationResult<string?>.Fail("desktop_unavailable", "The input desktop could not be read.")
+                : OperationResult<string?>.Ok(OtherInput ?? (Input ? DesktopPath : null)));
+        }
 
         public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();

@@ -91,11 +91,14 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
 
     /// <summary>
     ///     Desktop that can change the display now: the managed desktop that is the input desktop, whichever session that is,
-    ///     otherwise the default desktop (null). Resolved per call so a closed or switched session cannot leave a stale path.
-    ///     Nothing is switched.
+    ///     otherwise the default desktop (null). A failed lookup is an error and never counts as the default desktop.
+    ///     Every lookup appends to the desktop host's 1 MiB status spool, which ends the host when full, so callers resolve once
+    ///     per operation and again only after a failure, not on every sample. Nothing is switched.
     /// </summary>
-    private Task<string?> ExecutionPathAsync(CancellationToken cancellationToken) =>
-        _desktops is null ? Task.FromResult<string?>(null) : _desktops.InputDesktopPathAsync(cancellationToken);
+    private async Task<OperationResult<string?>> ExecutionPathAsync(CancellationToken cancellationToken) =>
+        _desktops is null
+            ? OperationResult<string?>.Ok(null)
+            : await _desktops.InputDesktopPathAsync(cancellationToken).ConfigureAwait(false);
 
     public async Task<OperationResult<DisplayLayoutTransaction>> StartAsync(
         IReadOnlyList<DisplayTargetChange> targets,
@@ -270,16 +273,30 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
             return OperationResult<DisplayLayoutObservation>.Fail("invalid_request", "timeout must be positive and at most 2 minutes, and stableSamples must be from 1 to 10.");
         }
 
+        OperationResult<string?> resolved = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
+        if (!resolved.Success)
+        {
+            return resolved.FailAs<DisplayLayoutObservation>();
+        }
+
+        string? desktopPath = resolved.Value;
         DateTimeOffset deadline = _time.GetUtcNow() + wait.Timeout;
         int stable = 0;
         string? previous = null;
         DisplayLayoutObservation? last = null;
         while (true)
         {
-            string? desktopPath = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
             OperationResult<DisplayLayoutSnapshot> snapshot = await _client.SnapshotAsync(_elevated, cancellationToken, desktopPath).ConfigureAwait(false);
             if (!snapshot.Success)
             {
+                // The desktop may have closed or lost input since the last lookup; look once more before giving up.
+                OperationResult<string?> refreshed = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
+                if (refreshed.Success && refreshed.Value != desktopPath)
+                {
+                    desktopPath = refreshed.Value;
+                    continue;
+                }
+
                 return snapshot.FailAs<DisplayLayoutObservation>();
             }
 
@@ -397,7 +414,20 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
         }
 
         _lastRestoreAttempt = _time.GetUtcNow();
-        string? desktopPath = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
+        OperationResult<string?> resolved = await ExecutionPathAsync(cancellationToken).ConfigureAwait(false);
+        if (!resolved.Success)
+        {
+            _current = _current with
+            {
+                State = "restore_failed",
+                RestorationVerified = false,
+                Error = "The input desktop could not be determined, so the layout was not restored: " + resolved.Error
+            };
+            Save();
+            return;
+        }
+
+        string? desktopPath = resolved.Value;
         List<DisplayTargetChange> original = _current.Original.Paths.Where(path => path.Active).Select(path => new DisplayTargetChange(
             path.Identity.MonitorDevicePath,
             path.Identity.ConnectorInstance,

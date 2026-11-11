@@ -227,16 +227,18 @@ public class ManagedDesktopTests : IDisposable
         RecordingHost host = new();
         ManagedDesktopSessionManager manager = Manager(host, allow: true);
         ManagedDesktopSession created = (await manager.CreateAsync(null, CancellationToken.None)).Value!;
-        Assert.Null(await manager.InputDesktopPathAsync(CancellationToken.None));
+        Assert.Null((await manager.InputDesktopPathAsync(CancellationToken.None)).Value);
 
         await manager.ActivateAsync(created.Id, CancellationToken.None);
-        Assert.Equal(DesktopSessionPolicy.DesktopPath(created.DesktopName), await manager.InputDesktopPathAsync(CancellationToken.None));
+        Assert.Equal(DesktopSessionPolicy.DesktopPath(created.DesktopName), (await manager.InputDesktopPathAsync(CancellationToken.None)).Value);
 
         await manager.RestoreAsync(created.Id, CancellationToken.None);
-        Assert.Null(await manager.InputDesktopPathAsync(CancellationToken.None));
+        Assert.Null((await manager.InputDesktopPathAsync(CancellationToken.None)).Value);
 
         host.FailEnumerate = true;
-        Assert.Null(await manager.InputDesktopPathAsync(CancellationToken.None));
+        OperationResult<string?> failed = await manager.InputDesktopPathAsync(CancellationToken.None);
+        Assert.False(failed.Success);
+        Assert.Equal("desktop_unavailable", failed.ErrorCode);
     }
 
     [Fact]
