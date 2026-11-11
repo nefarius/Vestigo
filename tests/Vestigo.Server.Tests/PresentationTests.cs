@@ -179,6 +179,31 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public async Task UnreadableLossCounters_HideAMatchingMode()
+    {
+        ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)], FailLossQuery = true };
+
+        OperationResult<PresentationObservation> result = await Observer(factory).ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("events_dropped", result.Value!.Reason);
+    }
+
+    [Fact]
+    public async Task Startup_KeepsASessionThatFailsToStop()
+    {
+        File.WriteAllText(VestigoPaths.OwnedPresentationPath, JsonSerializer.Serialize(new[] { "Vestigo-Pstuck", "Vestigo-Pok", "Other Session" }));
+        ScriptedFactory factory = new();
+        factory.FailStop.Add("Vestigo-Pstuck");
+
+        await Observer(factory).StartAsync(CancellationToken.None);
+
+        string saved = File.ReadAllText(VestigoPaths.OwnedPresentationPath);
+        Assert.Contains("Vestigo-Pstuck", saved, StringComparison.Ordinal);
+        Assert.DoesNotContain("Vestigo-Pok", saved, StringComparison.Ordinal);
+        Assert.DoesNotContain("Other Session", saved, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DisposeFailure_KeepsTheCheckpointAndReleasesTheGate()
     {
         ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)], FailDispose = true };
@@ -345,7 +370,11 @@ public class PresentationTests : IDisposable
 
         public bool FailDispose { get; set; }
 
+        public bool FailLossQuery { get; init; }
+
         public Exception? CreateError { get; init; }
+
+        public HashSet<string> FailStop { get; } = new(StringComparer.Ordinal);
 
         public List<string> Created { get; } = [];
 
@@ -370,7 +399,14 @@ public class PresentationTests : IDisposable
 
         public IRealtimeTraceSession Attach(string sessionName) => throw new NotSupportedException();
 
-        public void StopOrphan(string sessionName) => Stopped.Add(sessionName);
+        public void StopOrphan(string sessionName)
+        {
+            Stopped.Add(sessionName);
+            if (FailStop.Contains(sessionName))
+            {
+                throw new IOException("The presentation session could not be stopped.");
+            }
+        }
 
         public IReadOnlyList<string> ListSessions() => [];
 
@@ -378,7 +414,9 @@ public class PresentationTests : IDisposable
         {
             public string SessionName => sessionName;
 
-            public bool EventsWereLost => factory.EventsLost;
+            public bool EventsWereLost => factory.FailLossQuery
+                ? throw new IOException("The loss counters could not be read.")
+                : factory.EventsLost;
 
             public void EnableProvider(Guid providerId, TraceLevelSelection level, ulong matchAnyKeyword, ulong matchAllKeyword)
             {

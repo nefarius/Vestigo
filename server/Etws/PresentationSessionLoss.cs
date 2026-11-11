@@ -30,8 +30,12 @@ internal static class PresentationSessionLoss
             fixed (char* name = sessionName)
             {
                 WIN32_ERROR error = PInvoke.ControlTrace((ulong)0, name, properties, EVENT_TRACE_CONTROL.EVENT_TRACE_CONTROL_QUERY);
-                return error == WIN32_ERROR.ERROR_SUCCESS
-                    && (properties->EventsLost > 0 || properties->RealTimeBuffersLost > 0 || properties->LogBuffersLost > 0);
+                if (error != WIN32_ERROR.ERROR_SUCCESS)
+                {
+                    throw new System.ComponentModel.Win32Exception((int)error);
+                }
+
+                return properties->EventsLost > 0 || properties->RealTimeBuffersLost > 0 || properties->LogBuffersLost > 0;
             }
         }
         finally

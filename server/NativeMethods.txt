@@ -392,4 +392,4 @@ PowerReadDCValueIndex
 
 // Presentation observation: session loss counters before the session is stopped
 ControlTrace
-EVENT_TRACE_CONTROL_QUERY
+EVENT_TRACE_CONTROL

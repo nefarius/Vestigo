@@ -40,6 +40,7 @@ public sealed class PresentationObserver : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        List<string> retained = [];
         foreach (string name in Load())
         {
             if (!name.StartsWith(CaptureManager.SessionPrefix, StringComparison.Ordinal))
@@ -55,10 +56,11 @@ public sealed class PresentationObserver : IHostedService
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 _logger.LogWarning(ex, "Could not stop orphan presentation session {SessionName}", name);
+                retained.Add(name);
             }
         }
 
-        Save([]);
+        Save(retained);
         return Task.CompletedTask;
     }
 
@@ -186,6 +188,7 @@ public sealed class PresentationObserver : IHostedService
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         _logger.LogWarning(ex, "Could not read loss counters for presentation session {SessionName}", sessionName);
+                        eventsLost = true;
                     }
 
                     await session.DisposeAsync().ConfigureAwait(false);
