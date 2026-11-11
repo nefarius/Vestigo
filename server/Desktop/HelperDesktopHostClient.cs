@@ -47,6 +47,11 @@ public sealed class HelperDesktopHostClient(IProcessLauncher launcher) : IDeskto
         {
             return OperationResult<DesktopCommandResult>.Fail("cancelled", "The desktop-host command was cancelled.");
         }
+        catch (IOException)
+        {
+            CancelHost();
+            return OperationResult<DesktopCommandResult>.Fail("desktop_host_lost", "The interactive desktop host exited.");
+        }
         finally
         {
             _send.Release();
