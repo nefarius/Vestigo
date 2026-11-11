@@ -236,6 +236,24 @@ public class ManagedDesktopTests : IDisposable
     }
 
     [Fact]
+    public async Task Shutdown_DisposeAndStopShareOneLifetime()
+    {
+        RecordingHost host = new();
+        ManagedDesktopSessionManager first = Manager(host, allow: true);
+        await first.StartAsync(CancellationToken.None);
+        first.Dispose();
+        await first.StopAsync(CancellationToken.None);
+
+        ManagedDesktopSessionManager second = Manager(host, allow: true);
+        await second.StartAsync(CancellationToken.None);
+        await second.StopAsync(CancellationToken.None);
+        second.Dispose();
+        await second.StopAsync(CancellationToken.None);
+
+        Assert.Contains(DesktopHostOperations.Shutdown, host.Operations);
+    }
+
+    [Fact]
     public async Task Close_ReturnsTheHostErrorWhenRestoreIsWrapped()
     {
         RecordingHost host = new() { RestoreCode = "desktop_unavailable" };
