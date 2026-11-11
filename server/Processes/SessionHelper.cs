@@ -41,7 +41,7 @@ public static partial class SessionHelper
     {
         if (args.Length < 2 || args[0] != Flag)
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}> ..." }, Json));
+            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}|{DesktopHostCommand}|{DesktopRecoverCommand}|{DesktopEnumerateCommand}> ..." }, Json));
             return 2;
         }
 
@@ -63,6 +63,9 @@ public static partial class SessionHelper
             ApplyDisplayCommand => RunApplyDisplay(args),
             PlaceWindowCommand => RunPlaceWindow(args),
             RestoreWindowCommand => RunRestoreWindow(args),
+            DesktopHostCommand => RunDesktopHost(args),
+            DesktopRecoverCommand => RunDesktopRecover(args),
+            DesktopEnumerateCommand => RunDesktopEnumerate(args),
             _ => Reject($"Unknown session-helper command '{args[1]}'.")
         };
     }

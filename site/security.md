@@ -37,6 +37,7 @@ Even after a module is on, these actions stay off until their own setting is tru
 - `Desktop:AllowScreenshots`
 - `Desktop:AllowWindowPlacement`
 - `Desktop:AllowDisplayLayoutChanges`
+- `Desktop:AllowDesktopSessions`
 - `Input:AllowInput`
 - `Audio:AllowSetDefault`
 - `System:AllowBootConfigurationChanges`

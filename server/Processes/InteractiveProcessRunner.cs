@@ -4,6 +4,7 @@ using System.Security.Principal;
 
 using Microsoft.Win32.SafeHandles;
 
+using Vestigo.Desktop;
 using Vestigo.Jobs;
 using Vestigo.SystemInfo;
 
@@ -33,7 +34,7 @@ internal static class InteractiveProcessRunner
     {
         try
         {
-            using SafeFileHandle token = OpenUserToken(elevated);
+            using PreparedToken token = OpenUserToken(elevated);
             return OperationResult<bool>.Ok(true);
         }
         catch (ProcessLaunchException ex)
@@ -44,14 +45,16 @@ internal static class InteractiveProcessRunner
 
     public static async Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
     {
-        using SafeFileHandle token = OpenUserToken(request.Elevated);
+        using PreparedToken token = OpenUserToken(request.Elevated);
         using SafeFileHandle spool = OpenSpool(output.OutputPath);
         using SafeFileHandle nul = OpenNul();
         using SafeFileHandle job = CreateKillOnCloseJob();
 
-        Dictionary<string, string> environment = ReadUserEnvironment(token);
+        Dictionary<string, string> environment = ReadUserEnvironment(token.Handle);
         char[] block = EnvironmentBlock.Build(environment, request.Environment);
-        PROCESS_INFORMATION info = StartSuspended(token, request, spool, nul, block);
+        string desktop = ResolveDesktop(request);
+        PROCESS_INFORMATION info = StartSuspended(token.Handle, request, spool, nul, block, desktop);
+        Publish(request, info, token);
 
         using SafeFileHandle process = new(info.hProcess, ownsHandle: true);
         using SafeFileHandle thread = new(info.hThread, ownsHandle: true);
@@ -113,12 +116,48 @@ internal static class InteractiveProcessRunner
         }
     }
 
+    internal static string ResolveDesktop(LaunchRequest request)
+    {
+        if (request.Desktop is null)
+        {
+            return DesktopSessionPolicy.DefaultPath;
+        }
+
+        if (!DesktopSessionPolicy.IsLaunchPath(request.Desktop))
+        {
+            throw new ProcessLaunchException(
+                "invalid_request",
+                "Interactive launch can target winsta0\\default or a Vestigo- managed desktop. Secure desktops are refused.");
+        }
+
+        return request.Desktop;
+    }
+
+    private static unsafe void Publish(LaunchRequest request, PROCESS_INFORMATION info, PreparedToken token)
+    {
+        if (request.Report is null || !DesktopSessionPolicy.TrySplitPath(request.Desktop ?? DesktopSessionPolicy.DefaultPath, out string station, out string desktop))
+        {
+            return;
+        }
+
+        uint session;
+        int? sessionId = PInvoke.ProcessIdToSessionId(info.dwProcessId, &session) ? (int)session : null;
+        request.Report.Publish(new ProcessLaunchReport(
+            unchecked((int)info.dwProcessId),
+            sessionId,
+            station,
+            desktop,
+            ReadTokenElevated(token.Handle),
+            token.ElevationType));
+    }
+
     private static unsafe PROCESS_INFORMATION StartSuspended(
         SafeFileHandle token,
         LaunchRequest request,
         SafeFileHandle spool,
         SafeFileHandle nul,
-        char[] block)
+        char[] block,
+        string desktop)
     {
         char[] commandLine = (CommandLineBuilder.Build(request.Executable, request.Arguments) + '\0').ToCharArray();
         HANDLE spoolHandle = (HANDLE)spool.DangerousGetHandle();
@@ -132,7 +171,7 @@ internal static class InteractiveProcessRunner
         PROCESS_INFORMATION info;
         fixed (char* environmentPointer = block)
         fixed (char* commandLinePointer = commandLine)
-        fixed (char* desktopPointer = @"winsta0\default")
+        fixed (char* desktopPointer = desktop)
         fixed (char* workingDirectory = request.WorkingDirectory)
         fixed (byte* attributeList = attributeStorage)
         {
@@ -196,7 +235,16 @@ internal static class InteractiveProcessRunner
 
         return info;
     }
-    internal static SafeFileHandle OpenUserToken(bool elevated)
+    private readonly struct PreparedToken(SafeFileHandle handle, string elevationType) : IDisposable
+    {
+        public SafeFileHandle Handle { get; } = handle;
+
+        public string ElevationType { get; } = elevationType;
+
+        public void Dispose() => Handle.Dispose();
+    }
+
+    private static PreparedToken OpenUserToken(bool elevated)
     {
         uint session = ConsoleSession.ActiveConsoleSessionId();
         if (session is ConsoleSession.NoSession or 0)
@@ -224,18 +272,42 @@ internal static class InteractiveProcessRunner
 
         if (!elevated)
         {
-            return token;
+            return Finish(token);
         }
 
         try
         {
-            return ElevateToken(token);
+            return Finish(ElevateToken(token));
         }
         catch
         {
             token.Dispose();
             throw;
         }
+    }
+
+    private static PreparedToken Finish(SafeFileHandle token) => new(token, ReadElevationType(token));
+
+    private static unsafe string ReadElevationType(SafeFileHandle token)
+    {
+        int type = 0;
+        if (!PInvoke.GetTokenInformation(token, TOKEN_INFORMATION_CLASS.TokenElevationType, &type, sizeof(int), out _))
+        {
+            return "unknown";
+        }
+
+        return SessionMaps.Elevation(type) ?? "unknown";
+    }
+
+    private static unsafe bool ReadTokenElevated(SafeFileHandle token)
+    {
+        TOKEN_ELEVATION value = default;
+        if (!PInvoke.GetTokenInformation(token, TOKEN_INFORMATION_CLASS.TokenElevation, &value, (uint)sizeof(TOKEN_ELEVATION), out _))
+        {
+            return false;
+        }
+
+        return value.TokenIsElevated != 0;
     }
 
     private static unsafe SafeFileHandle ElevateToken(SafeFileHandle token)

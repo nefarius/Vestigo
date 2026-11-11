@@ -3,13 +3,14 @@ using System.ComponentModel;
 using ModelContextProtocol.Server;
 
 using Vestigo.Configuration;
+using Vestigo.Desktop;
 using Vestigo.Jobs;
 using Vestigo.Security;
 
 namespace Vestigo.Processes;
 
 /// <summary>Result of <c>run_process</c>: the job plus the end of its output when the caller waited.</summary>
-public sealed record RunProcessResult(JobInfo Job, string? OutputTail, long NextOffset, bool StillRunning);
+public sealed record RunProcessResult(JobInfo Job, string? OutputTail, long NextOffset, bool StillRunning, ProcessLaunchReport? Launch = null);
 
 /// <summary>
 ///     MCP tools that start, list, close, and kill processes. They execute arbitrary code as the Vestigo service
@@ -21,7 +22,8 @@ public sealed class ProcessTools(
     ExecutableResolver resolver,
     JobManager jobs,
     IProcessLauncher launcher,
-    AppCloser closer)
+    AppCloser closer,
+    IManagedDesktopDirectory? desktops = null)
 {
     private const int TailBytes = 16 * 1024;
 
@@ -30,8 +32,9 @@ public sealed class ProcessTools(
         "Starts a process as a job. path is a file under a root with Execute access (name:relative\\path or absolute), "
         + "or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. "
         + "context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\\default "
-        + "(elevated: true uses the linked administrator token). stdout and stderr go to the job output. "
-        + "wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.")]
+        + "unless desktopSessionId selects a managed test desktop. elevated: true uses the linked administrator token. "
+        + "The result reports the process id, Windows session, window station, desktop, and elevation actually used. "
+        + "stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.")]
     public async Task<OperationResult<RunProcessResult>> RunProcess(
         [Description("Executable or script path, or a bare name resolved from PATH.")] string path,
         [Description("Command-line arguments, one array element per argument.")] string[]? args = null,
@@ -39,6 +42,7 @@ public sealed class ProcessTools(
         [Description("Environment variable overrides.")] Dictionary<string, string>? env = null,
         [Description("'service' (default) or 'interactive'.")] string context = "service",
         [Description("Interactive only: run with the elevated linked token.")] bool elevated = false,
+        [Description("Managed desktop session id from create_desktop_session. Requires context interactive. Omit to keep winsta0\\default.")] string? desktopSessionId = null,
         [Description("Seconds to wait (0 to 300) before returning. 0 returns the job id immediately.")] int wait = 0,
         CancellationToken cancellationToken = default)
     {
@@ -91,37 +95,107 @@ public sealed class ProcessTools(
             return Fail("invalid_request", tooLong);
         }
 
+        if (!string.IsNullOrWhiteSpace(desktopSessionId) && launchContext != LaunchContext.Interactive)
+        {
+            return Fail("invalid_request", "desktopSessionId requires context 'interactive'. A managed desktop is on the console user's window station.");
+        }
+
         OperationResult<bool> available = launcher.CheckAvailability(launchContext, elevated);
         if (!available.Success)
         {
             return available.FailAs<RunProcessResult>();
         }
 
-        LaunchRequest request = new(plan.Executable, plan.Arguments, directory, environment, launchContext, elevated);
-        OperationResult<JobInfo> started = jobs.Start(
-            "process",
-            $"{launchContext.ToString().ToLowerInvariant()}: {Path.GetFileName(resolved.Value.Path)}",
-            (output, token) => launcher.RunAsync(request, output, token));
-        if (!started.Success)
+        ManagedDesktopLease? lease = null;
+        ProcessLaunchReportBox? report = null;
+        string? startedId = null;
+        try
         {
-            return Fail(started.ErrorCode!, started.Error!);
+            if (!string.IsNullOrWhiteSpace(desktopSessionId))
+            {
+                if (desktops is null)
+                {
+                    return Fail("desktop_sessions_disabled", "Managed desktop sessions require the Desktop module and Vestigo:Desktop:AllowDesktopSessions.");
+                }
+
+                OperationResult<ManagedDesktopLease> leased = await desktops.LeaseForLaunchAsync(desktopSessionId, cancellationToken).ConfigureAwait(false);
+                if (!leased.Success)
+                {
+                    return leased.FailAs<RunProcessResult>();
+                }
+
+                lease = leased.Value;
+            }
+
+            report = new ProcessLaunchReportBox();
+            LaunchRequest request = new(plan.Executable, plan.Arguments, directory, environment, launchContext, elevated, lease?.DesktopPath, report);
+            OperationResult<JobInfo> started = jobs.Start(
+                "process",
+                $"{launchContext.ToString().ToLowerInvariant()}: {Path.GetFileName(resolved.Value.Path)}",
+                (output, token) => launcher.RunAsync(request, output, token));
+            if (!started.Success)
+            {
+                return Fail(started.ErrorCode!, started.Error!);
+            }
+
+            startedId = started.Value!.Id;
+            ProcessLaunchReport? launch = await WaitForLaunchAsync(report!, startedId, cancellationToken).ConfigureAwait(false);
+            if (lease is not null && launch is not null)
+            {
+                lease.Attach(new OwnedDesktopProcess(started.Value.Id, launch.ProcessId, launch.Elevated));
+            }
+
+            int seconds = Math.Clamp(wait, 0, 300);
+            if (seconds == 0)
+            {
+                return OperationResult<RunProcessResult>.Ok(new RunProcessResult(started.Value, null, 0, true, launch));
+            }
+
+            OperationResult<JobInfo> finished = await jobs.WaitAsync(started.Value.Id, TimeSpan.FromSeconds(seconds), cancellationToken).ConfigureAwait(false);
+            JobInfo info = finished.Value!;
+            long offset = Math.Max(0, info.OutputBytes - TailBytes);
+            OperationResult<JobOutputPage> page = jobs.ReadOutput(info.Id, offset, TailBytes);
+            return OperationResult<RunProcessResult>.Ok(new RunProcessResult(
+                info,
+                page.Value?.Text,
+                page.Value?.NextOffset ?? 0,
+                info.State == JobState.Running,
+                launch));
+        }
+        catch (OperationCanceledException)
+        {
+            if (lease is not null && startedId is not null && report?.Value is { } published)
+            {
+                lease.Attach(new OwnedDesktopProcess(startedId, published.ProcessId, published.Elevated));
+            }
+
+            throw;
+        }
+        finally
+        {
+            lease?.Dispose();
+        }
+    }
+
+    private async Task<ProcessLaunchReport?> WaitForLaunchAsync(ProcessLaunchReportBox report, string jobId, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; attempt < 100; attempt++)
+        {
+            if (report.Value is { } published)
+            {
+                return published;
+            }
+
+            OperationResult<JobInfo> current = jobs.Get(jobId);
+            if (current.Value is { State: not JobState.Running })
+            {
+                return report.Value;
+            }
+
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
         }
 
-        int seconds = Math.Clamp(wait, 0, 300);
-        if (seconds == 0)
-        {
-            return OperationResult<RunProcessResult>.Ok(new RunProcessResult(started.Value!, null, 0, true));
-        }
-
-        OperationResult<JobInfo> finished = await jobs.WaitAsync(started.Value!.Id, TimeSpan.FromSeconds(seconds), cancellationToken).ConfigureAwait(false);
-        JobInfo info = finished.Value!;
-        long offset = Math.Max(0, info.OutputBytes - TailBytes);
-        OperationResult<JobOutputPage> page = jobs.ReadOutput(info.Id, offset, TailBytes);
-        return OperationResult<RunProcessResult>.Ok(new RunProcessResult(
-            info,
-            page.Value?.Text,
-            page.Value?.NextOffset ?? 0,
-            info.State == JobState.Running));
+        return report.Value;
     }
 
     [McpServerTool(Name = "list_processes")]

@@ -2,6 +2,14 @@
 
 Generated from `McpServerTool` attributes. Do not edit by hand.
 
+## `activate_desktop_session`
+
+Makes a managed test desktop the input desktop. This is explicit: no other tool switches desktops. The previous input desktop was recorded at creation and can be restored. Refuses while the lock screen or UAC secure desktop is active. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
+
 ## `add_class_filter`
 
 Adds an existing driver service to a device class's upper or lower filter list.
@@ -62,6 +70,15 @@ Politely closes applications by posting WM_CLOSE to their top-level windows. Sel
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
 | `elevated` | `bool` | no | `false` | Interactive only: use the elevated token so elevated windows can be closed. |
 
+## `close_desktop_session`
+
+Restores the recorded input desktop when this session switched it, applies the cleanup policy, and releases the desktop handle this service holds. terminate-owned cancels owned jobs and then kills any of those processes still running. fail-if-running returns processes_still_running and changes nothing while one is alive. Closing the handle does not stop an unowned process and does not destroy a desktop Windows still considers in use; desktopRetained reports that. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
+| `cleanupPolicy` | `string` | no | `null` | Omit to use the policy from create_desktop_session. terminate-owned or fail-if-running. |
+
 ## `convert_etl`
 
 Decodes ETL files to a JSON or NDJSON file inside an allowed output root and returns a summary, plus a download link when the output also lies in a Files root with Read access. See get_trace_settings for allowed roots.
@@ -84,6 +101,14 @@ Copies a file or directory tree. Source needs Read access, destination needs Wri
 | `source` | `string` | yes |  | Source path. |
 | `destination` | `string` | yes |  | Destination path (the new name, not the parent directory). |
 | `overwrite` | `bool` | no | `false` | Replace existing destination files. |
+
+## `create_desktop_session`
+
+Creates a named test desktop on the console user's window station and returns its session id. The desktop name is assigned by Vestigo and always starts with Vestigo-. The call records the current input desktop and does not switch to the new one. Secure desktops, including the lock screen and UAC, are refused. cleanupPolicy terminate-owned (default) is used for lease expiry, cancellation, service stop, and startup recovery. fail-if-running makes an explicit close leave the session open while a process it launched is still running. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `cleanupPolicy` | `string` | no | `terminate-owned` | terminate-owned (default) or fail-if-running. Automatic cleanup always uses terminate-owned. |
 
 ## `create_device_node`
 
@@ -295,6 +320,14 @@ Returns status, counters, and the last error for one debug-output capture.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `captureId` | `string` | yes |  | Capture identifier. |
+
+## `get_desktop_session`
+
+Returns one managed desktop session by the id from create_desktop_session.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
 
 ## `get_device`
 
@@ -678,6 +711,12 @@ Lists debug-output captures owned by this Vestigo process.
 
 No parameters.
 
+## `list_desktop_sessions`
+
+Lists managed desktop sessions, including closed sessions still remembered by this process. This does not switch desktops.
+
+No parameters.
+
 ## `list_directory`
 
 Lists the entries of a directory inside a root with Read access.
@@ -870,6 +909,12 @@ Lists video encoders registered with Media Foundation, using MFTEnumEx. backend 
 ## `list_window_event_captures`
 
 Lists window-event captures started by this service process.
+
+No parameters.
+
+## `list_window_station_desktops`
+
+Lists desktops on the console user's window station and classifies each as owned, user, or secure. Secure desktops are not opened. This does not create, activate, or close a desktop. Interactive session only.
 
 No parameters.
 
@@ -1122,6 +1167,14 @@ Stops a service (waiting for Stopped) and starts it again (waiting for Running).
 | `stopDependents` | `bool` | no | `false` | Also stop running dependent services first. |
 | `timeoutSeconds` | `int` | no | `30` | Seconds to wait for each phase, 1 to 300. |
 
+## `restore_desktop_session`
+
+Switches the input desktop back to the one recorded before this session was activated, when this session is still the input desktop. If the user or another session has since changed the input desktop, the call returns input_desktop_changed and does not switch. Refuses while a secure desktop is active. Requires Vestigo:Desktop:AllowDesktopSessions.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | `string` | yes |  | Managed desktop session id. |
+
 ## `restore_display_layout_transaction`
 
 Applies the snapshot taken before the transaction and reads the topology again. RestorationVerified is true only when the fingerprint matches. A failed restore stays open and blocks another transaction. The restore is written to the display database so a temporary test layout cannot return at logoff. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.
@@ -1142,7 +1195,7 @@ Restores a placement saved by set_window_client_rect. The window and process ide
 
 ## `run_process`
 
-Starts a process as a job. path is a file under a root with Execute access (name:relative\path or absolute), or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\default (elevated: true uses the linked administrator token). stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.
+Starts a process as a job. path is a file under a root with Execute access (name:relative\path or absolute), or a bare name such as cmd.exe when AllowPathLookup is enabled. .ps1 files run through pwsh.exe, else powershell.exe. context 'service' runs as the Vestigo service account; 'interactive' runs as the console user on winsta0\default unless desktopSessionId selects a managed test desktop. elevated: true uses the linked administrator token. The result reports the process id, Windows session, window station, desktop, and elevation actually used. stdout and stderr go to the job output. wait > 0 waits that many seconds and returns the output tail; wait 0 returns the job id immediately.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1152,6 +1205,7 @@ Starts a process as a job. path is a file under a root with Execute access (name
 | `env` | `Dictionary<string, string>` | no | `null` | Environment variable overrides. |
 | `context` | `string` | no | `service` | 'service' (default) or 'interactive'. |
 | `elevated` | `bool` | no | `false` | Interactive only: run with the elevated linked token. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id from create_desktop_session. Requires context interactive. Omit to keep winsta0\default. |
 | `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns the job id immediately. |
 
 ## `run_scheduled_task`

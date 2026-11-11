@@ -87,6 +87,9 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowDisplayLayoutChanges</c>.</summary>
         public const string DesktopDisplayLayout = "DesktopDisplayLayout";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowDesktopSessions</c>.</summary>
+        public const string DesktopSessions = "DesktopSessions";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Input:AllowInput</c>.</summary>
         public const string InputInjection = "InputInjection";
 
@@ -114,6 +117,7 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots"),
             new OptionToggle(DesktopWindowPlacement, "Desktop", "AllowWindowPlacement"),
             new OptionToggle(DesktopDisplayLayout, "Desktop", "AllowDisplayLayoutChanges"),
+            new OptionToggle(DesktopSessions, "Desktop", "AllowDesktopSessions"),
             new OptionToggle(InputInjection, "Input", "AllowInput"),
             new OptionToggle(DiagnosticsCaptureProbes, "Diagnostics", "AllowCaptureProbes"),
             new OptionToggle(DiagnosticsNetworkProbes, "Diagnostics", "AllowNetworkProbes"),
@@ -132,10 +136,11 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Logs", "Logs", "Tail, incremental reads and regex search of text log files.", true, null),
             new ModuleDefinition("Registry", "Registry", "Read allow-listed registry values and key metadata. Opt-in. There is no write tool.", false, null),
             new ModuleDefinition("EventLog", "Event log", "List and query Windows event log channels and .evtx files.", true, null),
-            new ModuleDefinition("Desktop", "Desktop", "List and inspect windows, capture window events, and list displays on the console user's or service desktop. Screenshots, window placement, and display-layout changes are separate child features.", false, null),
+            new ModuleDefinition("Desktop", "Desktop", "List and inspect windows, capture window events, and list displays on the console user's or service desktop. Screenshots, window placement, display-layout changes, and managed test desktops are separate child features.", false, null),
             new ModuleDefinition(DesktopScreenshots, "Screenshots", "Allow capturing PNG screenshots of the console user's desktop, one display, one window, or a region (Vestigo:Desktop:AllowScreenshots). Discloses screen contents.", false, "Desktop"),
             new ModuleDefinition(DesktopWindowPlacement, "Window placement", "Allow set_window_client_rect and restore_window_placement (Vestigo:Desktop:AllowWindowPlacement). Moves a window. Activation and Z-order are preserved on the move path.", false, "Desktop"),
             new ModuleDefinition(DesktopDisplayLayout, "Display layout changes", "Allow temporary or persistent display-layout transactions (Vestigo:Desktop:AllowDisplayLayoutChanges). Does not create virtual displays.", false, "Desktop"),
+            new ModuleDefinition(DesktopSessions, "Managed test desktops", "Allow creating, activating, and closing named test desktops in the console user's window station (Vestigo:Desktop:AllowDesktopSessions). Does not open the lock screen or UAC desktop.", false, "Desktop"),
             new ModuleDefinition("Input", "Input", "Inject mouse movement, clicks, scrolling, typing and key chords into the console user's session. Needs Desktop. Injection is a separate child feature.", false, "Desktop"),
             new ModuleDefinition(InputInjection, "Allow input injection", "Allow send_input to act as the console user (Vestigo:Input:AllowInput). Anything on screen can be clicked or typed into. Administrator-equivalent when an elevated window is open.", false, "Input"),
             new ModuleDefinition("Audio", "Audio", "List audio playback and recording endpoints, volumes, sessions, and defaults. Optionally switch the default device.", false, null),
@@ -270,6 +275,7 @@ namespace Vestigo.Installer.Actions.Logic
             return string.Equals(name, DesktopScreenshots, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, DesktopWindowPlacement, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, DesktopDisplayLayout, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, DesktopSessions, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, InputInjection, StringComparison.OrdinalIgnoreCase);
         }
 

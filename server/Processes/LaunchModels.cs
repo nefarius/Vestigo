@@ -8,8 +8,36 @@ public enum LaunchContext
     /// <summary>The Vestigo service account (normally SYSTEM), non-interactive.</summary>
     Service,
 
-    /// <summary>The active console user, on the interactive desktop <c>winsta0\default</c>.</summary>
+    /// <summary>The active console user. The desktop is <c>winsta0\default</c> unless a managed session selects another.</summary>
     Interactive
+}
+
+/// <summary>
+///     What Windows actually used for a launch. <see cref="WindowStation" /> and <see cref="Desktop" /> are null when
+///     Vestigo did not select them and let the service process assign them.
+/// </summary>
+public sealed record ProcessLaunchReport(
+    int ProcessId,
+    int? SessionId,
+    string? WindowStation,
+    string? Desktop,
+    bool Elevated,
+    string ElevationType);
+
+/// <summary>Filled by the launcher as soon as the process exists, before it is waited on.</summary>
+public sealed class ProcessLaunchReportBox
+{
+    private readonly TaskCompletionSource<ProcessLaunchReport> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public ProcessLaunchReport? Value { get; private set; }
+
+    public Task<ProcessLaunchReport> Ready => _ready.Task;
+
+    public void Publish(ProcessLaunchReport report)
+    {
+        Value = report;
+        _ready.TrySetResult(report);
+    }
 }
 
 /// <summary>A fully resolved process launch. <see cref="Executable" /> is an absolute path.</summary>
@@ -19,7 +47,9 @@ public sealed record LaunchRequest(
     string? WorkingDirectory,
     IReadOnlyDictionary<string, string> Environment,
     LaunchContext Context,
-    bool Elevated);
+    bool Elevated,
+    string? Desktop = null,
+    ProcessLaunchReportBox? Report = null);
 
 /// <summary>Raised when a process cannot be started. <see cref="Code" /> is a stable error code.</summary>
 /// <param name="reason">Optional stable token, such as why no console user is available.</param>

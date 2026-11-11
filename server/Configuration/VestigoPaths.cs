@@ -32,6 +32,8 @@ public static class VestigoPaths
 
     public static string OwnedDisplayLayoutPath => Path.Combine(SettingsDirectory, "owned-display-layout.json");
 
+    public static string OwnedDesktopsPath => Path.Combine(SettingsDirectory, "owned-desktops.json");
+
     public static string DefaultSymbolCache => Path.Combine(SettingsDirectory, "symcache");
 
     /// <summary>Default folder for ETL, PDB, TMF, and conversion-output paths when no trace roots are configured.</summary>
