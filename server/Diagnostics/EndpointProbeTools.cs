@@ -16,7 +16,7 @@ public sealed class EndpointProbeTools(IEndpointProbe probe, VestigoOptions opti
     [Description(
         "Observes one destination from Vestigo's own network context, which can differ from an application's routing, proxy, or credentials. "
         + "protocol 'dns' resolves the host, 'tcp' also connects, 'tls' also performs a TLS handshake with certificate name and chain validation, and 'udp' sends one datagram. "
-        + "udp outcome 'sent' does not prove the peer is reachable: a blocked UDP port fails silently. "
+        + "udp outcome 'sent' does not prove the peer is reachable: a blocked UDP port can fail silently. "
         + "stun true, only with udp, sends one STUN binding request and waits for a matching response. A missing response is not a firewall block. The mapped address is unauthenticated. "
         + "quic returns protocol_unsupported. "
         + "The direct probe contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. "

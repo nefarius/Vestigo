@@ -199,6 +199,27 @@ public class NetworkDiagnosticsTests
         Assert.True(StunBinding.Read(signed, transaction).Success);
         signed[^1] ^= 0xFF;
         Assert.False(StunBinding.Read(signed, transaction).Success);
+
+        byte[] mapped = (byte[])success.Clone();
+        mapped[20] = 0x00;
+        mapped[21] = 0x01;
+        ushort xport = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(mapped.AsSpan(26));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(mapped.AsSpan(26), (ushort)(xport ^ 0x2112));
+        uint xaddr = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(mapped.AsSpan(28));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(mapped.AsSpan(28), xaddr ^ 0x2112A442);
+        StunDecode plain = StunBinding.Read(mapped, transaction);
+        Assert.True(plain.Success);
+        Assert.False(plain.Reflexive);
+        Assert.Equal("192.0.2.1", plain.MappedAddress!.ToString());
+        Assert.Equal(32853, plain.MappedPort);
+
+        byte[] bare = new byte[StunBinding.HeaderLength];
+        success.AsSpan(0, StunBinding.HeaderLength).CopyTo(bare);
+        bare[2] = 0;
+        bare[3] = 0;
+        StunDecode addressless = StunBinding.Read(bare, transaction);
+        Assert.True(addressless.Success);
+        Assert.Null(addressless.MappedAddress);
     }
 
     [Fact]
@@ -283,10 +304,40 @@ public class NetworkDiagnosticsTests
         Assert.False(result.TimedOut);
     }
 
+    [Fact]
+    public async Task SocketProbe_IgnoresABindingSuccessThatHasNoMappedAddress()
+    {
+        using UdpClient server = new(new IPEndPoint(IPAddress.Loopback, 0));
+        int port = ((IPEndPoint)server.Client.LocalEndPoint!).Port;
+        Task responder = ReplyAfterAnAddresslessSuccess(server);
+        SocketEndpointProbe probe = new(new VestigoOptions());
+
+        EndpointProbeResult result = await probe.ProbeAsync("127.0.0.1", port, "udp", TimeSpan.FromSeconds(3), includeResolvedAddress: false, stun: true, CancellationToken.None);
+        await responder.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.True(result.Udp!.Stun!.Responded);
+        Assert.Equal("203.0.113.8", result.Udp.Stun.MappedAddress);
+        Assert.Equal(40000, result.Udp.Stun.MappedPort);
+        Assert.False(result.TimedOut);
+    }
+
     private static async Task ReplyWithMappedAddress(UdpClient server)
     {
         UdpReceiveResult incoming = await server.ReceiveAsync();
         byte[] response = StunBinding.CreateSuccess(incoming.Buffer.AsSpan(8, 12), IPAddress.Parse("203.0.113.8"), 40000);
+        await server.SendAsync(response, response.Length, incoming.RemoteEndPoint);
+    }
+
+    private static async Task ReplyAfterAnAddresslessSuccess(UdpClient server)
+    {
+        UdpReceiveResult incoming = await server.ReceiveAsync();
+        byte[] transaction = incoming.Buffer.AsSpan(8, StunBinding.TransactionLength).ToArray();
+        byte[] bare = new byte[StunBinding.HeaderLength];
+        bare[0] = 0x01;
+        bare[1] = 0x01;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(bare.AsSpan(4), 0x2112A442);
+        transaction.CopyTo(bare.AsSpan(8));
+        await server.SendAsync(bare, bare.Length, incoming.RemoteEndPoint);
+        byte[] response = StunBinding.CreateSuccess(transaction, IPAddress.Parse("203.0.113.8"), 40000);
         await server.SendAsync(response, response.Length, incoming.RemoteEndPoint);
     }
 

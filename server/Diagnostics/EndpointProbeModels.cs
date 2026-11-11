@@ -17,7 +17,7 @@ public sealed record TlsObservation(
 /// <summary>One UDP datagram. <see cref="Reachability" /> says what the outcome does not prove.</summary>
 public sealed record UdpObservation(string Outcome, int BytesSent, int BytesReceived, string Reachability, StunObservation? Stun)
 {
-    public const string SentDoesNotProveReachability = "A sent datagram does not prove the peer is reachable. A blocked UDP port fails silently, and a timeout is not a firewall block.";
+    public const string SentDoesNotProveReachability = "A sent datagram does not prove the peer is reachable. A blocked UDP port can fail silently, and a timeout is not a firewall block.";
 
     public const string StunSilent = "No matching STUN binding response arrived. That does not prove a firewall blocked the port.";
 

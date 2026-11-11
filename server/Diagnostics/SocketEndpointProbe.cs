@@ -168,7 +168,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
                 }
 
                 StunDecode decoded = StunBinding.Read(buffer.AsSpan(0, received.ReceivedBytes), transaction);
-                if (!decoded.Success)
+                if (!decoded.Success || decoded.MappedAddress is null)
                 {
                     continue;
                 }
