@@ -74,6 +74,16 @@ dotnet publish examples/Vestigo.ExamplePlugin -c Release -o artifacts/example-pl
 
 Copy the **published output**, including private dependencies, `.deps.json`, any generated runtime configuration, manifest and `runtimes` assets, to one immediate subdirectory of the protected root. `.runtimeconfig.json` is not required for a framework-dependent class library; the host supplies the runtime. Build output alone and an isolated entry DLL are insufficient. Plugin deployment contents must not overwrite public host files.
 
+## AI-assisted plugin development
+
+Plugin authors can copy [`examples/AGENTS.md`](../examples/AGENTS.md) into the root
+of their own plugin repository to give coding agents the public API, packaging,
+authorization, trust and validation requirements. Follow the target host release's
+contracts and guide when using the template outside this checkout. The
+[scoped Cursor rule](../.cursor/rules/vestigo-plugin-development.mdc) applies the
+same guidance to examples, public contracts and plugin fixtures in this repository.
+Keep any additional corporate instructions and private code in the private repository.
+
 ## Manifest and activation
 
 Each immediate plugin subdirectory requires this strict `plugin.json` (UTF-8, at most 64 KiB). Unknown, missing and duplicate fields are rejected:
