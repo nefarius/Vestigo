@@ -49,7 +49,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span></p>
     <h2>Devices and drivers</h2>
-    <p>Install and uninstall driver packages, create and remove ROOT device nodes, edit class filters, run <code>[DefaultInstall]</code> INFs, list the driver store, and enable, disable, or restart a device. Queries run in-process; mutating calls go through bundled nefcon.</p>
+    <p>Install and uninstall driver packages, create and remove ROOT device nodes, edit class filters, run <code>[DefaultInstall]</code> INFs, list the driver store, and enable, disable, or restart a device. <code>inspect_hid_device</code> reads HID usages, report lengths, and identity strings. It does not return a raw report descriptor or keystrokes. Queries run in-process; mutating calls go through bundled nefcon.</p>
     <p>Installing a driver is kernel-mode code execution. Enable this module only on machines you intend to debug drivers on.</p>
   </article>
   <article class="card">

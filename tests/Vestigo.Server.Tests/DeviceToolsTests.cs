@@ -364,7 +364,7 @@ public sealed class DeviceToolsTests : IDisposable
     public void DevicesModule_IsRegisteredWithItsTools()
     {
         Vestigo.Modules.VestigoModule module = Vestigo.Modules.ModuleRegistry.All.Single(m => m.Name == "Devices");
-        Assert.Equal([typeof(DeviceTools)], module.ToolTypes);
+        Assert.Equal([typeof(DeviceTools), typeof(HidTools)], module.ToolTypes);
     }
 
     [Fact]

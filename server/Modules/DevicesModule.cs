@@ -12,10 +12,14 @@ public sealed class DevicesModule : VestigoModule
     /// <summary>Kernel-privileged operations stay off until an administrator opts in.</summary>
     public override bool EnabledByDefault => false;
 
-    public override string Description => "Driver install, device nodes, class filters, and device queries and state via nefcon and device management.";
+    public override string Description => "Driver install, device nodes, class filters, device state, and read-only HID capabilities via nefcon and device management.";
 
-    public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(DeviceTools)];
+    public override IReadOnlyList<Type> ToolTypes { get; } = [typeof(DeviceTools), typeof(HidTools)];
 
-    public override void ConfigureServices(IServiceCollection services, VestigoOptions options) =>
+    public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
+    {
         services.AddSingleton<IDeviceControl, DeviceControl>();
+        services.AddSingleton<IHidPlatform, WindowsHidPlatform>();
+        services.AddSingleton<HidService>();
+    }
 }
