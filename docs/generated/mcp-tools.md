@@ -379,6 +379,12 @@ Returns an HTTP GET URL, not the file bytes, for downloading an existing file fr
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
 
+## `get_driver_verifier_state`
+
+Reads Driver Verifier with the fixed commands verifier /query and verifier /querysettings. running is the current query. configured is the saved settings, which can differ until a reboot. An active statistics dump stays text and is not turned into flags. Unknown settings lines are kept. This does not enable, change, or reset verifier.
+
+No parameters.
+
 ## `get_environment_variable`
 
 Reads one environment variable. Machine scope reads the Session Manager registry key and user scope reads the environment of the user logged on at the console; both return the unexpanded value and whether it is REG_EXPAND_SZ. Fails with user_not_available when nobody is logged on.
@@ -1185,6 +1191,12 @@ Removes driver store packages by original INF file name (for example mydriver.in
 | `classGuid` | `string` | no | `null` | Optional device class GUID to narrow the match. |
 | `serviceName` | `string` | no | `null` | Optional driver service name to narrow the match. |
 
+## `reset_driver_verifier`
+
+Runs verifier /reset and reads the saved settings back. This stays available when AllowDriverVerifier is false. A reboot is required before the clear takes effect. Vestigo does not reboot.
+
+No parameters.
+
 ## `resolve_binary_symbols`
 
 Reads the CodeView PDB identity from each .sys, .dll, or .exe under a Files root with Read access, then resolves it through the symbol cache, trace input roots, and the configured symbol server. Returns per-binary origin, local PDB path, and diagnostics.
@@ -1312,6 +1324,16 @@ Sets the default audio playback or recording endpoint. role 'default' is Windows
 | `id` | `string` | yes |  | Endpoint id from list_audio_endpoints. |
 | `role` | `string` | no | `default` | 'default' (Default Device), 'communications' (Default Communication Device) or 'all'. |
 | `context` | `string` | no | `interactive` | 'interactive' (default) or 'service'. |
+
+## `set_driver_verifier`
+
+Saves standard Driver Verifier flags for 1 to 8 named .sys drivers. Requires Vestigo:Diagnostics:AllowDriverVerifier and iUnderstandVerifierCanBugcheck. Omitting flags uses /standard. There is no /all mode, and kernel images are refused. The saved settings are read back. A reboot is required and is not performed.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `drivers` | `List<string>` | yes |  | Driver image names, such as contoso.sys. 1 to 8. No paths or wildcards. |
+| `flags` | `List<string>` | no | `null` | Standard flag names. Omit them to use verifier /standard. |
+| `iUnderstandVerifierCanBugcheck` | `bool` | no | `false` | Must be true. Verifier can bugcheck after the next boot. |
 
 ## `set_environment_variable`
 
