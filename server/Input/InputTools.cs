@@ -99,7 +99,7 @@ public sealed class InputTools(
         }
 
         double stepMilliseconds = plan.Value!.Steps.Sum(step =>
-            250d + step.Milliseconds + step.HoldMilliseconds + step.DelayAfterMilliseconds + step.Count * 100d + (step.Text?.Length ?? 0) * 5d + (step.Kind == InputKinds.Drag ? 2000d : 0d));
+            250d + step.Milliseconds + (double)step.HoldMilliseconds * step.Count + step.DelayAfterMilliseconds + step.Count * 100d + (step.Text?.Length ?? 0) * 5d + (step.Kind == InputKinds.Drag ? 2000d : 0d));
         TimeSpan timeout = TimeSpan.FromSeconds(30) + TimeSpan.FromMilliseconds(stepMilliseconds);
         string? desktopPath = targeted.Value?.DesktopPath;
         OperationResult<PerceptionOutcome>? before = null;

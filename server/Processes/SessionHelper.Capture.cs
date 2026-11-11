@@ -153,7 +153,7 @@ public static partial class SessionHelper
             OperationResult<ScreenCaptureResult> result = ScreenCapture.Capture(request);
             if (!result.Success)
             {
-                return Reject(result.Error!, result.ErrorCode!);
+                return Reject(result.Error!, result.ErrorCode!, result.Reason);
             }
 
             Console.Out.WriteLine(JsonSerializer.Serialize(result.Value, Json));

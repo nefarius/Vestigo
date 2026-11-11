@@ -73,9 +73,10 @@ public static partial class SessionHelper
         };
     }
 
-    private static int Reject(string error, string code = "invalid_request")
+    private static int Reject(string error, string code = "invalid_request", string? reason = null)
     {
-        Console.Out.WriteLine(JsonSerializer.Serialize(new { error, errorCode = code }, Json));
+        object payload = reason is null ? new { error, errorCode = code } : new { error, errorCode = code, reason };
+        Console.Out.WriteLine(JsonSerializer.Serialize(payload, Json));
         return 2;
     }
 

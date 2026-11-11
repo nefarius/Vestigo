@@ -80,7 +80,7 @@ public static partial class SessionHelper
             OperationResult<ScreenCaptureResult> captured = ScreenCapture.Capture(request with { IncludeFullImage = true });
             if (!captured.Success)
             {
-                return Reject(captured.Error!, captured.ErrorCode!);
+                return Reject(captured.Error!, captured.ErrorCode!, captured.Reason);
             }
 
             ScreenCaptureResult capture = captured.Value!;

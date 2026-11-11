@@ -269,6 +269,10 @@ public class InputTests
         Assert.Equal(15, plan.Value.Steps[0].DelayAfterMilliseconds);
         Assert.Equal(25, plan.Value.Steps[1].HoldMilliseconds);
         Assert.Equal("invalid_request", InputPlanner.Plan([new InputActionSpec { Type = "move", X = 1, Y = 2, HoldMilliseconds = 10 }], null, null, cache, limits).ErrorCode);
+        Assert.Equal(
+            "invalid_request",
+            InputPlanner.Plan([new InputActionSpec { Type = "click", Count = 3, HoldMilliseconds = 5000 }], null, null, cache, limits).ErrorCode);
+        Assert.True(InputPlanner.Plan([new InputActionSpec { Type = "click", Count = 1, HoldMilliseconds = 5000 }], null, null, cache, limits).Success);
     }
 
     [Fact]
@@ -299,7 +303,7 @@ public class InputTests
         CallToolResult result = await tools.SendInput([new InputActionSpec { Type = "click" }], desktopSessionId: "abc");
 
         Assert.Equal(DesktopHelperTargeting.Unsupported, ErrorCode(result));
-        Assert.Null(launcher.Desktop);
+        Assert.Equal(0, launcher.Runs);
     }
 
     [Fact]
@@ -346,12 +350,15 @@ public class InputTests
 
     private sealed class RecordingLaunch : IProcessLauncher
     {
+        public int Runs { get; private set; }
+
         public string? Desktop { get; private set; }
 
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
 
         public Task<int> RunAsync(LaunchRequest request, Vestigo.Jobs.JobContext output, CancellationToken cancellationToken)
         {
+            Runs++;
             Desktop = request.Desktop;
             return Task.FromResult(0);
         }

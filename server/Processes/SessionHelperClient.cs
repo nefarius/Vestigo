@@ -109,7 +109,11 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
                               errorCode.GetString() is { Length: > 0 } parsed
                     ? parsed
                     : "invalid_request";
-                return OperationResult<T>.Fail(code, error.GetString() ?? "The session helper rejected the request.");
+                string? reason = document.RootElement.TryGetProperty("reason", out JsonElement reasonElement) &&
+                                 reasonElement.ValueKind == JsonValueKind.String
+                    ? reasonElement.GetString()
+                    : null;
+                return OperationResult<T>.Fail(code, error.GetString() ?? "The session helper rejected the request.", reason);
             }
 
             T? value = document.RootElement.Deserialize<T>(SessionHelper.Json);
