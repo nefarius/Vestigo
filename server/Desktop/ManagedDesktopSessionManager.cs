@@ -326,6 +326,36 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
         }
     }
 
+    public async Task<OperationResult<string?>> InputDesktopPathAsync(CancellationToken cancellationToken)
+    {
+        // Hold the session lock across the host query so an activate or restore cannot switch desktops between the
+        // answer and the match. The host's live answer decides which desktop is active; the cached InputSwitched flag can be stale.
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            OperationResult<WindowStationDesktopList> listed = await EnumerateAsync(cancellationToken).ConfigureAwait(false);
+            if (!listed.Success)
+            {
+                return listed.FailAs<string?>();
+            }
+
+            string? inputName = listed.Value?.InputDesktop;
+            if (string.IsNullOrWhiteSpace(inputName))
+            {
+                return OperationResult<string?>.Ok(null);
+            }
+
+            ManagedDesktopSession? input = _sessions.Values.FirstOrDefault(session =>
+                session.State is "open" or "active" or "recovery-failed"
+                && string.Equals(session.DesktopName, inputName, StringComparison.OrdinalIgnoreCase));
+            return OperationResult<string?>.Ok(input is null ? null : DesktopSessionPolicy.DesktopPath(input.DesktopName));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);

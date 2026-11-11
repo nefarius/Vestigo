@@ -1460,6 +1460,7 @@ Captures every CCD path, including inactive ones. topology is single, clone, ext
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `elevated` | `bool` | no | `false` | Use the elevated token. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id the helper runs on. Omit for winsta0\default. The desktop is not activated. |
 
 ## `stage_kernel_dump`
 
@@ -1500,13 +1501,14 @@ Starts the single DebugViewConsole capture of OutputDebugString messages. Events
 
 ## `start_display_layout_transaction`
 
-Validates and applies a layout for targets that are already active. The original topology is saved before the change. persistent defaults to false and is the only way the change is also written to the display database. Only one transaction can be open. Cancellation of this call attempts to restore the original layout. A later client disconnect does not, because MCP is stateless; the lease restores it. Service shutdown and the next service start also attempt restore. External display changes are reported and cannot be blocked. This tool does not create or remove virtual displays. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.
+Validates and applies a layout for targets that are already active. The original topology is saved before the change. persistent defaults to false and is the only way the change is also written to the display database. Only one transaction can be open. Cancellation of this call attempts to restore the original layout. A later client disconnect does not, because MCP is stateless; the lease restores it. Service shutdown and the next service start also attempt restore. External display changes are reported and cannot be blocked. Windows lets only the input desktop change the display configuration (otherwise SetDisplayConfig fails with access denied, native error 5). While a managed desktop is active, pass its desktopSessionId so the change runs there; an inactive session is refused with unsupported_on_inactive_desktop and nothing is switched. The transaction remembers the desktop; observe and restore run on whichever desktop is the input desktop when they start (observe looks again after a failed sample), the default desktop when no managed one is. This tool does not create or remove virtual displays. Requires Vestigo:Desktop:AllowDisplayLayoutChanges.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `targets` | `List<DisplayTargetChange>` | yes |  | Active targets to reposition or change mode. Identity must match snapshot_display_layout. |
 | `persistent` | `bool` | no | `false` | Write the change to the display database. Leave false for a temporary test layout. |
 | `elevated` | `bool` | no | `false` | Use the elevated token. |
+| `desktopSessionId` | `string` | no | `null` | Managed desktop session id that is the input desktop. Omit for winsta0\default, which Windows refuses while a managed desktop is active. Nothing is switched. |
 
 ## `start_remote_debugger`
 

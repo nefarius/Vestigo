@@ -222,6 +222,26 @@ public class ManagedDesktopTests : IDisposable
     }
 
     [Fact]
+    public async Task InputDesktopPath_FollowsTheHostAndIgnoresTheDefaultDesktop()
+    {
+        RecordingHost host = new();
+        ManagedDesktopSessionManager manager = Manager(host, allow: true);
+        ManagedDesktopSession created = (await manager.CreateAsync(null, CancellationToken.None)).Value!;
+        Assert.Null((await manager.InputDesktopPathAsync(CancellationToken.None)).Value);
+
+        await manager.ActivateAsync(created.Id, CancellationToken.None);
+        Assert.Equal(DesktopSessionPolicy.DesktopPath(created.DesktopName), (await manager.InputDesktopPathAsync(CancellationToken.None)).Value);
+
+        await manager.RestoreAsync(created.Id, CancellationToken.None);
+        Assert.Null((await manager.InputDesktopPathAsync(CancellationToken.None)).Value);
+
+        host.FailEnumerate = true;
+        OperationResult<string?> failed = await manager.InputDesktopPathAsync(CancellationToken.None);
+        Assert.False(failed.Success);
+        Assert.Equal("desktop_unavailable", failed.ErrorCode);
+    }
+
+    [Fact]
     public async Task Close_FailIfRunning_DoesNotChangeTheInputDesktop()
     {
         RecordingHost host = new();

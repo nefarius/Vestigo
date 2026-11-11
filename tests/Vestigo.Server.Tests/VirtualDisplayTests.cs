@@ -312,7 +312,7 @@ public class VirtualDisplayTests : IDisposable
 
         public bool ActivePaths { get; init; } = true;
 
-        public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken)
+        public Task<OperationResult<DisplayLayoutSnapshot>> SnapshotAsync(bool elevated, CancellationToken cancellationToken, string? desktopPath = null)
         {
             Operations.Add("snapshot");
             DisplayTargetIdentity identity = new(@"\\.\DISPLAY1", 1, "adapter", 7, 1);
@@ -329,7 +329,7 @@ public class VirtualDisplayTests : IDisposable
                 new DisplayLayoutSnapshot(DateTimeOffset.UnixEpoch, 1, DesktopCoordinates.PhysicalScreenPixels, "fp", paths)));
         }
 
-        public Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(DisplayLayoutRequest request, bool elevated, CancellationToken cancellationToken)
+        public Task<OperationResult<DisplayLayoutApplyResult>> ApplyAsync(DisplayLayoutRequest request, bool elevated, CancellationToken cancellationToken, string? desktopPath = null)
         {
             if (request.Targets.Count == 0)
             {

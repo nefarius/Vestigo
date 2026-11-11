@@ -59,7 +59,18 @@ public static class PresentationWorker
             return 2;
         }
 
-        PresentationSessionRelease release = new();
+        // Decoding is where a native metadata fault can end this process. The parent reads this line to report the
+        // provider outcomes the session really returned, instead of inventing them when the process dies.
+        PresentationSessionRelease release = new()
+        {
+            ProvidersReady = (enabled, failed) =>
+            {
+                Console.Out.WriteLine(JsonSerializer.Serialize(
+                    new { progress = new { stage = "decoding", providersEnabled = enabled, providersFailed = failed } },
+                    SessionHelperJson()));
+                Console.Out.Flush();
+            }
+        };
         PresentationObserver observer = new(
             new EtwRealtimeTraceSessionFactory(),
             new VestigoOptions
@@ -155,12 +166,16 @@ public sealed record PresentationProcessResult(
     bool TimedOut,
     bool HostFailed = false,
     bool Started = true,
-    bool TerminationUncertain = false);
+    bool TerminationUncertain = false,
+    string? ErrorTail = null);
 
 /// <summary>Starts <c>Vestigo.exe --presentation-worker</c> and bounds its output.</summary>
 public sealed class ProcessPresentationHost : IPresentationProcess
 {
     public const int MaxOutputBytes = 1024 * 1024;
+
+    /// <summary>The worker's stderr is diagnostic text from a process that may have faulted. Only a bounded tail is kept.</summary>
+    public const int MaxErrorTailChars = 2048;
 
     private readonly string? _executable;
     private readonly IReadOnlyList<string> _prefix;
@@ -208,7 +223,7 @@ public sealed class ProcessPresentationHost : IPresentationProcess
             }
 
             started = true;
-            _ = process.StandardError.ReadToEndAsync();
+            Task<string> errors = ReadTailAsync(process.StandardError);
             using CancellationTokenSource timeoutSource = new(timeout);
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
             Task<string> output = ReadBoundedAsync(process.StandardOutput);
@@ -229,7 +244,14 @@ public sealed class ProcessPresentationHost : IPresentationProcess
             }
 
             (string text, bool completed) = await DrainAsync(output).ConfigureAwait(false);
-            return new PresentationProcessResult(process.ExitCode, text, false, false, TerminationUncertain: !completed);
+            (string tail, _) = await DrainAsync(errors).ConfigureAwait(false);
+            return new PresentationProcessResult(
+                process.ExitCode,
+                text,
+                false,
+                false,
+                TerminationUncertain: !completed,
+                ErrorTail: tail.Length == 0 ? null : tail);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -254,6 +276,26 @@ public sealed class ProcessPresentationHost : IPresentationProcess
         catch (TimeoutException)
         {
             return (string.Empty, false);
+        }
+    }
+
+    private static async Task<string> ReadTailAsync(StreamReader reader)
+    {
+        char[] buffer = new char[1024];
+        System.Text.StringBuilder tail = new();
+        while (true)
+        {
+            int read = await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return tail.ToString();
+            }
+
+            tail.Append(buffer, 0, read);
+            if (tail.Length > MaxErrorTailChars)
+            {
+                tail.Remove(0, tail.Length - MaxErrorTailChars);
+            }
         }
     }
 
