@@ -605,6 +605,14 @@ Reads one PE file inside a root with Read access: architecture (x86, x64, arm64,
 | `path` | `string` | yes |  | File as root:relative\path or an absolute path inside a root with Read access. |
 | `computeSha256` | `bool` | no | `true` | Compute SHA-256. Defaults to true. |
 
+## `inspect_hid_device`
+
+Reads HID capabilities for one device instance: vendor, product, version, manufacturer, product and serial strings, top-level usage, report lengths, bounded button and value usages, and link collections. A closed interface reports openError and leaves capabilities null. Does not return the raw report descriptor, input reports, or the process holding an exclusive handle.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `instanceId` | `string` | yes |  | Device instance ID, for example USB\VID_046D&PID_C52B\1. |
+
 ## `inspect_input_state`
 
 Reads the foreground window and the cursor position on the input desktop. desktopSessionId must already be the input desktop; this tool does not activate it and returns unsupported_on_inactive_desktop otherwise. A successful read is not evidence that an application responded to input.
@@ -810,6 +818,14 @@ Lists Windows event log channels with record count and enabled state. Channels t
 Lists DXGI adapters in the service process, including software and remote adapters. Each adapter includes vendor, device, subsystem, and revision when they are non-zero, the LUID, video memory, the user-mode driver version when CheckInterfaceSupport returns one, and outputs with the adapter LUID they are attached to. A Display-class device node is matched by PCI ids and reported as matchConfidence exact, subsystem, device, or ambiguous. Unknown numbers are null. This does not rank drivers.
 
 No parameters.
+
+## `list_hid_usages`
+
+Lists the top-level HID usage page and usage of present HID interfaces, at most 128. Pass usagePage to keep only that page. An interface that cannot be opened has null usage fields and openError. Does not read reports.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `usagePage` | `int?` | no | `null` | Optional usage page from 0 through 65535. Omit it to return every scanned interface. |
 
 ## `list_installed_software`
 

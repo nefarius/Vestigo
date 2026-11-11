@@ -109,6 +109,10 @@ Vicius exit `202` means already up to date, `207` means the install was handed t
 
 The installed configuration must remain at `%ProgramFiles%\Nefarius Software Solutions\Vestigo\Nefarius_Vestigo_Updater.json`. Missing updater files or the version registry value are expected when the `Updater` feature was deselected; use Modify to add Automatic updates, or reinstall without `REMOVE=Updater`. The registry value `HKLM\SOFTWARE\Nefarius Software Solutions\Vestigo\Version` must be the installed MSI product version. A manifest whose `manifestVersion` is older than the last one this user accepted is rejected. Exit code 104 means the manifest or its `.minisig` sidecar could not be verified. Exit code 116 means the downloaded MSI checksum or Authenticode publisher check failed.
 
+## HID capability reads
+
+`inspect_hid_device` returns `device_not_found` when the instance ID is not a present device node, and `invalid_instance_id` when the ID is empty, has no `\`, starts with `-`, or contains a control character. An empty `interfaces` list means that node has no present HID interface (or the 256-interface scan was truncated before it was seen; `truncated` is then true). `openError` `sharing_violation` or `access_denied` means Windows would not open that interface. Capabilities stay null. That is not the process which holds the handle. `list_hid_usages` returns `invalid_request` when `usagePage` is outside 0 through 65535. Neither tool reads reports.
+
 ## JSON document query fails
 
 `read_json_path` and `get_json_summary` read one UTF-8 JSON document, for example a service snapshot `logs:state.json` containing `{"status":"pending","items":[{"name":"device"}]}`. `get_json_summary` reports the top-level names and types. `read_json_path` with `$.status` returns the string `pending`, and `$.items[*]` returns each array element. A line-oriented `.jsonl` file is not one document; search it with `search_text`.

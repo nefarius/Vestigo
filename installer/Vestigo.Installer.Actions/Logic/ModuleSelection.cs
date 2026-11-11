@@ -149,7 +149,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Services", "Services", "List, start, stop, and configure Windows services and kernel drivers.", true, null),
             new ModuleDefinition("ScheduledTasks", "Scheduled tasks", "List and inspect scheduled tasks and their run history.", true, null),
             new ModuleDefinition(ScheduledTaskChanges, "Run and delete tasks", "Allow running, stopping, enabling, disabling, and deleting scheduled tasks (Vestigo:ScheduledTasks:AllowChanges). Tasks run as their own principal, often SYSTEM. Administrator-equivalent.", false, "ScheduledTasks"),
-            new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, and device state via nefcon. Runs code with kernel privilege.", false, null),
+            new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, device state, and read-only HID capabilities via nefcon. Runs code with kernel privilege.", false, null),
             new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes, Software, and Diagnostics.", true, null),
             new ModuleDefinition("WindowsServicing", "Windows servicing", "Read-only Windows Update, reboot queues, CBS packages, servicing logs, storage and file lockers. Needs Jobs. May disclose sensitive paths and logs.", false, "Jobs"),
             new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, list media capabilities, and list Windows Error Reporting report metadata. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
