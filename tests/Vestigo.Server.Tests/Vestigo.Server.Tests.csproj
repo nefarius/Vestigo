@@ -33,6 +33,19 @@
   <ItemGroup>
     <ProjectReference Include="..\..\build\_build.csproj" />
     <ProjectReference Include="..\..\server\Vestigo.Server.csproj" />
+    <ProjectReference Include="..\..\examples\Vestigo.ExamplePlugin\Vestigo.ExamplePlugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\fixtures\plugins\PluginV1\PluginV1.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\fixtures\plugins\PluginV2\PluginV2.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <!-- Exercise a real published plugin, rather than a test assembly accidentally shared by the host. -->
+  <Target Name="PublishExamplePluginFixture" AfterTargets="Build">
+    <MSBuild Projects="..\..\examples\Vestigo.ExamplePlugin\Vestigo.ExamplePlugin.csproj"
+             Targets="Publish" Properties="Configuration=$(Configuration);PublishDir=$(MSBuildProjectDirectory)\$(OutDir)plugin-fixtures\example\" />
+    <MSBuild Projects="..\fixtures\plugins\PluginV1\PluginV1.csproj"
+             Targets="Publish" Properties="Configuration=$(Configuration);PublishDir=$(MSBuildProjectDirectory)\$(OutDir)plugin-fixtures\v1\" />
+    <MSBuild Projects="..\fixtures\plugins\PluginV2\PluginV2.csproj"
+             Targets="Publish" Properties="Configuration=$(Configuration);PublishDir=$(MSBuildProjectDirectory)\$(OutDir)plugin-fixtures\v2\" />
+  </Target>
 
 </Project>

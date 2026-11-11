@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../../../server/Vestigo.Abstractions/Vestigo.Abstractions.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="../PrivateV1/PrivateV1.csproj" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="minisign-net" />
+    <Compile Include="../FixturePlugin.cs" />
+  </ItemGroup>
+</Project>

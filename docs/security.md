@@ -176,3 +176,7 @@ existing retention/output caps. Timeout/cancellation does not terminate native
 Windows work; its concurrency slot remains held until completion. A stuck call
 requires operator investigation. Restart Manager results are best-effort and
 are not permission to replace a file. See [Windows servicing diagnostics](windows-servicing.md).
+
+## External plugin trust
+
+External plugins are disabled by default and execute trusted code with the Windows service identity, potentially LocalSystem. AssemblyLoadContext provides dependency isolation, not security isolation. Loading requires explicit administrative or pinned-package trust and protected Windows ACLs; reparse deployments and untrusted writers are rejected without repair. File/path tools deny mutations to plugin trees, activation settings and their ancestors. Administrator-equivalent process, service, registry, environment and installer operations can bypass application path guards and must remain restricted to administrators. Every valid API token can access every enabled plugin tool; there are no per-plugin token scopes. Plugin endpoints inherit authentication and cannot declare AllowAnonymous. See [plugins](plugins.md) for installation, capability warnings and the full trust model.

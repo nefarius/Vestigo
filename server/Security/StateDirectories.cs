@@ -322,6 +322,12 @@ public static class StateDirectories
         foreach ((string name, long fileId) in ListChildren(directory))
         {
             string childPath = Path.Combine(displayPath, name);
+            // Executable deployments must be rejected on their existing ACLs, never made
+            // apparently trustworthy by repairing mutable state. The plugin loader validates them.
+            if (string.Equals(childPath, VestigoPaths.PluginDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             string? rejection = null;
             try
             {

@@ -86,3 +86,7 @@ cancellation stops waiting and retains that slot until Windows returns.
 Traffic is not TLS. Tokens, tickets, traces, and screenshots cross the network in the clear. Use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine. One-time `/files` tickets expire, bind to one path, and are consumed on first use; treat the URL as a secret until then. A `take_screenshot` share URL is the same kind of secret for a downscaled preview: it lasts 10 minutes, works once, and does not require the API token.
 
 Back to the [intro](index.md), [features](features.md), [developers](developers.md), or [QA](qa.md).
+
+## Trusted plugins
+
+Plugin loading is disabled by default. Plugins execute with the service's privileges; assembly dependency isolation is not a security sandbox. Deployment ACLs, reparse checks and optional complete-package SHA-256 pins protect installation. Every token holder can use every enabled plugin tool. Anonymous plugin endpoints are rejected. Administrator-equivalent tools remain administrator access and can bypass file path guards. See the [full plugin trust model](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md).

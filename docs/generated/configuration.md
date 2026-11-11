@@ -97,6 +97,10 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `MaxReadBatch` | `200` |
 | `MaxReadWait` | `00:00:30` |
 | `Modules` | `empty` |
+| `Plugins:Enabled` | `false` |
+| `Plugins:PackageHashes` | `empty` |
+| `Plugins:Root` | `null` |
+| `Plugins:TrustMode` | `Disabled` |
 | `Processes:AllowPathLookup` | `true` |
 | `Registry:AllowedPrefixes` | `empty` |
 | `Registry:DeniedPrefixes` | `HKLM\SAM, HKLM\SECURITY, HKLM\SYSTEM\CurrentControlSet\Control\Lsa, HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` |

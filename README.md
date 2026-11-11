@@ -151,3 +151,7 @@ Third-party software included in the MSI and its applicable redistribution licen
 - [nefcon](https://github.com/nefarius/nefcon)
 - [DebugView++](https://github.com/CobaltFusion/DebugViewPP)
 - [ripgrep](https://github.com/BurntSushi/ripgrep)
+
+## External plugins
+
+Optional trusted .NET 10 plugins can add tools to the existing MCP endpoint and authenticated HTTP routes. Loading and external modules default to disabled. Plugins run with the service's privileges; dependency isolation is not a security sandbox. See [plugin development and deployment](docs/plugins.md). The public MSI contains no private plugins.

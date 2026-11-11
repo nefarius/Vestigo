@@ -55,6 +55,9 @@ public sealed partial class RootPolicy(VestigoOptions options, VolumeRootSource?
 
     /// <summary>Resolves a path that must be reachable with <paramref name="needed" /> access.</summary>
     public PathCheck Resolve(string requestedPath, RootAccess needed)
+        => PluginPathGuard.Check(ResolveCore(requestedPath, needed), needed, options);
+
+    private PathCheck ResolveCore(string requestedPath, RootAccess needed)
     {
         if (string.IsNullOrWhiteSpace(requestedPath))
         {

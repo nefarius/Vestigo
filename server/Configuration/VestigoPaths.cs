@@ -20,6 +20,8 @@ public static class VestigoPaths
 
     public static string SettingsFilePath => Path.Combine(SettingsDirectory, "appsettings.json");
 
+    public static string PluginDirectory => Path.Combine(SettingsDirectory, "plugins");
+
     public static string SpoolDirectory => Path.Combine(SettingsDirectory, "spool");
 
     public static string LogDirectory => Path.Combine(SettingsDirectory, "logs");

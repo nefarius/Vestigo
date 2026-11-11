@@ -78,6 +78,14 @@ class Build : FalloutBuild
         {
             PublishProject(Solution.GetAllProjects("Vestigo.Server").Single(), PublishServerDir);
 
+            // External deployments live outside this payload. Never stage examples or private plugins in the MSI.
+            if (!File.Exists(Path.Combine(PublishServerDir, "Vestigo.Abstractions.dll")) ||
+                Directory.Exists(Path.Combine(PublishServerDir, "plugins")) ||
+                Directory.EnumerateFiles(PublishServerDir, "Vestigo.ExamplePlugin*.dll", SearchOption.AllDirectories).Any())
+            {
+                throw new InvalidOperationException("Server publish must include the public plugin contracts and exclude plugin deployments/examples.");
+            }
+
             // The update feed models carry [JsonSchemaType]; System.Text.Json loads this assembly at
             // runtime, so a payload without it breaks check_for_updates.
             string annotations = Path.Combine(PublishServerDir, "NJsonSchema.Annotations.dll");
