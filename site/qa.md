@@ -72,6 +72,11 @@ The Security channel follows Windows ACLs for the service account.
 
 The service context does not see user-session audio. Per-app overrides in Settings are not changed.
 
+## List kernel dumps
+
+1. Enable Diagnostics. It needs Jobs.
+2. `list_kernel_dumps` returns `MEMORY.DMP`, the dedicated dump file, and minidumps that exist. File names and a small header prefix are included. Dump bytes and bugcheck fields are not.
+
 ## Read a crash and take a dump
 
 1. Enable Diagnostics, Processes, and Jobs. Processes is opt-in and needs Jobs; Diagnostics needs Jobs too. `list_crash_reports` returns Windows Error Reporting metadata for the machine, a user, or both. Dump bytes and the raw report file are not included.

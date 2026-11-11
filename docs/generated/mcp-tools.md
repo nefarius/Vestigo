@@ -881,6 +881,14 @@ Lists background jobs owned by this Vestigo process, newest first.
 
 No parameters.
 
+## `list_kernel_dumps`
+
+Lists MEMORY.DMP, the dedicated CrashControl dump file, and Minidump *.dmp files in file-name order. Each row has a stable id, location, file name, length, last write time, and a header prefix when the file opens. PAGEDU64 and PAGEDUMP expose major and minor version, machine type, and processor count. Bugcheck fields are not returned. MDMP is reported as minidump without kernel fields. werMatches names Windows Error Reporting reports whose dump file name matches. limit is clamped to 1..50. Dump bytes are not returned.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | `int` | no | `20` | Maximum dumps. Clamped to 1..50. |
+
 ## `list_logon_sessions`
 
 Lists Windows logon sessions. isCurrentInput marks the session interactive tools would use. includeClientAddresses adds the client name and address; otherwise those fields are null and are not written to the log. Station names are displayed, not interpreted. There is no logoff or connect tool.

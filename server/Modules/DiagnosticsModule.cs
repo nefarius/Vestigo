@@ -18,7 +18,7 @@ public sealed class DiagnosticsModule : VestigoModule
     public override string Name => "Diagnostics";
 
     public override string Description =>
-        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list process connections, list media capabilities, list Windows Error Reporting report metadata, read Windows Firewall profiles and rules, and read Driver Verifier state. Opt-in. Needs Jobs. Capture probes, network probes, audible audio probes, process dumps, firewall inventory, and Driver Verifier changes are separate gates. A valid Authenticode signature is not permission to load a kernel driver.";
+        "Inspect PE files and signatures, list loaded modules, read SetupAPI install history, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list process connections, list media capabilities, list Windows Error Reporting report metadata, read Windows Firewall profiles and rules, read Driver Verifier state, and list kernel dump metadata. Opt-in. Needs Jobs. Capture probes, network probes, audible audio probes, process dumps, firewall inventory, and Driver Verifier changes are separate gates. A valid Authenticode signature is not permission to load a kernel driver.";
 
     /// <summary>Module lists, signature subjects, SetupAPI logs, and crash metadata are information disclosure, so the module is opt-in.</summary>
     public override bool EnabledByDefault => false;
@@ -27,7 +27,7 @@ public sealed class DiagnosticsModule : VestigoModule
     public override IReadOnlyList<string> Dependencies { get; } = ["Jobs"];
 
     public override IReadOnlyList<Type> ToolTypes { get; } =
-        [typeof(BinaryTools), typeof(ProcessModuleTools), typeof(InstallHistoryTools), typeof(DeviceProblemTools), typeof(GraphicsTools), typeof(CaptureProbeTools), typeof(ConnectionTools), typeof(EndpointProbeTools), typeof(MediaTools), typeof(CrashTools), typeof(FirewallTools), typeof(VerifierTools)];
+        [typeof(BinaryTools), typeof(ProcessModuleTools), typeof(InstallHistoryTools), typeof(DeviceProblemTools), typeof(GraphicsTools), typeof(CaptureProbeTools), typeof(ConnectionTools), typeof(EndpointProbeTools), typeof(MediaTools), typeof(CrashTools), typeof(KernelDumpTools), typeof(FirewallTools), typeof(VerifierTools)];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
     {
@@ -46,6 +46,7 @@ public sealed class DiagnosticsModule : VestigoModule
         services.AddSingleton<ICameraFormatSource, MediaFoundationCameras>();
         services.AddSingleton<IAudioFormatProbe, SessionAudioFormatProbe>();
         services.AddSingleton<ICrashReportSource, WerCrashReportSource>();
+        services.AddSingleton<IKernelDumpInventory, WindowsKernelDumpInventory>();
         services.AddSingleton<IFirewallInventory, WindowsFirewallInventory>();
         services.AddSingleton<IProcessDumpWriter, MiniDumpWriter>();
         services.AddSingleton<IVerifierQuery, WindowsVerifierQuery>();
