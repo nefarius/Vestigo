@@ -33,6 +33,22 @@ public class VirtualDisplayTests : IDisposable
     }
 
     [Fact]
+    public async Task Shutdown_DisposeAndStopShareOneLifetime()
+    {
+        RecordingDisplays displays = new();
+        VirtualDisplayCoordinator coordinator = Coordinator(new UnavailableVirtualDisplayBackend(), displays, new ManualClock());
+        await coordinator.StartAsync(CancellationToken.None);
+        coordinator.Dispose();
+        await coordinator.StopAsync(CancellationToken.None);
+
+        VirtualDisplayCoordinator second = Coordinator(new UnavailableVirtualDisplayBackend(), displays, new ManualClock());
+        await second.StartAsync(CancellationToken.None);
+        await second.StopAsync(CancellationToken.None);
+        second.Dispose();
+        await second.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Create_RestoresBeforeRemovingOwnedAndPreservesForeignDisplays()
     {
         List<string> log = [];
