@@ -26,6 +26,8 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
     private readonly ILogger<ManagedDesktopSessionManager>? _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, ManagedDesktopSession> _sessions = new(StringComparer.Ordinal);
+    private readonly object _sweeps = new();
+    private readonly List<Task> _sweepTasks = [];
     private bool _checkpointUnsupported;
     private Timer? _timer;
     private int _lifetime;
@@ -55,7 +57,15 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             }
         }
 
-        _timer = new Timer(_ => _ = SweepAsync(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        _timer = new Timer(_ => QueueSweep(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    internal void QueueSweep()
+    {
+        lock (_sweeps)
+        {
+            _sweepTasks.Add(SweepAsync());
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -71,6 +81,15 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             {
                 await _timer.DisposeAsync().ConfigureAwait(false);
                 _timer = null;
+            }
+
+            try
+            {
+                await Task.WhenAll(ActiveSweeps()).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger?.LogWarning(ex, "A desktop presence sweep did not finish cleanly.");
             }
 
             await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -356,7 +375,7 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                bool pending = _sessions.Values.Any(NeedsPresenceCheck);
+                bool pending = _sessions.Values.Any(session => NeedsPresenceCheck(session) || session.State is "open" or "active");
                 if (!pending || (throttle && _time.GetUtcNow() - _lastPresenceCheck < TimeSpan.FromSeconds(2)))
                 {
                     return;
@@ -381,9 +400,23 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
                 _lastPresenceCheck = _time.GetUtcNow();
                 if (!listed.Success || listed.Value is null)
                 {
-                    foreach (ManagedDesktopSession session in _sessions.Values.Where(NeedsPresenceCheck).ToList())
+                    bool hostExited = listed.ErrorCode == "desktop_host_lost";
+                    foreach (ManagedDesktopSession session in _sessions.Values.ToList())
                     {
-                        _sessions[session.Id] = session with { DesktopPresence = "enumeration-unknown" };
+                        bool open = session.State is "open" or "active";
+                        if (!NeedsPresenceCheck(session) && !(hostExited && open))
+                        {
+                            continue;
+                        }
+
+                        _sessions[session.Id] = hostExited
+                            ? session with
+                            {
+                                HandleHeld = false,
+                                State = open ? "recovery-failed" : session.State,
+                                DesktopPresence = "enumeration-unknown"
+                            }
+                            : session with { DesktopPresence = "enumeration-unknown" };
                     }
 
                     Save();
@@ -436,6 +469,15 @@ public sealed class ManagedDesktopSessionManager : IHostedService, IManagedDeskt
             {
                 _gate.Release();
             }
+        }
+    }
+
+    private Task[] ActiveSweeps()
+    {
+        lock (_sweeps)
+        {
+            _sweepTasks.RemoveAll(static task => task.IsCompleted);
+            return _sweepTasks.ToArray();
         }
     }
 

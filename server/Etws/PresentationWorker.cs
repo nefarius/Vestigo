@@ -162,12 +162,31 @@ public sealed class ProcessPresentationHost : IPresentationProcess
 {
     public const int MaxOutputBytes = 1024 * 1024;
 
+    private readonly string? _executable;
+    private readonly IReadOnlyList<string> _prefix;
+
+    public ProcessPresentationHost(string? executable = null, IReadOnlyList<string>? prefix = null)
+    {
+        _executable = executable;
+        _prefix = prefix ?? [];
+    }
+
     public async Task<PresentationProcessResult> RunAsync(
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        (string executable, List<string> prefix) = Vestigo.Processes.SessionHelperClient.Host();
+        string executable;
+        List<string> prefix;
+        if (_executable is null)
+        {
+            (executable, prefix) = Vestigo.Processes.SessionHelperClient.Host();
+        }
+        else
+        {
+            executable = _executable;
+            prefix = _prefix.ToList();
+        }
         using Process process = new();
         process.StartInfo.FileName = executable;
         process.StartInfo.WorkingDirectory = AppContext.BaseDirectory;

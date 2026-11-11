@@ -393,6 +393,46 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public async Task UncertainTimeout_SaysCleanupIsUnconfirmed()
+    {
+        ScriptedPresentation process = new() { TimedOut = true, TerminationUncertain = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_timeout", result.Value!.Reason);
+        Assert.Contains("cleanup is unconfirmed", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task ConfirmedTimeout_SaysTheDecoderWasStopped()
+    {
+        ScriptedPresentation process = new() { TimedOut = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("worker_timeout", result.Value!.Reason);
+        Assert.Contains("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("[]", File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
+    public async Task UncertainCancellation_SaysCleanupIsUnconfirmed()
+    {
+        ScriptedPresentation process = new() { Cancelled = true, TerminationUncertain = true, StopExitCode = 0 };
+        PresentationGateway gateway = Gateway(process);
+
+        OperationResult<PresentationObservation> result = await gateway.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("cancelled", result.Value!.Reason);
+        Assert.Contains("cleanup is unconfirmed", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("was stopped", result.Value.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task UncertainTermination_KeepsTheCheckpoint()
     {
         ScriptedPresentation process = new() { ExitCode = 0, Output = "{}", TerminationUncertain = true, StopExitCode = 0 };
@@ -424,7 +464,7 @@ public class PresentationTests : IDisposable
         }
 
         PresentationGateway gateway = new(
-            new ProcessPresentationHost(),
+            new ProcessPresentationHost(VestigoExecutable()),
             new VestigoOptions(),
             TimeProvider.System,
             NullLogger<PresentationGateway>.Instance);
@@ -451,6 +491,18 @@ public class PresentationTests : IDisposable
         {
             Assert.DoesNotContain(result.Value.SessionName!, File.ReadAllText(VestigoPaths.OwnedPresentationPath), StringComparison.Ordinal);
         }
+    }
+
+    private static string VestigoExecutable()
+    {
+        DirectoryInfo output = new(AppContext.BaseDirectory);
+        string configuration = output.Parent?.Name ?? "Debug";
+        string executable = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "server", "bin", configuration, output.Name, "Vestigo.exe"));
+        Assert.True(File.Exists(executable), executable);
+        return executable;
     }
 
     private PresentationObserver Observer(ScriptedFactory factory) =>
@@ -515,6 +567,10 @@ public class PresentationTests : IDisposable
 
         public bool TerminationUncertain { get; init; }
 
+        public bool TimedOut { get; init; }
+
+        public bool Cancelled { get; init; }
+
         public List<string[]> Calls { get; } = [];
 
         public async Task<PresentationProcessResult> RunAsync(
@@ -540,7 +596,7 @@ public class PresentationTests : IDisposable
                 }
             }
 
-            return new PresentationProcessResult(ExitCode, Output, false, false, HostFailed, Started, TerminationUncertain);
+            return new PresentationProcessResult(ExitCode, Output, Cancelled, TimedOut, HostFailed, Started, TerminationUncertain);
         }
     }
 

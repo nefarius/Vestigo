@@ -663,6 +663,20 @@ public class DisplayLayoutContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_KeepsTheCheckpointWhenTheTopologyWasNotApplied()
+    {
+        FakeDisplays displays = new(Snap(Path(0, 0, 1920, 1080))) { RejectBeforeApply = true };
+        DisplayLayoutTransactionManager manager = Manager(displays);
+
+        OperationResult<DisplayLayoutTransaction> failed = await manager.StartAsync([Change(0, 0, 1280, 720)], true, false, CancellationToken.None);
+
+        Assert.Equal("display_mode_unavailable", failed.ErrorCode);
+        Assert.DoesNotContain("Rollback", failed.Error);
+        Assert.Single(displays.Applied);
+        Assert.True(File.Exists(VestigoPaths.OwnedDisplayLayoutPath));
+    }
+
+    [Fact]
     public async Task Restore_SkipsInactivePathsFromTheOriginalSnapshot()
     {
         DisplayPathLayout active = Path(0, 0, 1920, 1080);
@@ -811,6 +825,7 @@ public class DisplayLayoutContractTests : IDisposable
         public DisplayLayoutSnapshot Current = original;
         public int SnapshotsBeforeChanged;
         public bool FailApply;
+        public bool RejectBeforeApply;
         public bool ReportUnchanged;
         public bool OmitAfter;
         public bool CancelFirstApply;
@@ -838,6 +853,12 @@ public class DisplayLayoutContractTests : IDisposable
             if (UncertainError is not null && Applied.Count == 1)
             {
                 return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Fail(UncertainError, "The helper did not return a result."));
+            }
+
+            if (RejectBeforeApply)
+            {
+                return Task.FromResult(OperationResult<DisplayLayoutApplyResult>.Ok(
+                    new DisplayLayoutApplyResult(false, true, request.Persistent, null, "display_mode_unavailable", "A requested target was not in the active topology.", Current, null, "validate")));
             }
 
             if (FailApply)

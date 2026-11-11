@@ -146,11 +146,7 @@ public sealed class PresentationGateway : IHostedService
                     sessionName,
                     started,
                     reason,
-                    run.Cancelled
-                        ? "The observation was cancelled and the decoder process was stopped."
-                        : run.TimedOut
-                            ? "The decoder process exceeded the observation deadline and was stopped."
-                            : "The service could not read the decoder process.");
+                    TerminationDetail(run));
             }
 
             if (!TryParse(run.Output, out OperationResult<PresentationObservation>? parsed) || parsed is null)
@@ -189,6 +185,31 @@ public sealed class PresentationGateway : IHostedService
         {
             _gate.Release();
         }
+    }
+
+    private static string TerminationDetail(PresentationProcessResult run)
+    {
+        if (run.TerminationUncertain && run.Cancelled)
+        {
+            return "The observation was cancelled. Termination was attempted, but cleanup is unconfirmed.";
+        }
+
+        if (run.TerminationUncertain && run.TimedOut)
+        {
+            return "The decoder process exceeded the observation deadline. Termination was attempted, but cleanup is unconfirmed.";
+        }
+
+        if (run.Cancelled)
+        {
+            return "The observation was cancelled and the decoder process was stopped.";
+        }
+
+        if (run.TimedOut)
+        {
+            return "The decoder process exceeded the observation deadline and was stopped.";
+        }
+
+        return "The service could not read the decoder process.";
     }
 
     private async Task StopIfCreatedAsync(string sessionName, bool started, bool terminationUncertain)

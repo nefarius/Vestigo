@@ -69,6 +69,59 @@ public class ManagedDesktopTests : IDisposable
     }
 
     [Fact]
+    public async Task HostExit_ReconcilesOpenSessionsAndPreservesCleanup()
+    {
+        RecordingHost host = new() { RetainOnClose = true };
+        ManagedDesktopSessionManager manager = Manager(host, allow: true);
+        ManagedDesktopSession open = (await manager.CreateAsync("terminate-owned", CancellationToken.None)).Value!;
+        ManagedDesktopSession retained = (await manager.CreateAsync("fail-if-running", CancellationToken.None)).Value!;
+        OperationResult<ManagedDesktopSession> closed = await manager.CloseAsync(retained.Id, null, CancellationToken.None);
+        Assert.Equal("close-time-retained", closed.Value!.DesktopPresence);
+        Assert.Equal("Windows kept the desktop because another handle or thread still uses it.", closed.Value.LastError);
+
+        host.RejectOp = DesktopHostOperations.Enumerate;
+        host.RejectCode = "desktop_host_lost";
+        ManagedDesktopSession openRead = (await manager.GetAsync(open.Id)).Value!;
+        ManagedDesktopSession retainedRead = (await manager.GetAsync(retained.Id)).Value!;
+
+        Assert.Equal("recovery-failed", openRead.State);
+        Assert.False(openRead.HandleHeld);
+        Assert.Equal("enumeration-unknown", openRead.DesktopPresence);
+        Assert.Equal("terminate-owned", openRead.CleanupPolicy);
+        Assert.Null(openRead.LastError);
+        Assert.Equal("desktop_session_not_found", (await manager.LeaseForLaunchAsync(open.Id, CancellationToken.None)).ErrorCode);
+
+        Assert.Equal("closed", retainedRead.State);
+        Assert.False(retainedRead.HandleHeld);
+        Assert.Equal("enumeration-unknown", retainedRead.DesktopPresence);
+        Assert.True(retainedRead.DesktopRetained);
+        Assert.Equal(closed.Value.LastError, retainedRead.LastError);
+        Assert.Equal("fail-if-running", retainedRead.CleanupPolicy);
+    }
+
+    [Fact]
+    public async Task Stop_AwaitsTheSweepBeforeDisposingTheGate()
+    {
+        TaskCompletionSource hold = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        RecordingHost host = new() { HoldEnumerate = hold.Task };
+        ManagedDesktopSessionManager manager = Manager(host, allow: true);
+        Assert.True((await manager.CreateAsync("terminate-owned", CancellationToken.None)).Success);
+
+        manager.QueueSweep();
+        for (int attempt = 0; attempt < 50 && !host.Operations.Contains(DesktopHostOperations.Enumerate); attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.Contains(DesktopHostOperations.Enumerate, host.Operations);
+        Task stopping = manager.StopAsync(CancellationToken.None);
+        await Task.Delay(50);
+        Assert.False(stopping.IsCompleted);
+        hold.TrySetResult();
+        await stopping;
+    }
+
+    [Fact]
     public async Task ClosedRetention_ClearsAfterTheDesktopDisappears()
     {
         RecordingHost host = new() { RetainOnClose = true };
@@ -618,12 +671,19 @@ public class ManagedDesktopTests : IDisposable
 
         public string RejectCode { get; set; } = "helper_timeout";
 
-        public Task<OperationResult<DesktopCommandResult>> SendAsync(DesktopCommand command, CancellationToken cancellationToken)
+        public Task? HoldEnumerate { get; set; }
+
+        public async Task<OperationResult<DesktopCommandResult>> SendAsync(DesktopCommand command, CancellationToken cancellationToken)
         {
             Operations.Add(command.Op);
+            if (command.Op == DesktopHostOperations.Enumerate && HoldEnumerate is not null)
+            {
+                await HoldEnumerate.ConfigureAwait(false);
+            }
+
             if (RejectOp is not null && command.Op == RejectOp)
             {
-                return Task.FromResult(OperationResult<DesktopCommandResult>.Fail(RejectCode, "The desktop host did not answer in time."));
+                return OperationResult<DesktopCommandResult>.Fail(RejectCode, "The desktop host did not answer in time.");
             }
 
             if (command.Op == DesktopHostOperations.Create && Cancellation is not null)
@@ -633,7 +693,7 @@ public class ManagedDesktopTests : IDisposable
 
             if (Secure && command.Op is DesktopHostOperations.Create or DesktopHostOperations.Activate)
             {
-                return Task.FromResult(OperationResult<DesktopCommandResult>.Ok(DesktopCommandResult.Fail(command.RequestId, "secure_desktop_active", "Secure desktop.")));
+                return OperationResult<DesktopCommandResult>.Ok(DesktopCommandResult.Fail(command.RequestId, "secure_desktop_active", "Secure desktop."));
             }
 
             DesktopCommandResult result = command.Op switch
@@ -648,7 +708,7 @@ public class ManagedDesktopTests : IDisposable
                 DesktopHostOperations.Shutdown => new DesktopCommandResult(command.RequestId, true, null, null, null, null, null, "WinSta0", 1, "Default", _input, true, true, false, false, 1, null),
                 _ => DesktopCommandResult.Fail(command.RequestId, "invalid_request", "Unknown.")
             };
-            return Task.FromResult(OperationResult<DesktopCommandResult>.Ok(result));
+            return OperationResult<DesktopCommandResult>.Ok(result);
         }
 
         public Task<OperationResult<DesktopCommandResult>> RecoverAsync(DesktopCommand command, CancellationToken cancellationToken)

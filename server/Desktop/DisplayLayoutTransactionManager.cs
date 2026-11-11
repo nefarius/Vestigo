@@ -156,14 +156,14 @@ public sealed class DisplayLayoutTransactionManager : IHostedService, IDisposabl
                     && applied.Value.After is not null
                     && !string.Equals(applied.Value.Before.Fingerprint, applied.Value.After.Fingerprint, StringComparison.OrdinalIgnoreCase);
                 bool unknownAfter = applied.Value.Validated && applied.Value.After is null;
-                if (drifted || unknownAfter)
+                if ((drifted || unknownAfter) && applied.Value.Stage == "apply")
                 {
                     await RestoreCoreAsync(CancellationToken.None).ConfigureAwait(false);
                     message += _current is { RestorationVerified: true }
                         ? " Rollback verified the original topology."
                         : " Rollback did not verify the original topology.";
                 }
-                else
+                else if (!(drifted || unknownAfter))
                 {
                     _current = null;
                     TryDelete();
