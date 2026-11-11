@@ -203,6 +203,7 @@ public class RepositoryBoundaryTests
                      "Diagnostics:MaxProcessModules", "Diagnostics:MaxInstallHistoryBytes",
                      "Diagnostics:MaxProbeDuration", "Diagnostics:MaxInspectBytes",
                      "Diagnostics:MaxProcessConnections", "Diagnostics:MaxEndpointProbeDuration",
+                     "Diagnostics:MaxUdpPayloadBytes", "Diagnostics:MaxUdpProbeDuration",
                      "Diagnostics:AllowAudioPlayback", "Diagnostics:MaxVideoEncoders",
                      "Diagnostics:MaxCameraFormats", "Diagnostics:MaxAudioProbeDuration",
                      "Diagnostics:AllowProcessDumps", "Diagnostics:MaxCrashReports",
