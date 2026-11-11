@@ -17,7 +17,8 @@ public static class PresentationClassifier
         string? sessionName,
         bool cancelled,
         bool truncated,
-        int undecodedEvents)
+        int undecodedEvents,
+        bool eventsLost = false)
     {
         bool dropped = samples.Any(sample => sample.Dropped);
         List<PresentationSample> correlated = samples.Where(sample => Correlates(sample, processId, windowHandle)).ToList();
@@ -30,7 +31,7 @@ public static class PresentationClassifier
             }
         }
 
-        string? reason = Reason(providersEnabled, dropped, cancelled, truncated, undecodedEvents, samples, correlated, modes);
+        string? reason = Reason(providersEnabled, providersFailed, dropped || eventsLost, cancelled, truncated, undecodedEvents, samples, correlated, modes);
         return new PresentationObservation(
             reason is null ? modes.Single() : PresentationProviders.Unknown,
             reason,
@@ -49,6 +50,7 @@ public static class PresentationClassifier
 
     private static string? Reason(
         IReadOnlyList<string> providersEnabled,
+        IReadOnlyList<string> providersFailed,
         bool dropped,
         bool cancelled,
         bool truncated,
@@ -62,7 +64,7 @@ public static class PresentationClassifier
             return "cancelled";
         }
 
-        if (providersEnabled.Count == 0)
+        if (providersEnabled.Count == 0 || providersFailed.Count > 0)
         {
             return "providers_unavailable";
         }
@@ -77,7 +79,7 @@ public static class PresentationClassifier
             return "events_truncated";
         }
 
-        if (undecodedEvents > 0 && samples.Count == 0)
+        if (undecodedEvents > 0)
         {
             return "decode_failed";
         }

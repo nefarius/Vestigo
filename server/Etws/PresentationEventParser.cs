@@ -94,7 +94,9 @@ public static class PresentationEventParser
         }
         else if (name.Equals("Task", StringComparison.OrdinalIgnoreCase) || name.Equals("TaskName", StringComparison.OrdinalIgnoreCase))
         {
-            collected.Task ??= ReadString(value);
+            string? task = ReadString(value);
+            collected.Task ??= task;
+            collected.Dropped |= IsLossMarker(task);
         }
         else if (name.Equals("Provider", StringComparison.OrdinalIgnoreCase)
                  || name.Equals("ProviderName", StringComparison.OrdinalIgnoreCase)
@@ -102,6 +104,12 @@ public static class PresentationEventParser
                  || name.Equals("GuidName", StringComparison.OrdinalIgnoreCase))
         {
             collected.Provider ??= ReadString(value);
+        }
+        else if (name.Equals("Name", StringComparison.OrdinalIgnoreCase)
+                 || name.Equals("Opcode", StringComparison.OrdinalIgnoreCase)
+                 || name.Equals("OpcodeName", StringComparison.OrdinalIgnoreCase))
+        {
+            collected.Dropped |= IsLossMarker(ReadString(value));
         }
         else if (name.Equals("EventsLost", StringComparison.OrdinalIgnoreCase)
                  || name.Equals("LostEvents", StringComparison.OrdinalIgnoreCase)
@@ -169,6 +177,11 @@ public static class PresentationEventParser
 
         return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) ? parsed : null;
     }
+
+    private static bool IsLossMarker(string? text) =>
+        text is not null
+        && (text.Contains("RTLostEvent", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("RTLostBuffer", StringComparison.OrdinalIgnoreCase));
 
     private static string? ReadString(JsonElement value) => value.ValueKind switch
     {

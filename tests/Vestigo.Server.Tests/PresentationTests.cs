@@ -114,6 +114,88 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public void PartialProviderFailure_HidesAMatchingMode()
+    {
+        PresentationObservation observation = PresentationClassifier.Classify(
+            [Parsed(Event(266, "IndependentFlip", 42))],
+            42,
+            null,
+            ["dxgi"],
+            ["dxgkrnl"],
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
+            "Vestigo-Ptest",
+            false,
+            false,
+            0);
+
+        Assert.Equal("unknown", observation.Mode);
+        Assert.Equal("providers_unavailable", observation.Reason);
+    }
+
+    [Fact]
+    public void OneUndecodedEvent_HidesAMatchingMode()
+    {
+        PresentationObservation observation = PresentationClassifier.Classify(
+            [Parsed(Event(266, "IndependentFlip", 42))],
+            42,
+            null,
+            ["provider"],
+            [],
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
+            "Vestigo-Ptest",
+            false,
+            false,
+            1);
+
+        Assert.Equal("decode_failed", observation.Reason);
+    }
+
+    [Fact]
+    public void LostEventName_HidesAMatchingMode()
+    {
+        string json = """
+            {"Event":{"Name":"MSNT_SystemTrace/EventTrace/RTLostEvent","Provider":"Microsoft-Windows-DxgKrnl","Id":266,"TaskName":"IndependentFlip","ProcessId":42}}
+            """;
+
+        Assert.True(PresentationEventParser.TryParse(Encoding.UTF8.GetBytes(json), out PresentationSample sample));
+        Assert.True(sample.Dropped);
+        Assert.Equal("events_dropped", Classify(42, null, json).Reason);
+        Assert.True(PresentationEventParser.TryParse(
+            """{"Event":{"TaskName":"RTLostBuffer","ProcessId":1}}"""u8,
+            out PresentationSample buffer));
+        Assert.True(buffer.Dropped);
+    }
+
+    [Fact]
+    public async Task SessionLoss_HidesAMatchingMode()
+    {
+        ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)], EventsLost = true };
+
+        OperationResult<PresentationObservation> result = await Observer(factory).ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("events_dropped", result.Value!.Reason);
+    }
+
+    [Fact]
+    public async Task DisposeFailure_KeepsTheCheckpointAndReleasesTheGate()
+    {
+        ScriptedFactory factory = new() { Events = [Event(266, "IndependentFlip", 42)], FailDispose = true };
+        PresentationObserver observer = Observer(factory);
+
+        OperationResult<PresentationObservation> first = await observer.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.Equal("independent-flip", first.Value!.Mode);
+        Assert.Contains(first.Value.SessionName!, File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+        factory.FailDispose = false;
+        OperationResult<PresentationObservation> second = await observer.ObserveAsync(42, null, TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        Assert.True(second.Success, second.Error);
+        Assert.Contains(first.Value.SessionName!, File.ReadAllText(VestigoPaths.OwnedPresentationPath));
+    }
+
+    [Fact]
     public void WindowHandle_MustMatchWhenRequested()
     {
         string matched = """
@@ -213,6 +295,12 @@ public class PresentationTests : IDisposable
     private PresentationObserver Observer(ScriptedFactory factory) =>
         new(factory, new VestigoOptions(), TimeProvider.System, NullLogger<PresentationObserver>.Instance);
 
+    private static PresentationSample Parsed(string json)
+    {
+        Assert.True(PresentationEventParser.TryParse(Encoding.UTF8.GetBytes(json), out PresentationSample sample));
+        return sample;
+    }
+
     private static PresentationObservation Classify(int processId, long? window, params string[] json)
     {
         List<PresentationSample> samples = json.Select(item =>
@@ -253,6 +341,10 @@ public class PresentationTests : IDisposable
 
         public bool Hold { get; init; }
 
+        public bool EventsLost { get; init; }
+
+        public bool FailDispose { get; set; }
+
         public Exception? CreateError { get; init; }
 
         public List<string> Created { get; } = [];
@@ -286,6 +378,8 @@ public class PresentationTests : IDisposable
         {
             public string SessionName => sessionName;
 
+            public bool EventsWereLost => factory.EventsLost;
+
             public void EnableProvider(Guid providerId, TraceLevelSelection level, ulong matchAnyKeyword, ulong matchAllKeyword)
             {
             }
@@ -311,6 +405,11 @@ public class PresentationTests : IDisposable
             public ValueTask DisposeAsync()
             {
                 factory.Disposed.Add(sessionName);
+                if (factory.FailDispose)
+                {
+                    throw new IOException("The presentation session could not be stopped.");
+                }
+
                 return ValueTask.CompletedTask;
             }
         }

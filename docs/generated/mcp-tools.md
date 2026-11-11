@@ -143,7 +143,7 @@ Would create a temporary virtual display, arrange it, and restore the original t
 | `refreshDenominator` | `uint` | no | `1` | Refresh denominator. Default 1. |
 | `x` | `int` | no | `0` | Desktop position X. |
 | `y` | `int` | no | `0` | Desktop position Y. |
-| `primary` | `bool` | no | `false` | Make the new display primary. Not applied while creation is unavailable. |
+| `primary` | `bool` | no | `false` | Rejected with invalid_request. The display-layout request cannot select a primary yet. |
 
 ## `delete_file_on_reboot`
 
@@ -1018,7 +1018,7 @@ Samples the active topology until a target is active, matches the requested mode
 
 ## `observe_presentation`
 
-Observes DXGI, DWM, and DxgKrnl events for one process for a bounded interval and reports composed, independent-flip, or exclusive only when an explicit event supports that mode. A DXGI present by itself, window styles, and monitor-sized bounds are not evidence. The result is unknown when providers are missing, events do not correlate, events were dropped or truncated, the evidence disagrees, or the call is cancelled. Creates a short Vestigo- session and stops that session when the call ends. Duration is at most 30 seconds and cannot exceed Vestigo:MaxCaptureDuration.
+Observes DXGI, DWM, and DxgKrnl events for one process for a bounded interval and reports composed, independent-flip, or exclusive only when an explicit event supports that mode. A DXGI present by itself, window styles, and monitor-sized bounds are not evidence. The result is unknown when any provider fails to enable, an event cannot be decoded, ETW reports lost events or buffers, events do not correlate, events were truncated, the evidence disagrees, or the call is cancelled. Creates a short Vestigo- session and stops that session when the call ends. Duration is at most 30 seconds and cannot exceed Vestigo:MaxCaptureDuration.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

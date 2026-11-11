@@ -464,6 +464,8 @@ public class CaptureManagerTests : IDisposable
             factory.LastMatchAll = matchAllKeyword;
         }
 
+        public bool EventsWereLost => false;
+
         public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadEventsAsync(
             DecodingContext? context,
             bool rewriteProviderName,

@@ -62,6 +62,20 @@ public sealed class PresentationObserver : IHostedService
         return Task.CompletedTask;
     }
 
+    private void Remember(string sessionName)
+    {
+        List<string> names = [.. Load()];
+        if (!names.Contains(sessionName, StringComparer.Ordinal))
+        {
+            names.Add(sessionName);
+        }
+
+        Save(names);
+    }
+
+    private void Forget(string sessionName) =>
+        Save(Load().Where(name => !string.Equals(name, sessionName, StringComparison.Ordinal)).ToList());
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public async Task<OperationResult<PresentationObservation>> ObserveAsync(
@@ -103,10 +117,11 @@ public sealed class PresentationObserver : IHostedService
         int undecoded = 0;
         bool truncated = false;
         bool cancelled = false;
+        bool eventsLost = false;
         DateTimeOffset started = _time.GetUtcNow();
         try
         {
-            Save([sessionName]);
+            Remember(sessionName);
             try
             {
                 session = _sessions.Create(sessionName, _options);
@@ -159,13 +174,37 @@ public sealed class PresentationObserver : IHostedService
         }
         finally
         {
-            if (session is not null)
+            try
             {
-                await session.DisposeAsync().ConfigureAwait(false);
-            }
+                bool releaseCheckpoint = session is null;
+                if (session is not null)
+                {
+                    try
+                    {
+                        eventsLost = session.EventsWereLost;
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        _logger.LogWarning(ex, "Could not read loss counters for presentation session {SessionName}", sessionName);
+                    }
 
-            Save([]);
-            _gate.Release();
+                    await session.DisposeAsync().ConfigureAwait(false);
+                    releaseCheckpoint = true;
+                }
+
+                if (releaseCheckpoint)
+                {
+                    Forget(sessionName);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger.LogWarning(ex, "Presentation session {SessionName} cleanup failed", sessionName);
+            }
+            finally
+            {
+                _gate.Release();
+            }
         }
 
         return OperationResult<PresentationObservation>.Ok(PresentationClassifier.Classify(
@@ -179,7 +218,8 @@ public sealed class PresentationObserver : IHostedService
             sessionName,
             cancelled,
             truncated,
-            undecoded));
+            undecoded,
+            eventsLost));
     }
 
     private OperationResult<PresentationObservation> Unknown(
