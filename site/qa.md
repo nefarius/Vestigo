@@ -171,3 +171,5 @@ Keep [the intro](index.md) connection steps nearby: the MSI writes the token int
 ## Plugin validation
 
 The server tests publish real plugin fixtures and exercise shared contract identity, private dependency versions, manifest and trust rejection, dependency graphs, HTTP authentication and MCP discovery/echo invocation. Service restart and MSI upgrade preservation need an elevated deployment smoke test. See the [plugin deployment checklist](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md#msi-updates-and-validation).
+
+API 1.1 tests use a separately published, fake provider plugin to verify schemas and rich content, live catalog changes, disabled modules, prefix conflicts, authenticated owner/session isolation and service disposal over the actual MCP HTTP endpoint. No Playwright backend or browser is needed for these tests. Providers must separately test their own backend leases, concurrency and cleanup.

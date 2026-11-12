@@ -89,4 +89,6 @@ Traffic is not TLS. Tokens, tickets, traces, and screenshots cross the network i
 
 Plugin loading is disabled by default. Plugins execute with the service's privileges; assembly dependency isolation is not a security sandbox. Deployment ACLs, reparse checks and optional complete-package SHA-256 pins protect installation. Every token holder can use every enabled plugin tool. Anonymous plugin endpoints are rejected. Administrator-equivalent tools remain administrator access and can bypass file path guards. See the [full plugin trust model](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md).
 
+API 1.1 session-required providers fail closed unless a valid bearer credential and explicit application session ID are present. Their isolation key combines the host's opaque owner ID with the selected session ID. Sharing both values shares a key. This is not a transport session, permission scope or sandbox; providers must enforce resource ownership and cleanup. See [session identity](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md#authenticated-application-session-identity).
+
 Back to the [intro](index.md), [features](features.md), [developers](developers.md), or [QA](qa.md).

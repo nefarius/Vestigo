@@ -425,3 +425,5 @@ queue cancellation, cache reset or reboot operations are exposed.
 ## External plugin tools
 
 Trusted external modules can contribute MCP tool classes to the existing /mcp endpoint. The separately published example exposes example_plugin_echo through an injected private service. It is absent from clean installations and the built-in generated catalog. Module activation, resolved tool-name collision checks and authentication use the host pipeline. See [plugins](plugins.md).
+
+API 1.1 `IVestigoToolProvider` sources contribute protocol-defined tools without generated wrapper classes. The host prefixes names and retains schemas, annotations, rich content and structured/error results alongside built-in tools. Providers requiring authenticated application sessions appear only for selected sessions. Provider catalogs are refreshed on list and validated before call; clients must re-list to see changes. These tools are independently deployed and are absent from the generated built-in catalog. See [tool providers](plugins.md#api-11-tool-providers).

@@ -42,7 +42,8 @@ public sealed class ApiTokenAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    VestigoOptions vestigo)
+    VestigoOptions vestigo,
+    ApiTokenOwners owners)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -61,7 +62,7 @@ public sealed class ApiTokenAuthenticationHandler(
         }
 
         ClaimsIdentity identity = new(
-            [new Claim(ClaimTypes.NameIdentifier, "vestigo-client")],
+            [new Claim(ClaimTypes.NameIdentifier, owners.GetVerifiedOwner(provided))],
             ApiTokenDefaults.Scheme);
         AuthenticationTicket ticket = new(new ClaimsPrincipal(identity), ApiTokenDefaults.Scheme);
         return Task.FromResult(AuthenticateResult.Success(ticket));

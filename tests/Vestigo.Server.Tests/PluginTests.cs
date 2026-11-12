@@ -144,7 +144,7 @@ public sealed class PluginTests : IDisposable
     [InlineData("hostApiVersion", null)]
     [InlineData("hostApiVersion", "0.1")]
     [InlineData("hostApiVersion", "2.0")]
-    [InlineData("hostApiVersion", "1.1")]
+    [InlineData("hostApiVersion", "1.2")]
     [InlineData("entryAssembly", "../escape.dll")]
     [InlineData("entryAssembly", "missing.dll")]
     [InlineData("entryAssembly", "C:\\escape.dll")]
@@ -448,6 +448,171 @@ public sealed class PluginTests : IDisposable
             Assert.False(result.IsError ?? false);
             Assert.Contains(result.Content, content => content is TextContentBlock { Text: "hello plugins" });
         }
+    }
+
+    [Fact]
+    public async Task ProviderHost_ComposesToolsPreservesPayloadsAndIsolatesOwnersAndSessions()
+    {
+        string marker = Path.Combine(VestigoPaths.TraceDirectory, "provider-disposed.txt");
+        IAsyncDisposable rootProvider;
+        await using (WebApplicationFactory<Program> factory = ProviderApplication(disposeMarker: marker))
+        {
+            rootProvider = (IAsyncDisposable)factory.Services;
+            using HttpClient anonymous = factory.CreateClient();
+            Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsync("/mcp", new StringContent("{}"), TestContext.Current.CancellationToken)).StatusCode);
+            using HttpClient first = ProviderClient(factory, "owner-one-token", "session_1234567890abcdef");
+            using HttpClient otherOwner = ProviderClient(factory, "owner-two-token", "session_1234567890abcdef");
+            using HttpClient otherSession = ProviderClient(factory, "owner-one-token", "another_session_1234567890");
+            using HttpClient noSession = ProviderClient(factory, "owner-one-token", null);
+
+            JsonElement listed = (await Rpc(first, "tools/list", new { })).GetProperty("result").GetProperty("tools");
+            Assert.Contains(listed.EnumerateArray(), tool => tool.GetProperty("name").GetString() == "list_jobs");
+            JsonElement definition = listed.EnumerateArray().Single(tool => tool.GetProperty("name").GetString() == "fixture_echo");
+            Assert.True(definition.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean());
+            Assert.Equal("object", definition.GetProperty("outputSchema").GetProperty("type").GetString());
+            Assert.Equal("metadata", definition.GetProperty("_meta").GetProperty("fixture").GetString());
+            JsonElement missingIdentity = await Rpc(noSession, "tools/list", new { });
+            Assert.DoesNotContain(missingIdentity.GetProperty("result").GetProperty("tools").EnumerateArray(), tool => tool.GetProperty("name").GetString() == "fixture_echo");
+            Assert.Contains("session_identity_required", (await Rpc(noSession, "tools/call", new { name = "fixture_echo" })).GetProperty("error").GetProperty("message").GetString());
+
+            object arguments = new { value = new { nested = new object?[] { 1, "two", null } } };
+            JsonElement a = (await Rpc(first, "tools/call", new { name = "fixture_echo", arguments })).GetProperty("result");
+            Assert.Equal("echo", a.GetProperty("content")[0].GetProperty("text").GetString());
+            Assert.Equal("image", a.GetProperty("content")[1].GetProperty("type").GetString());
+            Assert.Equal("result metadata", a.GetProperty("_meta").GetProperty("fixture").GetString());
+            Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(arguments), JsonNode.Parse(a.GetProperty("structuredContent").GetProperty("arguments").GetRawText())));
+            JsonElement aAgain = (await Rpc(first, "tools/call", new { name = "fixture_echo", arguments = new { fail = true } })).GetProperty("result");
+            Assert.True(aAgain.GetProperty("isError").GetBoolean());
+            Assert.Equal(2, aAgain.GetProperty("structuredContent").GetProperty("count").GetInt32());
+            JsonElement b = (await Rpc(otherOwner, "tools/call", new { name = "fixture_echo" })).GetProperty("result").GetProperty("structuredContent");
+            JsonElement c = (await Rpc(otherSession, "tools/call", new { name = "fixture_echo" })).GetProperty("result").GetProperty("structuredContent");
+            JsonElement identity = a.GetProperty("structuredContent");
+            Assert.NotEqual(identity.GetProperty("owner").GetString(), b.GetProperty("owner").GetString());
+            Assert.Equal(identity.GetProperty("owner").GetString(), c.GetProperty("owner").GetString());
+            Assert.Equal(1, b.GetProperty("count").GetInt32());
+            Assert.Equal(1, c.GetProperty("count").GetInt32());
+            Assert.NotEqual(identity.GetProperty("session").GetString(), c.GetProperty("session").GetString());
+
+            await Rpc(first, "tools/call", new { name = "fixture_echo", arguments = new { rename = true } });
+            Assert.Contains((await Rpc(first, "tools/list", new { })).GetProperty("result").GetProperty("tools").EnumerateArray(), tool => tool.GetProperty("name").GetString() == "fixture_updated");
+            Assert.Contains("provider_tool_unknown", (await Rpc(first, "tools/call", new { name = "fixture_echo" })).GetProperty("error").GetProperty("message").GetString());
+        }
+        // Explicitly dispose the captured application provider after stopping the test server.
+        await rootProvider.DisposeAsync();
+        Assert.Equal("disposed", File.ReadAllText(marker));
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task ProviderHost_RespectsDisabledModulesAndOptionalSessionIdentity(bool enabled, bool requiresIdentity)
+    {
+        await using WebApplicationFactory<Program> factory = ProviderApplication(enabled: enabled, requiresIdentity: requiresIdentity, secondPrefix: enabled ? "second_" : null);
+        using HttpClient client = ProviderClient(factory, "owner-one-token", null);
+        JsonElement list = (await Rpc(client, "tools/list", new { })).GetProperty("result").GetProperty("tools");
+        Assert.Equal(enabled, list.EnumerateArray().Any(tool => tool.GetProperty("name").GetString() == "fixture_echo"));
+        Assert.Equal(enabled, list.EnumerateArray().Any(tool => tool.GetProperty("name").GetString() == "second_echo"));
+    }
+
+    [Fact]
+    public async Task ProviderHost_AcceptsRequestMetadataAndRejectsHeaderConflict()
+    {
+        await using WebApplicationFactory<Program> factory = ProviderApplication();
+        using HttpClient client = ProviderClient(factory, "owner-one-token", null);
+        var metadata = new Dictionary<string, object?> { [Extensibility.PluginSessionIdentity.MetadataKey] = "session_1234567890abcdef", ["keep"] = "other metadata" };
+        JsonElement result = (await Rpc(client, "tools/call", new { name = "fixture_echo", _meta = metadata })).GetProperty("result").GetProperty("structuredContent");
+        Assert.Equal("session_1234567890abcdef", result.GetProperty("session").GetString());
+        Assert.False(result.GetProperty("meta").TryGetProperty(Extensibility.PluginSessionIdentity.MetadataKey, out _));
+        Assert.Equal("other metadata", result.GetProperty("meta").GetProperty("keep").GetString());
+        client.DefaultRequestHeaders.Add(Extensibility.PluginSessionIdentity.HeaderName, "different_session_123456789");
+        Assert.Contains("session_identity_invalid", (await Rpc(client, "tools/call", new { name = "fixture_echo", _meta = metadata })).GetProperty("error").GetProperty("message").GetString());
+    }
+
+    [Theory]
+    [InlineData("list_", null)]
+    [InlineData("fixture_", "fixture_")]
+    [InlineData("fixture_", "fixture_nested_")]
+    public void ProviderHost_RejectsConflictingNamespacesBeforeServing(string prefix, string? second)
+    {
+        using WebApplicationFactory<Program> factory = ProviderApplication(prefix: prefix, secondPrefix: second);
+        Assert.Contains("provider_registration_invalid", Assert.ThrowsAny<Exception>(() => factory.CreateClient()).ToString());
+    }
+
+    [Fact]
+    public void ProviderHost_RejectsReplacingComposedSdkHandlers()
+    {
+        using WebApplicationFactory<Program> factory = ProviderApplication(replaceHandlers: true);
+        Assert.Contains("use IVestigoToolProvider", Assert.ThrowsAny<Exception>(() => factory.CreateClient()).ToString());
+    }
+
+    [Fact]
+    public void ProviderHost_RejectsReplacingOnlyAlternateCallHandler()
+    {
+        using WebApplicationFactory<Program> factory = ProviderApplication(replaceAlternateHandler: true);
+        Assert.Contains("provider_registration_invalid: use IVestigoToolProvider", Assert.ThrowsAny<Exception>(() => factory.CreateClient()).ToString());
+    }
+
+    [Fact]
+    public async Task ProviderHost_LegacyProtocolClientReceivesTheSameApplicationIdentity()
+    {
+        await using WebApplicationFactory<Program> factory = ProviderApplication();
+        using HttpClient http = ProviderClient(factory, "owner-one-token", "legacy_session_123456789");
+        await using HttpClientTransport transport = new(new() { Endpoint = new Uri(http.BaseAddress!, "/mcp") }, http);
+        await using McpClient client = await McpClient.CreateAsync(transport,
+            new McpClientOptions { ProtocolVersion = "2025-11-25" }, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Contains(await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken), tool => tool.Name == "fixture_echo");
+        CallToolResult result = await client.CallToolAsync("fixture_echo", cancellationToken: TestContext.Current.CancellationToken);
+        JsonElement structured = JsonSerializer.SerializeToElement(result).GetProperty("structuredContent");
+        Assert.Equal("legacy_session_123456789", structured.GetProperty("session").GetString());
+        Assert.Matches("\\A[0-9a-f]{32}\\z", structured.GetProperty("owner").GetString()!);
+    }
+
+    private WebApplicationFactory<Program> ProviderApplication(bool enabled = true, bool requiresIdentity = true, string prefix = "fixture_", string? secondPrefix = null, string? disposeMarker = null, bool replaceHandlers = false, bool replaceAlternateHandler = false)
+    {
+        string directory = Install("provider", "v1");
+        ChangeManifest(directory, "entryType", "Vestigo.PluginFixture.ProviderPlugin");
+        ChangeManifest(directory, "hostApiVersion", "1.1");
+        File.WriteAllText(VestigoPaths.SettingsFilePath, JsonSerializer.Serialize(new
+        {
+            Vestigo = new
+            {
+                ApiTokens = new[] { "owner-one-token", "owner-two-token" },
+                Plugins = new { Enabled = true, TrustMode = "AdministratorManaged" },
+                Modules = new Dictionary<string, object> { ["ProviderFixture"] = new { Enabled = enabled, RequiresSessionIdentity = requiresIdentity, Prefix = prefix, SecondPrefix = secondPrefix, DisposeMarker = disposeMarker, ReplaceHandlers = replaceHandlers, ReplaceAlternateHandler = replaceAlternateHandler } }
+            }
+        }));
+        return new();
+    }
+
+    private static HttpClient ProviderClient(WebApplicationFactory<Program> factory, string token, string? session)
+    {
+        HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (session is not null) client.DefaultRequestHeaders.Add(Extensibility.PluginSessionIdentity.HeaderName, session);
+        return client;
+    }
+
+    private static async Task<JsonElement> Rpc(HttpClient client, string method, object parameters)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Post, "/mcp");
+        request.Headers.Add("Accept", "application/json, text/event-stream");
+        request.Headers.Add("MCP-Protocol-Version", "2026-07-28");
+        request.Headers.Add("Mcp-Method", method);
+        JsonObject payload = JsonSerializer.SerializeToNode(parameters)!.AsObject();
+        if (payload["name"] is JsonValue name) request.Headers.Add("Mcp-Name", name.GetValue<string>());
+        JsonObject metadata = payload["_meta"]?.AsObject() ?? new();
+        metadata["io.modelcontextprotocol/protocolVersion"] = "2026-07-28";
+        metadata["io.modelcontextprotocol/clientCapabilities"] = new JsonObject();
+        metadata["io.modelcontextprotocol/clientInfo"] = new JsonObject { ["name"] = "provider-tests", ["version"] = "1.0" };
+        if (payload["_meta"] is null) payload["_meta"] = metadata;
+        request.Content = new StringContent(JsonSerializer.Serialize(new { jsonrpc = "2.0", id = 1, method, @params = payload }), System.Text.Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        string content = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode, $"MCP HTTP {(int)response.StatusCode}: {content}");
+        if (!content.TrimStart().StartsWith('{'))
+            content = string.Join("\n", content.Split('\n').Where(line => line.StartsWith("data:", StringComparison.Ordinal)).Select(line => line[5..].Trim()));
+        using JsonDocument json = JsonDocument.Parse(content);
+        return json.RootElement.Clone();
     }
 
     private sealed class TestModule(string name, IReadOnlyList<string> dependencies, IReadOnlyList<Type>? tools = null, IReadOnlyList<string>? capabilities = null) : VestigoModule

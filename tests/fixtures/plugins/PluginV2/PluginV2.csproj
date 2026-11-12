@@ -10,5 +10,6 @@
     <ProjectReference Include="../LegacyFramework/LegacyFramework.csproj" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <Compile Include="../FixturePlugin.cs" />
+    <Compile Include="../ProviderPlugin.cs" />
   </ItemGroup>
 </Project>

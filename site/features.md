@@ -174,3 +174,5 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
 ## External .NET plugins
 
 Optional independently published plugins extend the existing MCP endpoint and add authenticated HTTP routes. Each plugin can supply multiple modules, services and private managed/native dependencies. External modules default off; the public MSI includes no proprietary extensions. See the [plugin guide](https://github.com/nefarius/Vestigo/blob/master/docs/plugins.md).
+
+API 1.1 providers can contribute dynamic tool catalogs to the same MCP endpoint, preserving schemas and rich results. Namespaces are validated against built-in and other provider tools. Explicit authenticated application session identities support provider-owned isolation without changing the stateless transport. No browser automation backend is bundled.

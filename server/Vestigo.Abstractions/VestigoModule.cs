@@ -31,7 +31,7 @@ public interface IVestigoPlugin
 /// <summary>Independent of the Vestigo application release version.</summary>
 public static class PluginApi
 {
-    public static Version Version { get; } = new(1, 0);
+    public static Version Version { get; } = new(1, 1);
     public static bool IsCompatible(Version required) =>
         required.Major == Version.Major && required.Minor <= Version.Minor && required.Build < 0;
 }
