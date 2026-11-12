@@ -546,6 +546,13 @@ public sealed class PluginTests : IDisposable
     }
 
     [Fact]
+    public void ProviderHost_RejectsReplacingOnlyAlternateCallHandler()
+    {
+        using WebApplicationFactory<Program> factory = ProviderApplication(replaceAlternateHandler: true);
+        Assert.Contains("provider_registration_invalid: use IVestigoToolProvider", Assert.ThrowsAny<Exception>(() => factory.CreateClient()).ToString());
+    }
+
+    [Fact]
     public async Task ProviderHost_LegacyProtocolClientReceivesTheSameApplicationIdentity()
     {
         await using WebApplicationFactory<Program> factory = ProviderApplication();
@@ -560,7 +567,7 @@ public sealed class PluginTests : IDisposable
         Assert.Matches("\\A[0-9a-f]{32}\\z", structured.GetProperty("owner").GetString()!);
     }
 
-    private WebApplicationFactory<Program> ProviderApplication(bool enabled = true, bool requiresIdentity = true, string prefix = "fixture_", string? secondPrefix = null, string? disposeMarker = null, bool replaceHandlers = false)
+    private WebApplicationFactory<Program> ProviderApplication(bool enabled = true, bool requiresIdentity = true, string prefix = "fixture_", string? secondPrefix = null, string? disposeMarker = null, bool replaceHandlers = false, bool replaceAlternateHandler = false)
     {
         string directory = Install("provider", "v1");
         ChangeManifest(directory, "entryType", "Vestigo.PluginFixture.ProviderPlugin");
@@ -571,7 +578,7 @@ public sealed class PluginTests : IDisposable
             {
                 ApiTokens = new[] { "owner-one-token", "owner-two-token" },
                 Plugins = new { Enabled = true, TrustMode = "AdministratorManaged" },
-                Modules = new Dictionary<string, object> { ["ProviderFixture"] = new { Enabled = enabled, RequiresSessionIdentity = requiresIdentity, Prefix = prefix, SecondPrefix = secondPrefix, DisposeMarker = disposeMarker, ReplaceHandlers = replaceHandlers } }
+                Modules = new Dictionary<string, object> { ["ProviderFixture"] = new { Enabled = enabled, RequiresSessionIdentity = requiresIdentity, Prefix = prefix, SecondPrefix = secondPrefix, DisposeMarker = disposeMarker, ReplaceHandlers = replaceHandlers, ReplaceAlternateHandler = replaceAlternateHandler } }
             }
         }));
         return new();

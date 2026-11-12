@@ -30,6 +30,10 @@ public sealed class ProviderModule : VestigoModule
             services.AddSingleton<IVestigoToolProvider>(_ => new FixtureProvider(second, false, null));
         if (bool.TryParse(context.Settings["ReplaceHandlers"], out bool replace) && replace)
             services.Configure<McpServerOptions>(options => options.Handlers.ListToolsHandler = (_, _) => ValueTask.FromResult(new ListToolsResult { Tools = [] }));
+        if (bool.TryParse(context.Settings["ReplaceAlternateHandler"], out bool replaceAlternate) && replaceAlternate)
+#pragma warning disable MCPEXP002 // Exercise rejection of the SDK's experimental alternate handler registration.
+            services.Configure<McpServerOptions>(options => options.Handlers.CallToolWithAlternateHandler = (_, _) => throw new InvalidOperationException("Unexpected fixture handler invocation."));
+#pragma warning restore MCPEXP002
     }
 }
 

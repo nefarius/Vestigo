@@ -131,7 +131,9 @@ if (providerOwners.Count > 0)
     builder.Services.AddSingleton<PluginToolRegistry>();
     builder.Services.AddOptions<McpServerOptions>().Configure<PluginToolRegistry>((options, registry) =>
     {
-        if (options.Handlers.ListToolsHandler is not null || options.Handlers.CallToolHandler is not null)
+#pragma warning disable MCPEXP002 // Reject the SDK's experimental alternate handler before assigning the host handler.
+        if (options.Handlers.ListToolsHandler is not null || options.Handlers.CallToolHandler is not null || options.Handlers.CallToolWithAlternateHandler is not null)
+#pragma warning restore MCPEXP002
             throw new InvalidOperationException("provider_registration_invalid: use IVestigoToolProvider instead of replacing the host's MCP handlers.");
         options.Handlers.ListToolsHandler = (request, cancellation) => registry.ListAsync(request.Params, cancellation);
         options.Handlers.CallToolHandler = (request, cancellation) => registry.CallAsync(request.Params, cancellation);
