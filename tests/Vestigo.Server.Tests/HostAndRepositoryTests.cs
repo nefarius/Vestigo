@@ -52,6 +52,13 @@ public class HostTests : IDisposable
         Assert.Contains("location.pathname", body, StringComparison.Ordinal);
         Assert.Contains("TLS-terminating proxy", body, StringComparison.Ordinal);
         Assert.Contains("https://github.com/nefarius/Vestigo", body, StringComparison.Ordinal);
+        Assert.Contains(
+            "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, and system diagnostics.",
+            body,
+            StringComparison.Ordinal);
+        Assert.Contains("Sensitive and mutating features require explicit configuration.", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Plugin API", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("protocol-defined tool providers", body, StringComparison.Ordinal);
     }
 
     [Fact]
