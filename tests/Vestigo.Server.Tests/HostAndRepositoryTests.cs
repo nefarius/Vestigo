@@ -56,7 +56,11 @@ public class HostTests : IDisposable
             "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, and system diagnostics.",
             body,
             StringComparison.Ordinal);
-        Assert.Contains("Sensitive and mutating features require explicit configuration.", body, StringComparison.Ordinal);
+        Assert.Contains("Explicit configuration gates many sensitive features.", body, StringComparison.Ordinal);
+        Assert.Contains(
+            "The Services and Environment modules, including their mutating tools, are enabled by default and need no separate opt-in.",
+            body,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Plugin API", body, StringComparison.Ordinal);
         Assert.DoesNotContain("protocol-defined tool providers", body, StringComparison.Ordinal);
     }
