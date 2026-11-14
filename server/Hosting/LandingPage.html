@@ -69,8 +69,9 @@
     <p>Vestigo runs as a Windows service. It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, and system diagnostics.</p>
     <p>Explicit configuration gates many sensitive features. The Services and Environment modules, including their mutating tools, are enabled by default and need no separate opt-in.</p>
 
-    <h2>This is not a browser UI</h2>
-    <p>Use Vestigo through an AI agent or MCP client such as Cursor, Claude, or Visual Studio Code over Streamable HTTP. This page only explains how to connect.</p>
+    <h2>Configure this machine</h2>
+    <p>On the service machine, open <a href="/config">local configuration</a> using <code>http://localhost:5098/config</code> (adjust the port). Edit settings, save, and restart the service to apply them. This page is available only over a direct loopback connection. Do not proxy it.</p>
+    <p>Use the tools through an AI agent or MCP client such as Cursor, Claude, or Visual Studio Code over Streamable HTTP.</p>
 
     <h2>Connect an agent</h2>
     <p>Point the client at the Streamable HTTP endpoint:</p>

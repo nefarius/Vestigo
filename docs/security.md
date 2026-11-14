@@ -1,5 +1,13 @@
 # Security
 
+## Local configuration
+
+`/config` is a privileged local administration page. It deliberately bypasses API-token authentication for direct loopback connections: **all local users and processes able to reach the listener can read tokens and change settings as the service account**, including enabling plugins and privileged capabilities. Use Vestigo on machines where local users are trusted with that authority.
+
+The page and Blazor transport/assets require a real loopback peer, a loopback/localhost Host with the listener's port, and a matching Origin when supplied. IPv4-mapped loopback addresses are supported. Forwarded headers and cross-site browser requests are rejected; null peer addresses fail closed. Responses are not cached and cannot be framed. Interactive mutations use the same gated Blazor circuit; no GET performs a save or restart. An explicit confirmation precedes restart, which interrupts active work. Validation errors do not echo supplied secrets.
+
+Never proxy `/config`, `/_blazor`, `/_framework` or `/_content`, even behind token authentication. A reverse proxy forwarding to loopback without identifying headers is indistinguishable from a local client. Keep these routes blocked at the proxy. This interface is not an authenticated remote administration API. Settings writes retain the secured machine directory and destination file ACLs.
+
 Vestigo binds to one IP address and runs as a Windows service so realtime ETW session creation can be elevated. That privilege is local administrator or `SeSystemProfilePrivilege`. The configuration default is loopback (`127.0.0.1`); a fresh MSI install defaults to any address with a generated token.
 
 When `ApiTokens` is empty, `/mcp` accepts anonymous clients. That is the `dotnet run` default and the MSI localhost-no-token mode. A fresh MSI install defaults to any address with a generated token. Add one or more tokens to require `Authorization: Bearer <token>`. Comparison uses SHA-256 digests and a fixed-time check. Tokens are not logged and are not copied into claims.

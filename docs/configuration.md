@@ -6,6 +6,18 @@ The installed binaries stay in Program Files. The installer does not ship `appse
 
 Property defaults are generated in [generated/configuration.md](generated/configuration.md).
 
+## Local configuration page
+
+Open `http://localhost:5098/config` on the machine running Vestigo, using its configured port. A loopback IP such as `127.0.0.1` or `[::1]` also works when that address is bound. A listener bound only to a non-loopback IP must be changed to loopback or a wildcard in the JSON file before the page is reachable.
+
+The MudBlazor page groups every writable `Vestigo` option, including disabled modules and their gates. It provides switches, enum selectors, text fields and one-entry-per-line string lists. Named roots and other structured lists use JSON fields; flag enums accept comma-separated names. Durations use `hh:mm:ss`. Secret fields are masked; API-token lists are visible to local users. Plugin-specific values already in the machine file are retained and editable. The page does not configure Windows service identity, firewall rules or other MSI installation choices outside `Vestigo` settings.
+
+The initial form shows startup values overlaid with the saved machine settings, so it can show pending changes before restart. **Save settings** validates using the host's options and module dependency checks, preserves other JSON sections and unknown plugin settings, and atomically replaces the machine file as UTF-8 without BOM. Saving materializes the displayed defaults in the file and removes JSON comments/formatting. A revision check rejects another editor's intervening save; **Reload saved settings** discards unsaved edits. Restart is required: there is no partial hot reload.
+
+**Restart service** asks for confirmation, starts a separate helper, and gracefully stops the host before the helper starts the `Vestigo` Windows service again. Active jobs, captures and MCP/browser connections are interrupted. Refresh after restart; if the address or port changed, use the new local URL. For a console host, restart the process manually. Plugin-loading changes can require manual recovery if the deployment is invalid; plugin startup is not executed during form validation.
+
+This is local administration without an API token, including when `/mcp` requires one. Any local user or process that can connect can read credentials and change administrator-equivalent settings. Remote connections receive HTTP 403. The page, static UI assets and Blazor transport enforce loopback peer and Host/port checks, reject forwarded headers and cross-site origins, disable caching and framing, and use the Blazor antiforgery/circuit protections. Never proxy `/config`, `/_blazor`, `/_framework` or `/_content`: a proxy that hides its remote origin can defeat a loopback-only trust boundary. See [security](security.md#local-configuration).
+
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `ListenAddress` | `127.0.0.1` | IP address to bind: loopback (`127.0.0.1`, `::1`) or any other address such as `0.0.0.0` or `::` to accept network clients. Host names are rejected, as is `Kestrel:Endpoints`. Binding beyond loopback without `ApiTokens` logs a startup warning. |

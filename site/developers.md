@@ -5,6 +5,8 @@ description: Driver and application workflows on a Vestigo lab PC.
 
 # Developer workflows
 
+Use the local `/config` page on the service machine to edit modules, roots and gates, save, and restart the Windows service. For `dotnet run`, restart the process manually. This page exposes credentials and privileged settings to local users without a token; never proxy it or its Blazor transport.
+
 Point an MCP client at a lab PC and let the agent do the install, capture, and attach loop. Enable [Devices](features.md), [Diagnostics](features.md), [Debug output](features.md), [Processes](features.md), and [Remote debugger](features.md) on that machine, and keep a token on `/mcp`. The [security model](security.md) is the other half of this page.
 
 ## Install a driver

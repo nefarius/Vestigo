@@ -3,6 +3,8 @@ using System.Net.Sockets;
 using System.Text.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 using Vestigo.Configuration;
 using Vestigo.Modules;
@@ -74,6 +76,48 @@ public class HostTests : IDisposable
         HttpResponseMessage mcp = await client.PostAsync("/mcp", new StringContent("{}"));
 
         Assert.NotEqual(HttpStatusCode.Unauthorized, mcp.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConfigurationFailsClosedWithoutARealLoopbackPeer()
+    {
+        await using VestigoApplication application = CreateApplication(["secret-token"]);
+        using HttpClient client = application.CreateClient();
+        foreach (string path in new[] { "/config", "/_blazor/negotiate", "/_framework/blazor.web.js", "/_content/MudBlazor/MudBlazor.min.css" })
+        {
+            using HttpResponseMessage response = await client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigurationRendersForLoopbackWithoutAnApiToken()
+    {
+        await using VestigoApplication application = CreateApplication(["secret-token"]);
+        await using var local = application.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.AddSingleton<IStartupFilter>(new LocalPeerStartupFilter())));
+        using HttpClient client = local.CreateClient();
+        using HttpResponseMessage response = await client.GetAsync("/config");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        string body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Save settings", body);
+        Assert.Contains("ListenPort", body);
+        Assert.Contains("_framework/blazor", body);
+    }
+
+    private sealed class LocalPeerStartupFilter : Microsoft.AspNetCore.Hosting.IStartupFilter
+    {
+        public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) => app =>
+        {
+            Microsoft.AspNetCore.Builder.UseExtensions.Use(app, async (context, continuation) =>
+            {
+                context.Connection.RemoteIpAddress = IPAddress.Loopback;
+                context.Connection.LocalPort = context.Request.Host.Port ?? 80;
+                await continuation();
+            });
+            next(app);
+        };
     }
 
     public void Dispose()

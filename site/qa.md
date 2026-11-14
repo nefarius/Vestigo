@@ -5,6 +5,8 @@ description: Test-rig workflows for a Vestigo lab PC.
 
 # QA workflows
 
+Before a run, open `http://localhost:5098/config` directly on the lab PC (adjust the port), change modules and gates, save, then confirm **Restart service**. Restart interrupts active work; reconnect at the new local URL if you changed the listener. The page exposes credentials and privileged settings to local users without a token and must never be proxied.
+
 Treat the lab PC as a remote pair of hands. The agent installs the build, puts the machine in the state the case needs, captures evidence, and pulls the files back. [Features](features.md) lists every area. [Security](security.md) says which of these stay off until you opt in.
 
 ## Install and uninstall a build

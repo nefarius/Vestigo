@@ -1,5 +1,13 @@
 # Troubleshooting
 
+## Local configuration page
+
+- HTTP 403 at `/config`: open a direct loopback URL on the service machine with the correct port, without a proxy. Remote peers, forwarded headers, cross-origin requests and non-local Host names are rejected. A listener bound only to a LAN IP does not accept loopback; update the JSON binding first.
+- Settings changed on disk: use **Reload saved settings**, then repeat the edit. This discards unsaved form changes.
+- Invalid configuration: check field types, positive limits, absolute paths, nonblank tokens, enum values and module dependencies. JSON fields must retain their array/object type. Failed validation leaves the file unchanged.
+- Restart unavailable: console hosts require a manual process restart. The action is enabled only inside the installed Windows service.
+- Page disconnects after restart: wait and refresh using the saved local address and port. If the service stays stopped, inspect Windows Services and Vestigo logs; correct the machine JSON manually if plugin loading or startup failed. A restart interrupts active jobs and captures.
+
 ## Installer says .NET Runtime 10 and ASP.NET Core 10 are required
 
 The MSI is framework-dependent and needs the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch). The ASP.NET Core 10.0 Hosting Bundle also satisfies this. A later major (11 or newer) does not. Install them from [https://dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0) and run the installer again. In a silent install the same message is written to the MSI log.

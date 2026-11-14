@@ -7,6 +7,7 @@ using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.Server;
 
 using Serilog;
+using MudBlazor.Services;
 
 using Vestigo.Configuration;
 using Vestigo.Devices;
@@ -16,6 +17,12 @@ using Vestigo.Modules;
 using Vestigo.Processes;
 using Vestigo.Plugins;
 using Vestigo.Security;
+
+if (ServiceRestart.IsInvocation(args))
+{
+    Environment.ExitCode = ServiceRestart.Run(args);
+    return;
+}
 
 // Presentation decoding runs in this child so a native ETW metadata fault cannot terminate the service.
 if (args.Length > 0 && string.Equals(args[0], Vestigo.Etws.PresentationWorker.Flag, StringComparison.Ordinal))
@@ -41,6 +48,7 @@ Directory.SetCurrentDirectory(AppContext.BaseDirectory);
 IReadOnlyList<string> stateRepairs = StateDirectories.EnsureSecure();
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(webOptions);
+builder.WebHost.UseStaticWebAssets();
 builder.Configuration.AddJsonFile(VestigoPaths.SettingsFilePath, optional: true, reloadOnChange: false);
 
 VestigoOptions vestigo = builder.Configuration.GetSection(VestigoOptions.SectionName).Get<VestigoOptions>() ?? new VestigoOptions();
@@ -63,6 +71,10 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 ListenEndpoint.RejectConflictingKestrelEndpoints(builder.Configuration);
 builder.WebHost.UseUrls(ListenEndpoint.Url(vestigo.ListenAddress, vestigo.ListenPort));
 builder.Services.AddSingleton(vestigo);
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddMudServices();
+builder.Services.AddSingleton<ConfigurationEditor>();
+builder.Services.AddSingleton<ServiceRestart>();
 builder.Services.AddSingleton<ApiTokenOwners>();
 
 if (vestigo.AuthenticationEnabled)
@@ -88,6 +100,7 @@ builder.Services.AddDevices();
 
 PluginManager plugins = new();
 IReadOnlyList<VestigoModule> allModules = [.. ModuleRegistry.All, .. plugins.LoadModules(vestigo, builder.Configuration)];
+builder.Services.AddSingleton(allModules);
 // Emit diagnostics before validation: an explicitly enabled rejected plugin must fail startup visibly.
 foreach (PluginDiagnostic diagnostic in plugins.Diagnostics)
 {
@@ -141,6 +154,7 @@ if (providerOwners.Count > 0)
 }
 
 WebApplication app = builder.Build();
+app.UseMiddleware<LocalConfigurationAccess>();
 if (providerOwners.Count > 0)
     _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<McpServerOptions>>().Value;
 Log.Information("Vestigo modules enabled: {Modules}", string.Join(", ", modules.Select(module => module.Name)));
@@ -194,6 +208,10 @@ if (vestigo.AuthenticationEnabled)
 
 app.MapHealthChecks("/health", new HealthCheckOptions { AllowCachingResponses = false }).AllowAnonymous();
 app.MapLandingPage();
+app.UseAntiforgery();
+app.MapStaticAssets().AllowAnonymous();
+app.MapRazorComponents<Vestigo.Hosting.Components.ConfigApp>()
+    .AddInteractiveServerRenderMode().AllowAnonymous();
 IEndpointConventionBuilder mcp = app.MapMcp("/mcp");
 if (vestigo.AuthenticationEnabled)
 {

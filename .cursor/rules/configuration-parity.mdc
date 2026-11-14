@@ -1,0 +1,35 @@
+---
+description: Keep runtime configuration available across host JSON, MSI setup and the local config UI
+alwaysApply: true
+---
+
+# Configuration parity
+
+Every runtime configuration change must keep the host, MSI and `/config` aligned.
+This applies to additions, renames, removals, defaults, types, enum values,
+validation, feature gates, module dependencies and persistence behavior.
+
+- Update host options, JSON binding and validation together with the MSI's
+  interactive controls, silent-install properties, settings-writing logic and
+  module/feature metadata. Every affected setting must be available to MSI users.
+- Ensure the localhost `/config` page exposes every affected setting with a
+  usable editor, including disabled modules, nested options, lists, flags and
+  credentials. Update field metadata/components when automatic rendering cannot
+  represent the type correctly; preserve localhost and secret-handling protections.
+- Check both directions: setup-written values must load correctly in `/config`,
+  and UI-saved values must bind correctly on restart and survive MSI repair and
+  upgrade according to the documented installer ownership rules. Preserve
+  unrelated JSON sections and plugin settings.
+- Keep types, accepted values, validation and dependencies consistent. Document
+  and test deliberate differences in MSI versus host defaults and which keys the
+  installer owns. State whether a change requires a service restart.
+- Add or update meaningful coverage for host validation, MSI interactive/silent
+  persistence and repair/upgrade merging, and UI exposure/edit/save round trips.
+  Verify actual field availability and editing; reflection or generic JSON
+  support alone is insufficient. Check renamed/removed settings for stale controls,
+  properties, metadata and documentation.
+- Update `docs/configuration.md`, `docs/windows-service.md` and affected security,
+  troubleshooting, README and `site/` guidance. Regenerate configuration catalogs
+  with `VESTIGO_REGENERATE_DOCS=1`, then verify tests without that variable.
+- Report any unverified MSI/UI path or environment-dependent skip explicitly.
+  A setting implemented only in JSON is not a completed configuration change.

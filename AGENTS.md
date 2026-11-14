@@ -23,11 +23,25 @@ apply to Codex, even if the client does not automatically load `.mdc` files:
 
 - `.cursor/rules/feature-branch-required.mdc`
 - `.cursor/rules/vestigo-development.mdc`
+- `.cursor/rules/configuration-parity.mdc`
 - `.cursor/rules/mcp-docs.mdc`
 - `.cursor/rules/windows-interop.mdc`
 
 Consume released NuGet packages, preserve package boundaries, confine client
 paths to configured roots, never log tokens, and save UTF-8 without BOM.
+
+## Configuration changes
+
+Whenever a runtime setting is added, changed, renamed or removed, keep its
+availability and behavior aligned across the host options/JSON binding, MSI
+setup (interactive and silent), and the localhost `/config` UI. Update all
+three surfaces in the same change, including defaults, validation, module
+dependencies, persistence and restart requirements. Verify that users can
+actually edit and save the setting through both the MSI and `/config`; generic
+JSON support or automatic field generation alone is not proof of availability.
+Preserve unrelated settings during MSI repair/upgrade and UI saves. Document
+and test intentional differences in defaults or installer ownership. Follow
+`.cursor/rules/configuration-parity.mdc` for the verification and docs checklist.
 
 ## Developing external plugins
 

@@ -5,6 +5,8 @@ description: Short security model for a Vestigo lab install.
 
 # Security model
 
+`/config` grants direct loopback clients local administration without an API token, including access to credentials and privileged settings. All local users who can reach the listener must be trusted. The page and Blazor transport reject remote peers, non-local Hosts, forwarded headers and cross-origin requests. Never proxy `/config`, `/_blazor`, `/_framework` or `/_content`: a proxy hiding its origin can bypass the loopback trust boundary. Saving validates settings; applying them requires a restart that interrupts jobs and connections.
+
 Vestigo is meant to give an agent administrator-equivalent reach on a lab PC. The defaults try to keep that reach local, token-gated, and off until you ask for it. This page is the booklet summary, not the full policy.
 
 ## Tokens
