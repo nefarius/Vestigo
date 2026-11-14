@@ -21,6 +21,7 @@ namespace Vestigo.Build;
 public static class UpdateFeed
 {
     public const string DirectoryUrl = "https://buildbot.nefarius.at/builds/Vestigo/latest/";
+    public const string ReleaseNotesUrlPrefix = "https://github.com/nefarius/Vestigo/releases/tag/";
     public const string ManifestFileName = "updates.json";
     public const string PackageFileNamePrefix = "Vestigo-v";
     public const string PackageFileNamePattern = PackageFileNamePrefix + "*.msi";
@@ -40,6 +41,12 @@ public static class UpdateFeed
 
     static readonly Regex ProductVersionPattern = new(
         @"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(\.(0|[1-9]\d*))?$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    // Keep this aligned with Vestigo.Updates.UpdateFeedClient. Release tags are MinVer v* tags,
+    // including an optional numeric revision and a prerelease suffix.
+    static readonly Regex ReleaseTagPattern = new(
+        @"^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly JsonSerializerOptions SerializerOptions = new()
@@ -71,7 +78,7 @@ public static class UpdateFeed
         string productVersion = RequireProductVersion(spec.ProductVersion);
         string checksum = RequireSha256(spec.Sha256);
         string summary = string.IsNullOrWhiteSpace(spec.Summary)
-            ? $"# Vestigo {productVersion}{Environment.NewLine}{Environment.NewLine}Signed release of the Vestigo MCP server."
+            ? DefaultSummary(productVersion, RequireReleaseNotesUrl(spec.ReleaseUrl))
             : spec.Summary.Trim();
 
         UpdateRelease release = new()
@@ -179,41 +186,158 @@ public static class UpdateFeed
         }
     }
 
-    public static void RequireBuildbotResources(JsonElement root)
+    public static void RequireBuildbotResources(JsonElement root) => Walk(root, propertyName: "");
+
+    public static string RequireReleaseNotesUrl(string releaseUrl)
     {
-        Walk(root);
-
-        static void Walk(JsonElement element)
+        if (!TryCanonicalReleaseNotesUrl(releaseUrl, out string canonical))
         {
-            switch (element.ValueKind)
-            {
-                case JsonValueKind.Object:
-                    foreach (JsonProperty property in element.EnumerateObject())
-                    {
-                        Walk(property.Value);
-                    }
+            throw new ArgumentException(
+                $"The release URL must be {ReleaseNotesUrlPrefix}<v-tag>.",
+                nameof(releaseUrl));
+        }
 
-                    break;
-                case JsonValueKind.Array:
-                    foreach (JsonElement item in element.EnumerateArray())
-                    {
-                        Walk(item);
-                    }
+        return canonical;
+    }
 
-                    break;
-                case JsonValueKind.String:
-                    string value = element.GetString() ?? "";
-                    if ((value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                         value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) &&
-                        !value.StartsWith(DirectoryUrl, StringComparison.Ordinal))
-                    {
-                        throw new InvalidOperationException($"The update manifest may only reference {DirectoryUrl}. Found '{value}'.");
-                    }
+    public static string DefaultSummary(string productVersion, string releaseUrl)
+    {
+        string version = RequireProductVersion(productVersion);
+        string notesUrl = RequireReleaseNotesUrl(releaseUrl);
+        return $"# Vestigo {version}{Environment.NewLine}{Environment.NewLine}" +
+               $"Signed release of the Vestigo MCP server.{Environment.NewLine}{Environment.NewLine}" +
+               $"[Release notes]({notesUrl})";
+    }
 
-                    break;
-            }
+    static void Walk(JsonElement element, string propertyName)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    Walk(property.Value, property.Name);
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    Walk(item, propertyName);
+                }
+
+                break;
+            case JsonValueKind.String:
+                RequireManifestUrl(propertyName, element.GetString() ?? "");
+                break;
         }
     }
+
+    static void RequireManifestUrl(string propertyName, string value)
+    {
+        if (IsSummary(propertyName))
+        {
+            foreach (string url in HttpUrls(value))
+            {
+                if (!IsAllowedSummaryUrl(url))
+                {
+                    throw new InvalidOperationException(ManifestUrlMessage(url));
+                }
+            }
+
+            return;
+        }
+
+        if (IsAbsoluteHttp(value) && !value.StartsWith(DirectoryUrl, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(ManifestUrlMessage(value));
+        }
+    }
+
+    static bool IsAllowedSummaryUrl(string url) =>
+        url.StartsWith(DirectoryUrl, StringComparison.Ordinal) ||
+        TryCanonicalReleaseNotesUrl(url, out _);
+
+    static bool TryCanonicalReleaseNotesUrl(string releaseUrl, out string canonical)
+    {
+        canonical = "";
+        string candidate = releaseUrl?.Trim() ?? "";
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out Uri uri) ||
+            uri is null ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(uri.IdnHost, "github.com", StringComparison.OrdinalIgnoreCase) ||
+            !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return false;
+        }
+
+        const string pathPrefix = "/nefarius/Vestigo/releases/tag/";
+        if (!uri.AbsolutePath.StartsWith(pathPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string tag = uri.AbsolutePath[pathPrefix.Length..];
+        if (tag.Contains('/') || !ReleaseTagPattern.IsMatch(tag))
+        {
+            return false;
+        }
+
+        canonical = ReleaseNotesUrlPrefix + tag;
+        return string.Equals(candidate, canonical, StringComparison.Ordinal);
+    }
+
+    static bool IsSummary(string propertyName) =>
+        string.Equals(propertyName, "summary", StringComparison.OrdinalIgnoreCase);
+
+    static bool IsAbsoluteHttp(string value) =>
+        value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    static IEnumerable<string> HttpUrls(string text)
+    {
+        for (int index = 0; index < text.Length; index++)
+        {
+            if (!StartsWithHttp(text, index))
+            {
+                continue;
+            }
+
+            int end = index;
+            while (end < text.Length && !IsUrlTerminator(text[end]))
+            {
+                end++;
+            }
+
+            while (end > index && text[end - 1] is '.' or ',' or ';' or ':' or '!')
+            {
+                end--;
+            }
+
+            if (end > index)
+            {
+                yield return text[index..end];
+            }
+
+            index = Math.Max(end, index + 1) - 1;
+        }
+    }
+
+    static bool StartsWithHttp(string text, int index)
+    {
+        ReadOnlySpan<char> rest = text.AsSpan(index);
+        return rest.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+               rest.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsUrlTerminator(char value) =>
+        char.IsWhiteSpace(value) || value is '<' or '>' or '"' or '\'' or ')' or ']' or '`';
+
+    static string ManifestUrlMessage(string value) =>
+        $"The update manifest may only reference {DirectoryUrl}, or a Vestigo GitHub release link in the summary. Found '{value}'.";
 
     public static string PackageFileName(string productVersion)
         => PackageFileNamePrefix + RequireProductVersion(productVersion) + ".msi";
@@ -258,6 +382,12 @@ public sealed class UpdateManifestSpec
     public required string Sha256 { get; init; }
 
     public string Summary { get; init; }
+
+    /// <summary>
+    ///     Canonical GitHub Release URL, <c>https://github.com/nefarius/Vestigo/releases/tag/&lt;tag&gt;</c>.
+    ///     Required when <see cref="Summary" /> is empty. The page can be published after the manifest is signed.
+    /// </summary>
+    public string ReleaseUrl { get; init; }
 }
 
 sealed class ProductVersionConverter : JsonConverter<Version>

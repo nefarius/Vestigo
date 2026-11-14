@@ -7,6 +7,7 @@ namespace Vestigo.Updates;
 public static class UpdateEndpoints
 {
     public const string DirectoryUrl = "https://buildbot.nefarius.at/builds/Vestigo/latest/";
+    public const string ReleaseNotesUrlPrefix = "https://github.com/nefarius/Vestigo/releases/tag/";
     public const string ManifestFileName = "updates.json";
     public const string ManifestSignatureFileName = ManifestFileName + ".minisig";
     public const string ManifestUrl = DirectoryUrl + ManifestFileName;

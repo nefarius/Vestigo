@@ -26,10 +26,12 @@ A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
 2. Signs both with SignRelay.
 3. Builds `publish-x64\installer\Vestigo-v<product-version>.msi` from those signed binaries.
 4. Signs and verifies the MSI.
-5. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key.
+5. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key. The summary names the product version and links to the GitHub Release for the tag.
 6. Verifies the sidecar against the public key embedded in Vicius 1.20.1.
 7. Uploads `Vestigo-v<product-version>.msi`, `updates.json`, and `updates.json.minisig` as one artifact and posts the Buildbot webhook.
 8. Publishes a GitHub Release for the tag, with generated notes and those three files attached. Installed clients do not download the GitHub copies.
+
+The updater summary is Markdown. `PublishUpdateManifest` receives `--release-url` from `VESTIGO_RELEASE_URL`, which the tag build sets to `https://github.com/nefarius/Vestigo/releases/tag/<tag>` using `github.ref_name`. That page does not exist yet: the manifest is signed before the `release` job publishes the generated changelog. The link stays the same, so the updater can show it immediately and the generated notes appear there once the release exists. The MSI download URL remains the Buildbot package. A summary may also mention a URL under `https://buildbot.nefarius.at/builds/Vestigo/latest/`. Any other summary link, and any package or resource URL outside that directory, fails the manifest step. `check_for_updates` applies the same rule.
 
 The tag pipeline requires `SIGN_RELAY_SERVER`, `SIGN_RELAY_CI_TOKEN`, `WEBHOOK_URL`, `MINISIGN_PRIVATE_KEY`, and `MINISIGN_PASSWORD`. `MINISIGN_PRIVATE_KEY` is the minisign private-key file contents. The workflow writes it to a temporary file, passes that path as `VESTIGO_MINISIGN_KEY`, and deletes the file. It does not print the key or passphrase.
 
@@ -54,7 +56,7 @@ The manifest's release version is the MSI `ProductVersion`. When the updater fea
 On a Windows machine with the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0, or the ASP.NET Core 10.0 Hosting Bundle:
 
 - Install an older signed Vestigo MSI with the updater selected (the default), then confirm `Nefarius_Vestigo_Updater.exe --install --silent --override-success-code 0` exits 0 and creates the current user's logon autostart entry and daily scheduled task.
-- Launch the updater and confirm it offers the newer Buildbot release, shows the MSI summary, and requests elevation.
+- Launch the updater and confirm it offers the newer Buildbot release, shows the summary and its GitHub Release link, and requests elevation.
 - Accept the update. Confirm the service stops and starts, the product version and registry value advance, and an in-flight capture has ended.
 - Cancel the MSI once and confirm Vestigo remains on the previous version.
 - Repeat an update that returns MSI exit code 3010 and confirm the updater treats it as success and asks for a restart.

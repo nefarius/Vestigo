@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 using Minisign;
 using Minisign.Models;
@@ -17,11 +18,17 @@ public interface IUpdateFeedClient
 
 /// <summary>
 ///     Downloads <c>updates.json</c> and its <c>.minisig</c> sidecar, verifies the minisign signature,
-///     refuses URLs outside the Buildbot directory, and returns the newest enabled release.
+///     refuses package URLs outside the Buildbot directory, allows the summary to link to the Vestigo
+///     GitHub Release, and returns the newest enabled release.
 /// </summary>
 public sealed class UpdateFeedClient : IUpdateFeedClient
 {
     public const string HttpClientName = "updates";
+
+    // Keep this aligned with Vestigo.Build.UpdateFeed. Release tags are MinVer v* tags.
+    private static readonly Regex ReleaseTagPattern = new(
+        @"^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -214,7 +221,7 @@ public sealed class UpdateFeedClient : IUpdateFeedClient
     {
         try
         {
-            Walk(root, directoryUrl);
+            Walk(root, directoryUrl, propertyName: null);
             error = null;
             return true;
         }
@@ -223,39 +230,129 @@ public sealed class UpdateFeedClient : IUpdateFeedClient
             error = ex.Message;
             return false;
         }
+    }
 
-        static void Walk(JsonElement element, string directoryUrl)
+    private static void Walk(JsonElement element, string directoryUrl, string? propertyName)
+    {
+        switch (element.ValueKind)
         {
-            switch (element.ValueKind)
-            {
-                case JsonValueKind.Object:
-                    foreach (JsonProperty property in element.EnumerateObject())
-                    {
-                        Walk(property.Value, directoryUrl);
-                    }
+            case JsonValueKind.Object:
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    Walk(property.Value, directoryUrl, property.Name);
+                }
 
-                    break;
-                case JsonValueKind.Array:
-                    foreach (JsonElement item in element.EnumerateArray())
-                    {
-                        Walk(item, directoryUrl);
-                    }
+                break;
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    Walk(item, directoryUrl, propertyName);
+                }
 
-                    break;
-                case JsonValueKind.String:
-                    string value = element.GetString() ?? "";
-                    if ((value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                         value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) &&
-                        !value.StartsWith(directoryUrl, StringComparison.Ordinal))
-                    {
-                        throw new InvalidOperationException(
-                            $"The update feed may only reference {directoryUrl}. Found '{value}'.");
-                    }
-
-                    break;
-            }
+                break;
+            case JsonValueKind.String:
+                RequireFeedUrl(propertyName, element.GetString() ?? "", directoryUrl);
+                break;
         }
     }
+
+    private static void RequireFeedUrl(string? propertyName, string value, string directoryUrl)
+    {
+        if (IsSummary(propertyName))
+        {
+            foreach (string url in HttpUrls(value))
+            {
+                if (!IsAllowedSummaryUrl(url, directoryUrl))
+                {
+                    throw new InvalidOperationException(FeedUrlMessage(directoryUrl, url));
+                }
+            }
+
+            return;
+        }
+
+        if (IsAbsoluteHttp(value) && !value.StartsWith(directoryUrl, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(FeedUrlMessage(directoryUrl, value));
+        }
+    }
+
+    private static bool IsAllowedSummaryUrl(string url, string directoryUrl) =>
+        url.StartsWith(directoryUrl, StringComparison.Ordinal) || IsReleaseNotesUrl(url);
+
+    private static bool IsReleaseNotesUrl(string releaseUrl)
+    {
+        string candidate = (releaseUrl ?? "").Trim();
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri) ||
+            uri is null ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(uri.IdnHost, "github.com", StringComparison.OrdinalIgnoreCase) ||
+            !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return false;
+        }
+
+        const string pathPrefix = "/nefarius/Vestigo/releases/tag/";
+        if (!uri.AbsolutePath.StartsWith(pathPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string tag = uri.AbsolutePath[pathPrefix.Length..];
+        if (tag.Contains('/') || !ReleaseTagPattern.IsMatch(tag))
+        {
+            return false;
+        }
+
+        return string.Equals(candidate, UpdateEndpoints.ReleaseNotesUrlPrefix + tag, StringComparison.Ordinal);
+    }
+
+    private static bool IsSummary(string? propertyName) =>
+        string.Equals(propertyName, "summary", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAbsoluteHttp(string value) =>
+        value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> HttpUrls(string text)
+    {
+        for (int index = 0; index < text.Length; index++)
+        {
+            ReadOnlySpan<char> rest = text.AsSpan(index);
+            if (!rest.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                !rest.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            int end = index;
+            while (end < text.Length && !IsUrlTerminator(text[end]))
+            {
+                end++;
+            }
+
+            while (end > index && text[end - 1] is '.' or ',' or ';' or ':' or '!')
+            {
+                end--;
+            }
+
+            if (end > index)
+            {
+                yield return text[index..end];
+            }
+
+            index = Math.Max(end, index + 1) - 1;
+        }
+    }
+
+    private static bool IsUrlTerminator(char value) =>
+        char.IsWhiteSpace(value) || value is '<' or '>' or '"' or '\'' or ')' or ']' or '`';
+
+    private static string FeedUrlMessage(string directoryUrl, string value) =>
+        $"The update feed may only reference {directoryUrl}, or a Vestigo GitHub release link in the summary. Found '{value}'.";
 
     internal static Version Normalize(Version version) =>
         new(version.Major, version.Minor, Math.Max(version.Build, 0), Math.Max(version.Revision, 0));

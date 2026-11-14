@@ -40,8 +40,51 @@ public class UpdateFeedTests
         JsonElement cancelled = release.GetProperty("exitCode").GetProperty("messages").GetProperty("1602");
         Assert.False(cancelled.TryGetProperty("isSuccess", out JsonElement success) && success.GetBoolean());
         Assert.Equal("2026-10-12T00:00:00Z", release.GetProperty("publishedAt").GetString());
+        string summary = release.GetProperty("summary").GetString();
+        Assert.Equal(
+            UpdateFeed.DefaultSummary("1.2.3.4", "https://github.com/nefarius/Vestigo/releases/tag/v1.2.3"),
+            summary);
+        Assert.Contains("[Release notes](https://github.com/nefarius/Vestigo/releases/tag/v1.2.3)", summary, StringComparison.Ordinal);
         UpdateFeed.RequireBuildbotResources(root);
-        Assert.DoesNotContain("github.com", Encoding.UTF8.GetString(bytes), StringComparison.OrdinalIgnoreCase);
+        string json = Encoding.UTF8.GetString(bytes);
+        Assert.Equal(1, CountOf(json, "github.com"));
+        Assert.Contains("https://github.com/nefarius/Vestigo/releases/tag/v1.2.3", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.com/nefarius/Vestigo/releases/download", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Manifest_AcceptsAPrereleaseTagAndRejectsOtherReleaseUrls()
+    {
+        const string prerelease = "https://github.com/nefarius/Vestigo/releases/tag/v1.2.3-beta.1";
+        using JsonDocument document = JsonDocument.Parse(UpdateFeed.CreateManifest(Sample(prerelease)));
+        Assert.Contains(
+            "[Release notes](" + prerelease + ")",
+            document.RootElement.GetProperty("releases")[0].GetProperty("summary").GetString(),
+            StringComparison.Ordinal);
+
+        string[] rejected =
+        [
+            "https://github.com/nefarius/Vestigo/releases",
+            "https://github.com/nefarius/Vestigo/releases/tag/v1.2.3/extra",
+            "https://github.com/other/Vestigo/releases/tag/v1.2.3",
+            "http://github.com/nefarius/Vestigo/releases/tag/v1.2.3",
+            "https://github.com/nefarius/Vestigo/releases/tag/v1.2.3?asset=1",
+            "https://user@github.com/nefarius/Vestigo/releases/tag/v1.2.3",
+            "https://github.com.evil/nefarius/Vestigo/releases/tag/v1.2.3",
+            "https://github.com/nefarius/Vestigo/releases/download/v1.2.3/Vestigo.msi",
+            ""
+        ];
+        foreach (string releaseUrl in rejected)
+        {
+            Assert.Throws<ArgumentException>(() => UpdateFeed.CreateManifest(Sample(releaseUrl)));
+        }
+
+        Assert.Throws<InvalidOperationException>(() => UpdateFeed.CreateManifest(Sample(
+            "https://github.com/nefarius/Vestigo/releases/tag/v1.2.3",
+            "Signed release. Also see https://evil.example/update.msi")));
+        using JsonDocument packageUrl = JsonDocument.Parse(
+            """{"downloadUrl":"https://github.com/nefarius/Vestigo/releases/tag/v1.2.3"}""");
+        Assert.Throws<InvalidOperationException>(() => UpdateFeed.RequireBuildbotResources(packageUrl.RootElement));
     }
 
     [Fact]
@@ -54,7 +97,8 @@ public class UpdateFeedTests
             ManifestVersion = 42,
             PublishedAt = DateTimeOffset.Parse("2026-10-12T00:00:00Z"),
             DownloadSize = 3_960_832,
-            Sha256 = digest.ToUpperInvariant()
+            Sha256 = digest.ToUpperInvariant(),
+            ReleaseUrl = "https://github.com/nefarius/Vestigo/releases/tag/v1.2.3"
         };
         using JsonDocument document = JsonDocument.Parse(UpdateFeed.CreateManifest(spec));
         Assert.Equal(digest, document.RootElement.GetProperty("releases")[0].GetProperty("checksum").GetProperty("checksum").GetString());
@@ -131,6 +175,7 @@ public class UpdateFeedTests
             StringComparison.Ordinal);
         Assert.Equal(UpdateFeed.ManifestPublicKey, Vestigo.Updates.UpdateEndpoints.ManifestPublicKey);
         Assert.Equal(UpdateFeed.DirectoryUrl, Vestigo.Updates.UpdateEndpoints.DirectoryUrl);
+        Assert.Equal(UpdateFeed.ReleaseNotesUrlPrefix, Vestigo.Updates.UpdateEndpoints.ReleaseNotesUrlPrefix);
         Assert.Equal(UpdateFeed.RegistryKey, Vestigo.Updates.UpdateEndpoints.RegistryKey);
         Assert.Equal(UpdateFeed.UpdaterExecutable, Vestigo.Updates.UpdateEndpoints.UpdaterExecutable);
         Assert.Contains("!Updater=3 AND &Updater=2", installer, StringComparison.Ordinal);
@@ -206,6 +251,12 @@ public class UpdateFeedTests
         Assert.True(verified >= 0 && verified < signed && signed < uploaded && uploaded < webhook);
         Assert.Contains("updates.json.minisig", workflow, StringComparison.Ordinal);
         Assert.Contains("github.run_id", workflow, StringComparison.Ordinal);
+        Assert.Contains(
+            "VESTIGO_RELEASE_URL: https://github.com/nefarius/Vestigo/releases/tag/",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("--release-url \"$env:VESTIGO_RELEASE_URL\"", workflow, StringComparison.Ordinal);
+        Assert.Contains("ReleaseUrl = ReleaseUrl", build, StringComparison.Ordinal);
         Assert.Contains("dist/updates.json", workflow, StringComparison.Ordinal);
         Assert.Contains("Vestigo-v*.msi", workflow, StringComparison.Ordinal);
         Assert.Contains("Resolve versioned MSI", workflow, StringComparison.Ordinal);
@@ -214,7 +265,9 @@ public class UpdateFeedTests
         Assert.DoesNotContain("dist/Vestigo.msi", workflow, StringComparison.Ordinal);
     }
 
-    private static UpdateManifestSpec Sample()
+    private static UpdateManifestSpec Sample(
+        string releaseUrl = "https://github.com/nefarius/Vestigo/releases/tag/v1.2.3",
+        string? summary = null)
     {
         return new UpdateManifestSpec
         {
@@ -222,8 +275,23 @@ public class UpdateFeedTests
             ManifestVersion = 42,
             PublishedAt = DateTimeOffset.Parse("2026-10-12T00:00:00Z"),
             DownloadSize = 3_960_832,
-            Sha256 = new string('a', 64)
+            Sha256 = new string('a', 64),
+            Summary = summary,
+            ReleaseUrl = releaseUrl
         };
+    }
+
+    private static int CountOf(string text, string value)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 
     private static string FindRepositoryRoot()

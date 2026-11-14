@@ -43,6 +43,9 @@ class Build : FalloutBuild
     [Parameter("UTC publish timestamp for updates.json (ISO 8601). Defaults to the current time.")]
     readonly string PublishedAt;
 
+    [Parameter("GitHub Release URL linked from the updater summary. Tag builds pass https://github.com/nefarius/Vestigo/releases/tag/<tag>.")]
+    readonly string ReleaseUrl;
+
     [Solution] readonly Solution Solution;
 
     Target Clean => _ => _
@@ -342,7 +345,8 @@ class Build : FalloutBuild
                     CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal),
             DownloadSize = msi.Length,
-            Sha256 = Convert.ToHexString(SHA256.HashData(msi)).ToLowerInvariant()
+            Sha256 = Convert.ToHexString(SHA256.HashData(msi)).ToLowerInvariant(),
+            ReleaseUrl = ReleaseUrl
         };
 
         File.WriteAllBytes(manifestPath, UpdateFeed.CreateManifest(spec));
