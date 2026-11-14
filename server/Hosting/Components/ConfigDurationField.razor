@@ -1,0 +1,89 @@
+<MudGrid Spacing="2" Class="my-1">
+    <MudItem xs="12" sm="8">
+        <ConfigQuantityInput Immediate="true" Label="@Label" Value="_amount" ValueChanged="AmountChanged" ConversionFailed="ConversionFailed"
+                             Format="0.############################" Variant="Variant.Outlined" HelperText="@_helper" Error="@(_error is not null)" ErrorText="@_error" />
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudSelect T="string" Label="Duration unit" Value="_unit" ValueChanged="UnitChanged" ToStringFunc="@ConfigurationQuantity.DurationUnitLabel"
+                   Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+            @foreach (string unit in ConfigurationQuantity.DurationUnits)
+            {
+                <MudSelectItem T="string" Value="@unit">@ConfigurationQuantity.DurationUnitLabel(unit)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public EventCallback<bool> ValidChanged { get; set; }
+    private decimal _amount;
+    private string _unit = "seconds";
+    private string? _error;
+    private string? _helper;
+    private bool _known;
+    private bool _valid = true;
+    private bool _parsed = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!ConfigurationQuantity.TryFormatDuration(Value, out _amount, out _unit))
+        {
+            _error = ConfigurationQuantity.DurationTextError;
+            await SetValid(false);
+            return;
+        }
+        await Commit(write: false);
+    }
+
+    private async Task ConversionFailed(string? message)
+    {
+        _parsed = false;
+        _error = string.IsNullOrWhiteSpace(message) ? ConfigurationQuantity.NumberParseError : message;
+        _helper = null;
+        await SetValid(false);
+    }
+
+    private async Task AmountChanged(decimal amount)
+    {
+        _parsed = true;
+        _amount = amount;
+        await Commit(write: true);
+    }
+
+    private async Task UnitChanged(string unit)
+    {
+        _unit = unit;
+        await Commit(write: true);
+    }
+
+    private async Task Commit(bool write)
+    {
+        if (!_parsed)
+        {
+            _helper = null;
+            await SetValid(false);
+            return;
+        }
+        if (!ConfigurationQuantity.TryConvertDuration(_amount, _unit, out string? canonical, out _error))
+        {
+            _helper = null;
+            await SetValid(false);
+            return;
+        }
+        _helper = $"Stored as {canonical}.";
+        if (write) await ValueChanged.InvokeAsync(canonical!);
+        await SetValid(true);
+    }
+
+    private async Task SetValid(bool valid)
+    {
+        bool announce = _known || !valid;
+        if (_known && _valid == valid) return;
+        _known = true;
+        _valid = valid;
+        if (announce) await ValidChanged.InvokeAsync(valid);
+    }
+}

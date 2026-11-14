@@ -1,0 +1,93 @@
+@using Vestigo.Configuration
+<MudStack Spacing="2" Class="my-3">
+    <MudText Typo="Typo.subtitle1">@Label</MudText>
+    <MudText Typo="Typo.body2">Named directories a client can address as <code>name:relative\path</code>. Each row needs a name, an absolute path, and at least one access flag.</MudText>
+    @if (_rows.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No named roots.</MudText>
+    }
+    @foreach (NamedRootDraft row in _rows)
+    {
+        int index = _rows.IndexOf(row);
+        <MudPaper @key="row.UiKey" Outlined="true" Class="pa-3">
+            @if (!row.Structured)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-2">@ConfigurationQuantity.RootShapeError</MudAlert>
+            }
+            else
+            {
+                <MudTextField T="string" Immediate="true" Label="Name" Value="@row.Name" ValueChanged="@(value => Edit(row, value, row.Path, row.Access))"
+                              Variant="Variant.Outlined" Class="mb-2" Error="@Has(index, "name")" ErrorText="@Message(index, "name")" />
+                <MudTextField T="string" Immediate="true" Label="Path" Value="@row.Path" ValueChanged="@(value => Edit(row, row.Name, value, row.Access))"
+                              Variant="Variant.Outlined" Class="mb-2" Error="@Has(index, "path")" ErrorText="@Message(index, "path")" />
+                <ConfigFlagsField Label="Access" EnumType="typeof(RootAccess)" Value="@ConfigurationQuantity.FormatFlags(typeof(RootAccess), row.Access)"
+                                  ExternalError="@Message(index, "access")" Class="" ValueChanged="@(value => AccessChanged(row, value))" />
+            }
+            <MudButton Color="Color.Error" Variant="Variant.Text" OnClick="@(() => Remove(row))">Remove</MudButton>
+        </MudPaper>
+    }
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="Add">Add root</MudButton>
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public JsonArray Value { get; set; } = null!;
+    [Parameter] public EventCallback<JsonArray> ValueChanged { get; set; }
+    [Parameter] public EventCallback<bool> ValidChanged { get; set; }
+    private readonly List<NamedRootDraft> _rows = [];
+    private IReadOnlyList<ConfigurationFieldError> _errors = [];
+    private bool _known;
+    private bool _valid = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows.AddRange(ConfigurationQuantity.ReadNamedRoots(Value));
+        await Publish(write: false);
+    }
+
+    private async Task Edit(NamedRootDraft row, string name, string path, IReadOnlyList<string> access)
+    {
+        row.Name = name;
+        row.Path = path;
+        row.Access = access.ToList();
+        await Publish(write: true);
+    }
+
+    private async Task AccessChanged(NamedRootDraft row, string access)
+    {
+        if (!ConfigurationQuantity.TryReadFlags(typeof(RootAccess), access, out IReadOnlyList<string> selected, out _)) return;
+        row.Access = selected.ToList();
+        await Publish(write: true);
+    }
+
+    private async Task Add()
+    {
+        _rows.Add(new NamedRootDraft { Access = ["Read"], Prototype = new JsonObject() });
+        await Publish(write: true);
+    }
+
+    private async Task Remove(NamedRootDraft row)
+    {
+        _rows.Remove(row);
+        await Publish(write: true);
+    }
+
+    private async Task Publish(bool write)
+    {
+        bool valid = ConfigurationQuantity.TryCreateNamedRoots(_rows, out JsonArray? roots, out _errors);
+        if (valid && write) await ValueChanged.InvokeAsync(roots!);
+        await SetValid(valid);
+    }
+
+    private bool Has(int index, string target) => Message(index, target) is not null;
+    private string? Message(int index, string target) => _errors.FirstOrDefault(error => error.Index == index && error.Target == target)?.Message;
+
+    private async Task SetValid(bool valid)
+    {
+        bool announce = _known || !valid;
+        if (_known && _valid == valid) return;
+        _known = true;
+        _valid = valid;
+        if (announce) await ValidChanged.InvokeAsync(valid);
+    }
+}

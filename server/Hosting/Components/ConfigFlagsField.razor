@@ -1,0 +1,50 @@
+<MudSelect T="string" Label="@Label" MultiSelection="true" SelectedValues="_selected" SelectedValuesChanged="Changed"
+           ToStringFunc="@ConfigurationFieldMetadata.EnumDisplayLabel" Variant="Variant.Outlined" Class="@Class" Clearable="true"
+           HelperText="@(_error is null && string.IsNullOrEmpty(ExternalError) ? "Choose one or more values. Clear the selection for none." : null)"
+           Error="@(_error is not null || !string.IsNullOrEmpty(ExternalError))" ErrorText="@(_error ?? ExternalError)"
+           AnchorOrigin="Origin.BottomCenter">
+    @foreach (string name in _names)
+    {
+        <MudSelectItem T="string" Value="@name">@ConfigurationFieldMetadata.EnumDisplayLabel(name)</MudSelectItem>
+    }
+</MudSelect>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter, EditorRequired] public Type EnumType { get; set; } = typeof(object);
+    [Parameter] public string? ExternalError { get; set; }
+    [Parameter] public string Class { get; set; } = "my-3";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public EventCallback<bool> ValidChanged { get; set; }
+    private string[] _names = [];
+    private IReadOnlyCollection<string> _selected = [];
+    private string? _error;
+    private bool _known;
+    private bool _valid = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _names = ConfigurationQuantity.FlagChoices(EnumType).ToArray();
+        if (ConfigurationQuantity.TryReadFlags(EnumType, Value, out IReadOnlyList<string> selected, out _error))
+            _selected = selected.ToArray();
+        await SetValid(_error is null);
+    }
+
+    private async Task Changed(IReadOnlyCollection<string>? selected)
+    {
+        _selected = selected ?? [];
+        _error = null;
+        await ValueChanged.InvokeAsync(ConfigurationQuantity.FormatFlags(EnumType, _selected));
+        await SetValid(true);
+    }
+
+    private async Task SetValid(bool valid)
+    {
+        bool announce = _known || !valid;
+        if (_known && _valid == valid) return;
+        _known = true;
+        _valid = valid;
+        if (announce) await ValidChanged.InvokeAsync(valid);
+    }
+}

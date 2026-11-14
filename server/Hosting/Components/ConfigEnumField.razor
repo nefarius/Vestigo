@@ -1,0 +1,46 @@
+<MudSelect T="string" Label="@Label" Value="@_value" ValueChanged="Changed" ToStringFunc="@ConfigurationFieldMetadata.EnumDisplayLabel"
+           Variant="Variant.Outlined" Class="@Class" Error="@(_error is not null)" ErrorText="@_error" AnchorOrigin="Origin.BottomCenter">
+    @foreach (string name in _names)
+    {
+        <MudSelectItem T="string" Value="@name">@ConfigurationFieldMetadata.EnumDisplayLabel(name)</MudSelectItem>
+    }
+</MudSelect>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter, EditorRequired] public Type EnumType { get; set; } = typeof(object);
+    [Parameter] public string Class { get; set; } = "my-3";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public EventCallback<bool> ValidChanged { get; set; }
+    private string[] _names = [];
+    private string? _value;
+    private string? _error;
+    private bool _known;
+    private bool _valid = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _names = Enum.GetNames(EnumType);
+        _value = Value;
+        _error = Value is not null && _names.Contains(Value, StringComparer.Ordinal) ? null : "Choose one of the listed values.";
+        await SetValid(_error is null);
+    }
+
+    private async Task Changed(string value)
+    {
+        _value = value;
+        _error = _names.Contains(value, StringComparer.Ordinal) ? null : "Choose one of the listed values.";
+        if (_error is null) await ValueChanged.InvokeAsync(value);
+        await SetValid(_error is null);
+    }
+
+    private async Task SetValid(bool valid)
+    {
+        bool announce = _known || !valid;
+        if (_known && _valid == valid) return;
+        _known = true;
+        _valid = valid;
+        if (announce) await ValidChanged.InvokeAsync(valid);
+    }
+}

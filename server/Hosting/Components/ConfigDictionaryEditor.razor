@@ -1,0 +1,88 @@
+<MudStack Spacing="2" Class="my-3">
+    <MudText Typo="Typo.subtitle1">@Label</MudText>
+    <MudText Typo="Typo.body2">@HelperText</MudText>
+    @if (_rows.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No entries.</MudText>
+    }
+    @foreach (StringEntryDraft row in _rows)
+    {
+        int index = _rows.IndexOf(row);
+        <MudPaper @key="row.UiKey" Outlined="true" Class="pa-3">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="5">
+                    <MudTextField T="string" Immediate="true" Label="@KeyLabel" Value="@row.Key" ValueChanged="@(value => Edit(row, value, row.Value, row.Structured))"
+                                  Variant="Variant.Outlined" Error="@Has(index, "key")" ErrorText="@Message(index, "key")" />
+                </MudItem>
+                <MudItem xs="12" sm="5">
+                    <MudTextField T="string" Immediate="true" Label="@ValueLabel" Value="@row.Value" ValueChanged="@(value => Edit(row, row.Key, value, structured: true))"
+                                  Variant="Variant.Outlined" Error="@Has(index, "value")" ErrorText="@Message(index, "value")" />
+                </MudItem>
+                <MudItem xs="12" sm="2" Class="d-flex align-center">
+                    <MudButton Color="Color.Error" Variant="Variant.Text" OnClick="@(() => Remove(row))">Remove</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    }
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="Add">Add entry</MudButton>
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string KeyLabel { get; set; } = "Name";
+    [Parameter] public string ValueLabel { get; set; } = "Value";
+    [Parameter] public string HelperText { get; set; } = "One entry per row. Leave the list empty to clear it.";
+    [Parameter] public bool RequireSha256 { get; set; }
+    [Parameter, EditorRequired] public JsonObject Value { get; set; } = null!;
+    [Parameter] public EventCallback<JsonObject> ValueChanged { get; set; }
+    [Parameter] public EventCallback<bool> ValidChanged { get; set; }
+    private readonly List<StringEntryDraft> _rows = [];
+    private IReadOnlyList<ConfigurationFieldError> _errors = [];
+    private bool _known;
+    private bool _valid = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows.AddRange(ConfigurationQuantity.ReadStringDictionary(Value));
+        await Publish(write: false);
+    }
+
+    private async Task Edit(StringEntryDraft row, string key, string value, bool structured = true)
+    {
+        row.Key = key;
+        row.Value = value;
+        row.Structured = structured;
+        await Publish(write: true);
+    }
+
+    private async Task Add()
+    {
+        _rows.Add(new StringEntryDraft());
+        await Publish(write: true);
+    }
+
+    private async Task Remove(StringEntryDraft row)
+    {
+        _rows.Remove(row);
+        await Publish(write: true);
+    }
+
+    private async Task Publish(bool write)
+    {
+        bool valid = ConfigurationQuantity.TryCreateStringDictionary(_rows, RequireSha256, out JsonObject? value, out _errors);
+        if (valid && write) await ValueChanged.InvokeAsync(value!);
+        await SetValid(valid);
+    }
+
+    private bool Has(int index, string target) => Message(index, target) is not null;
+    private string? Message(int index, string target) => _errors.FirstOrDefault(error => error.Index == index && error.Target == target)?.Message;
+
+    private async Task SetValid(bool valid)
+    {
+        bool announce = _known || !valid;
+        if (_known && _valid == valid) return;
+        _known = true;
+        _valid = valid;
+        if (announce) await ValidChanged.InvokeAsync(valid);
+    }
+}

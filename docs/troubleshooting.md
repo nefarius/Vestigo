@@ -4,7 +4,7 @@
 
 - HTTP 403 at `/config`: open a direct loopback URL on the service machine with the correct port, without a proxy. Remote peers, forwarded headers, cross-origin requests and non-local Host names are rejected. A listener bound only to a LAN IP does not accept loopback; update the JSON binding first.
 - Settings changed on disk: use **Reload saved settings**, then repeat the edit. This discards unsaved form changes.
-- Invalid configuration: check field types, positive limits, absolute paths, nonblank tokens, enum values and module dependencies. JSON fields must retain their array/object type. Failed validation leaves the file unchanged.
+- Invalid configuration: check field types, positive limits, absolute paths, nonblank tokens, enum values and module dependencies. Byte quantities must convert to a whole number of bytes, and durations must convert to an exact time span; those fields block Save until they do. JSON fields must retain their array/object type. Failed validation leaves the file unchanged.
 - Restart unavailable: console hosts require a manual process restart. The action is enabled only inside the installed Windows service.
 - Page disconnects after restart: wait and refresh using the saved local address and port. If the service stays stopped, inspect Windows Services and Vestigo logs; correct the machine JSON manually if plugin loading or startup failed. A restart interrupts active jobs and captures.
 
