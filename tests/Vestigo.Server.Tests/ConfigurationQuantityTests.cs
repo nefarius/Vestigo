@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 
 using Vestigo.Configuration;
 using Vestigo.Hosting;
+using Vestigo.Hosting.Components;
 
 namespace Vestigo.Server.Tests;
 
@@ -52,6 +53,19 @@ public class ConfigurationQuantityTests
         Assert.True(ConfigurationFieldMetadata.TryGetEnum("VolumeRootAccess", out Type access, out bool accessFlags));
         Assert.Equal(typeof(RootAccess), access);
         Assert.True(accessFlags);
+    }
+
+    [Fact]
+    public void UnknownStringFieldIsNotAnEnumOrDuration()
+    {
+        const string path = "ExamplePlugin:Note";
+        Assert.Null(ConfigurationFieldMetadata.TypeFor(path));
+        Assert.False(ConfigurationFieldMetadata.IsDuration(path));
+        Assert.False(ConfigurationFieldMetadata.TryGetEnum(path, out _, out _));
+        Assert.False(ConfigQuantityInput.TryAcceptParsedAmount(conversionFailed: true, converted: 0m, out _));
+        Assert.False(ConfigQuantityInput.TryAcceptParsedAmount(conversionFailed: false, converted: null, out _));
+        Assert.True(ConfigQuantityInput.TryAcceptParsedAmount(conversionFailed: false, converted: 1.5m, out decimal amount));
+        Assert.Equal(1.5m, amount);
     }
 
     [Theory]

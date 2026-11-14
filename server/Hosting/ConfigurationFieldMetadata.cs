@@ -21,7 +21,7 @@ internal static class ConfigurationFieldMetadata
     public static bool IsStringList(string path) =>
         TypeFor(path) is Type type && type != typeof(string) && typeof(IEnumerable<string>).IsAssignableFrom(type);
 
-    public static bool IsDuration(string path) => Unwrap(TypeFor(path)) == typeof(TimeSpan);
+    public static bool IsDuration(string path) => TypeFor(path) is Type type && Unwrap(type) == typeof(TimeSpan);
 
     public static bool IsNamedRoots(string path) => ElementType(TypeFor(path)) == typeof(RootDefinition);
 
@@ -43,7 +43,7 @@ internal static class ConfigurationFieldMetadata
 
     public static bool TryGetEnum(string path, out Type enumType, out bool flags)
     {
-        Type? type = Unwrap(TypeFor(path));
+        Type? type = TypeFor(path) is Type resolved ? Unwrap(resolved) : null;
         if (type is not { IsEnum: true })
         {
             enumType = typeof(object);

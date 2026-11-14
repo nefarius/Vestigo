@@ -34,6 +34,7 @@ internal static class ConfigurationQuantity
     public const string ByteFitError = "That size does not fit in this setting.";
     public const string PositiveSizeError = "Enter zero or a positive size.";
     public const string ByteNumberError = "Enter a whole number of bytes.";
+    public const string NumberParseError = "Enter a number.";
     public const string PositiveDurationError = "Enter zero or a positive duration.";
     public const string DurationTickError = "Enter a duration that lands on a whole tick.";
     public const string DurationFitError = "That duration does not fit.";
