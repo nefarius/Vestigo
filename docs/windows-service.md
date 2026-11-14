@@ -1,5 +1,7 @@
 # Windows service
 
+After installation, open `http://localhost:5098/config` directly on this machine (adjust the port) to edit machine settings. Save, then confirm **Restart service** to apply them. A separate helper starts the service again after graceful shutdown; active captures, jobs and connections are interrupted. Refresh at the saved address/port. Console hosting requires a manual process restart. The page gives local users access to credentials and privileged settings without an API token: never proxy it or its Blazor transport. Service account, firewall and other MSI choices outside the `Vestigo` JSON section remain installer/Windows administration tasks. See [configuration](configuration.md#local-configuration-page).
+
 The MSI installs an x64, per-machine, framework-dependent service. It requires the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this) and replaces an earlier Vestigo installation that uses the same upgrade code. Windows 11 on ARM64 is supported through x64 emulation; a native ARM64 runtime does not satisfy the check, and the x64 runtimes live under `%ProgramFiles%\dotnet\x64`. The installer stops with a message when no matching pair is present. A later major (11 or newer) does not count. In a silent install the same message is written to the MSI log.
 
 - Service name: `Vestigo`

@@ -1,0 +1,101 @@
+@page "/config"
+@rendermode InteractiveServer
+@inject ConfigurationEditor Editor
+@inject ServiceRestart Restart
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudContainer MaxWidth="MaxWidth.Large" Class="my-8">
+    <MudText Typo="Typo.overline">VESTIGO / LOCAL ADMINISTRATION</MudText>
+    <MudText Typo="Typo.h3" Class="mb-3">Configuration</MudText>
+    <MudText Class="mb-4">Edit machine settings, then save and restart Vestigo to apply them. Restart interrupts active jobs and client connections.</MudText>
+    <MudAlert Severity="Severity.Warning" Class="mb-4">This page exposes credentials and privileged settings to local users. Keep this route private and never forward it through a proxy.</MudAlert>
+    @if (_message is not null)
+    {
+        <MudAlert Severity="_severity" Class="mb-4">@_message</MudAlert>
+    }
+    @if (_snapshot is not null)
+    {
+        <MudTextField T="string" @bind-Value="_search" Label="Find a setting" Immediate="true" Variant="Variant.Outlined" Class="mb-4" />
+        <MudExpansionPanels MultiExpansion="true" @key="_snapshot">
+            <MudExpansionPanel Text="Host, paths and capture limits" Expanded="true" KeepContentAlive="true">
+                <ConfigFields Values="_snapshot.Values" ScalarsOnly="true" Search="@_search" ValidityChanged="FieldValidity" />
+            </MudExpansionPanel>
+            @foreach (var group in _snapshot.Values)
+            {
+                @if (group.Value is JsonObject children)
+                {
+                    <MudExpansionPanel @key="group.Key" Text="@group.Key" KeepContentAlive="true"
+                                       Class="@(Matches(children, group.Key) ? null : "d-none")" Expanded="@(!string.IsNullOrWhiteSpace(_search))">
+                        <ConfigFields Values="children" Prefix="@group.Key" Search="@_search" ValidityChanged="FieldValidity" />
+                    </MudExpansionPanel>
+                }
+            }
+        </MudExpansionPanels>
+        <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-5" Spacing="3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="@(_restarting || _invalidFields.Count > 0)">Save settings</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="Load" Disabled="_restarting">Reload saved settings</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="@(() => _confirmRestart = true)" Disabled="@(!Restart.Available || _restarting)">Restart service</MudButton>
+        </MudStack>
+        @if (!Restart.Available)
+        {
+            <MudText Typo="Typo.body2">Restart is available when Vestigo runs as a Windows service. For a console host, restart the process manually after saving.</MudText>
+        }
+        @if (_confirmRestart)
+        {
+            <MudPaper Class="pa-4 my-4" Outlined="true">
+                <MudText Class="mb-3">Restart the service using the last saved settings? Unsaved edits will be lost. Active captures, jobs and connections will close. If the listen address or port changed, open the new local URL afterwards.</MudText>
+                <MudButton Color="Color.Warning" Variant="Variant.Filled" OnClick="RestartService">Confirm restart</MudButton>
+                <MudButton OnClick="@(() => _confirmRestart = false)">Cancel</MudButton>
+            </MudPaper>
+        }
+    }
+    <MudLink Href="/" Class="mt-5">Back to Vestigo</MudLink>
+</MudContainer>
+
+@code {
+    private ConfigurationSnapshot? _snapshot;
+    private string _search = "";
+    private string? _message;
+    private Severity _severity = Severity.Info;
+    private bool _confirmRestart;
+    private bool _restarting;
+    private readonly HashSet<string> _invalidFields = [];
+    private bool Matches(JsonObject values, string prefix) => string.IsNullOrWhiteSpace(_search) ||
+        values.Any(field => (prefix + ":" + field.Key).Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            field.Value is JsonObject child && Matches(child, prefix + ":" + field.Key));
+    private void FieldValidity((string Path, bool Valid) field)
+    {
+        if (field.Valid) _invalidFields.Remove(field.Path); else _invalidFields.Add(field.Path);
+    }
+    protected override void OnInitialized() => Load();
+    private void Load()
+    {
+        try { _snapshot = Editor.Load(); _invalidFields.Clear(); _message = null; }
+        catch { _message = "Could not read settings. Check that the machine settings file contains a valid configuration and is accessible to the service."; _severity = Severity.Error; }
+    }
+    private void Save()
+    {
+        if (_invalidFields.Count > 0) return;
+        try
+        {
+            _snapshot = Editor.Save(_snapshot!);
+            _message = "Saved. Restart Vestigo to apply the configuration.";
+            _severity = Severity.Success;
+        }
+        catch (InvalidOperationException exception) { _message = exception.Message; _severity = Severity.Error; }
+        catch { _message = "Could not save settings. Check the settings directory permissions and free disk space."; _severity = Severity.Error; }
+    }
+    private async Task RestartService()
+    {
+        try
+        {
+            await Restart.RequestAsync(); _confirmRestart = false; _restarting = true;
+            _message = "Restart requested. Wait a few seconds, then refresh this page at the configured local address and port.";
+            _severity = Severity.Info;
+        }
+        catch { _message = "Could not request a restart. Check the Windows service status and restart Vestigo using Services if necessary."; _severity = Severity.Error; }
+    }
+}

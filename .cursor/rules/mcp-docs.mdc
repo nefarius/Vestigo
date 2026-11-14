@@ -14,7 +14,7 @@ A new MCP tool, tool category, or `VestigoModule` is not done until the user-fac
 - `README.md`: intro, Limitations, or credits when the tool is a new capability, constraint, or dependency.
 - `docs/security.md` when the tool discloses data, mutates the machine, or adds a gate.
 - `docs/troubleshooting.md` when it adds stable error codes.
-- `docs/configuration.md` and regenerate `docs/generated/configuration.md` when it adds settings.
+- For any configuration change, follow `configuration-parity.mdc` to keep host JSON, MSI setup and `/config` availability aligned. Update `docs/configuration.md` and regenerate `docs/generated/configuration.md` when settings change.
 
 ## New module or category
 
@@ -29,4 +29,4 @@ Do the tool list above, then:
 - `site/` GitHub Pages booklet: update Features, Security, Intro and relevant QA/developer workflows for new public capabilities. Ensure the Pages build passes and verify deployment after merge.
 - Installer module metadata (`ModuleSelection` / feature parent) so MSI pages stay aligned.
 
-Do not treat the generated tool catalog as a substitute for the narrative docs. Update `server/README.md` only when `/`, `/mcp`, `/files`, or `/health` changes.
+Do not treat the generated tool catalog as a substitute for the narrative docs. Update `server/README.md` when `/`, `/mcp`, `/files`, `/health`, `/config`, or the configuration UI's transport/security boundary changes.

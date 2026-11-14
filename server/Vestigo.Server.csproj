@@ -30,6 +30,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="MudBlazor" />
     <PackageReference Include="NAudio.Wasapi" />
     <PackageReference Include="OpenCvSharp4" />
     <PackageReference Include="OpenCvSharp4.runtime.win" />
