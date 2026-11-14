@@ -332,6 +332,59 @@ public class ConfigurationEditorTests : IDisposable
         Assert.Equal("7", configuration["Vestigo:ExamplePlugin:Limits:Count"]);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void KnownContainerScalarAndDescendantBindAndRoundTrip(bool scalarFirst)
+    {
+        JsonObject values = new();
+        if (scalarFirst) values["Files"] = "scalar";
+        values["Files:MaxUploadBytes"] = "1234";
+        if (!scalarFirst) values["Files"] = "scalar";
+        File.WriteAllText(VestigoPaths.SettingsFilePath, new JsonObject { ["Vestigo"] = values }.ToJsonString());
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.Equal("scalar", snapshot.Values["Files"]!.GetValue<string>());
+        Assert.Equal(1234, snapshot.Values["Files:MaxUploadBytes"]!.GetValue<long>());
+        _editor.Save(snapshot);
+        using var stream = new MemoryStream(File.ReadAllBytes(VestigoPaths.SettingsFilePath));
+        var configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        Assert.Equal("scalar", configuration["Vestigo:Files"]);
+        Assert.Equal("1234", configuration["Vestigo:Files:MaxUploadBytes"]);
+        ConfigurationSnapshot reloaded = _editor.Load();
+        Assert.Equal("scalar", reloaded.Values["Files"]!.GetValue<string>());
+        Assert.Equal(1234, reloaded.Values["Files:MaxUploadBytes"]!.GetValue<long>());
+    }
+
+    [Fact]
+    public void KnownFlatDescendantConversionFailuresAreNotFilteredOut()
+    {
+        File.WriteAllText(VestigoPaths.SettingsFilePath, """
+        { "Vestigo": { "Files": "scalar", "Files:MaxUploadBytes": "invalid" } }
+        """);
+        var exception = Assert.Throws<InvalidOperationException>(() => _editor.Load());
+        Assert.Contains("Files:MaxUploadBytes", exception.ToString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ModulesScalarAndDescendantKeepDefaultsAndRoundTrip(bool scalarFirst)
+    {
+        JsonObject values = new();
+        if (scalarFirst) values["Modules"] = "scalar";
+        values["Modules:Trace:Enabled"] = true;
+        if (!scalarFirst) values["Modules"] = "scalar";
+        File.WriteAllText(VestigoPaths.SettingsFilePath, new JsonObject { ["Vestigo"] = values }.ToJsonString());
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.Equal("scalar", snapshot.Values["Modules"]!.GetValue<string>());
+        foreach (VestigoModule module in ModuleRegistry.All)
+            Assert.NotNull(snapshot.Values["Modules:" + module.Name]!["Enabled"]);
+        _editor.Save(snapshot);
+        ConfigurationSnapshot reloaded = _editor.Load();
+        Assert.Equal("scalar", reloaded.Values["Modules"]!.GetValue<string>());
+        Assert.True(reloaded.Values["Modules:Trace"]!["Enabled"]!.GetValue<bool>());
+    }
+
     [Fact]
     public void UserinfoCredentialsRoundTripWithNormalizedRunningOptions()
     {

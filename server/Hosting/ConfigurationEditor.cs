@@ -55,11 +55,11 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
             }
             VestigoOptions options = Bind(new JsonObject { ["Vestigo"] = combined.DeepClone() });
             JsonObject values = JsonSerializer.SerializeToNode(options, JsonOptions)!.AsObject();
-            if (saved is not null) CopyUnknown(values, saved);
             JsonObject moduleValues = Find(values, "Modules")!.AsObject();
             foreach (VestigoModule module in modules)
                 if (Find(moduleValues, module.Name) is null)
                     moduleValues[module.Name] = new JsonObject { ["Enabled"] = module.IsEnabled(options) };
+            if (saved is not null) CopyUnknown(values, saved);
             return new(values, Revision(text));
         }
     }
@@ -130,23 +130,29 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
 
     private static JsonNode? KnownValues(JsonNode? node, Type type)
     {
-        Type? element = type.IsArray ? type.GetElementType() : type == typeof(string) ? null : type.GetInterfaces()
-            .FirstOrDefault(item => item.IsGenericType && item.GetGenericTypeDefinition() == typeof(IEnumerable<>))?.GetGenericArguments()[0];
+        Type? element = CollectionElement(type);
         if (node is JsonArray array)
         {
             return element is null ? node.DeepClone() : new JsonArray(array.Select(item => KnownValues(item, element)).ToArray());
         }
         if (node is not JsonObject source) return node?.DeepClone();
-        Type? dictionary = type.GetInterfaces().FirstOrDefault(item => item.IsGenericType && item.GetGenericTypeDefinition() == typeof(IDictionary<,>));
         JsonObject result = new();
         foreach ((string key, JsonNode? value) in source)
         {
-            Type? valueType = dictionary?.GetGenericArguments()[1] ?? element ?? type
-                .GetProperty(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.PropertyType;
+            Type? valueType = type;
+            foreach (string segment in key.Split(ConfigurationPath.KeyDelimiter))
+            {
+                Type? dictionary = valueType?.GetInterfaces().FirstOrDefault(item => item.IsGenericType && item.GetGenericTypeDefinition() == typeof(IDictionary<,>));
+                valueType = dictionary?.GetGenericArguments()[1] ?? (valueType is null ? null : CollectionElement(valueType)) ?? valueType?
+                    .GetProperty(segment, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.PropertyType;
+            }
             if (valueType is not null) result[key] = KnownValues(value, valueType);
         }
         return result;
     }
+
+    private static Type? CollectionElement(Type type) => type.IsArray ? type.GetElementType() : type == typeof(string) ? null : type.GetInterfaces()
+        .FirstOrDefault(item => item.IsGenericType && item.GetGenericTypeDefinition() == typeof(IEnumerable<>))?.GetGenericArguments()[0];
 
     private static string ReadFile() => File.Exists(VestigoPaths.SettingsFilePath) ? File.ReadAllText(VestigoPaths.SettingsFilePath) : "{}";
     private static void ValidateContainers(JsonObject values, JsonObject defaults)
@@ -156,13 +162,23 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
             JsonNode? actual = Find(values, key);
             if (expected is JsonObject child)
             {
-                if (actual is not JsonObject container) throw new InvalidOperationException();
+                JsonObject? container = actual as JsonObject;
+                if (container is null)
+                {
+                    JsonObject descendants = Descendants(values, key);
+                    if (descendants.Count == 0) throw new InvalidOperationException();
+                    container = NormalizePaths(descendants)!.AsObject();
+                }
                 ValidateContainers(container, child);
             }
-            else if (expected is JsonArray && actual is not JsonArray)
+            else if (expected is JsonArray && actual is not JsonArray && Descendants(values, key).Count == 0)
                 throw new InvalidOperationException();
         }
     }
+
+    private static JsonObject Descendants(JsonObject values, string key) => new(values
+        .Where(pair => pair.Key.StartsWith(key + ConfigurationPath.KeyDelimiter, StringComparison.OrdinalIgnoreCase))
+        .Select(pair => new KeyValuePair<string, JsonNode?>(pair.Key[(key.Length + 1)..], pair.Value?.DeepClone())));
     private static string Revision(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     private static JsonObject Parse(string text)
     {
@@ -194,18 +210,18 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
         return result;
     }
 
+    // Array indexes are configuration path segments too. Numeric objects keep sparse indexes
+    // intact when a delimited key adds a sibling to an existing array.
+    private static JsonObject AsPathObject(JsonNode? node) => node switch
+    {
+        JsonObject obj => obj,
+        JsonArray array => new JsonObject(array.Select((value, index) =>
+            new KeyValuePair<string, JsonNode?>(index.ToString(System.Globalization.CultureInfo.InvariantCulture), value?.DeepClone()))),
+        _ => throw new InvalidOperationException("Configuration contains conflicting paths.")
+    };
     private static JsonNode MergePaths(JsonNode? target, JsonNode? source)
     {
-        // Array indexes are configuration path segments too. Numeric objects keep sparse indexes
-        // intact when a delimited key adds a sibling to an existing array.
-        static JsonObject AsObject(JsonNode? node) => node switch
-        {
-            JsonObject obj => obj,
-            JsonArray array => new JsonObject(array.Select((value, index) =>
-                new KeyValuePair<string, JsonNode?>(index.ToString(System.Globalization.CultureInfo.InvariantCulture), value?.DeepClone()))),
-            _ => throw new InvalidOperationException("Configuration contains conflicting paths.")
-        };
-        JsonObject result = AsObject(target);
+        JsonObject result = AsPathObject(target);
         void Add(string key, JsonNode? value)
         {
             string? existing = result.Select(pair => pair.Key).FirstOrDefault(item => item.Equals(key, StringComparison.OrdinalIgnoreCase));
@@ -216,19 +232,19 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
             {
                 // IConfiguration permits a scalar and descendant values at the same time.
                 // Keep descendants flat at this boundary because JSON cannot nest under a scalar.
-                foreach ((string childKey, JsonNode? child) in AsObject(value))
+                foreach ((string childKey, JsonNode? child) in AsPathObject(value))
                     Add(existing + ConfigurationPath.KeyDelimiter + childKey, child);
             }
             else if (result[existing] is JsonObject or JsonArray)
             {
-                JsonObject children = AsObject(result[existing]);
+                JsonObject children = AsPathObject(result[existing]);
                 result[existing] = value?.DeepClone();
                 foreach ((string childKey, JsonNode? child) in children)
                     Add(existing + ConfigurationPath.KeyDelimiter + childKey, child);
             }
             else throw new InvalidOperationException("Configuration contains conflicting paths.");
         }
-        foreach ((string key, JsonNode? value) in AsObject(source)) Add(key, value);
+        foreach ((string key, JsonNode? value) in AsPathObject(source)) Add(key, value);
         return result;
     }
     internal static JsonNode? Find(JsonObject source, string name) => source.FirstOrDefault(pair => pair.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Value;
@@ -264,6 +280,13 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
         {
             if (!targetObject.Any(pair => pair.Key.Equals(key, StringComparison.OrdinalIgnoreCase)))
                 targetObject[key] = value?.DeepClone();
+            else if (value is not (JsonObject or JsonArray) && Find(targetObject, key) is JsonObject or JsonArray)
+            {
+                JsonObject children = AsPathObject(Find(targetObject, key));
+                Set(targetObject, key, value?.DeepClone());
+                foreach ((string childKey, JsonNode? child) in children)
+                    Set(targetObject, key + ConfigurationPath.KeyDelimiter + childKey, child?.DeepClone());
+            }
             else if (Find(targetObject, key) is { } child && value is { } saved)
                 CopyUnknown(child, saved);
         }
