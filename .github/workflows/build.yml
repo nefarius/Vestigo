@@ -300,13 +300,17 @@ jobs:
         env:
           MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
           VESTIGO_MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+          VESTIGO_RELEASE_URL: https://github.com/nefarius/Vestigo/releases/tag/${{ github.ref_name }}
         run: |
           $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:VESTIGO_RELEASE_URL)) {
+            throw 'VESTIGO_RELEASE_URL is required.'
+          }
           $keyPath = Join-Path $env:RUNNER_TEMP 'vestigo-minisign.key'
           try {
             [System.IO.File]::WriteAllText($keyPath, $env:MINISIGN_PRIVATE_KEY)
             $env:VESTIGO_MINISIGN_KEY = $keyPath
-            .\build.ps1 PublishUpdateManifest --manifest-version ${{ github.run_id }}
+            .\build.ps1 PublishUpdateManifest --manifest-version ${{ github.run_id }} --release-url "$env:VESTIGO_RELEASE_URL"
           }
           finally {
             if (Test-Path -LiteralPath $keyPath) {

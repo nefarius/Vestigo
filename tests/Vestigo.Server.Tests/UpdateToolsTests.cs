@@ -76,6 +76,65 @@ public class UpdateToolsTests : IDisposable
         Assert.Equal(42, result.Value.ManifestVersion);
         Assert.Equal(UpdateFeed.PackageUrl("9.8.7.6"), result.Value.DownloadUrl);
         Assert.Equal(3_960_832, result.Value.DownloadSize);
+        Assert.Contains(
+            "[Release notes](https://github.com/nefarius/Vestigo/releases/tag/v9.8.7.6)",
+            result.Value.Summary,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Feed_RejectsASummaryLinkOutsideTheRelease()
+    {
+        using SignedFeed feed = new();
+        string downloadUrl = UpdateEndpoints.DirectoryUrl + "Vestigo-v9.0.0.msi";
+        feed.Sign(Encoding.UTF8.GetBytes(
+            $$"""
+            {
+              "manifestVersion": 7,
+              "releases": [
+                {
+                  "name": "Vestigo",
+                  "version": "9.0.0",
+                  "summary": "See https://evil.example/notes",
+                  "publishedAt": "2026-10-12T00:00:00Z",
+                  "downloadUrl": "{{downloadUrl}}"
+                }
+              ]
+            }
+            """));
+        UpdateFeedClient client = Client(feed);
+
+        OperationResult<UpdateFeedRelease> result = await client.GetLatestAsync(CancellationToken.None);
+
+        Assert.Equal("manifest_invalid", result.ErrorCode);
+        Assert.Contains("https://evil.example/notes", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Feed_RejectsAGitHubPackageUrl()
+    {
+        using SignedFeed feed = new();
+        feed.Sign(Encoding.UTF8.GetBytes(
+            """
+            {
+              "manifestVersion": 7,
+              "releases": [
+                {
+                  "name": "Vestigo",
+                  "version": "9.0.0",
+                  "summary": "notes",
+                  "publishedAt": "2026-10-12T00:00:00Z",
+                  "downloadUrl": "https://github.com/nefarius/Vestigo/releases/tag/v9.0.0"
+                }
+              ]
+            }
+            """));
+        UpdateFeedClient client = Client(feed);
+
+        OperationResult<UpdateFeedRelease> result = await client.GetLatestAsync(CancellationToken.None);
+
+        Assert.Equal("manifest_invalid", result.ErrorCode);
+        Assert.Contains(UpdateEndpoints.DirectoryUrl, result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -397,7 +456,8 @@ public class UpdateToolsTests : IDisposable
         ManifestVersion = 42,
         PublishedAt = DateTimeOffset.Parse("2026-10-12T00:00:00Z"),
         DownloadSize = 3_960_832,
-        Sha256 = new string('a', 64)
+        Sha256 = new string('a', 64),
+        ReleaseUrl = UpdateFeed.ReleaseNotesUrlPrefix + "v" + version
     };
 
     private UpdateFeedClient Client(SignedFeed feed, HttpStatusCode sidecarStatus = HttpStatusCode.OK) =>
