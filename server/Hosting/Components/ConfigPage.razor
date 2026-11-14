@@ -3,13 +3,15 @@
 @inject ConfigurationEditor Editor
 @inject ServiceRestart Restart
 
-<MudThemeProvider />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudContainer MaxWidth="MaxWidth.Large" Class="my-8">
     <MudText Typo="Typo.overline">VESTIGO / LOCAL ADMINISTRATION</MudText>
-    <MudText Typo="Typo.h3" Class="mb-3">Configuration</MudText>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudText Typo="Typo.h3" Class="my-0">Configuration</MudText>
+        <ConfigThemeToggle />
+    </MudStack>
     <MudText Class="mb-4">Edit machine settings, then save and restart Vestigo to apply them. Restart interrupts active jobs and client connections.</MudText>
     <MudAlert Severity="Severity.Warning" Class="mb-4">This page exposes credentials and privileged settings to local users. Keep this route private and never forward it through a proxy.</MudAlert>
     @if (_message is not null)

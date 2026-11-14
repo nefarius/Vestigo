@@ -1,0 +1,78 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime Js
+
+<MudThemeProvider IsDarkMode="_dark" IsDarkModeChanged="OnProviderChanged" ObserveSystemDarkModeChange="_followSystem" />
+<MudSwitch T="bool" Value="_dark" ValueChanged="SetDarkModeAsync" Color="Color.Primary" Label="Dark mode" />
+
+@code {
+    private bool _dark;
+    private bool _followSystem;
+    private bool _userChose;
+
+    private async Task OnProviderChanged(bool dark)
+    {
+        _dark = dark;
+        // MudBlazor updates its palette only. Keep the document colors in step without storing a choice.
+        try
+        {
+            await Js.InvokeVoidAsync("vestigoTheme.apply", ConfigThemePreference.Format(dark));
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _userChose) return;
+        string? stored = null;
+        try
+        {
+            stored = await Js.InvokeAsync<string?>("vestigoTheme.read");
+        }
+        catch (JSException)
+        {
+            return;
+        }
+
+        if (_userChose) return;
+        if (ConfigThemePreference.Parse(stored) is bool dark)
+        {
+            _followSystem = false;
+            _dark = dark;
+        }
+        else
+        {
+            bool systemDark = false;
+            try
+            {
+                systemDark = await Js.InvokeAsync<bool>("vestigoTheme.systemDark");
+            }
+            catch (JSException)
+            {
+                systemDark = false;
+            }
+
+            if (_userChose) return;
+            _followSystem = true;
+            _dark = systemDark;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SetDarkModeAsync(bool dark)
+    {
+        _userChose = true;
+        _followSystem = false;
+        _dark = dark;
+        try
+        {
+            await Js.InvokeVoidAsync("vestigoTheme.write", ConfigThemePreference.Format(dark));
+        }
+        catch (JSException)
+        {
+            // The choice still applies for this visit when the browser refuses storage.
+        }
+    }
+}

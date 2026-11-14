@@ -7,7 +7,7 @@ description: Vestigo feature booklet for developers and QA personnel.
 
 ## Local settings
 
-Open `/config` directly through localhost on the service machine to edit all `Vestigo` settings with switches, selectors, lists and structured fields. Save after validation, then confirm a service restart to apply changes. Console hosts require a manual restart. This page grants local users access to credentials and privileged configuration without an API token; never proxy it or its Blazor transport. See [Security](security.md).
+Open `/config` directly through localhost on the service machine to edit all `Vestigo` settings with switches, selectors, lists and structured fields. A dark mode switch on that page is remembered in the browser. Save after validation, then confirm a service restart to apply changes. Console hosts require a manual restart. This page grants local users access to credentials and privileged configuration without an API token; never proxy it or its Blazor transport. See [Security](security.md).
 
 Each card is one area of the MCP surface. **On by default** is available after a stock install. **Opt-in** stays off until that module is enabled. **Gated** needs a second setting even after the module is on.
 
