@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Vestigo.Configuration;
 using Vestigo.Hosting;
@@ -218,6 +219,117 @@ public class ConfigurationEditorTests : IDisposable
         Assert.Equal(6010, snapshot.Values["ListenPort"]!.GetValue<int>());
         Assert.Equal("None", snapshot.Values["VolumeRoots"]!.GetValue<string>());
         Assert.False(snapshot.Values["Plugins"]!["Enabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void DelimitedKeysLoadAndSaveAsSingleNestedPaths()
+    {
+        File.WriteAllText(VestigoPaths.SettingsFilePath, """
+        {
+          "Vestigo:ListenPort": 6012,
+          "Vestigo": { "Files:MaxUploadBytes": 1234, "ExamplePlugin": { "Limits:Count": 7 } },
+          "Other:Nested": { "Enabled": true }
+        }
+        """);
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.Equal(6012, snapshot.Values["ListenPort"]!.GetValue<int>());
+        Assert.Equal(1234, snapshot.Values["Files"]!["MaxUploadBytes"]!.GetValue<long>());
+        Assert.Equal(7, snapshot.Values["ExamplePlugin"]!["Limits"]!["Count"]!.GetValue<int>());
+        _editor.Save(snapshot);
+        JsonNode saved = JsonNode.Parse(File.ReadAllText(VestigoPaths.SettingsFilePath))!;
+        Assert.Null(saved["Vestigo:ListenPort"]);
+        Assert.Null(saved["Vestigo"]!["Files:MaxUploadBytes"]);
+        Assert.True(saved["Other"]!["Nested"]!["Enabled"]!.GetValue<bool>());
+        using var stream = new MemoryStream(File.ReadAllBytes(VestigoPaths.SettingsFilePath));
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddJsonStream(stream).Build();
+        Assert.Equal("6012", configuration["Vestigo:ListenPort"]);
+    }
+
+    [Fact]
+    public void SaveRejectsConflictingUnknownPluginPathsWithoutWriting()
+    {
+        File.WriteAllText(VestigoPaths.SettingsFilePath, "{}");
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["ExamplePlugin"] = new JsonObject
+        {
+            ["Limits:Count"] = 1, ["Limits"] = new JsonObject { ["Count"] = 2 }
+        };
+        Assert.Throws<InvalidOperationException>(() => _editor.Save(snapshot));
+        Assert.Equal("{}", File.ReadAllText(VestigoPaths.SettingsFilePath));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DelimitedArrayElementFieldsPreserveUnknownValuesInEitherOrder(bool delimitedFirst)
+    {
+        JsonObject nested = new()
+        {
+            ["Roots"] = new JsonArray(new JsonObject { ["Name"] = "work", ["Path"] = _directory, ["Access"] = "Read" })
+        };
+        JsonObject document = new();
+        if (delimitedFirst) document["Vestigo:Roots:0:PluginHint"] = "preserved";
+        document["Vestigo"] = nested;
+        if (!delimitedFirst) document["Vestigo:Roots:0:PluginHint"] = "preserved";
+        File.WriteAllText(VestigoPaths.SettingsFilePath, document.ToJsonString());
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.Equal("preserved", snapshot.Values["Roots"]![0]!["PluginHint"]!.GetValue<string>());
+        _editor.Save(snapshot);
+        Assert.Equal("preserved", _editor.Load().Values["Roots"]![0]!["PluginHint"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void SaveNormalizesNewPluginPathsInTheReturnedSnapshotAndFile()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["ExamplePlugin:Limits:Count"] = 7;
+        ConfigurationSnapshot saved = _editor.Save(snapshot);
+        Assert.False(saved.Values.ContainsKey("ExamplePlugin:Limits:Count"));
+        Assert.Equal(7, saved.Values["ExamplePlugin"]!["Limits"]!["Count"]!.GetValue<int>());
+        Assert.Equal(7, _editor.Load().Values["ExamplePlugin"]!["Limits"]!["Count"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void LoadRejectsConflictingPathsOutsideVestigo()
+    {
+        File.WriteAllText(VestigoPaths.SettingsFilePath, """
+        { "Other:Count": 1, "other": { "Count": 2 } }
+        """);
+        Assert.Throws<InvalidOperationException>(() => _editor.Load());
+    }
+
+    [Fact]
+    public void DelimitedKeysCanExtendAnExistingRootsArray()
+    {
+        JsonObject document = new()
+        {
+            ["Vestigo"] = new JsonObject { ["Roots"] = new JsonArray(new JsonObject
+                { ["Name"] = "first", ["Path"] = _directory, ["Access"] = "Read" }) },
+            ["Vestigo:Roots:1"] = new JsonObject { ["Name"] = "second", ["Path"] = _directory, ["Access"] = "Read" }
+        };
+        File.WriteAllText(VestigoPaths.SettingsFilePath, document.ToJsonString());
+        _editor.Save(_editor.Load());
+        var roots = _editor.Load().Values["Roots"]!.AsArray();
+        Assert.Equal(2, roots.Count);
+        Assert.Equal("first", roots[0]!["Name"]!.GetValue<string>());
+        Assert.Equal("second", roots[1]!["Name"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ScalarAndDescendantValuesRoundTripInEitherOrder(bool scalarFirst)
+    {
+        JsonObject values = new();
+        if (scalarFirst) values["ExamplePlugin"] = "scalar";
+        values["ExamplePlugin:Limits:Count"] = 7;
+        if (!scalarFirst) values["ExamplePlugin"] = "scalar";
+        File.WriteAllText(VestigoPaths.SettingsFilePath, new JsonObject { ["Vestigo"] = values }.ToJsonString());
+        _editor.Save(_editor.Load());
+        using var stream = new MemoryStream(File.ReadAllBytes(VestigoPaths.SettingsFilePath));
+        var configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        Assert.Equal("scalar", configuration["Vestigo:ExamplePlugin"]);
+        Assert.Equal("7", configuration["Vestigo:ExamplePlugin:Limits:Count"]);
     }
 
     [Fact]
