@@ -1,5 +1,5 @@
 <MudSelect T="string" Label="@Label" Value="@_value" ValueChanged="Changed" ToStringFunc="@ConfigurationFieldMetadata.EnumDisplayLabel"
-           Variant="Variant.Outlined" Class="@Class" Error="@(_error is not null)" ErrorText="@_error" AnchorOrigin="Origin.BottomCenter">
+           Variant="Variant.Outlined" Class="@Class" Error="@(_error is not null)" ErrorText="@_error">
     @foreach (string name in _names)
     {
         <MudSelectItem T="string" Value="@name">@ConfigurationFieldMetadata.EnumDisplayLabel(name)</MudSelectItem>

@@ -5,7 +5,7 @@
     </MudItem>
     <MudItem xs="12" sm="4">
         <MudSelect T="string" Label="Duration unit" Value="_unit" ValueChanged="UnitChanged" ToStringFunc="@ConfigurationQuantity.DurationUnitLabel"
-                   Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                   Variant="Variant.Outlined">
             @foreach (string unit in ConfigurationQuantity.DurationUnits)
             {
                 <MudSelectItem T="string" Value="@unit">@ConfigurationQuantity.DurationUnitLabel(unit)</MudSelectItem>

@@ -4,7 +4,7 @@
                              Format="0.############################" Variant="Variant.Outlined" HelperText="@_helper" Error="@(_error is not null)" ErrorText="@_error" />
     </MudItem>
     <MudItem xs="12" sm="4">
-        <MudSelect T="string" Label="Size unit" Value="_unit" ValueChanged="UnitChanged" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+        <MudSelect T="string" Label="Size unit" Value="_unit" ValueChanged="UnitChanged" Variant="Variant.Outlined">
             @foreach (string unit in ConfigurationQuantity.ByteUnits)
             {
                 <MudSelectItem T="string" Value="@unit">@unit</MudSelectItem>
