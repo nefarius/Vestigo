@@ -77,8 +77,28 @@ public sealed class ConfigQuantityInput : MudNumericField<decimal>
         bool notifyUnchanged = NotifyUnchangedExplicitValue(_rejected, value, ReadValue);
         _rejected = false;
         _failure = null;
+        // Drop the failed parse before validation runs, or it is copied onto the corrected value.
+        ResetConverterErrors();
         await base.SetValueAndUpdateTextAsync(value, updateText, force);
+        // A spin that stays on the current amount, such as ArrowUp at Max, returns before MudBlazor replaces the text.
+        if (notifyUnchanged)
+            await base.UpdateTextPropertyAsync(false);
+        await ReparseAcceptedTextAsync();
         if (notifyUnchanged) await ValueChanged.InvokeAsync(value);
+    }
+
+    private async Task ReparseAcceptedTextAsync()
+    {
+        _failure = null;
+        _ = ConvertGet(ReadText);
+        if (_failure is not null || ConversionError)
+        {
+            // Keep the accepted amount when the formatted text does not round-trip.
+            _failure = null;
+            ResetConverterErrors();
+        }
+
+        await ValidateValue();
     }
 
     protected override Task UpdateTextPropertyAsync(bool updateValue)
