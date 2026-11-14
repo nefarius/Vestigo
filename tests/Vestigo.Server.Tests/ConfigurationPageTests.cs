@@ -368,6 +368,33 @@ public class ConfigurationEditorTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public void ScalarCollectionKeepsItsSparseSavedIndex(bool scalarFirst)
+    {
+        JsonObject values = new();
+        if (scalarFirst) values["Roots"] = "scalar";
+        values["Roots:5"] = new JsonObject
+        {
+            ["Name"] = "work", ["Path"] = _directory, ["Access"] = "Read", ["PluginHint"] = "preserved"
+        };
+        if (!scalarFirst) values["Roots"] = "scalar";
+        File.WriteAllText(VestigoPaths.SettingsFilePath, new JsonObject { ["Vestigo"] = values }.ToJsonString());
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.False(snapshot.Values.ContainsKey("Roots:0"));
+        Assert.Equal("work", snapshot.Values["Roots:5"]!["Name"]!.GetValue<string>());
+        Assert.Equal("preserved", snapshot.Values["Roots:5"]!["PluginHint"]!.GetValue<string>());
+        _editor.Save(snapshot);
+        using var stream = new MemoryStream(File.ReadAllBytes(VestigoPaths.SettingsFilePath));
+        var configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        Assert.Equal("scalar", configuration["Vestigo:Roots"]);
+        Assert.Equal("5", Assert.Single(configuration.GetSection("Vestigo:Roots").GetChildren()).Key);
+        ConfigurationSnapshot reloaded = _editor.Load();
+        Assert.False(reloaded.Values.ContainsKey("Roots:0"));
+        Assert.Equal("preserved", reloaded.Values["Roots:5"]!["PluginHint"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public void ModulesScalarAndDescendantKeepDefaultsAndRoundTrip(bool scalarFirst)
     {
         JsonObject values = new();

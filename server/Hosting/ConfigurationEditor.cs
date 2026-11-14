@@ -282,7 +282,21 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
                 targetObject[key] = value?.DeepClone();
             else if (value is not (JsonObject or JsonArray) && Find(targetObject, key) is JsonObject or JsonArray)
             {
-                JsonObject children = AsPathObject(Find(targetObject, key));
+                JsonObject savedChildren = Descendants(sourceObject, key);
+                JsonObject children;
+                if (Find(targetObject, key) is JsonArray bound)
+                {
+                    string[] paths = savedChildren.Select(pair => pair.Key.Split(ConfigurationPath.KeyDelimiter)[0])
+                        .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(path => path, ConfigurationKeyComparer.Instance).ToArray();
+                    // Binding compacts indexes and appends saved entries after constructor defaults.
+                    // Restore only those entries, using their original keys rather than array offsets.
+                    int offset = bound.Count - paths.Length;
+                    if (offset < 0) throw new InvalidOperationException("Bound collection does not match its saved paths.");
+                    children = new JsonObject(paths.Select((path, index) =>
+                        new KeyValuePair<string, JsonNode?>(path, bound[offset + index]?.DeepClone())));
+                }
+                else children = AsPathObject(Find(targetObject, key));
+                CopyUnknown(children, savedChildren);
                 Set(targetObject, key, value?.DeepClone());
                 foreach ((string childKey, JsonNode? child) in children)
                     Set(targetObject, key + ConfigurationPath.KeyDelimiter + childKey, child?.DeepClone());
