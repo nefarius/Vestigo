@@ -6,8 +6,9 @@
     {
         <ConfigFields Values="nested" Prefix="@path" Search="@Search" ValidityChanged="ValidityChanged" />
     }
-    else if (string.IsNullOrWhiteSpace(Search) || path.Contains(Search, StringComparison.OrdinalIgnoreCase))
+    else
     {
+        <div @key="path" hidden="@(!string.IsNullOrWhiteSpace(Search) && !path.Contains(Search, StringComparison.OrdinalIgnoreCase))">
         @if (field.Value is JsonValue value && value.TryGetValue<bool>(out bool flag))
         {
             <MudSwitch T="bool" Value="flag" ValueChanged="@(v => Set(field.Key, JsonValue.Create(v)))" Label="@path" Color="Color.Primary" />
@@ -30,15 +31,17 @@
         else
         {
             bool structured = field.Value is JsonArray or JsonObject;
-            string text = field.Value is JsonValue scalar && scalar.TryGetValue<string>(out string? s) ? s : field.Value?.ToJsonString(ConfigurationEditor.JsonOptions) ?? "";
+            string text = _drafts.TryGetValue(field.Key, out string? draft) ? draft :
+                field.Value is JsonValue scalar && scalar.TryGetValue<string>(out string? s) ? s : field.Value?.ToJsonString(ConfigurationEditor.JsonOptions) ?? "";
             <MudTextField T="string" Immediate="true" Value="@text" ValueChanged="@(v => Change(field.Key, v, field.Value))" Label="@path"
                           Lines="@(structured ? 4 : 1)" Variant="Variant.Outlined" Class="my-3"
                           InputType="@(path.Contains("Secret", StringComparison.OrdinalIgnoreCase) && !structured ? InputType.Password : InputType.Text)"
                           HelperText="@(structured ? "JSON array or object. Lists replace the existing values." : "")" />
         }
+        @if (_errors.TryGetValue(field.Key, out string? error)) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
+        </div>
     }
 }
-@if (_error is not null) { <MudAlert Severity="Severity.Error">@_error</MudAlert> }
 
 @code {
     [Parameter, EditorRequired] public JsonObject Values { get; set; } = null!;
@@ -46,10 +49,12 @@
     [Parameter] public EventCallback<(string Path, bool Valid)> ValidityChanged { get; set; }
     [Parameter] public string Prefix { get; set; } = "";
     [Parameter] public string Search { get; set; } = "";
-    private string? _error;
+    private readonly Dictionary<string, string> _drafts = [];
+    private readonly Dictionary<string, string> _errors = [];
     private void Set(string key, JsonNode? value) => Values[key] = value;
     private async Task Change(string key, string text, JsonNode? previous)
     {
+        _drafts[key] = text;
         try
         {
             JsonNode? value = previous is JsonArray or JsonObject ? JsonNode.Parse(text) :
@@ -58,12 +63,12 @@
             if (previous is JsonArray && value is not JsonArray || previous is JsonObject && value is not JsonObject ||
                 previous is JsonValue number && number.GetValueKind() == JsonValueKind.Number && value?.GetValueKind() != JsonValueKind.Number)
                 throw new JsonException();
-            Set(key, value); _error = null;
+            Set(key, value); _errors.Remove(key);
             await ValidityChanged.InvokeAsync(($"{Prefix}:{key}", true));
         }
         catch (JsonException)
         {
-            _error = $"{Prefix}:{key}: enter valid JSON of the existing type.";
+            _errors[key] = $"{Prefix}:{key}: enter valid JSON of the existing type.";
             await ValidityChanged.InvokeAsync(($"{Prefix}:{key}", false));
         }
     }

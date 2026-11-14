@@ -92,12 +92,37 @@ public class LocalConfigurationAccessTests
 public class ServiceRestartTests
 {
     [Fact]
-    public void ConsoleHostCannotRestartTheInstalledService()
+    public async Task ConsoleHostCannotRestartTheInstalledService()
     {
         var lifetime = new TestLifetime();
         var restart = new ServiceRestart(lifetime);
         Assert.False(restart.Available);
-        Assert.Throws<InvalidOperationException>(restart.Request);
+        await Assert.ThrowsAsync<InvalidOperationException>(restart.RequestAsync);
+        Assert.False(lifetime.Stopped);
+    }
+
+    [Fact]
+    public async Task FailedHelperReadinessLeavesTheHostRunningAndAllowsRetry()
+    {
+        var lifetime = new TestLifetime();
+        var restart = new ServiceRestart(lifetime);
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => restart.RequestAsync(true, () =>
+            {
+                var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
+                };
+                start.ArgumentList.Add("/d");
+                start.ArgumentList.Add("/c");
+                start.ArgumentList.Add("exit 1");
+                return System.Diagnostics.Process.Start(start)!;
+            }));
+            Assert.False(lifetime.Stopped);
+        }
+        // A failed request must not leave the normal delayed shutdown scheduled.
+        await Task.Delay(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
         Assert.False(lifetime.Stopped);
     }
 
@@ -193,6 +218,56 @@ public class ConfigurationEditorTests : IDisposable
         Assert.Equal(6010, snapshot.Values["ListenPort"]!.GetValue<int>());
         Assert.Equal("None", snapshot.Values["VolumeRoots"]!.GetValue<string>());
         Assert.False(snapshot.Values["Plugins"]!["Enabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void UserinfoCredentialsRoundTripWithNormalizedRunningOptions()
+    {
+        VestigoOptions running = new() { SymbolServer = "https://user:private-password@example.test/symbols" };
+        running.Validate();
+        File.WriteAllText(VestigoPaths.SettingsFilePath, """
+        { "Vestigo": { "SymbolServer": "https://user:private-password@example.test/symbols" } }
+        """);
+        var editor = new ConfigurationEditor(running, ModuleRegistry.All);
+        ConfigurationSnapshot snapshot = editor.Load();
+        Assert.Equal("https://example.test/symbols", snapshot.Values["SymbolServer"]!.GetValue<string>());
+        Assert.Equal("Basic", snapshot.Values["SymbolServerAuth"]!["Scheme"]!.GetValue<string>());
+        Assert.Equal("user", snapshot.Values["SymbolServerAuth"]!["Username"]!.GetValue<string>());
+        Assert.Equal("private-password", snapshot.Values["SymbolServerAuth"]!["Secret"]!.GetValue<string>());
+        editor.Save(snapshot);
+        Assert.Equal("private-password", editor.Load().Values["SymbolServerAuth"]!["Secret"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("\"InvalidAccess\"")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    public void BadCollectionElementsAreRejectedWithoutDroppingThem(string access)
+    {
+        File.WriteAllText(VestigoPaths.SettingsFilePath, "{}");
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["Roots"] = new JsonArray(new JsonObject
+        {
+            ["Name"] = "work", ["Path"] = _directory, ["Access"] = JsonNode.Parse(access)
+        });
+        Assert.Throws<InvalidOperationException>(() => _editor.Save(snapshot));
+        Assert.Equal("{}", File.ReadAllText(VestigoPaths.SettingsFilePath));
+    }
+
+    [Fact]
+    public void StrictCollectionBindingPreservesUnknownFieldsInKnownElements()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["Roots"] = new JsonArray(new JsonObject
+        {
+            ["Name"] = "work", ["Path"] = _directory, ["Access"] = "Read", ["PluginHint"] = "preserved"
+        });
+        _editor.Save(snapshot);
+        var saved = JsonNode.Parse(File.ReadAllText(VestigoPaths.SettingsFilePath))!;
+        Assert.Equal("preserved", saved["Vestigo"]!["Roots"]![0]!["PluginHint"]!.GetValue<string>());
+        _editor.Save(_editor.Load());
+        saved = JsonNode.Parse(File.ReadAllText(VestigoPaths.SettingsFilePath))!;
+        Assert.Equal("preserved", saved["Vestigo"]!["Roots"]![0]!["PluginHint"]!.GetValue<string>());
     }
 
     [Theory]

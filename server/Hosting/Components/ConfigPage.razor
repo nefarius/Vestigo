@@ -20,14 +20,15 @@
     {
         <MudTextField T="string" @bind-Value="_search" Label="Find a setting" Immediate="true" Variant="Variant.Outlined" Class="mb-4" />
         <MudExpansionPanels MultiExpansion="true" @key="_snapshot">
-            <MudExpansionPanel Text="Host, paths and capture limits" Expanded="true">
+            <MudExpansionPanel Text="Host, paths and capture limits" Expanded="true" KeepContentAlive="true">
                 <ConfigFields Values="_snapshot.Values" ScalarsOnly="true" Search="@_search" ValidityChanged="FieldValidity" />
             </MudExpansionPanel>
             @foreach (var group in _snapshot.Values)
             {
-                @if (group.Value is JsonObject children && Matches(children, group.Key))
+                @if (group.Value is JsonObject children)
                 {
-                    <MudExpansionPanel Text="@group.Key" Expanded="@(!string.IsNullOrWhiteSpace(_search))">
+                    <MudExpansionPanel @key="group.Key" Text="@group.Key" KeepContentAlive="true"
+                                       Class="@(Matches(children, group.Key) ? null : "d-none")" Expanded="@(!string.IsNullOrWhiteSpace(_search))">
                         <ConfigFields Values="children" Prefix="@group.Key" Search="@_search" ValidityChanged="FieldValidity" />
                     </MudExpansionPanel>
                 }
@@ -87,11 +88,11 @@
         catch (InvalidOperationException exception) { _message = exception.Message; _severity = Severity.Error; }
         catch { _message = "Could not save settings. Check the settings directory permissions and free disk space."; _severity = Severity.Error; }
     }
-    private void RestartService()
+    private async Task RestartService()
     {
         try
         {
-            Restart.Request(); _confirmRestart = false; _restarting = true;
+            await Restart.RequestAsync(); _confirmRestart = false; _restarting = true;
             _message = "Restart requested. Wait a few seconds, then refresh this page at the configured local address and port.";
             _severity = Severity.Info;
         }

@@ -47,7 +47,11 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
             // After a save, show the pending machine settings, including defaults for omitted properties.
             JsonObject combined = JsonSerializer.SerializeToNode(running, JsonOptions)!.AsObject();
             JsonObject? saved = Find(document, "Vestigo") as JsonObject;
-            if (saved is not null) Merge(combined, saved);
+            if (saved is not null)
+            {
+                NormalizeSavedSymbolServer(saved);
+                Merge(combined, saved);
+            }
             VestigoOptions options = Bind(new JsonObject { ["Vestigo"] = combined.DeepClone() });
             JsonObject values = JsonSerializer.SerializeToNode(options, JsonOptions)!.AsObject();
             if (saved is not null) CopyUnknown(values, saved);
@@ -98,9 +102,45 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
 
     private static VestigoOptions Bind(JsonObject document)
     {
-        using MemoryStream stream = new(Encoding.UTF8.GetBytes(document.ToJsonString()));
+        // Strict binding catches conversions that the default binder silently drops from collections.
+        // Filter only the binding copy so unknown plugin fields remain intact in the saved document.
+        JsonObject known = new() { ["Vestigo"] = KnownValues(Find(document, "Vestigo"), typeof(VestigoOptions)) };
+        using MemoryStream stream = new(Encoding.UTF8.GetBytes(known.ToJsonString()));
         IConfigurationRoot configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
-        return configuration.GetSection(VestigoOptions.SectionName).Get<VestigoOptions>() ?? new();
+        return configuration.GetSection(VestigoOptions.SectionName)
+            .Get<VestigoOptions>(options => options.ErrorOnUnknownConfiguration = true) ?? new();
+    }
+
+    private static void NormalizeSavedSymbolServer(JsonObject saved)
+    {
+        if (Find(saved, "SymbolServer")?.GetValue<string>() is not { } url ||
+            !Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || string.IsNullOrEmpty(uri.UserInfo)) return;
+        VestigoOptions options = Bind(new JsonObject { ["Vestigo"] = saved.DeepClone() });
+        options.NormalizeSymbolServer();
+        Set(saved, "SymbolServer", JsonValue.Create(options.SymbolServer));
+        JsonObject auth = Find(saved, "SymbolServerAuth") as JsonObject ?? new();
+        Merge(auth, JsonSerializer.SerializeToNode(options.SymbolServerAuth, JsonOptions)!.AsObject());
+        if (auth.Parent is null) Set(saved, "SymbolServerAuth", auth);
+    }
+
+    private static JsonNode? KnownValues(JsonNode? node, Type type)
+    {
+        if (node is JsonArray array)
+        {
+            Type? element = type.IsArray ? type.GetElementType() : type.GetInterfaces()
+                .FirstOrDefault(item => item.IsGenericType && item.GetGenericTypeDefinition() == typeof(IEnumerable<>))?.GetGenericArguments()[0];
+            return element is null ? node.DeepClone() : new JsonArray(array.Select(item => KnownValues(item, element)).ToArray());
+        }
+        if (node is not JsonObject source) return node?.DeepClone();
+        Type? dictionary = type.GetInterfaces().FirstOrDefault(item => item.IsGenericType && item.GetGenericTypeDefinition() == typeof(IDictionary<,>));
+        JsonObject result = new();
+        foreach ((string key, JsonNode? value) in source)
+        {
+            Type? valueType = dictionary?.GetGenericArguments()[1] ?? type
+                .GetProperty(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.PropertyType;
+            if (valueType is not null) result[key] = KnownValues(value, valueType);
+        }
+        return result;
     }
 
     private static string ReadFile() => File.Exists(VestigoPaths.SettingsFilePath) ? File.ReadAllText(VestigoPaths.SettingsFilePath) : "{}";
@@ -134,13 +174,21 @@ internal sealed class ConfigurationEditor(VestigoOptions running, IReadOnlyList<
             else Set(target, key, value?.DeepClone());
         }
     }
-    private static void CopyUnknown(JsonObject target, JsonObject source)
+    private static void CopyUnknown(JsonNode target, JsonNode source)
     {
-        foreach ((string key, JsonNode? value) in source)
+        if (target is JsonArray targetArray && source is JsonArray savedArray)
         {
-            if (!target.Any(pair => pair.Key.Equals(key, StringComparison.OrdinalIgnoreCase)))
-                target[key] = value?.DeepClone();
-            else if (Find(target, key) is JsonObject child && value is JsonObject saved)
+            for (int index = 0; index < Math.Min(targetArray.Count, savedArray.Count); index++)
+                if (targetArray[index] is { } child && savedArray[index] is { } saved)
+                    CopyUnknown(child, saved);
+            return;
+        }
+        if (target is not JsonObject targetObject || source is not JsonObject sourceObject) return;
+        foreach ((string key, JsonNode? value) in sourceObject)
+        {
+            if (!targetObject.Any(pair => pair.Key.Equals(key, StringComparison.OrdinalIgnoreCase)))
+                targetObject[key] = value?.DeepClone();
+            else if (Find(targetObject, key) is { } child && value is { } saved)
                 CopyUnknown(child, saved);
         }
     }
