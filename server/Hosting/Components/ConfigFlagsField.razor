@@ -1,8 +1,7 @@
 <MudSelect T="string" Label="@Label" MultiSelection="true" SelectedValues="_selected" SelectedValuesChanged="Changed"
            ToStringFunc="@ConfigurationFieldMetadata.EnumDisplayLabel" Variant="Variant.Outlined" Class="@Class" Clearable="true"
            HelperText="@(_error is null && string.IsNullOrEmpty(ExternalError) ? "Choose one or more values. Clear the selection for none." : null)"
-           Error="@(_error is not null || !string.IsNullOrEmpty(ExternalError))" ErrorText="@(_error ?? ExternalError)"
-           AnchorOrigin="Origin.BottomCenter">
+           Error="@(_error is not null || !string.IsNullOrEmpty(ExternalError))" ErrorText="@(_error ?? ExternalError)">
     @foreach (string name in _names)
     {
         <MudSelectItem T="string" Value="@name">@ConfigurationFieldMetadata.EnumDisplayLabel(name)</MudSelectItem>
