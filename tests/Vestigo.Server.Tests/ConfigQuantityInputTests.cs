@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 using Bunit;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -56,6 +58,27 @@ public class ConfigQuantityInputTests
         Assert.Equal(5m, cut.Instance.Amount);
         Assert.Equal("5", cut.Find("input").GetAttribute("value"));
         Assert.False(cut.Instance.Field.HasErrors);
+    }
+
+    [Fact]
+    public void BundledToolPathsShowTheEmptyFallback()
+    {
+        using BunitContext context = new();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+        JsonObject values = new()
+        {
+            ["Devices"] = new JsonObject { ["NefconPath"] = "" },
+            ["DebugOutput"] = new JsonObject { ["ExecutablePath"] = "" },
+            ["Logs"] = new JsonObject { ["RipgrepPath"] = "" }
+        };
+
+        IRenderedComponent<ConfigFields> cut = context.Render<ConfigFields>(parameters => parameters.Add(component => component.Values, values));
+        string text = cut.Markup;
+
+        Assert.Contains(@"tools\nefconc.exe", text);
+        Assert.Contains(@"tools\DebugViewConsole.exe", text);
+        Assert.Contains(@"tools\rg.exe", text);
     }
 
     private sealed class QuantityHost : ComponentBase

@@ -12,6 +12,23 @@ namespace Vestigo.Server.Tests;
 public class ConfigurationQuantityTests
 {
     [Theory]
+    [InlineData("Devices:NefconPath", "nefconc.exe")]
+    [InlineData("DebugOutput:ExecutablePath", "DebugViewConsole.exe")]
+    [InlineData("Logs:RipgrepPath", "rg.exe")]
+    public void BundledToolPathsExplainTheEmptyFallback(string path, string file)
+    {
+        string? hint = ConfigurationFieldMetadata.BundledExecutableHint(path);
+        Assert.Contains(file, hint);
+        Assert.Contains(@"tools\", hint);
+        Assert.Contains("Leave empty", hint);
+        Assert.Contains("Vestigo.exe", hint);
+    }
+
+    [Fact]
+    public void OtherFieldsDoNotUseTheBundledToolHint() =>
+        Assert.Null(ConfigurationFieldMetadata.BundledExecutableHint("ListenAddress"));
+
+    [Theory]
     [InlineData("None", "None")]
     [InlineData("Read", "Read")]
     [InlineData("SystemDrive", "System Drive")]

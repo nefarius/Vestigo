@@ -62,7 +62,7 @@
             <MudTextField T="string" Immediate="true" Value="@text" ValueChanged="@(value => Change(key, value, field.Value))" Label="@path"
                           Lines="@(structured ? 4 : 1)" Variant="Variant.Outlined" Class="my-3"
                           InputType="@(path.Contains("Secret", StringComparison.OrdinalIgnoreCase) && !structured ? InputType.Password : InputType.Text)"
-                          HelperText="@(structured ? "JSON value without a dedicated editor. It must stay valid JSON of the same type." : "")" />
+                          HelperText="@(structured ? "JSON value without a dedicated editor. It must stay valid JSON of the same type." : ConfigurationFieldMetadata.BundledExecutableHint(path) ?? "")" />
         }
         @if (_errors.TryGetValue(key, out string? error)) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
         </div>

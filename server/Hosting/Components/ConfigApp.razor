@@ -9,6 +9,33 @@
     <HeadOutlet />
 </head>
 <body>
+    <script>
+        window.vestigoTheme = {
+            key: "vestigo-config-theme",
+            read: function () {
+                try { return localStorage.getItem(this.key); } catch (e) { return null; }
+            },
+            write: function (value) {
+                if (value !== "dark" && value !== "light") return;
+                try { localStorage.setItem(this.key, value); } catch (e) { }
+                this.apply(value);
+            },
+            apply: function (mode) {
+                var dark = mode === "dark";
+                document.documentElement.style.colorScheme = dark ? "dark" : "light";
+                document.documentElement.style.backgroundColor = dark ? "#32333d" : "#ffffff";
+            },
+            systemDark: function () {
+                return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+            }
+        };
+        (function () {
+            var stored = window.vestigoTheme.read();
+            var mode = stored === "dark" || stored === "light" ? stored
+                : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+            window.vestigoTheme.apply(mode);
+        })();
+    </script>
     <Router AppAssembly="typeof(ConfigApp).Assembly">
         <Found Context="routeData"><RouteView RouteData="routeData" /></Found>
     </Router>

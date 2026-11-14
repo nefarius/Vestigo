@@ -56,6 +56,15 @@ internal static class ConfigurationFieldMetadata
         return true;
     }
 
+    /// <summary>Explains an empty optional path that falls back to a tool installed next to Vestigo.exe.</summary>
+    public static string? BundledExecutableHint(string path) => path switch
+    {
+        "Devices:NefconPath" => @"Leave empty to use tools\nefconc.exe next to Vestigo.exe.",
+        "DebugOutput:ExecutablePath" => @"Leave empty to use tools\DebugViewConsole.exe next to Vestigo.exe.",
+        "Logs:RipgrepPath" => @"Leave empty to use tools\rg.exe next to Vestigo.exe.",
+        _ => null
+    };
+
     /// <summary>Turns a PascalCase enum name into display text without changing the saved name.</summary>
     public static string EnumDisplayLabel(string name)
     {
