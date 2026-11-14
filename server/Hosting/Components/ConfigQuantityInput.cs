@@ -25,6 +25,10 @@ public sealed class ConfigQuantityInput : MudNumericField<decimal>
         return true;
     }
 
+    /// <summary>A spin step that keeps the retained amount still has to clear a rejected entry.</summary>
+    internal static bool NotifyUnchangedExplicitValue(bool wasRejected, decimal? requested, decimal? current) =>
+        wasRejected && requested is not null && EqualityComparer<decimal?>.Default.Equals(requested, current);
+
     protected override void OnConversionErrorOccurred(string error)
     {
         base.OnConversionErrorOccurred(error);
@@ -65,6 +69,16 @@ public sealed class ConfigQuantityInput : MudNumericField<decimal>
         _failure = null;
         _rejected = false;
         await base.OnBlurredAsync(obj);
+    }
+
+    protected override async Task SetValueAndUpdateTextAsync(decimal value, bool updateText = true, bool force = false)
+    {
+        // Spin buttons publish this value directly. Drop the rejected text so the field shows the accepted amount.
+        bool notifyUnchanged = NotifyUnchangedExplicitValue(_rejected, value, ReadValue);
+        _rejected = false;
+        _failure = null;
+        await base.SetValueAndUpdateTextAsync(value, updateText, force);
+        if (notifyUnchanged) await ValueChanged.InvokeAsync(value);
     }
 
     protected override Task UpdateTextPropertyAsync(bool updateValue)

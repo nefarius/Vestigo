@@ -66,6 +66,9 @@ public class ConfigurationQuantityTests
         Assert.False(ConfigQuantityInput.TryAcceptParsedAmount(conversionFailed: false, converted: null, out _));
         Assert.True(ConfigQuantityInput.TryAcceptParsedAmount(conversionFailed: false, converted: 1.5m, out decimal amount));
         Assert.Equal(1.5m, amount);
+        Assert.True(ConfigQuantityInput.NotifyUnchangedExplicitValue(wasRejected: true, requested: 5m, current: 5m));
+        Assert.False(ConfigQuantityInput.NotifyUnchangedExplicitValue(wasRejected: true, requested: 6m, current: 5m));
+        Assert.False(ConfigQuantityInput.NotifyUnchangedExplicitValue(wasRejected: false, requested: 5m, current: 5m));
     }
 
     [Theory]
