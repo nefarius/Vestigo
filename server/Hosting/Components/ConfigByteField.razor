@@ -1,0 +1,75 @@
+<MudGrid Spacing="2" Class="my-1">
+    <MudItem xs="12" sm="8">
+        <MudNumericField T="decimal" Immediate="true" Label="@Label" Value="_amount" ValueChanged="AmountChanged" Format="0.############################"
+                         Variant="Variant.Outlined" HelperText="@_helper" Error="@(_error is not null)" ErrorText="@_error" />
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudSelect T="string" Label="Size unit" Value="_unit" ValueChanged="UnitChanged" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+            @foreach (string unit in ConfigurationQuantity.ByteUnits)
+            {
+                <MudSelectItem T="string" Value="@unit">@unit</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public JsonNode? Value { get; set; }
+    [Parameter, EditorRequired] public Type IntegerType { get; set; } = typeof(long);
+    [Parameter] public EventCallback<JsonNode?> ValueChanged { get; set; }
+    [Parameter] public EventCallback<bool> ValidChanged { get; set; }
+    private decimal _amount;
+    private string _unit = "B";
+    private string? _error;
+    private string? _helper;
+    private bool _known;
+    private bool _valid = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!ConfigurationQuantity.TryFormatByteCount(Value, out _amount, out _unit))
+        {
+            _amount = 0;
+            _unit = "B";
+            _error = ConfigurationQuantity.ByteNumberError;
+            await SetValid(false);
+            return;
+        }
+        await Commit(write: false);
+    }
+
+    private async Task AmountChanged(decimal amount)
+    {
+        _amount = amount;
+        await Commit(write: true);
+    }
+
+    private async Task UnitChanged(string unit)
+    {
+        _unit = unit;
+        await Commit(write: true);
+    }
+
+    private async Task Commit(bool write)
+    {
+        if (!ConfigurationQuantity.TryConvertByteCount(_amount, _unit, IntegerType, out JsonValue? converted, out _error))
+        {
+            _helper = null;
+            await SetValid(false);
+            return;
+        }
+        _helper = ConfigurationQuantity.ByteSummary(ConfigurationQuantity.ReadNumber(converted!));
+        if (write) await ValueChanged.InvokeAsync(converted);
+        await SetValid(true);
+    }
+
+    private async Task SetValid(bool valid)
+    {
+        bool announce = _known || !valid;
+        if (_known && _valid == valid) return;
+        _known = true;
+        _valid = valid;
+        if (announce) await ValidChanged.InvokeAsync(valid);
+    }
+}

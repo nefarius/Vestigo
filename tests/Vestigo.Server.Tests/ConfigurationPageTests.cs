@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
@@ -474,6 +475,71 @@ public class ConfigurationEditorTests : IDisposable
         File.WriteAllText(VestigoPaths.SettingsFilePath, "{}");
         ConfigurationSnapshot snapshot = _editor.Load();
         snapshot.Values[field] = JsonNode.Parse(json);
+        Assert.Throws<InvalidOperationException>(() => _editor.Save(snapshot));
+        Assert.Equal("{}", File.ReadAllText(VestigoPaths.SettingsFilePath));
+    }
+
+    [Fact]
+    public void TypedEditorValuesRoundTripAndPreserveUnknownFields()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.True(ConfigurationQuantity.TryConvertByteCount(64, "KiB", typeof(int), out JsonValue? readBytes, out string? error), error);
+        Assert.True(ConfigurationQuantity.TryConvertByteCount(1.5m, "MiB", typeof(long), out JsonValue? outputBytes, out error), error);
+        Assert.True(ConfigurationQuantity.TryConvertDuration(1.5m, "hours", out string? retention, out error), error);
+        Assert.True(ConfigurationQuantity.TryConvertDuration(2.5m, "days", out string? spool, out error), error);
+        snapshot.Values["MaxJobReadBytes"] = readBytes;
+        snapshot.Values["MaxOutputBytes"] = outputBytes;
+        snapshot.Values["JobRetention"] = retention;
+        snapshot.Values["SpoolRetention"] = spool;
+        snapshot.Values["VolumeRootAccess"] = ConfigurationQuantity.FormatFlags(typeof(RootAccess), ["Execute", "Read"]);
+        NamedRootDraft root = new()
+        {
+            Name = "work",
+            Path = _directory,
+            Access = ["Execute", "Read"],
+            Prototype = new JsonObject { ["PluginHint"] = "kept", ["Name"] = "old", ["Path"] = "old", ["Access"] = "Read" }
+        };
+        Assert.True(ConfigurationQuantity.TryCreateNamedRoots([root], out JsonArray? roots, out _), "root");
+        snapshot.Values["Roots"] = roots;
+        string hash = new('a', 64);
+        Assert.True(ConfigurationQuantity.TryCreateStringDictionary(
+            [new StringEntryDraft { Key = "Playwright", Value = hash }], true, out JsonObject? hashes, out _), "hash");
+        snapshot.Values["Plugins"]!["PackageHashes"] = hashes;
+
+        _editor.Save(snapshot);
+        ConfigurationSnapshot loaded = _editor.Load();
+        Assert.Equal(64 * 1024, loaded.Values["MaxJobReadBytes"]!.GetValue<int>());
+        Assert.Equal(1_572_864L, loaded.Values["MaxOutputBytes"]!.GetValue<long>());
+        Assert.Equal(54_000_000_000L, TimeSpan.Parse(loaded.Values["JobRetention"]!.GetValue<string>(), CultureInfo.InvariantCulture).Ticks);
+        Assert.Equal(ConfigurationQuantity.ToCanonical(TimeSpan.FromTicks((long)(2.5m * TimeSpan.TicksPerDay))), loaded.Values["SpoolRetention"]!.GetValue<string>());
+        Assert.Equal(RootAccess.Read | RootAccess.Execute, Enum.Parse<RootAccess>(loaded.Values["VolumeRootAccess"]!.GetValue<string>()));
+        Assert.Equal("kept", loaded.Values["Roots"]![0]!["PluginHint"]!.GetValue<string>());
+        Assert.Equal("Read, Execute", loaded.Values["Roots"]![0]!["Access"]!.GetValue<string>());
+        Assert.Equal(hash, loaded.Values["Plugins"]!["PackageHashes"]!["Playwright"]!.GetValue<string>());
+        _editor.Save(loaded);
+        Assert.Equal("kept", _editor.Load().Values["Roots"]![0]!["PluginHint"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void MalformedQuantitiesRootsAndHashesDoNotOverwriteTheFile()
+    {
+        File.WriteAllText(VestigoPaths.SettingsFilePath, "{}");
+        Reject("JobRetention", JsonValue.Create("forever"));
+        Reject("MaxJobReadBytes", JsonValue.Create(-1));
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["Plugins"]!["PackageHashes"] = new JsonObject { ["plugin"] = "zz" };
+        Assert.Throws<InvalidOperationException>(() => _editor.Save(snapshot));
+        Assert.Equal("{}", File.ReadAllText(VestigoPaths.SettingsFilePath));
+        snapshot = _editor.Load();
+        snapshot.Values["Roots"] = new JsonArray(new JsonObject { ["Name"] = "work", ["Path"] = "relative", ["Access"] = "Read" });
+        Assert.Throws<InvalidOperationException>(() => _editor.Save(snapshot));
+        Assert.Equal("{}", File.ReadAllText(VestigoPaths.SettingsFilePath));
+    }
+
+    private void Reject(string field, JsonNode? value)
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values[field] = value;
         Assert.Throws<InvalidOperationException>(() => _editor.Save(snapshot));
         Assert.Equal("{}", File.ReadAllText(VestigoPaths.SettingsFilePath));
     }
