@@ -60,8 +60,8 @@ internal static class WasapiAudioFormatProbe
         }
 
         WaveFormat format = new(rate, bits, channels);
-        AudioClient client = device.AudioClient;
-        bool supported = client.IsFormatSupported(AudioClientShareMode.Shared, format, out WaveFormatExtensible closest);
+        using AudioClient client = device.CreateAudioClient();
+        bool supported = client.IsFormatSupported(AudioClientShareMode.Shared, format, out WaveFormat? closest);
         string requested = AudioProbeFormat.Describe(rate, bits, channels);
         string? closestText = closest is null ? null : AudioProbeFormat.Describe(closest.SampleRate, closest.BitsPerSample, closest.Channels);
         if (!playback || !supported)
