@@ -43,17 +43,110 @@ bool ReadU16(const BYTE*& cursor, const BYTE* end, std::uint16_t& value)
     return true;
 }
 
-bool ReadExact(HANDLE pipe, BYTE* buffer, DWORD bytes)
+struct ScopedEvent
 {
+    HANDLE handle = nullptr;
+
+    explicit ScopedEvent(HANDLE value) : handle(value) {}
+
+    ~ScopedEvent()
+    {
+        if (handle != nullptr)
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    ScopedEvent(const ScopedEvent&) = delete;
+    ScopedEvent& operator=(const ScopedEvent&) = delete;
+};
+
+bool ReadExactOverlapped(HANDLE pipe, HANDLE stopEvent, BYTE* buffer, DWORD bytes)
+{
+    ScopedEvent ioEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    if (ioEvent.handle == nullptr)
+    {
+        return false;
+    }
+
     DWORD total = 0;
     while (total < bytes)
     {
+        ResetEvent(ioEvent.handle);
+        OVERLAPPED ov{};
+        ov.hEvent = ioEvent.handle;
         DWORD read = 0;
-        if (!ReadFile(pipe, buffer + total, bytes - total, &read, nullptr) || read == 0)
+        const BOOL ok = ReadFile(pipe, buffer + total, bytes - total, &read, &ov);
+        if (!ok)
+        {
+            if (GetLastError() != ERROR_IO_PENDING)
+            {
+                return false;
+            }
+            HANDLE waits[2] = { ioEvent.handle, stopEvent };
+            const DWORD waitCount = stopEvent != nullptr ? 2u : 1u;
+            const DWORD waited = WaitForMultipleObjects(waitCount, waits, FALSE, INFINITE);
+            if (waited != WAIT_OBJECT_0)
+            {
+                CancelIoEx(pipe, &ov);
+                GetOverlappedResult(pipe, &ov, &read, TRUE);
+                return false;
+            }
+            if (!GetOverlappedResult(pipe, &ov, &read, FALSE))
+            {
+                return false;
+            }
+        }
+        if (read == 0)
         {
             return false;
         }
         total += read;
+    }
+    return true;
+}
+
+bool WriteExactOverlapped(HANDLE pipe, HANDLE stopEvent, const BYTE* buffer, DWORD bytes, DWORD timeoutMs)
+{
+    ScopedEvent ioEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    if (ioEvent.handle == nullptr)
+    {
+        return false;
+    }
+
+    DWORD total = 0;
+    while (total < bytes)
+    {
+        ResetEvent(ioEvent.handle);
+        OVERLAPPED ov{};
+        ov.hEvent = ioEvent.handle;
+        DWORD written = 0;
+        const BOOL ok = WriteFile(pipe, buffer + total, bytes - total, &written, &ov);
+        if (!ok)
+        {
+            if (GetLastError() != ERROR_IO_PENDING)
+            {
+                return false;
+            }
+            HANDLE waits[2] = { ioEvent.handle, stopEvent };
+            const DWORD waitCount = stopEvent != nullptr ? 2u : 1u;
+            const DWORD waited = WaitForMultipleObjects(waitCount, waits, FALSE, timeoutMs);
+            if (waited != WAIT_OBJECT_0)
+            {
+                CancelIoEx(pipe, &ov);
+                GetOverlappedResult(pipe, &ov, &written, TRUE);
+                return false;
+            }
+            if (!GetOverlappedResult(pipe, &ov, &written, FALSE))
+            {
+                return false;
+            }
+        }
+        if (written == 0)
+        {
+            return false;
+        }
+        total += written;
     }
     return true;
 }
@@ -110,11 +203,7 @@ void PipeClient::Stop()
         CloseHandle(thread_);
         thread_ = nullptr;
     }
-    pipe = TakePipe();
-    if (pipe != INVALID_HANDLE_VALUE)
-    {
-        CloseHandle(pipe);
-    }
+    ClosePipe();
     if (stop_ != nullptr)
     {
         CloseHandle(stop_);
@@ -172,7 +261,7 @@ bool PipeClient::ConnectAndRun()
         0,
         nullptr,
         OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
+        FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
         nullptr);
     if (pipe == INVALID_HANDLE_VALUE)
     {
@@ -186,11 +275,7 @@ bool PipeClient::ConnectAndRun()
     }
     if (!WriteFrame(vestigo::protocol::MessageType::Hello, EncodeHello(scenario_, sids_)))
     {
-        HANDLE published = TakePipe();
-        if (published != INVALID_HANDLE_VALUE)
-        {
-            CloseHandle(published);
-        }
+        ClosePipe();
         return false;
     }
 
@@ -198,7 +283,7 @@ bool PipeClient::ConnectAndRun()
     {
         vestigo::protocol::MessageType type{};
         std::vector<BYTE> payload;
-        if (!ReadFrame(type, payload))
+        if (!ReadFrame(pipe, type, payload))
         {
             break;
         }
@@ -231,11 +316,7 @@ bool PipeClient::ConnectAndRun()
         }
     }
 
-    HANDLE published = TakePipe();
-    if (published != INVALID_HANDLE_VALUE)
-    {
-        CloseHandle(published);
-    }
+    ClosePipe();
     return false;
 }
 
@@ -265,11 +346,31 @@ HANDLE PipeClient::CurrentPipe()
     return pipe_;
 }
 
+void PipeClient::ClosePipe()
+{
+    HANDLE pipe = TakePipe();
+    if (pipe == INVALID_HANDLE_VALUE)
+    {
+        return;
+    }
+    CancelIoEx(pipe, nullptr);
+    {
+        std::lock_guard writeLock(writeMutex_);
+    }
+    CloseHandle(pipe);
+}
+
 bool PipeClient::WriteFrame(
     vestigo::protocol::MessageType type,
     const std::vector<BYTE>& payload,
     std::uint64_t requiredGeneration)
 {
+    if (payload.size() > static_cast<size_t>(vestigo::protocol::kMaxPayload))
+    {
+        return false;
+    }
+
+    std::lock_guard writeLock(writeMutex_);
     HANDLE pipe = INVALID_HANDLE_VALUE;
     {
         std::lock_guard lock(mutex_);
@@ -281,45 +382,38 @@ bool PipeClient::WriteFrame(
         pipe = pipe_;
     }
 
-    if (pipe == INVALID_HANDLE_VALUE || payload.size() > vestigo::protocol::kMaxPayload)
+    if (pipe == INVALID_HANDLE_VALUE)
     {
         return false;
     }
-    BYTE header[vestigo::protocol::kHeaderSize]{};
-    header[0] = static_cast<BYTE>(vestigo::protocol::kMagic);
-    header[1] = static_cast<BYTE>(vestigo::protocol::kMagic >> 8);
-    header[2] = static_cast<BYTE>(vestigo::protocol::kMagic >> 16);
-    header[3] = static_cast<BYTE>(vestigo::protocol::kMagic >> 24);
-    header[4] = static_cast<BYTE>(vestigo::protocol::kVersion);
-    header[5] = static_cast<BYTE>(vestigo::protocol::kVersion >> 8);
-    const auto message = static_cast<std::uint16_t>(type);
-    header[6] = static_cast<BYTE>(message);
-    header[7] = static_cast<BYTE>(message >> 8);
-    const auto length = static_cast<std::int32_t>(payload.size());
-    header[8] = static_cast<BYTE>(length);
-    header[9] = static_cast<BYTE>(length >> 8);
-    header[10] = static_cast<BYTE>(length >> 16);
-    header[11] = static_cast<BYTE>(length >> 24);
 
-    DWORD written = 0;
-    if (!WriteFile(pipe, header, sizeof(header), &written, nullptr) || written != sizeof(header))
+    std::vector<BYTE> frame(vestigo::protocol::kHeaderSize + payload.size());
+    frame[0] = static_cast<BYTE>(vestigo::protocol::kMagic);
+    frame[1] = static_cast<BYTE>(vestigo::protocol::kMagic >> 8);
+    frame[2] = static_cast<BYTE>(vestigo::protocol::kMagic >> 16);
+    frame[3] = static_cast<BYTE>(vestigo::protocol::kMagic >> 24);
+    frame[4] = static_cast<BYTE>(vestigo::protocol::kVersion);
+    frame[5] = static_cast<BYTE>(vestigo::protocol::kVersion >> 8);
+    const auto message = static_cast<std::uint16_t>(type);
+    frame[6] = static_cast<BYTE>(message);
+    frame[7] = static_cast<BYTE>(message >> 8);
+    const auto length = static_cast<std::int32_t>(payload.size());
+    frame[8] = static_cast<BYTE>(length);
+    frame[9] = static_cast<BYTE>(length >> 8);
+    frame[10] = static_cast<BYTE>(length >> 16);
+    frame[11] = static_cast<BYTE>(length >> 24);
+    if (!payload.empty())
     {
-        return false;
+        std::memcpy(frame.data() + vestigo::protocol::kHeaderSize, payload.data(), payload.size());
     }
-    if (!payload.empty() &&
-        (!WriteFile(pipe, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) ||
-         written != payload.size()))
-    {
-        return false;
-    }
-    return FlushFileBuffers(pipe) != FALSE;
+
+    return WriteExactOverlapped(pipe, stop_, frame.data(), static_cast<DWORD>(frame.size()), 5000);
 }
 
-bool PipeClient::ReadFrame(vestigo::protocol::MessageType& type, std::vector<BYTE>& payload)
+bool PipeClient::ReadFrame(HANDLE pipe, vestigo::protocol::MessageType& type, std::vector<BYTE>& payload)
 {
-    HANDLE pipe = CurrentPipe();
     BYTE header[vestigo::protocol::kHeaderSize]{};
-    if (pipe == INVALID_HANDLE_VALUE || !ReadExact(pipe, header, sizeof(header)))
+    if (pipe == INVALID_HANDLE_VALUE || !ReadExactOverlapped(pipe, stop_, header, sizeof(header)))
     {
         return false;
     }
@@ -334,7 +428,7 @@ bool PipeClient::ReadFrame(vestigo::protocol::MessageType& type, std::vector<BYT
         return false;
     }
     payload.assign(static_cast<size_t>(length), 0);
-    return length == 0 || ReadExact(pipe, payload.data(), static_cast<DWORD>(length));
+    return length == 0 || ReadExactOverlapped(pipe, stop_, payload.data(), static_cast<DWORD>(length));
 }
 
 std::vector<BYTE> PipeClient::EncodeHello(

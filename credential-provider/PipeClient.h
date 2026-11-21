@@ -48,11 +48,12 @@ private:
     bool PublishPipe(HANDLE pipe);
     HANDLE TakePipe();
     HANDLE CurrentPipe();
+    void ClosePipe();
     bool WriteFrame(
         vestigo::protocol::MessageType type,
         const std::vector<BYTE>& payload,
         std::uint64_t requiredGeneration = 0);
-    bool ReadFrame(vestigo::protocol::MessageType& type, std::vector<BYTE>& payload);
+    bool ReadFrame(HANDLE pipe, vestigo::protocol::MessageType& type, std::vector<BYTE>& payload);
     static std::vector<BYTE> EncodeHello(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario, const std::vector<std::wstring>& sids);
     static bool DecodeDispatch(const std::vector<BYTE>& payload, DispatchRequest& request);
     static std::vector<BYTE> EncodeStatus(vestigo::protocol::ProviderStatus status, int win32Error, const std::wstring& message);
@@ -66,6 +67,7 @@ private:
     std::vector<std::wstring> sids_;
     DispatchCallback callback_ = nullptr;
     void* callbackContext_ = nullptr;
+    std::mutex writeMutex_;
     std::mutex mutex_;
     std::uint64_t generation_ = 0;
     bool hasDispatch_ = false;

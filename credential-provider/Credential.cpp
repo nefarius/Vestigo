@@ -52,6 +52,7 @@ void VestigoCredential::Initialize(
     userSid_ = userSid;
     pipe_ = pipe;
     generation_ = generation;
+    consumed_ = false;
 }
 
 IFACEMETHODIMP VestigoCredential::QueryInterface(REFIID riid, void** ppv)
@@ -118,7 +119,7 @@ IFACEMETHODIMP VestigoCredential::SetDeselected()
 }
 
 IFACEMETHODIMP VestigoCredential::GetFieldState(
-    DWORD,
+    DWORD field,
     CREDENTIAL_PROVIDER_FIELD_STATE* state,
     CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE* interactive)
 {
@@ -126,14 +127,22 @@ IFACEMETHODIMP VestigoCredential::GetFieldState(
     {
         return E_INVALIDARG;
     }
-    *state = CPFS_HIDDEN;
+    if (field != 0)
+    {
+        return E_INVALIDARG;
+    }
+    *state = CPFS_DISPLAY_IN_BOTH;
     *interactive = CPFIS_NONE;
     return S_OK;
 }
 
-IFACEMETHODIMP VestigoCredential::GetStringValue(DWORD, LPWSTR* value)
+IFACEMETHODIMP VestigoCredential::GetStringValue(DWORD field, LPWSTR* value)
 {
-    return CopyString(L"", value);
+    if (field != 0)
+    {
+        return E_INVALIDARG;
+    }
+    return CopyString(L"Vestigo", value);
 }
 
 IFACEMETHODIMP VestigoCredential::GetBitmapValue(DWORD, HBITMAP* bitmap)
@@ -206,6 +215,7 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
     }
 
     std::memset(serialization, 0, sizeof(*serialization));
+    consumed_ = true;
     HRESULT hr = PackInteractiveLogon(
         scenario_, domain_, userName_, password_, &serialization->rgbSerialization, &serialization->cbSerialization);
     SecureZeroMemory(password_.data(), password_.size() * sizeof(wchar_t));

@@ -2,6 +2,8 @@
 
 #include "guid.h"
 
+#include <shlwapi.h>
+
 #include <new>
 
 extern "C" void DllAddRef();
@@ -113,18 +115,39 @@ IFACEMETHODIMP VestigoProvider::GetFieldDescriptorCount(DWORD* count)
     {
         return E_INVALIDARG;
     }
-    *count = 0;
+    *count = 1;
     return S_OK;
 }
 
-IFACEMETHODIMP VestigoProvider::GetFieldDescriptorAt(DWORD, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** descriptor)
+IFACEMETHODIMP VestigoProvider::GetFieldDescriptorAt(DWORD index, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** descriptor)
 {
     if (descriptor == nullptr)
     {
         return E_INVALIDARG;
     }
     *descriptor = nullptr;
-    return E_INVALIDARG;
+    if (index != 0)
+    {
+        return E_INVALIDARG;
+    }
+    auto* allocated = static_cast<CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR*>(
+        CoTaskMemAlloc(sizeof(CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR)));
+    if (allocated == nullptr)
+    {
+        return E_OUTOFMEMORY;
+    }
+    allocated->dwFieldID = 0;
+    allocated->cpft = CPFT_LARGE_TEXT;
+    allocated->pszLabel = nullptr;
+    allocated->guidFieldType = GUID_NULL;
+    const HRESULT hr = SHStrDupW(L"Vestigo", &allocated->pszLabel);
+    if (FAILED(hr))
+    {
+        CoTaskMemFree(allocated);
+        return hr;
+    }
+    *descriptor = allocated;
+    return S_OK;
 }
 
 IFACEMETHODIMP VestigoProvider::GetCredentialCount(DWORD* count, DWORD* defaultIndex, BOOL* autoLogonWithDefault)
@@ -135,7 +158,7 @@ IFACEMETHODIMP VestigoProvider::GetCredentialCount(DWORD* count, DWORD* defaultI
     }
 
     ApplyDispatch();
-    if (!hasCredential_)
+    if (!hasCredential_ || credential_ == nullptr || credential_->Consumed())
     {
         *count = 0;
         *defaultIndex = CREDENTIAL_PROVIDER_NO_DEFAULT;
@@ -157,7 +180,7 @@ IFACEMETHODIMP VestigoProvider::GetCredentialAt(DWORD index, ICredentialProvider
     }
     *credential = nullptr;
     ApplyDispatch();
-    if (index != 0 || credential_ == nullptr)
+    if (index != 0 || credential_ == nullptr || credential_->Consumed())
     {
         return E_INVALIDARG;
     }
@@ -219,18 +242,18 @@ void VestigoProvider::ApplyDispatch()
         return;
     }
 
-    if (scenario_ == CPUS_UNLOCK_WORKSTATION && !request.targetSid.empty())
+    std::wstring matchedSid;
+    if (!request.targetSid.empty())
     {
-        bool match = false;
         for (const std::wstring& sid : sids_)
         {
             if (_wcsicmp(sid.c_str(), request.targetSid.c_str()) == 0)
             {
-                match = true;
+                matchedSid = sid;
                 break;
             }
         }
-        if (!match)
+        if (scenario_ == CPUS_UNLOCK_WORKSTATION && matchedSid.empty())
         {
             pipe_.Report(vestigo::protocol::ProviderStatus::Failed, ERROR_NO_SUCH_USER, L"sid_mismatch", request.generation);
             SecureZeroMemory(request.password.data(), request.password.size() * sizeof(wchar_t));
@@ -255,7 +278,7 @@ void VestigoProvider::ApplyDispatch()
         request.userName,
         request.domain,
         std::move(request.password),
-        request.targetSid,
+        matchedSid,
         &pipe_,
         request.generation);
     hasCredential_ = true;
