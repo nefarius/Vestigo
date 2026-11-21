@@ -36,7 +36,8 @@ public:
         void* context);
     void Stop();
     bool TryTakeDispatch(DispatchRequest& request);
-    void Report(
+    bool IsGenerationActive(std::uint64_t generation) const;
+    bool Report(
         vestigo::protocol::ProviderStatus status,
         int win32Error,
         const std::wstring& message,
@@ -68,7 +69,7 @@ private:
     DispatchCallback callback_ = nullptr;
     void* callbackContext_ = nullptr;
     std::mutex writeMutex_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::uint64_t generation_ = 0;
     bool hasDispatch_ = false;
     DispatchRequest dispatch_{};

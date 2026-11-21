@@ -158,7 +158,7 @@ IFACEMETHODIMP VestigoProvider::GetCredentialCount(DWORD* count, DWORD* defaultI
     }
 
     ApplyDispatch();
-    if (!hasCredential_ || credential_ == nullptr || credential_->Consumed())
+    if (!hasCredential_ || credential_ == nullptr || !credential_->IsAvailable())
     {
         *count = 0;
         *defaultIndex = CREDENTIAL_PROVIDER_NO_DEFAULT;
@@ -180,7 +180,7 @@ IFACEMETHODIMP VestigoProvider::GetCredentialAt(DWORD index, ICredentialProvider
     }
     *credential = nullptr;
     ApplyDispatch();
-    if (index != 0 || credential_ == nullptr || credential_->Consumed())
+    if (index != 0 || credential_ == nullptr || !credential_->IsAvailable())
     {
         return E_INVALIDARG;
     }

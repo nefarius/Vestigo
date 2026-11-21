@@ -228,13 +228,19 @@ bool PipeClient::TryTakeDispatch(DispatchRequest& request)
     return true;
 }
 
-void PipeClient::Report(
+bool PipeClient::IsGenerationActive(std::uint64_t generation) const
+{
+    std::lock_guard lock(mutex_);
+    return pipe_ != INVALID_HANDLE_VALUE && generation != 0 && generation_ == generation;
+}
+
+bool PipeClient::Report(
     vestigo::protocol::ProviderStatus status,
     int win32Error,
     const std::wstring& message,
     std::uint64_t generation)
 {
-    WriteFrame(vestigo::protocol::MessageType::Status, EncodeStatus(status, win32Error, message), generation);
+    return WriteFrame(vestigo::protocol::MessageType::Status, EncodeStatus(status, win32Error, message), generation);
 }
 
 void PipeClient::Worker()
@@ -279,6 +285,7 @@ bool PipeClient::ConnectAndRun()
         return false;
     }
 
+    bool dispatchedOnConnection = false;
     while (WaitForSingleObject(stop_, 0) != WAIT_OBJECT_0)
     {
         vestigo::protocol::MessageType type{};
@@ -310,6 +317,7 @@ bool PipeClient::ConnectAndRun()
             dispatch_.generation = generation_;
             hasDispatch_ = true;
         }
+        dispatchedOnConnection = true;
         if (callback_ != nullptr)
         {
             callback_(callbackContext_);
@@ -317,6 +325,11 @@ bool PipeClient::ConnectAndRun()
     }
 
     ClosePipe();
+    if (dispatchedOnConnection && callback_ != nullptr &&
+        (stop_ == nullptr || WaitForSingleObject(stop_, 0) != WAIT_OBJECT_0))
+    {
+        callback_(callbackContext_);
+    }
     return false;
 }
 
@@ -337,6 +350,9 @@ HANDLE PipeClient::TakePipe()
     std::lock_guard lock(mutex_);
     HANDLE pipe = pipe_;
     pipe_ = INVALID_HANDLE_VALUE;
+    SecureZeroMemory(dispatch_.password.data(), dispatch_.password.size() * sizeof(wchar_t));
+    dispatch_ = {};
+    hasDispatch_ = false;
     return pipe;
 }
 

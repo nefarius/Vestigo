@@ -215,6 +215,14 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
     }
 
     std::memset(serialization, 0, sizeof(*serialization));
+    if (!IsAvailable())
+    {
+        consumed_ = true;
+        SecureZeroMemory(password_.data(), password_.size() * sizeof(wchar_t));
+        password_.clear();
+        *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        return HRESULT_FROM_WIN32(ERROR_CANCELLED);
+    }
     consumed_ = true;
     HRESULT hr = PackInteractiveLogon(
         scenario_, domain_, userName_, password_, &serialization->rgbSerialization, &serialization->cbSerialization);
@@ -234,6 +242,7 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
     hr = RetrieveNegotiateAuthPackage(&authPackage);
     if (FAILED(hr))
     {
+        SecureZeroMemory(serialization->rgbSerialization, serialization->cbSerialization);
         CoTaskMemFree(serialization->rgbSerialization);
         serialization->rgbSerialization = nullptr;
         serialization->cbSerialization = 0;
@@ -245,13 +254,19 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
         return hr;
     }
 
+    if (pipe_ == nullptr || !pipe_->Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"", generation_))
+    {
+        SecureZeroMemory(serialization->rgbSerialization, serialization->cbSerialization);
+        CoTaskMemFree(serialization->rgbSerialization);
+        serialization->rgbSerialization = nullptr;
+        serialization->cbSerialization = 0;
+        *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        return HRESULT_FROM_WIN32(ERROR_CANCELLED);
+    }
+
     serialization->ulAuthenticationPackage = authPackage;
     serialization->clsidCredentialProvider = CLSID_VestigoCredentialProvider;
     *response = CPGSR_RETURN_CREDENTIAL_FINISHED;
-    if (pipe_ != nullptr)
-    {
-        pipe_->Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"", generation_);
-    }
     return S_OK;
 }
 
@@ -284,4 +299,9 @@ IFACEMETHODIMP VestigoCredential::GetUserSid(LPWSTR* sid)
         return S_FALSE;
     }
     return CopyString(userSid_, sid);
+}
+
+bool VestigoCredential::IsAvailable() const
+{
+    return !consumed_ && pipe_ != nullptr && pipe_->IsGenerationActive(generation_);
 }

@@ -91,26 +91,15 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                     "LogonUI is not attached to the active console session.");
             }
 
-            string? targetSid = !string.IsNullOrWhiteSpace(expectedSid)
-                ? expectedSid
-                : ResolveUserSid(userName, domain);
-
-            if (peer.Hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
-                !string.IsNullOrWhiteSpace(targetSid) &&
-                !peer.Hello.UserSids.Contains(targetSid, StringComparer.OrdinalIgnoreCase))
-            {
-                return OperationResult<string>.Fail(
-                    "sid_mismatch",
-                    "The unlock target is not one of the users on the lock screen.");
-            }
-
-            (OperationResult<string> result, bool dropPeer) = await ExchangeDispatchAsync(
+            (OperationResult<string> result, bool dropPeer) = await DispatchToStreamAsync(
                 peer.Pipe,
+                peer.Hello,
                 userName,
                 domain,
                 password,
-                targetSid,
+                expectedSid,
                 DefaultDispatchTimeout,
+                ResolveUserSid,
                 _logger,
                 cancellationToken).ConfigureAwait(false);
             if (dropPeer)
@@ -126,7 +115,7 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         }
     }
 
-    internal static async Task<(OperationResult<string> Result, bool DropPeer)> ExchangeDispatchAsync(
+    internal static Task<(OperationResult<string> Result, bool DropPeer)> ExchangeDispatchAsync(
         Stream stream,
         string userName,
         string? domain,
@@ -134,16 +123,58 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         string? targetSid,
         TimeSpan timeout,
         ILogger? logger,
+        CancellationToken cancellationToken) =>
+        DispatchToStreamAsync(
+            stream,
+            new CredentialProviderProtocol.HelloMessage(CredentialProviderProtocol.UsageScenario.Logon, 0, []),
+            userName,
+            domain,
+            password,
+            targetSid,
+            timeout,
+            static (_, _) => null,
+            logger,
+            cancellationToken);
+
+    internal static async Task<(OperationResult<string> Result, bool DropPeer)> DispatchToStreamAsync(
+        Stream stream,
+        CredentialProviderProtocol.HelloMessage hello,
+        string userName,
+        string? domain,
+        char[] password,
+        string? expectedSid,
+        TimeSpan timeout,
+        Func<string, string?, string?> sidResolver,
+        ILogger? logger,
         CancellationToken cancellationToken)
     {
         byte[] payload = [];
+        bool sentDispatch = false;
         using CancellationTokenSource dispatchCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         dispatchCts.CancelAfter(timeout);
         CancellationToken token = dispatchCts.Token;
 
         try
         {
+            string? targetSid = !string.IsNullOrWhiteSpace(expectedSid)
+                ? expectedSid
+                : await ResolveUserSidAsync(userName, domain, sidResolver, token).ConfigureAwait(false);
+
+            token.ThrowIfCancellationRequested();
+
+            if (hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
+                !string.IsNullOrWhiteSpace(targetSid) &&
+                !hello.UserSids.Contains(targetSid, StringComparer.OrdinalIgnoreCase))
+            {
+                return (
+                    OperationResult<string>.Fail(
+                        "sid_mismatch",
+                        "The unlock target is not one of the users on the lock screen."),
+                    false);
+            }
+
             payload = CredentialProviderProtocol.EncodeDispatch(userName, domain ?? "", password, targetSid);
+            sentDispatch = true;
             await WriteFrameAsync(stream, CredentialProviderProtocol.MessageType.Dispatch, payload, token)
                 .ConfigureAwait(false);
             CredentialProviderProtocol.Frame frame = await ReadFrameAsync(stream, token).ConfigureAwait(false);
@@ -170,14 +201,22 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return (OperationResult<string>.Fail("cancelled", "The interactive logon was cancelled."), true);
+            return (OperationResult<string>.Fail("cancelled", "The interactive logon was cancelled."), sentDispatch);
         }
         catch (OperationCanceledException)
         {
-            logger?.LogWarning("Credential Provider timed out waiting for dispatch reply after {TimeoutSeconds}s.", timeout.TotalSeconds);
+            if (sentDispatch)
+            {
+                logger?.LogWarning("Credential Provider timed out waiting for dispatch reply after {TimeoutSeconds}s.", timeout.TotalSeconds);
+                return (
+                    OperationResult<string>.Fail("logon_failed", "LogonUI did not respond before the dispatch timed out."),
+                    true);
+            }
+
+            logger?.LogWarning("Account SID resolution timed out before dispatch after {TimeoutSeconds}s.", timeout.TotalSeconds);
             return (
-                OperationResult<string>.Fail("logon_failed", "LogonUI did not respond before the dispatch timed out."),
-                true);
+                OperationResult<string>.Fail("logon_failed", "Account SID resolution timed out before dispatch."),
+                false);
         }
         catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
@@ -193,6 +232,33 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         {
             CryptographicOperations.ZeroMemory(payload);
         }
+    }
+
+    internal static async Task<string?> ResolveUserSidAsync(
+        string userName,
+        string? domain,
+        Func<string, string?, string?> resolver,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Task<string?> lookup = Task.Run(() =>
+        {
+            try
+            {
+                return resolver(userName, domain);
+            }
+            catch (Exception exception) when (exception is IdentityNotMappedException or SystemException or ArgumentException)
+            {
+                return null;
+            }
+        }, CancellationToken.None);
+
+        return await lookup.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static string? ResolveUserSid(string userName, string? domain)

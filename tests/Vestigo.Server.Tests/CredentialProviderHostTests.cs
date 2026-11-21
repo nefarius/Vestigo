@@ -263,6 +263,115 @@ public class CredentialProviderHostTests
         }
     }
 
+    [Fact]
+    public async Task DispatchToStreamAsync_TimesOutSlowSidResolution_WithoutWritingCredentials()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using ManualResetEventSlim releaseLookup = new(false);
+        (DuplexTestStream serverSide, DuplexTestStream clientSide) = DuplexTestStream.CreatePair();
+        using (serverSide)
+        using (clientSide)
+        {
+            try
+            {
+                (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.DispatchToStreamAsync(
+                    serverSide,
+                    new CredentialProviderProtocol.HelloMessage(CredentialProviderProtocol.UsageScenario.Logon, 1, []),
+                    "Administrator",
+                    "CORP",
+                    "pw".ToCharArray(),
+                    expectedSid: null,
+                    TimeSpan.FromMilliseconds(100),
+                    (_, _) =>
+                    {
+                        releaseLookup.Wait(TimeSpan.FromSeconds(5));
+                        return "S-1-5-21-1-2-3-500";
+                    },
+                    NullLogger.Instance,
+                    ct);
+
+                Assert.False(result.Success);
+                Assert.Equal("logon_failed", result.ErrorCode);
+                Assert.Contains("timed out", result.Error, StringComparison.OrdinalIgnoreCase);
+                Assert.False(dropPeer);
+                Assert.Equal(0, serverSide.WritesCount);
+            }
+            finally
+            {
+                releaseLookup.Set();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DispatchToStreamAsync_CancelsSlowSidResolution_WithoutWritingCredentials()
+    {
+        using ManualResetEventSlim releaseLookup = new(false);
+        using CancellationTokenSource cts = new(TimeSpan.FromMilliseconds(80));
+        (DuplexTestStream serverSide, DuplexTestStream clientSide) = DuplexTestStream.CreatePair();
+        using (serverSide)
+        using (clientSide)
+        {
+            try
+            {
+                (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.DispatchToStreamAsync(
+                    serverSide,
+                    new CredentialProviderProtocol.HelloMessage(CredentialProviderProtocol.UsageScenario.Logon, 1, []),
+                    "Administrator",
+                    "CORP",
+                    "pw".ToCharArray(),
+                    expectedSid: null,
+                    TimeSpan.FromSeconds(10),
+                    (_, _) =>
+                    {
+                        releaseLookup.Wait(TimeSpan.FromSeconds(5));
+                        return "S-1-5-21-1-2-3-500";
+                    },
+                    NullLogger.Instance,
+                    cts.Token);
+
+                Assert.False(result.Success);
+                Assert.Equal("cancelled", result.ErrorCode);
+                Assert.False(dropPeer);
+                Assert.Equal(0, serverSide.WritesCount);
+            }
+            finally
+            {
+                releaseLookup.Set();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DispatchToStreamAsync_RejectsUnlockSidMismatch_FromResolvedSid_WithoutWritingCredentials()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        (DuplexTestStream serverSide, DuplexTestStream clientSide) = DuplexTestStream.CreatePair();
+        using (serverSide)
+        using (clientSide)
+        {
+            (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.DispatchToStreamAsync(
+                serverSide,
+                new CredentialProviderProtocol.HelloMessage(
+                    CredentialProviderProtocol.UsageScenario.Unlock,
+                    1,
+                    ["S-1-5-21-1-2-3-1001"]),
+                "Administrator",
+                "TESTBOX",
+                "pw".ToCharArray(),
+                expectedSid: null,
+                TimeSpan.FromSeconds(5),
+                (_, _) => "S-1-5-21-1-2-3-500",
+                NullLogger.Instance,
+                ct);
+
+            Assert.False(result.Success);
+            Assert.Equal("sid_mismatch", result.ErrorCode);
+            Assert.False(dropPeer);
+            Assert.Equal(0, serverSide.WritesCount);
+        }
+    }
+
     private static async Task AssertStatusMappingAsync(
         CredentialProviderProtocol.StatusMessage status,
         string expectedErrorCode,
@@ -309,6 +418,9 @@ public class CredentialProviderHostTests
         private byte[] _pending = [];
         private int _pendingOffset;
         private bool _disposed;
+        private int _writesCount;
+
+        public int WritesCount => Volatile.Read(ref _writesCount);
 
         private DuplexTestStream(ChannelReader<byte[]> incoming, ChannelWriter<byte[]> outgoing)
         {
@@ -373,6 +485,7 @@ public class CredentialProviderHostTests
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            Interlocked.Increment(ref _writesCount);
             byte[] copy = buffer.ToArray();
             if (!_outgoing.TryWrite(copy))
             {

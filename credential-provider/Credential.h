@@ -63,7 +63,7 @@ public:
     IFACEMETHODIMP GetUserSid(LPWSTR* sid) override;
 
     NTSTATUS LastStatus() const { return lastStatus_; }
-    bool Consumed() const { return consumed_; }
+    bool IsAvailable() const;
 
 private:
     LONG refs_ = 1;
