@@ -39,6 +39,12 @@ Requests cancellation of a running job. Process jobs kill their process tree.
 | --- | --- | --- | --- | --- |
 | `jobId` | `string` | yes |  | Job identifier. |
 
+## `cancel_reboot`
+
+Aborts a pending reboot countdown started by reboot_machine or another InitiateShutdown caller. Requires Vestigo:System:AllowReboot. Fails with no_reboot_in_progress when nothing is pending. An immediate reboot that has already started cannot be cancelled. Local machine only.
+
+No parameters.
+
 ## `capture_process_dump`
 
 Writes a minidump of one process as a job. Requires Vestigo:Diagnostics:AllowProcessDumps. output is a new .dmp file in a root with Write access. expectedStartTime, from list_processes, is required and is checked again immediately before the write. dumpType mini writes a small snapshot. dumpType full writes process memory and can contain credentials that were in the process. The dump runs as the Vestigo service. Protected processes and a fixed refusal list are rejected. The output volume must keep Vestigo:Diagnostics:MinDumpFreeBytes free after reserving Vestigo:Diagnostics:MaxDumpBytes. A dump over that cap is deleted. Vestigo does not upload the file and does not create a download ticket. wait > 0 waits that many seconds. The job output is a status line, never dump bytes.
@@ -1214,6 +1220,18 @@ Reads window-event records after afterSequence. waitSeconds long-polls for new r
 | `afterSequence` | `long` | no | `0` | Return records with a sequence greater than this value. |
 | `limit` | `int?` | no | `null` | Maximum records, clamped to Vestigo:MaxReadBatch. |
 | `waitSeconds` | `double` | no | `0` | Seconds to wait for new records, up to Vestigo:MaxReadWait. |
+
+## `reboot_machine`
+
+Restarts this machine with InitiateShutdown SHUTDOWN_RESTART. Requires Vestigo:System:AllowReboot. delaySeconds 0 is immediate (MCP clients drop); 1..315360000 is a cancellable countdown. force closes other apps without prompting and loses unsaved work. planned marks the shutdown reason. message is shown during a countdown, at most 512 characters, no control characters. dryRun returns the plan without calling Windows. Local machine only. Never logs the message.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `delaySeconds` | `int` | no | `0` | Seconds to wait. 0 restarts immediately. Maximum 315360000 (ten years). |
+| `force` | `bool` | no | `false` | Close applications without prompting. Unsaved work is lost. |
+| `message` | `string` | no | `null` | Countdown text shown to logged-on users. At most 512 characters. No control characters. |
+| `planned` | `bool` | no | `true` | Mark the shutdown reason as planned. Default true. |
+| `dryRun` | `bool` | no | `false` | Return the planned reboot without calling Windows. |
 
 ## `remove_class_filter`
 

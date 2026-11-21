@@ -140,6 +140,11 @@ public static class ModuleRegistry
             capabilities.Add("UAC changes");
         }
 
+        if (options.System.AllowReboot && enabled.Any(module => module.Name == "System"))
+        {
+            capabilities.Add("Machine reboot");
+        }
+
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
         {
             capabilities.Add("Self-update");

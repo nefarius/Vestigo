@@ -1,5 +1,7 @@
 using System.Security;
 
+using Microsoft.Extensions.Logging;
+
 using Vestigo.Configuration;
 
 namespace Vestigo.SystemInfo;
@@ -52,8 +54,13 @@ public sealed record UacChange(
     string? After,
     bool RebootRequired);
 
-/// <summary>Validates and maps host OS and boot-security probes. Never reboots the machine.</summary>
-public sealed class SystemService(ISystemPlatform platform, VestigoOptions options, IBootStatePlatform? boot = null)
+/// <summary>Validates and maps host OS, boot-security, UAC, and opt-in reboot operations.</summary>
+public sealed class SystemService(
+    ISystemPlatform platform,
+    VestigoOptions options,
+    IBootStatePlatform? boot = null,
+    IRebootPlatform? reboot = null,
+    ILogger<SystemService>? logger = null)
 {
     public OperationResult<SystemInfoResult> GetSystemInfo()
     {
@@ -243,6 +250,147 @@ public sealed class SystemService(ISystemPlatform platform, VestigoOptions optio
             before is null ? null : MapUacLevel(before),
             after is null ? null : MapUacLevel(after),
             UacRebootRequired(before, after)));
+    }
+
+    public OperationResult<RebootResult> RebootMachine(
+        int delaySeconds = 0,
+        bool force = false,
+        string? message = null,
+        bool planned = true,
+        bool dryRun = false,
+        DateTimeOffset? utcNow = null)
+    {
+        if (!options.System.AllowReboot)
+        {
+            return OperationResult<RebootResult>.Fail(
+                "reboot_disabled",
+                "Rebooting is disabled. Set Vestigo:System:AllowReboot to true.");
+        }
+
+        if (delaySeconds is < RebootPolicy.MinDelaySeconds or > RebootPolicy.MaxDelaySeconds)
+        {
+            return OperationResult<RebootResult>.Fail(
+                "invalid_delay",
+                "delaySeconds must be between 0 and 315360000.");
+        }
+
+        if (!RebootPolicy.TryNormalizeMessage(message, out string? normalized, out string messageError))
+        {
+            return OperationResult<RebootResult>.Fail("invalid_message", messageError);
+        }
+
+        string mode = RebootPolicy.Mode(delaySeconds);
+        DateTimeOffset scheduledAt = (utcNow ?? DateTimeOffset.UtcNow).AddSeconds(delaySeconds);
+        IReadOnlyList<string> notes = RebootNotes(mode, force, dryRun);
+        if (dryRun)
+        {
+            logger?.LogInformation(
+                "reboot_machine dryRun {Mode} delay {DelaySeconds} force {Force} planned {Planned}",
+                mode,
+                delaySeconds,
+                force,
+                planned);
+            return OperationResult<RebootResult>.Ok(new RebootResult(
+                mode,
+                delaySeconds,
+                force,
+                planned,
+                normalized,
+                scheduledAt,
+                true,
+                notes));
+        }
+
+        if (reboot is null)
+        {
+            return OperationResult<RebootResult>.Fail("reboot_failed", "Reboot support is not available.");
+        }
+
+        RebootPlatformOutcome outcome = reboot.InitiateReboot((uint)delaySeconds, force, planned, normalized);
+        logger?.LogInformation(
+            "reboot_machine {Mode} delay {DelaySeconds} force {Force} planned {Planned} success {Success} stage {Stage} win32 {Win32Error}",
+            mode,
+            delaySeconds,
+            force,
+            planned,
+            outcome.Success,
+            outcome.Stage,
+            outcome.Win32Error);
+        if (!outcome.Success)
+        {
+            (string code, string error) = outcome.Stage == "windows_required"
+                ? ("reboot_failed", "Windows is required.")
+                : RebootPolicy.MapInitiateError(outcome.Win32Error);
+            return OperationResult<RebootResult>.Fail(code, error);
+        }
+
+        return OperationResult<RebootResult>.Ok(new RebootResult(
+            mode,
+            delaySeconds,
+            force,
+            planned,
+            normalized,
+            scheduledAt,
+            false,
+            notes));
+    }
+
+    public OperationResult<CancelRebootResult> CancelReboot()
+    {
+        if (!options.System.AllowReboot)
+        {
+            return OperationResult<CancelRebootResult>.Fail(
+                "reboot_disabled",
+                "Cancelling a reboot is disabled. Set Vestigo:System:AllowReboot to true.");
+        }
+
+        if (reboot is null)
+        {
+            return OperationResult<CancelRebootResult>.Fail("cancel_reboot_failed", "Reboot support is not available.");
+        }
+
+        RebootPlatformOutcome outcome = reboot.AbortReboot();
+        logger?.LogInformation(
+            "cancel_reboot success {Success} stage {Stage} win32 {Win32Error}",
+            outcome.Success,
+            outcome.Stage,
+            outcome.Win32Error);
+        if (!outcome.Success)
+        {
+            (string code, string error) = outcome.Stage == "windows_required"
+                ? ("cancel_reboot_failed", "Windows is required.")
+                : RebootPolicy.MapAbortError(outcome.Win32Error);
+            return OperationResult<CancelRebootResult>.Fail(code, error);
+        }
+
+        return OperationResult<CancelRebootResult>.Ok(
+            new CancelRebootResult(true, ["The pending reboot countdown was cancelled."]));
+    }
+
+    internal static IReadOnlyList<string> RebootNotes(string mode, bool force, bool dryRun)
+    {
+        List<string> notes = [];
+        if (mode == RebootPolicy.Immediate)
+        {
+            notes.Add("The reboot starts immediately; MCP clients disconnect as the machine restarts.");
+        }
+        else
+        {
+            notes.Add("Windows shows a countdown. cancel_reboot can abort it before the delay expires.");
+        }
+
+        if (force)
+        {
+            notes.Add("force closes applications without prompting; unsaved work is lost.");
+        }
+
+        notes.Add("This is a full restart, not Fast Startup or hybrid shutdown.");
+        if (dryRun)
+        {
+            notes.Add("dryRun did not call Windows.");
+        }
+
+        return notes;
     }
 
     internal static bool UacRebootRequired(UacSettings? before, UacSettings? after) =>

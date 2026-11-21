@@ -44,6 +44,7 @@ Even after a module is on, these actions stay off until their own setting is tru
 - `Audio:AllowSetDefault`
 - `System:AllowBootConfigurationChanges`
 - `System:AllowUacChanges`
+- `System:AllowReboot`
 - `Updates:AllowSelfUpdate`
 - `Diagnostics:AllowOnlineRevocation`
 - `Diagnostics:AllowCaptureProbes`
