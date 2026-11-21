@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Vestigo.Configuration;
 using Vestigo.Hosting;
+using Vestigo.Installer.Actions.Logic;
 using Vestigo.Modules;
 
 namespace Vestigo.Server.Tests;
@@ -411,6 +412,52 @@ public class ConfigurationEditorTests : IDisposable
         ConfigurationSnapshot reloaded = _editor.Load();
         Assert.Equal("scalar", reloaded.Values["Modules"]!.GetValue<string>());
         Assert.True(reloaded.Values["Modules:Trace"]!["Enabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void SystemAllowRebootRoundTripsThroughTheEditor()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.False(snapshot.Values["System"]!["AllowReboot"]!.GetValue<bool>());
+        snapshot.Values["System"]!["AllowReboot"] = true;
+        _editor.Save(snapshot);
+        ConfigurationSnapshot loaded = _editor.Load();
+        Assert.True(loaded.Values["System"]!["AllowReboot"]!.GetValue<bool>());
+        using var stream = new MemoryStream(File.ReadAllBytes(VestigoPaths.SettingsFilePath));
+        var configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        VestigoOptions options = new();
+        configuration.GetSection("Vestigo").Bind(options);
+        Assert.True(options.System.AllowReboot);
+    }
+
+    [Fact]
+    public void SystemAllowRebootLoadsFromMsiWrittenSettings()
+    {
+        File.WriteAllText(VestigoPaths.SettingsFilePath, """
+        { "Vestigo": { "System": { "AllowBootConfigurationChanges": false, "AllowUacChanges": false, "AllowReboot": true } } }
+        """);
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.True(snapshot.Values["System"]!["AllowReboot"]!.GetValue<bool>());
+        Assert.False(snapshot.Values["System"]!["AllowUacChanges"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void SystemAllowRebootUiSaveSurvivesUnselectedUpgradeMerge()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["System"]!["AllowReboot"] = true;
+        _editor.Save(snapshot);
+        string existing = File.ReadAllText(VestigoPaths.SettingsFilePath);
+        string merged = ListenSettings.Merge(
+            existing,
+            new ResolvedSettings(ListenSettings.ListenAny, ListenSettings.AuthNone, 5098, string.Empty, null),
+            new Dictionary<string, bool> { ["System"] = true });
+        Assert.True(ModuleSelection.ReadExisting(merged)["SystemReboot"]);
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(merged));
+        var configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        VestigoOptions options = new();
+        configuration.GetSection("Vestigo").Bind(options);
+        Assert.True(options.System.AllowReboot);
     }
 
     [Fact]

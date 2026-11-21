@@ -127,6 +127,7 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `SymbolServerAuth:SecretFile` | `null` |
 | `SymbolServerAuth:Username` | `null` |
 | `System:AllowBootConfigurationChanges` | `false` |
+| `System:AllowReboot` | `false` |
 | `System:AllowUacChanges` | `false` |
 | `Updates:AllowSelfUpdate` | `false` |
 | `VolumeRootAccess` | `Read, Write, Execute` |

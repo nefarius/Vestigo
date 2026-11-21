@@ -13,10 +13,10 @@ Point an MCP client at a lab PC and let the agent do the install, capture, and a
 
 1. Put the driver package (INF plus the files beside it) in a named root that has `Read` access.
 2. Create the ROOT node and install the driver in one of two ways: `create_device_node` with the class name, class GUID, and a hardware ID such as `Root\MyDriver`, then `install_driver` with the INF path; or one `install_driver` call with the INF path and that `hardwareId`, which creates the node and installs the driver.
-3. `find_devices_by_hardware_id` to get the instance ID, then `restart_device` so the stack is rebuilt. If the result says `rebootRequired`, reboot yourself; Vestigo never triggers one.
+3. `find_devices_by_hardware_id` to get the instance ID, then `restart_device` so the stack is rebuilt. If the result says `rebootRequired`, call `reboot_machine` when `System:AllowReboot` is true, or restart the PC yourself. Device tools do not reboot on their own.
 4. Iterate by installing again with `noDuplicates`, then restarting the device. Tear down with `uninstall_driver`, `remove_device_node`, and `remove_driver_store_package` so old packages do not accumulate.
 
-Test-signing allows test-signed drivers to load; it does not allow unsigned drivers. `get_boot_security` shows the BCD value and the running kernel state. `set_test_signing` writes the default boot entry only when `System:AllowBootConfigurationChanges` is true, and it is refused while Secure Boot is on. Restart the PC after `set_test_signing` and before installing or loading the driver.
+Test-signing allows test-signed drivers to load; it does not allow unsigned drivers. `get_boot_security` shows the BCD value and the running kernel state. `set_test_signing` writes the default boot entry only when `System:AllowBootConfigurationChanges` is true, and it is refused while Secure Boot is on. Restart after `set_test_signing` and before installing or loading the driver: `reboot_machine` when `System:AllowReboot` is true, or restart the PC yourself.
 
 ## Investigate a queued driver replacement
 

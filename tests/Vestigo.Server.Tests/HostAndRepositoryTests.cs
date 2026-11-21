@@ -55,7 +55,7 @@ public class HostTests : IDisposable
         Assert.Contains("TLS-terminating proxy", body, StringComparison.Ordinal);
         Assert.Contains("https://github.com/nefarius/Vestigo", body, StringComparison.Ordinal);
         Assert.Contains(
-            "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, and system diagnostics.",
+            "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, system diagnostics, and opt-in machine reboot.",
             body,
             StringComparison.Ordinal);
         Assert.Contains("Explicit configuration gates many sensitive features.", body, StringComparison.Ordinal);
@@ -244,6 +244,7 @@ public class RepositoryBoundaryTests
                      "ClockResolution", "Software:AllowUninstall", "Software:ProtectedNames",
                      "System:AllowBootConfigurationChanges",
                      "System:AllowUacChanges",
+                     "System:AllowReboot",
                      "Updates:AllowSelfUpdate",
                      "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
                      "Services:ProtectedNames", "ScheduledTasks:AllowChanges", "ScheduledTasks:ProtectedPaths", "Processes:AllowPathLookup", "Files:MaxUploadBytes",

@@ -72,7 +72,7 @@ public class SecurityAndOptionsTests
         {
             ListenAddress = address,
             Software = { AllowUninstall = true },
-            System = { AllowBootConfigurationChanges = true },
+            System = { AllowBootConfigurationChanges = true, AllowReboot = true },
             Updates = { AllowSelfUpdate = true },
             Modules =
             {
@@ -95,6 +95,7 @@ public class SecurityAndOptionsTests
             Assert.Contains("Devices", warning);
             Assert.Contains("Software uninstall", warning);
             Assert.Contains("Boot configuration changes", warning);
+            Assert.Contains("Machine reboot", warning);
             Assert.Contains("Self-update", warning);
             Assert.Contains("signed Vestigo release", warning);
             Assert.DoesNotContain("secret-value", warning);

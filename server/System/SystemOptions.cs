@@ -17,6 +17,11 @@ public sealed class SystemOptions
     /// </summary>
     public bool AllowUacChanges { get; set; }
 
+    /// <summary>
+    ///     Enables <c>reboot_machine</c> and <c>cancel_reboot</c>. Reads work regardless.
+    /// </summary>
+    public bool AllowReboot { get; set; }
+
     public void Validate()
     {
     }
