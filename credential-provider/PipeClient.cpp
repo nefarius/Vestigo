@@ -139,12 +139,6 @@ bool PipeClient::TryTakeDispatch(DispatchRequest& request)
     return true;
 }
 
-std::uint64_t PipeClient::Generation()
-{
-    std::lock_guard lock(mutex_);
-    return generation_;
-}
-
 void PipeClient::Report(
     vestigo::protocol::ProviderStatus status,
     int win32Error,
@@ -228,6 +222,7 @@ bool PipeClient::ConnectAndRun()
             std::lock_guard lock(mutex_);
             SecureZeroMemory(dispatch_.password.data(), dispatch_.password.size() * sizeof(wchar_t));
             dispatch_ = std::move(request);
+            dispatch_.generation = generation_;
             hasDispatch_ = true;
         }
         if (callback_ != nullptr)

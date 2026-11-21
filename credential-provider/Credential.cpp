@@ -41,7 +41,8 @@ void VestigoCredential::Initialize(
     const std::wstring& domain,
     std::wstring password,
     const std::wstring& userSid,
-    PipeClient* pipe)
+    PipeClient* pipe,
+    std::uint64_t generation)
 {
     scenario_ = scenario;
     userName_ = userName;
@@ -50,7 +51,7 @@ void VestigoCredential::Initialize(
     password_ = std::move(password);
     userSid_ = userSid;
     pipe_ = pipe;
-    generation_ = pipe != nullptr ? pipe->Generation() : 0;
+    generation_ = generation;
 }
 
 IFACEMETHODIMP VestigoCredential::QueryInterface(REFIID riid, void** ppv)

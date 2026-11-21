@@ -15,6 +15,7 @@ struct DispatchRequest
     std::wstring domain;
     std::wstring password;
     std::wstring targetSid;
+    std::uint64_t generation = 0;
 };
 
 class PipeClient
@@ -35,7 +36,6 @@ public:
         void* context);
     void Stop();
     bool TryTakeDispatch(DispatchRequest& request);
-    std::uint64_t Generation();
     void Report(
         vestigo::protocol::ProviderStatus status,
         int win32Error,

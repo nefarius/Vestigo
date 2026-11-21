@@ -21,7 +21,8 @@ public:
         const std::wstring& domain,
         std::wstring password,
         const std::wstring& userSid,
-        PipeClient* pipe);
+        PipeClient* pipe,
+        std::uint64_t generation);
 
     // IUnknown
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
