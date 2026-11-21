@@ -84,6 +84,11 @@ public static class RebootPolicy
         {
             flags |= ShutdownGraceOverride;
         }
+        else
+        {
+            // InitiateShutdown rejects a positive grace period without SHUTDOWN_FORCE_SELF.
+            flags |= ShutdownForceSelf;
+        }
 
         if (force)
         {

@@ -561,11 +561,18 @@ public class SystemToolsTests
 
     [Theory]
     [InlineData(0u, false, 0x00000024u)]
-    [InlineData(60u, false, 0x00000004u)]
+    [InlineData(60u, false, 0x00000006u)]
+    [InlineData(30u, false, 0x00000006u)]
     [InlineData(0u, true, 0x00000027u)]
     [InlineData(60u, true, 0x00000007u)]
     public void RebootPolicy_FlagsCombineRestartGraceAndForce(uint delay, bool force, uint expected) =>
         Assert.Equal(expected, RebootPolicy.Flags(delay, force));
+
+    [Fact]
+    public void RebootPolicy_PositiveDelayWithoutForceIncludesForceSelf() =>
+        Assert.Equal(
+            RebootPolicy.ShutdownRestart | RebootPolicy.ShutdownForceSelf,
+            RebootPolicy.Flags(30, force: false));
 
     [Fact]
     public void RebootPolicy_ReasonAddsPlannedFlag()

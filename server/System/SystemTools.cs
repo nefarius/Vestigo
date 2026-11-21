@@ -43,7 +43,7 @@ public sealed class SystemTools(SystemService service)
         service.SetUac(level);
 
     [McpServerTool(Name = "reboot_machine", ReadOnly = false, Destructive = true, Idempotent = false)]
-    [Description("Restarts this machine with InitiateShutdown SHUTDOWN_RESTART. Requires Vestigo:System:AllowReboot. delaySeconds 0 is immediate (MCP clients drop); 1..315360000 is a cancellable countdown. force closes other apps without prompting and loses unsaved work. planned marks the shutdown reason. message is shown during a countdown, at most 512 characters, no control characters. dryRun returns the plan without calling Windows. Local machine only. Never logs the message.")]
+    [Description("Restarts this machine with InitiateShutdown SHUTDOWN_RESTART. Requires Vestigo:System:AllowReboot. delaySeconds 0 is immediate (MCP clients drop); 1..315360000 is a cancellable countdown and includes SHUTDOWN_FORCE_SELF because Windows requires it. force adds SHUTDOWN_FORCE_OTHERS so other sessions close without prompting and unsaved work is lost. planned marks the shutdown reason. message is shown during a countdown, at most 512 characters, no control characters. dryRun returns the plan without calling Windows. Local machine only. Never logs the message.")]
     public OperationResult<RebootResult> RebootMachine(
         [Description("Seconds to wait. 0 restarts immediately. Maximum 315360000 (ten years).")] int delaySeconds = 0,
         [Description("Close applications without prompting. Unsaved work is lost.")] bool force = false,

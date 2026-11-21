@@ -376,7 +376,7 @@ public sealed class SystemService(
         }
         else
         {
-            notes.Add("Windows shows a countdown. cancel_reboot can abort it before the delay expires.");
+            notes.Add("Windows shows a countdown. cancel_reboot can abort it before the delay expires. The countdown uses SHUTDOWN_FORCE_SELF because Windows requires it.");
         }
 
         if (force)
