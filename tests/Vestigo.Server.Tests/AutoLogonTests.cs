@@ -254,6 +254,10 @@ public class AutoLogonTests
         Assert.Equal(
             "sid_mismatch",
             CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: "S-1-5-21-9", locked)!.ErrorCode);
+        ConsoleLockRead otherSession = ConsoleLockRead.Ok("locked", 2, true, "lab");
+        Assert.Equal(
+            "logonui_not_connected",
+            CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: null, otherSession)!.ErrorCode);
     }
 
     [Fact]

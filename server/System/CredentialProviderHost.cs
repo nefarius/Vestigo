@@ -512,6 +512,13 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                             ? "The console is at the logon screen, not locked. Use request_interactive_logon."
                             : "The console lock state could not be determined.");
             }
+
+            if (consoleLock!.SessionId != hello.SessionId)
+            {
+                return OperationResult<string>.Fail(
+                    "logonui_not_connected",
+                    "LogonUI is not attached to the active console session.");
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(expectedSid) &&
