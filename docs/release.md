@@ -6,13 +6,14 @@ Version numbers come from MinVer and `v*` tags. MinVer's default CLR `AssemblyVe
 
 The workflow (`.github/workflows/build.yml`) builds the app once and hands the result to the installer job:
 
-`security`, `osv-restore`, and `build` run in parallel, then `osv` and `build-installer` -> `release` (tags only)
+`security`, `osv-restore`, and `build` run in parallel, then `osv` and `build-installer`. Tags then run `notify-buildbot` and `release` in parallel after `build-installer`.
 
 - `security` (Ubuntu) runs Gitleaks against git history and the checked-out tree, then Semgrep (`p/csharp`). `.gitleaks.toml` allowlists the fake installer test token. Semgrep uses a digest-pinned image.
 - `osv-restore` (Windows) writes NuGet lock files for the net10 projects and the net48 custom-action project. `osv` (Ubuntu) scans those lock files with a digest-pinned OSV Scanner image. A finding fails the job, and `build-installer` needs `security` and `osv`, so secrets, SAST, and dependency advisories block the MSI and release. The DTF packages stay on the frozen WiX 5.0.2 set.
 - `build` (Windows) runs the tests and the net48 custom-action package check, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep BuildCredentialProvider`, and uploads `publish-x64/` (`server`, `updater`, `tools`, `credential-provider`) as the `vestigo-publish-x64` artifact (3-day retention).
-- `build-installer` (Windows, `needs: [build, security, osv]`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep BuildCredentialProvider`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything.
-- `release` (tags only) publishes the signed files.
+- `build-installer` (Windows, `needs: [build, security, osv]`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep BuildCredentialProvider`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything. A `v*` tag also signs the payload and uploads `Vestigo-msi`.
+- `notify-buildbot` (Ubuntu, tags only, `needs: build-installer`) waits up to 60 seconds for `Vestigo-msi` to appear in `listWorkflowRunArtifacts`, then posts the Buildbot webhook. Splitting it out also lets a failed webhook rerun without re-signing or duplicating the MSI artifact.
+- `release` (Ubuntu, tags only, `needs: build-installer`) publishes the signed files. It does not depend on the webhook.
 
 Pull requests and `master` build an unsigned MSI as a smoke test and do not upload it.
 
@@ -28,8 +29,9 @@ A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
 4. Signs and verifies the MSI.
 5. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key. The summary names the product version and links to the GitHub Release for the tag.
 6. Verifies the sidecar against the public key embedded in Vicius 1.20.1.
-7. Uploads `Vestigo-v<product-version>.msi`, `updates.json`, and `updates.json.minisig` as one artifact and posts the Buildbot webhook.
-8. Publishes a GitHub Release for the tag, with generated notes and those three files attached. Installed clients do not download the GitHub copies.
+7. Uploads `Vestigo-v<product-version>.msi`, `updates.json`, and `updates.json.minisig` as one artifact.
+8. `notify-buildbot` waits for `Vestigo-msi` to appear in the run's REST artifact list (it can lag behind `upload-artifact`) and posts the Buildbot webhook.
+9. `release` publishes a GitHub Release for the tag, with generated notes and those three files attached. It does not wait for the webhook, so a receiver outage still publishes the GitHub copies. Installed clients do not download those copies.
 
 The updater summary is Markdown. `PublishUpdateManifest` receives `--release-url` from `VESTIGO_RELEASE_URL`, which the tag build sets to `https://github.com/nefarius/Vestigo/releases/tag/<tag>` using `github.ref_name`. That page does not exist yet: the manifest is signed before the `release` job publishes the generated changelog. The link stays the same, so the updater can show it immediately and the generated notes appear there once the release exists. The MSI download URL remains the Buildbot package. A summary may also mention a URL under `https://buildbot.nefarius.at/builds/Vestigo/latest/`. Any other summary link, and any package or resource URL outside that directory, fails the manifest step. `check_for_updates` applies the same rule.
 
