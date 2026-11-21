@@ -23,12 +23,14 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
     private static readonly SecurityIdentifier LocalSystem = new(WellKnownSidType.LocalSystemSid, null);
 
     private readonly ILogger<CredentialProviderHost> _logger;
+    private readonly ISessionPlatform _sessions;
     private readonly object _gate = new();
     private ConnectedPeer? _peer;
 
-    public CredentialProviderHost(ILogger<CredentialProviderHost> logger)
+    public CredentialProviderHost(ILogger<CredentialProviderHost> logger, ISessionPlatform sessions)
     {
         _logger = logger;
+        _sessions = sessions;
         string installDir = AppContext.BaseDirectory;
         CredentialProviderFiles.SweepUnlockedOrphans(installDir, CredentialProviderFiles.ReadRegisteredPath());
     }
@@ -92,7 +94,8 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                     "LogonUI is not attached to the active console session.");
             }
 
-            if (RejectDispatchPeer(peer.Hello, requireUnlock, expectedSid) is { } rejected)
+            ConsoleLockRead? consoleLock = requireUnlock ? _sessions.ReadConsoleLock() : null;
+            if (RejectDispatchPeer(peer.Hello, requireUnlock, expectedSid, consoleLock) is { } rejected)
             {
                 return rejected;
             }
@@ -483,22 +486,36 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
     }
 
     /// <summary>
-    ///     Refuses unlock dispatch when LogonUI is not in the unlock scenario, before credentials are encoded.
+    ///     Refuses unlock dispatch when the console is not locked. Windows 10+ often reports
+    ///     <see cref="CredentialProviderProtocol.UsageScenario.Logon" /> for a lock screen, so Hello scenario is not the unlock signal.
     /// </summary>
     internal static OperationResult<string>? RejectDispatchPeer(
         CredentialProviderProtocol.HelloMessage hello,
         bool requireUnlock,
-        string? expectedSid)
+        string? expectedSid,
+        ConsoleLockRead? consoleLock)
     {
-        if (requireUnlock && hello.Scenario != CredentialProviderProtocol.UsageScenario.Unlock)
+        if (requireUnlock)
         {
-            return OperationResult<string>.Fail(
-                "not_locked",
-                "The console is at the logon screen, not locked. Use request_interactive_logon.");
+            string state = consoleLock is { Success: true } read ? read.State : "unknown";
+            if (state != "locked")
+            {
+                return OperationResult<string>.Fail(
+                    state == "unlocked"
+                        ? "already_unlocked"
+                        : state == "logonScreen"
+                            ? "not_locked"
+                            : "lock_state_unknown",
+                    state == "unlocked"
+                        ? "The console session is already unlocked."
+                        : state == "logonScreen"
+                            ? "The console is at the logon screen, not locked. Use request_interactive_logon."
+                            : "The console lock state could not be determined.");
+            }
         }
 
-        if (hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
-            !string.IsNullOrWhiteSpace(expectedSid) &&
+        if (!string.IsNullOrWhiteSpace(expectedSid) &&
+            hello.UserSids.Count > 0 &&
             !hello.UserSids.Contains(expectedSid, StringComparer.OrdinalIgnoreCase))
         {
             return OperationResult<string>.Fail(

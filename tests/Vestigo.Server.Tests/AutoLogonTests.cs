@@ -233,21 +233,27 @@ public class AutoLogonTests
     }
 
     [Fact]
-    public void CredentialProviderHost_RejectsUnlockDispatchForLogonScenarioBeforeEncode()
+    public void CredentialProviderHost_UnlockDispatchUsesConsoleLockNotHelloScenario()
     {
-        CredentialProviderProtocol.HelloMessage logon = new(CredentialProviderProtocol.UsageScenario.Logon, 1, []);
+        CredentialProviderProtocol.HelloMessage logon = new(CredentialProviderProtocol.UsageScenario.Logon, 1, ["S-1-5-21-1"]);
         CredentialProviderProtocol.HelloMessage unlock = new(
             CredentialProviderProtocol.UsageScenario.Unlock, 1, ["S-1-5-21-1"]);
+        ConsoleLockRead locked = ConsoleLockRead.Ok("locked", 1, true, "lab");
+        ConsoleLockRead logonScreen = ConsoleLockRead.Ok("logonScreen", 1, false, null);
+        ConsoleLockRead unlocked = ConsoleLockRead.Ok("unlocked", 1, true, "lab");
 
-        OperationResult<string>? rejected = CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: null);
-        Assert.NotNull(rejected);
-        Assert.Equal("not_locked", rejected.ErrorCode);
-
-        Assert.Null(CredentialProviderHost.RejectDispatchPeer(unlock, requireUnlock: true, expectedSid: null));
-        Assert.Null(CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: false, expectedSid: null));
+        Assert.Null(CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: null, locked));
+        Assert.Null(CredentialProviderHost.RejectDispatchPeer(unlock, requireUnlock: true, expectedSid: null, locked));
+        Assert.Null(CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: false, expectedSid: null, consoleLock: null));
+        Assert.Equal(
+            "not_locked",
+            CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: null, logonScreen)!.ErrorCode);
+        Assert.Equal(
+            "already_unlocked",
+            CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: null, unlocked)!.ErrorCode);
         Assert.Equal(
             "sid_mismatch",
-            CredentialProviderHost.RejectDispatchPeer(unlock, requireUnlock: true, expectedSid: "S-1-5-21-9")!.ErrorCode);
+            CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: "S-1-5-21-9", locked)!.ErrorCode);
     }
 
     [Fact]
@@ -537,11 +543,11 @@ public class AutoLogonTests
     }
 
     [Fact]
-    public async Task ApproveUnlock_RejectsWhenLogonUiIsNotUnlockScenario()
+    public async Task ApproveUnlock_PassesRequireUnlockWhenConsoleStaysLocked()
     {
         VestigoOptions options = new() { System = { AllowInteractiveLogon = true } };
         LogonConsentStore store = new(TimeProvider.System, options);
-        MutableDispatcher dispatcher = new() { LogonUiConnected = true, UnlockScenario = false };
+        MutableDispatcher dispatcher = new() { LogonUiConnected = true };
         InteractiveLogonService service = new(
             dispatcher,
             new MutableConsole("locked", 1, "lab"),
@@ -563,10 +569,10 @@ public class AutoLogonTests
             "secret".ToCharArray(),
             CancellationToken.None);
 
-        Assert.Equal("not_locked", result.ErrorCode);
+        Assert.True(result.Success);
         Assert.True(dispatcher.LastRequireUnlock);
         Assert.Equal(1, dispatcher.DispatchCalls);
-        Assert.Equal("failed", store.Peek(link.RequestId)!.Status);
+        Assert.Equal("approved", store.Peek(link.RequestId)!.Status);
     }
 
     private static string Ticket(LogonConsentLink link)
@@ -675,8 +681,6 @@ public class AutoLogonTests
 
         public bool ProviderRegistered { get; set; } = true;
 
-        public bool UnlockScenario { get; set; } = true;
-
         public bool? LastRequireUnlock { get; private set; }
 
         public Task<OperationResult<string>> DispatchAsync(
@@ -689,13 +693,6 @@ public class AutoLogonTests
         {
             LastRequireUnlock = requireUnlock;
             DispatchCalls++;
-            if (requireUnlock && !UnlockScenario)
-            {
-                return Task.FromResult(OperationResult<string>.Fail(
-                    "not_locked",
-                    "The console is at the logon screen, not locked. Use request_interactive_logon."));
-            }
-
             return Task.FromResult(OperationResult<string>.Ok("submitted"));
         }
     }
