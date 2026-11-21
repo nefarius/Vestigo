@@ -45,6 +45,8 @@ Even after a module is on, these actions stay off until their own setting is tru
 - `System:AllowBootConfigurationChanges`
 - `System:AllowUacChanges`
 - `System:AllowReboot`
+- `System:AllowAutoLogonChanges`
+- `System:AllowInteractiveLogon`
 - `Updates:AllowSelfUpdate`
 - `Diagnostics:AllowOnlineRevocation`
 - `Diagnostics:AllowCaptureProbes`

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
@@ -35,6 +36,9 @@ namespace Vestigo.Installer.Actions
         private const string ErrorProperty = "VESTIGO_INPUT_ERROR";
         private const string SuggestedProperty = "VESTIGO_TOKEN_SUGGESTED";
         private const string WriteDataProperty = "VestigoWriteSettings";
+        private const string DeployCredentialProviderProperty = "VestigoDeployCredentialProvider";
+        private const string RemoveCredentialProviderProperty = "VestigoRemoveCredentialProvider";
+        private const int MoveFileDelayUntilReboot = 4;
 
         private const string CompanyFolder = "Nefarius Software Solutions";
         private const string ProductFolder = "Vestigo";
@@ -257,7 +261,8 @@ namespace Vestigo.Installer.Actions
         /// <summary>
         ///     Deferred, elevated, before StartServices. Merges Vestigo:ListenAddress, ListenPort, ApiTokens,
         ///     VolumeRoots, VolumeRootAccess, Modules, Software:AllowUninstall, ScheduledTasks:AllowChanges, Audio:AllowSetDefault,
-        ///     System:AllowBootConfigurationChanges, System:AllowUacChanges, System:AllowReboot, and Desktop:AllowScreenshots into the ProgramData
+        ///     System:AllowBootConfigurationChanges, System:AllowUacChanges, System:AllowReboot,
+        ///     System:AllowAutoLogonChanges, System:AllowInteractiveLogon, and Desktop:AllowScreenshots into the ProgramData
         ///     appsettings.json, keeping every other key, as UTF-8 without BOM readable only by SYSTEM and Administrators.
         /// </summary>
         [CustomAction]
@@ -319,6 +324,93 @@ namespace Vestigo.Installer.Actions
         }
 
         /// <summary>
+        ///     Immediate. Packs INSTALLDIR and whether this is a major-upgrade removal for the deferred Credential Provider actions.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult VestigoPrepareCredentialProvider(Session session)
+        {
+            try
+            {
+                CustomActionData data = new CustomActionData();
+                data["InstallDir"] = session["INSTALLDIR"];
+                data["Upgrading"] = string.IsNullOrWhiteSpace(session["UPGRADINGPRODUCTCODE"]) ? "0" : "1";
+                string packed = data.ToString();
+                session[DeployCredentialProviderProperty] = packed;
+                session[RemoveCredentialProviderProperty] = packed;
+                return ActionResult.Success;
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not prepare Credential Provider action: " + ex.GetType().Name + ": " + ex.Message);
+                return ActionResult.Failure;
+            }
+        }
+
+        /// <summary>
+        ///     Deferred. Copies the staged Credential Provider to a hash-suffixed live path and updates InprocServer32.
+        ///     An unchanged hash leaves a LogonUI-mapped DLL untouched so upgrades stay reboot-free.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult VestigoDeployCredentialProvider(Session session)
+        {
+            try
+            {
+                CustomActionData data = session.CustomActionData;
+                string installDir = data["InstallDir"];
+                WindowsCredentialProviderStore store = new WindowsCredentialProviderStore();
+                CredentialProviderDeployResult result = CredentialProviderDeployment.Deploy(installDir, store);
+                session.Log("Credential Provider deploy " + result.Action + " live=" + result.LivePath +
+                            " registration=" + result.RegistrationUpdated +
+                            " leftover=" + result.LeftoverLocked.Count);
+                return ActionResult.Success;
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not deploy Credential Provider: " + ex.GetType().Name + ": " + ex.Message);
+                return ActionResult.Failure;
+            }
+        }
+
+        /// <summary>
+        ///     Deferred. Unregisters the Credential Provider and best-effort deletes live DLLs. Skipped during a major upgrade.
+        ///     A locked live file is scheduled for deletion at the next reboot without forcing one.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult VestigoRemoveCredentialProvider(Session session)
+        {
+            try
+            {
+                CustomActionData data = session.CustomActionData;
+                string installDir = data["InstallDir"];
+                bool upgrading = data["Upgrading"] == "1";
+                WindowsCredentialProviderStore store = new WindowsCredentialProviderStore();
+                CredentialProviderDeployResult result = CredentialProviderDeployment.Remove(installDir, upgrading, store);
+                foreach (string leftover in result.LeftoverLocked)
+                {
+                    if (MoveFileEx(leftover, null, MoveFileDelayUntilReboot))
+                    {
+                        session.Log("Scheduled locked Credential Provider DLL for delete on reboot: " + leftover);
+                    }
+                    else
+                    {
+                        session.Log("Could not schedule delete for locked Credential Provider DLL: " + leftover);
+                    }
+                }
+
+                session.Log("Credential Provider remove " + result.Action + " leftover=" + result.LeftoverLocked.Count);
+                return ActionResult.Success;
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not remove Credential Provider: " + ex.GetType().Name + ": " + ex.Message);
+                return ActionResult.Failure;
+            }
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool MoveFileEx(string existingFileName, string newFileName, int flags);
+
+        /// <summary>
         ///     A module is enabled when its feature will be installed locally; when the request state is unknown the
         ///     current state decides (repair and modify keep untouched features as they are). DesktopScreenshots is
         ///     omitted when it is a new, unselected feature so an unelevated upgrade does not write AllowScreenshots=false.
@@ -332,10 +424,13 @@ namespace Vestigo.Installer.Actions
                 {
                     FeatureInfo feature = session.Features[module.Name];
                     InstallState request = feature.RequestState;
+                    bool currentlyInstalled = feature.CurrentState == InstallState.Local;
                     bool requestIsExplicit = request != InstallState.Unknown &&
                                              request != InstallState.Default &&
-                                             request != InstallState.NotUsed;
-                    bool currentlyInstalled = feature.CurrentState == InstallState.Local;
+                                             request != InstallState.NotUsed &&
+                                             ModuleSelection.IsExplicitFeatureRequest(
+                                                 currentlyInstalled,
+                                                 request == InstallState.Absent);
                     if (!ModuleSelection.ShouldWriteFeatureState(module.Name, requestIsExplicit, currentlyInstalled))
                     {
                         continue;
@@ -551,6 +646,130 @@ namespace Vestigo.Installer.Actions
                 FileSystemRights.FullControl,
                 AccessControlType.Allow));
             return security;
+        }
+
+        private sealed class WindowsCredentialProviderStore : ICredentialProviderStore
+        {
+            public bool Exists(string path)
+            {
+                return File.Exists(path) || Directory.Exists(path);
+            }
+
+            public bool IsReparsePoint(string path)
+            {
+                if (File.Exists(path))
+                {
+                    return (File.GetAttributes(path) & System.IO.FileAttributes.ReparsePoint) != 0;
+                }
+
+                if (Directory.Exists(path))
+                {
+                    return (new DirectoryInfo(path).Attributes & System.IO.FileAttributes.ReparsePoint) != 0;
+                }
+
+                return false;
+            }
+
+            public byte[] ReadAllBytes(string path)
+            {
+                return File.ReadAllBytes(path);
+            }
+
+            public void CreateDirectory(string path)
+            {
+                Directory.CreateDirectory(path);
+            }
+
+            public void WriteAllBytes(string path, byte[] content)
+            {
+                File.WriteAllBytes(path, content);
+                FileInfo info = new FileInfo(path);
+                info.SetAccessControl(RestrictedSecurity());
+            }
+
+            public bool TryDelete(string path)
+            {
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        File.Delete(path);
+                    }
+
+                    return true;
+                }
+                catch (IOException)
+                {
+                    return false;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return false;
+                }
+            }
+
+            public IReadOnlyList<string> EnumerateFiles(string directory, string pattern)
+            {
+                if (!Directory.Exists(directory))
+                {
+                    return Array.Empty<string>();
+                }
+
+                return Directory.GetFiles(directory, pattern);
+            }
+
+            public string ReadInprocServer32()
+            {
+                using (RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+                using (RegistryKey key = machine.OpenSubKey(CredentialProviderDeployment.InprocServer32Key, false))
+                {
+                    object value = key == null ? null : key.GetValue(null);
+                    string path = value as string;
+                    return string.IsNullOrWhiteSpace(path) ? null : path;
+                }
+            }
+
+            public void WriteRegistration(string dllPath)
+            {
+                using (RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+                {
+                    using (RegistryKey clsid = machine.CreateSubKey(CredentialProviderDeployment.ClassesClsidKey))
+                    {
+                        clsid.SetValue(null, "Vestigo Credential Provider", RegistryValueKind.String);
+                    }
+
+                    using (RegistryKey inproc = machine.CreateSubKey(CredentialProviderDeployment.InprocServer32Key))
+                    {
+                        inproc.SetValue(null, dllPath, RegistryValueKind.String);
+                        inproc.SetValue("ThreadingModel", "Apartment", RegistryValueKind.String);
+                    }
+
+                    using (RegistryKey provider = machine.CreateSubKey(CredentialProviderDeployment.CredentialProvidersKey))
+                    {
+                        provider.SetValue(null, "Vestigo Credential Provider", RegistryValueKind.String);
+                    }
+                }
+            }
+
+            public void DeleteRegistration()
+            {
+                using (RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+                {
+                    TryDeleteSubKey(machine, CredentialProviderDeployment.ClassesClsidKey);
+                    TryDeleteSubKey(machine, CredentialProviderDeployment.CredentialProvidersKey);
+                }
+            }
+
+            private static void TryDeleteSubKey(RegistryKey machine, string path)
+            {
+                try
+                {
+                    machine.DeleteSubKeyTree(path);
+                }
+                catch (ArgumentException)
+                {
+                }
+            }
         }
     }
 }

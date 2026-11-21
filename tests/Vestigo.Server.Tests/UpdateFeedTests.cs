@@ -199,13 +199,15 @@ public class UpdateFeedTests
         Assert.Contains(UpdateFeed.CurrentPackagePointerFileName, installer, StringComparison.Ordinal);
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
-        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep)", build, StringComparison.Ordinal);
+        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep, BuildCredentialProvider)", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", installer, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_DEBUGVIEW", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_DEBUGVIEW", installer, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_RIPGREP", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_RIPGREP", installer, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_CREDPROVIDER", build, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_CREDPROVIDER", installer, StringComparison.Ordinal);
         Assert.Contains("ripgrep-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("nefcon-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("DebugViewPP-LICENSE.txt", installer, StringComparison.Ordinal);

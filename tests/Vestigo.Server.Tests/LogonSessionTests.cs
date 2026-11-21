@@ -228,6 +228,15 @@ public class LogonSessionTests
         public SessionSnapshot Read() => snapshot;
 
         public SessionTokenRead ReadToken(uint sessionId) => Token;
+
+        public ConsoleLockRead ReadConsoleLock() =>
+            snapshot.Success
+                ? ConsoleLockRead.Ok(
+                    snapshot.ConsoleHasToken ? "unlocked" : "logonScreen",
+                    snapshot.ConsoleSessionId,
+                    snapshot.ConsoleHasToken,
+                    snapshot.Sessions.FirstOrDefault(session => session.SessionId == snapshot.ConsoleSessionId)?.UserName)
+                : ConsoleLockRead.Fail(snapshot.ErrorCode!, snapshot.Error!);
     }
 
     private sealed class RecordingLogger : ILogger<SessionTools>

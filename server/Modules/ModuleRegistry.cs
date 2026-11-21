@@ -145,6 +145,16 @@ public static class ModuleRegistry
             capabilities.Add("Machine reboot");
         }
 
+        if (options.System.AllowAutoLogonChanges && enabled.Any(module => module.Name == "System"))
+        {
+            capabilities.Add("Auto-logon changes");
+        }
+
+        if (options.System.AllowInteractiveLogon && enabled.Any(module => module.Name == "System"))
+        {
+            capabilities.Add("Interactive logon/unlock");
+        }
+
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
         {
             capabilities.Add("Self-update");

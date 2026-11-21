@@ -82,6 +82,32 @@ public class LocalConfigurationAccessTests
     }
 
     [Fact]
+    public async Task MudBlazorStaticCssIsAllowedOffLoopbackWhileScriptsStayGated()
+    {
+        DefaultHttpContext css = Context("192.0.2.4");
+        css.Request.Method = "GET";
+        css.Request.Path = "/_content/MudBlazor/MudBlazor.min.css";
+        bool reached = false;
+        await new LocalConfigurationAccess(_ => { reached = true; return Task.CompletedTask; }).InvokeAsync(css);
+        Assert.True(reached);
+
+        DefaultHttpContext fonts = Context("192.0.2.4");
+        fonts.Request.Method = "HEAD";
+        fonts.Request.Path = "/_content/MudBlazor/fonts/Roboto-Regular.woff2";
+        bool fontReached = false;
+        await new LocalConfigurationAccess(_ => { fontReached = true; return Task.CompletedTask; }).InvokeAsync(fonts);
+        Assert.True(fontReached);
+
+        DefaultHttpContext script = Context("192.0.2.4");
+        script.Request.Method = "GET";
+        script.Request.Path = "/_content/MudBlazor/MudBlazor.min.js";
+        bool scriptReached = false;
+        await new LocalConfigurationAccess(_ => { scriptReached = true; return Task.CompletedTask; }).InvokeAsync(script);
+        Assert.False(scriptReached);
+        Assert.Equal(403, script.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task OtherRoutesAreUnaffected()
     {
         DefaultHttpContext context = Context("192.0.2.4");
@@ -439,6 +465,52 @@ public class ConfigurationEditorTests : IDisposable
         ConfigurationSnapshot snapshot = _editor.Load();
         Assert.True(snapshot.Values["System"]!["AllowReboot"]!.GetValue<bool>());
         Assert.False(snapshot.Values["System"]!["AllowUacChanges"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void SystemAutoLogonSettingsRoundTripThroughTheEditor()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        Assert.False(snapshot.Values["System"]!["AllowAutoLogonChanges"]!.GetValue<bool>());
+        Assert.False(snapshot.Values["System"]!["AllowInteractiveLogon"]!.GetValue<bool>());
+        Assert.Equal("00:05:00", snapshot.Values["System"]!["LogonConsentLifetime"]!.GetValue<string>());
+        snapshot.Values["System"]!["AllowAutoLogonChanges"] = true;
+        snapshot.Values["System"]!["AllowInteractiveLogon"] = true;
+        snapshot.Values["System"]!["LogonConsentLifetime"] = "00:10:00";
+        _editor.Save(snapshot);
+        ConfigurationSnapshot loaded = _editor.Load();
+        Assert.True(loaded.Values["System"]!["AllowAutoLogonChanges"]!.GetValue<bool>());
+        Assert.True(loaded.Values["System"]!["AllowInteractiveLogon"]!.GetValue<bool>());
+        Assert.Equal("00:10:00", loaded.Values["System"]!["LogonConsentLifetime"]!.GetValue<string>());
+        using var stream = new MemoryStream(File.ReadAllBytes(VestigoPaths.SettingsFilePath));
+        var configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        VestigoOptions options = new();
+        configuration.GetSection("Vestigo").Bind(options);
+        Assert.True(options.System.AllowAutoLogonChanges);
+        Assert.True(options.System.AllowInteractiveLogon);
+        Assert.Equal(TimeSpan.FromMinutes(10), options.System.LogonConsentLifetime);
+    }
+
+    [Fact]
+    public void SystemAutoLogonUiSaveSurvivesUnselectedUpgradeMerge()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["System"]!["AllowAutoLogonChanges"] = true;
+        snapshot.Values["System"]!["AllowInteractiveLogon"] = true;
+        _editor.Save(snapshot);
+        string existing = File.ReadAllText(VestigoPaths.SettingsFilePath);
+        string merged = ListenSettings.Merge(
+            existing,
+            new ResolvedSettings(ListenSettings.ListenAny, ListenSettings.AuthNone, 5098, string.Empty, null),
+            new Dictionary<string, bool> { ["System"] = true });
+        Assert.True(ModuleSelection.ReadExisting(merged)["SystemAutoLogon"]);
+        Assert.True(ModuleSelection.ReadExisting(merged)["SystemInteractiveLogon"]);
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(merged));
+        var configuration = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        VestigoOptions options = new();
+        configuration.GetSection("Vestigo").Bind(options);
+        Assert.True(options.System.AllowAutoLogonChanges);
+        Assert.True(options.System.AllowInteractiveLogon);
     }
 
     [Fact]

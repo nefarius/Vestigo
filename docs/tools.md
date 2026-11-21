@@ -85,7 +85,7 @@ The `Software` module inventories installed programs from the `Uninstall` regist
 
 ## System
 
-The `System` module reports the host Windows version, boot state, boot-security posture, and UAC policy, and can restart the machine when that is opted in. Version and boot-security reads go through `Nefarius.Utilities.WindowsVersion`. It is enabled by default. Boot-configuration writes stay off until `Vestigo:System:AllowBootConfigurationChanges` is `true`. UAC writes stay off until `Vestigo:System:AllowUacChanges` is `true`. `reboot_machine` and `cancel_reboot` stay off until `Vestigo:System:AllowReboot` is `true`.
+The `System` module reports the host Windows version, boot state, boot-security posture, and UAC policy, and can restart the machine, enable AutoLogon, or sign in from the logon or lock screen when those are opted in. Version and boot-security reads go through `Nefarius.Utilities.WindowsVersion`. It is enabled by default. Boot-configuration writes stay off until `Vestigo:System:AllowBootConfigurationChanges` is `true`. UAC writes stay off until `Vestigo:System:AllowUacChanges` is `true`. `reboot_machine` and `cancel_reboot` stay off until `Vestigo:System:AllowReboot` is `true`. AutoLogon writes stay off until `Vestigo:System:AllowAutoLogonChanges` is `true`. Interactive logon stays off until `Vestigo:System:AllowInteractiveLogon` is `true` and the MSI Interactive logon feature has installed the Credential Provider.
 
 `get_system_info` returns the OS name, edition, display version (for example 24H2), version string, major/minor/build/UBR, whether it is Windows 11 or Server, whether the install was in-place upgraded (`grandfathered`), OS and processor bitness, ARM64, whether UAC is disabled, and the machine name. A probe that fails becomes a null field instead of failing the call.
 
@@ -106,6 +106,18 @@ The `System` module reports the host Windows version, boot state, boot-security 
 `list_logon_sessions` lists Windows logon sessions: session id, window station name, connection state, user, logon time, whether the session is the active console, and whether interactive tools would attach to it (`isCurrentInput`). `includeDisconnected` defaults to true. `includeListeners` defaults to false, so listener rows such as `RDP-Tcp` are omitted. `includeClientAddresses` defaults to false: the client name and address are null unless it is true, and those values are not written to the log. Station names are displayed, not interpreted. There is no logoff, connect, or shadow tool.
 
 `get_logon_session` returns one session id from that list. It adds token elevation (`default`, `full`, `limited`, or `unknown`), whether the token is in the local Administrators group, and the logon id, when the session token can be opened. Those three fields are null when the token cannot be read; the rest of the session is still returned. A negative id is `invalid_request`. An id Windows did not return is `session_not_found`. A refused query is `access_denied`. A Terminal Services failure is `wts_unavailable`. Protocol names are `console`, `ica`, `rdp`, or `unknown`.
+
+`get_autologon_state` reports whether AutoAdminLogon is on, the default user and domain, AutoLogonCount, ForceAutoLogon, whether an LSA `DefaultPassword` secret is present, and whether a legacy plaintext Winlogon `DefaultPassword` value exists. The password is never returned.
+
+`request_autologon_enable` starts a one-time consent request for `userName` (optional `domain`, optional `logonCount`, optional `forceAutoLogon`). It returns a URL the user must open in a browser to enter the Windows password. Present that URL; do not fetch it and do not ask for the password in chat. The password is stored as an LSA private secret, never in `appsettings.json`, MCP results, or logs. It fails with `autologon_disabled` unless `Vestigo:System:AllowAutoLogonChanges` is true.
+
+`disable_autologon` turns AutoAdminLogon off, deletes the LSA secret, and removes any legacy plaintext Winlogon `DefaultPassword`. `clearDefaultUser` also removes DefaultUserName and DefaultDomainName.
+
+`get_interactive_logon_status` reports whether interactive logon is allowed, whether the Credential Provider DLL is installed and registered, whether LogonUI is connected, and the console lock state (`locked`, `unlocked`, `logonScreen`, or `unknown`). Passwords are never returned.
+
+`request_interactive_logon` starts a one-time consent request to sign in or unlock the console as `userName`. It requires `Vestigo:System:AllowInteractiveLogon`, the MSI Interactive logon feature, and a locked or logon-screen console. The password is sent only to LogonUI over a SYSTEM-only named pipe. It fails with `already_unlocked` when the console is already unlocked, and `logonui_not_connected` when LogonUI is not attached.
+
+`get_logon_request` returns the status of a consent request. `waitSeconds` 0 returns immediately; 1 through 30 waits for completion. `cancel_logon_request` stops a pending URL. Neither tool returns a password.
 
 ## Power
 

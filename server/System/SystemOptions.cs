@@ -22,7 +22,28 @@ public sealed class SystemOptions
     /// </summary>
     public bool AllowReboot { get; set; }
 
+    /// <summary>
+    ///     Enables <c>request_autologon_enable</c> and <c>disable_autologon</c>. Reads work regardless.
+    /// </summary>
+    public bool AllowAutoLogonChanges { get; set; }
+
+    /// <summary>
+    ///     Enables <c>request_interactive_logon</c> and starts the Credential Provider named-pipe host.
+    ///     The MSI Interactive logon feature must also install the provider DLL.
+    /// </summary>
+    public bool AllowInteractiveLogon { get; set; }
+
+    /// <summary>
+    ///     Lifetime of a one-time consent link used to collect a Windows password outside MCP.
+    /// </summary>
+    public TimeSpan LogonConsentLifetime { get; set; } = TimeSpan.FromMinutes(5);
+
     public void Validate()
     {
+        if (LogonConsentLifetime <= TimeSpan.Zero || LogonConsentLifetime > TimeSpan.FromMinutes(30))
+        {
+            throw new InvalidOperationException(
+                "Vestigo:System:LogonConsentLifetime must be positive and at most 00:30:00.");
+        }
     }
 }

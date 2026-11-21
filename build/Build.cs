@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
@@ -34,6 +35,9 @@ class Build : FalloutBuild
     static AbsolutePath StagedNefconExe => ToolsStageDir / NefconPin.Executable;
     static AbsolutePath StagedDebugViewExe => ToolsStageDir / DebugViewPin.Executable;
     static AbsolutePath StagedRipgrepExe => ToolsStageDir / RipgrepPin.Executable;
+    static AbsolutePath CredentialProviderProject => RootDirectory / "credential-provider" / "Vestigo.CredentialProvider.vcxproj";
+    static AbsolutePath CredentialProviderStageDir => PublishRoot / "credential-provider";
+    static AbsolutePath StagedCredentialProviderDll => CredentialProviderStageDir / "Vestigo.CredentialProvider.dll";
     static AbsolutePath InstallerProjectFile => RootDirectory / "installer" / "Vestigo.Installer.csproj";
     static AbsolutePath StagedUpdaterExe => UpdaterStageDir / UpdateFeed.UpdaterExecutable;
 
@@ -120,9 +124,14 @@ class Build : FalloutBuild
         .Executes(StageRipgrep);
 
     [UsedImplicitly]
+    public Target BuildCredentialProvider => _ => _
+        .Description("Build the x64 Vestigo Credential Provider COM DLL and stage it for the MSI")
+        .Executes(BuildAndStageCredentialProvider);
+
+    [UsedImplicitly]
     public Target BuildInstaller => _ => _
         .Description("Publish Vestigo and build the x64 MSI. Requires Windows and WiX 5.0.2.")
-        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep)
+        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep, BuildCredentialProvider)
         .Executes(() =>
         {
             if (!OperatingSystem.IsWindows())
@@ -137,6 +146,7 @@ class Build : FalloutBuild
             const string envNefcon = "VESTIGO_INSTALLER_NEFCON";
             const string envDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
             const string envRipgrep = "VESTIGO_INSTALLER_RIPGREP";
+            const string envCredProvider = "VESTIGO_INSTALLER_CREDPROVIDER";
             try
             {
                 Environment.SetEnvironmentVariable(envServer, PublishServerDir);
@@ -145,6 +155,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envNefcon, StagedNefconExe);
                 Environment.SetEnvironmentVariable(envDebugView, StagedDebugViewExe);
                 Environment.SetEnvironmentVariable(envRipgrep, StagedRipgrepExe);
+                Environment.SetEnvironmentVariable(envCredProvider, StagedCredentialProviderDll);
                 DotNetTasks.DotNetRun(settings => settings
                     .SetProjectFile(InstallerProjectFile)
                     .SetConfiguration(Configuration.Release));
@@ -157,6 +168,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envNefcon, null);
                 Environment.SetEnvironmentVariable(envDebugView, null);
                 Environment.SetEnvironmentVariable(envRipgrep, null);
+                Environment.SetEnvironmentVariable(envCredProvider, null);
             }
         });
 
@@ -411,6 +423,87 @@ class Build : FalloutBuild
 
         return version;
 #pragma warning restore CA1416
+    }
+
+    void BuildAndStageCredentialProvider()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new InvalidOperationException(
+                "BuildCredentialProvider requires Windows and the MSVC v143 toolset.");
+        }
+
+        Directory.CreateDirectory(CredentialProviderStageDir);
+        string outDir = CredentialProviderStageDir.ToString().TrimEnd('\\') + "\\";
+        string msbuild = ResolveVisualStudioMsBuild();
+        ProcessStartInfo startInfo = new(msbuild)
+        {
+            WorkingDirectory = RootDirectory,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add(CredentialProviderProject.ToString());
+        startInfo.ArgumentList.Add("-restore");
+        startInfo.ArgumentList.Add("-p:Configuration=Release");
+        startInfo.ArgumentList.Add("-p:Platform=x64");
+        startInfo.ArgumentList.Add("-p:OutDir=" + outDir);
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("MSBuild.exe could not be started.");
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Credential Provider MSBuild failed with exit code {process.ExitCode}.");
+        }
+
+        if (!File.Exists(StagedCredentialProviderDll))
+        {
+            throw new InvalidOperationException(
+                $"MSBuild did not produce {StagedCredentialProviderDll}.");
+        }
+    }
+
+    static string ResolveVisualStudioMsBuild()
+    {
+        string vswhere = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            "Microsoft Visual Studio",
+            "Installer",
+            "vswhere.exe");
+        if (!File.Exists(vswhere))
+        {
+            throw new InvalidOperationException(
+                "vswhere.exe was not found. Install Visual Studio with the MSVC v143 toolset.");
+        }
+
+        ProcessStartInfo startInfo = new(vswhere)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("-latest");
+        startInfo.ArgumentList.Add("-products");
+        startInfo.ArgumentList.Add("*");
+        startInfo.ArgumentList.Add("-requires");
+        startInfo.ArgumentList.Add("Microsoft.VisualStudio.Component.VC.Tools.x86.x64");
+        startInfo.ArgumentList.Add("-requires");
+        startInfo.ArgumentList.Add("Microsoft.Component.MSBuild");
+        startInfo.ArgumentList.Add("-find");
+        startInfo.ArgumentList.Add(@"MSBuild\**\Bin\MSBuild.exe");
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("vswhere.exe could not be started.");
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        string msbuild = output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault(File.Exists);
+        if (string.IsNullOrWhiteSpace(msbuild))
+        {
+            throw new InvalidOperationException(
+                "Visual Studio MSBuild.exe was not found. Install Visual Studio with the MSVC v143 toolset.");
+        }
+
+        return msbuild;
     }
 
     void PublishProject(Project project, AbsolutePath publishDirectory)
