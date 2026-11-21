@@ -106,6 +106,38 @@ public class LogonConsentEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Post_ApprovesUnlockWorkstationConsent()
+    {
+        await using WebApplicationFactory<Program> factory = CreateUnlock();
+        using HttpClient client = factory.CreateClient();
+        LogonConsentLink link = IssueUnlock(factory);
+        string path = new Uri(link.Url).PathAndQuery;
+        using HttpResponseMessage form = await client.GetAsync(path);
+        string html = await form.Content.ReadAsStringAsync();
+        Assert.Contains("Unlock workstation", html, StringComparison.Ordinal);
+        string token = Antiforgery(html);
+        string field = AntiforgeryField(html);
+        using HttpResponseMessage posted = await client.PostAsync(
+            path.Split('?')[0],
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["ticket"] = Ticket(link),
+                ["decision"] = "approve",
+                ["password"] = "secret-password",
+                [field] = token
+            }));
+
+        string body = await posted.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("Unlock workstation", body, StringComparison.Ordinal);
+        Assert.Contains("workstation should unlock shortly", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-password", body, StringComparison.Ordinal);
+        Assert.Equal("approved", factory.Services.GetRequiredService<LogonConsentStore>().Peek(link.RequestId)!.Status);
+        FakeDispatcher dispatcher = (FakeDispatcher)factory.Services.GetRequiredService<IInteractiveLogonDispatcher>();
+        Assert.Equal(1, dispatcher.DispatchCalls);
+    }
+
+    [Fact]
     public async Task MudBlazorCssIsReachableWhileConfigStaysLoopbackOnly()
     {
         DefaultHttpContext remote = new();
@@ -137,6 +169,11 @@ public class LogonConsentEndpointTests : IDisposable
     private static LogonConsentLink Issue(WebApplicationFactory<Program> factory) =>
         factory.Services.GetRequiredService<LogonConsentStore>()
             .Issue(LogonConsentKind.AutoLogonEnable, "lab", null, null, false, "http://127.0.0.1")
+            .Value!;
+
+    private static LogonConsentLink IssueUnlock(WebApplicationFactory<Program> factory) =>
+        factory.Services.GetRequiredService<LogonConsentStore>()
+            .Issue(LogonConsentKind.UnlockWorkstation, "lab", null, null, false, "http://127.0.0.1")
             .Value!;
 
     private static string Ticket(LogonConsentLink link)
@@ -176,7 +213,11 @@ public class LogonConsentEndpointTests : IDisposable
         return "__RequestVerificationToken";
     }
 
-    private WebApplicationFactory<Program> Create()
+    private WebApplicationFactory<Program> Create() => Create(unlock: false);
+
+    private WebApplicationFactory<Program> CreateUnlock() => Create(unlock: true);
+
+    private WebApplicationFactory<Program> Create(bool unlock)
     {
         using TcpListener listener = new(IPAddress.Loopback, 0);
         listener.Start();
@@ -199,6 +240,11 @@ public class LogonConsentEndpointTests : IDisposable
             {
                 services.RemoveAll<IAutoLogonPlatform>();
                 services.AddSingleton<IAutoLogonPlatform, FakePlatform>();
+                if (unlock)
+                {
+                    services.RemoveAll<IInteractiveLogonDispatcher>();
+                    services.AddSingleton<IInteractiveLogonDispatcher, FakeDispatcher>();
+                }
             });
         });
     }
@@ -227,5 +273,27 @@ public class LogonConsentEndpointTests : IDisposable
 
         public OperationResult<bool> VerifyCredentials(string userName, string? domain, ReadOnlySpan<char> password) =>
             OperationResult<bool>.Ok(true);
+    }
+
+    private sealed class FakeDispatcher : IInteractiveLogonDispatcher
+    {
+        public int DispatchCalls { get; private set; }
+
+        public bool LogonUiConnected => true;
+
+        public bool ProviderInstalled => true;
+
+        public bool ProviderRegistered => true;
+
+        public Task<OperationResult<string>> DispatchAsync(
+            string userName,
+            string? domain,
+            char[] password,
+            string? expectedSid,
+            CancellationToken cancellationToken)
+        {
+            DispatchCalls++;
+            return Task.FromResult(OperationResult<string>.Ok("submitted"));
+        }
     }
 }

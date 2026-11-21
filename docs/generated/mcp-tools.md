@@ -41,11 +41,11 @@ Requests cancellation of a running job. Process jobs kill their process tree.
 
 ## `cancel_logon_request`
 
-Cancels a pending AutoLogon or interactive-logon consent request so the URL stops working.
+Cancels a pending AutoLogon, interactive-logon, or unlock consent request so the URL stops working.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `requestId` | `string` | yes |  | Request id from request_autologon_enable or request_interactive_logon. |
+| `requestId` | `string` | yes |  | Request id from request_autologon_enable, request_interactive_logon, or request_unlock_workstation. |
 
 ## `cancel_reboot`
 
@@ -485,11 +485,11 @@ No parameters.
 
 ## `get_logon_request`
 
-Returns the status of a request_autologon_enable or request_interactive_logon consent request. waitSeconds 0 returns immediately; 1 through 30 waits for completion. The password is never returned.
+Returns the status of a request_autologon_enable, request_interactive_logon, or request_unlock_workstation consent request. waitSeconds 0 returns immediately; 1 through 30 waits for the human to finish the consent page. The password is never returned.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `requestId` | `string` | yes |  | Request id from request_autologon_enable or request_interactive_logon. |
+| `requestId` | `string` | yes |  | Request id from request_autologon_enable, request_interactive_logon, or request_unlock_workstation. |
 | `waitSeconds` | `int` | no | `0` | Seconds to wait for completion, 0 to 30. |
 
 ## `get_logon_session`
@@ -1081,6 +1081,14 @@ Starts an offline-only WUA applicability inventory job. Returns a Jobs id; read_
 | `includeHidden` | `bool` | no | `false` | Include hidden updates. |
 | `limit` | `int` | no | `100` | Maximum returned updates; clamped to WindowsServicing:MaxResults. |
 
+## `lock_workstation`
+
+Locks the active console session through LockWorkStation in that session. Requires Vestigo:System:AllowInteractiveLogon. waitSeconds 0 returns after the lock call; 1 through 15 waits for the console to report locked and, when the Credential Provider is registered, for LogonUI to connect. Idempotent when already locked. Does not lock the logon screen.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `waitSeconds` | `int` | no | `5` | Seconds to wait for the lock screen and LogonUI, 0 to 15. |
+
 ## `make_directory`
 
 Creates a directory, including missing parents, inside a root with Write access.
@@ -1301,7 +1309,7 @@ Removes driver store packages by original INF file name (for example mydriver.in
 
 ## `request_autologon_enable`
 
-Starts a one-time consent request to enable Windows AutoLogon for userName (optional domain, optional logonCount, optional forceAutoLogon). Returns a URL the user must open to enter the Windows password. Present that URL; do not fetch it and do not ask for the password in chat. Requires Vestigo:System:AllowAutoLogonChanges. The password is stored as an LSA private secret, never in appsettings.json, MCP results, or logs.
+Starts a one-time consent request to enable Windows AutoLogon for userName (optional domain, optional logonCount, optional forceAutoLogon). Returns a URL. Display that full URL as a clickable link so a human can open it in their visible desktop browser, or launch that OS browser; do not fetch or open it in a headless, embedded, IDE, or automated browser, and do not ask for the password in chat. After they submit, call get_logon_request. Requires Vestigo:System:AllowAutoLogonChanges. The password is stored as an LSA private secret, never in appsettings.json, MCP results, or logs.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -1312,12 +1320,21 @@ Starts a one-time consent request to enable Windows AutoLogon for userName (opti
 
 ## `request_interactive_logon`
 
-Starts a one-time consent request to sign in or unlock the console as userName from the Windows logon or lock screen. Returns a URL the user must open to enter the Windows password. Present that URL; do not fetch it and do not ask for the password in chat. Requires Vestigo:System:AllowInteractiveLogon, the MSI Interactive logon feature, and a locked or logon-screen console. The password is sent only to LogonUI over a SYSTEM-only named pipe.
+Starts a one-time consent request to sign in or unlock the console as userName from the Windows logon or lock screen. Returns a URL. Display that full URL as a clickable link so a human can open it in their visible desktop browser, or launch that OS browser; do not fetch or open it in a headless, embedded, IDE, or automated browser, and do not ask for the password in chat. After they submit, call get_logon_request. Requires Vestigo:System:AllowInteractiveLogon, the MSI Interactive logon feature, and a locked or logon-screen console. The password is sent only to LogonUI over a SYSTEM-only named pipe.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `userName` | `string` | yes |  | Account name, or DOMAIN\user. |
 | `domain` | `string` | no | `null` | Domain or computer name. Omit for a local account. |
+
+## `request_unlock_workstation`
+
+Starts a one-time consent request to unlock the locked console. Omitting userName uses the locked console user. Returns a URL. Display that full URL as a clickable link so a human can open it in their visible desktop browser, or launch that OS browser; do not fetch or open it in a headless, embedded, IDE, or automated browser, and do not ask for the password in chat. After they submit, call get_logon_request. Requires Vestigo:System:AllowInteractiveLogon, the MSI Interactive logon feature, a locked console, and a connected LogonUI. The password is sent only to LogonUI over a SYSTEM-only named pipe.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `userName` | `string` | no | `null` | Account name, or DOMAIN\user. Omit to use the locked console user. |
+| `domain` | `string` | no | `null` | Domain or computer name. Omit for a local account or when userName is omitted. |
 
 ## `reset_driver_verifier`
 

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using Vestigo.Configuration;
+using Vestigo.Processes;
 using Vestigo.SystemInfo;
 
 namespace Vestigo.Modules;
@@ -24,6 +25,9 @@ public sealed class SystemModule : VestigoModule
         services.AddSingleton<IBootStatePlatform, WindowsBootStatePlatform>();
         services.AddSingleton<ISessionPlatform, WindowsSessionPlatform>();
         services.AddSingleton<IRebootPlatform, WindowsRebootPlatform>();
+        services.TryAddSingleton<IProcessLauncher, ProcessLauncher>();
+        services.TryAddSingleton<SessionHelperClient>();
+        services.AddSingleton<IWorkstationLockPlatform, SessionHelperWorkstationLockPlatform>();
         services.AddSingleton<SystemService>();
         services.AddSingleton<IAutoLogonPlatform, WindowsAutoLogonPlatform>();
         services.AddSingleton<LogonConsentStore>();

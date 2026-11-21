@@ -6,6 +6,7 @@ using Vestigo.Configuration;
 using Vestigo.Hosting;
 using Vestigo.Installer.Actions.Logic;
 using Vestigo.Modules;
+using Vestigo.Processes;
 using Vestigo.SystemInfo;
 
 namespace Vestigo.Server.Tests;
@@ -246,7 +247,201 @@ public class AutoLogonTests
     {
         Assert.Contains("consent", ConfigurationFieldMetadata.BundledExecutableHint("System:AllowAutoLogonChanges"), StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Credential Provider", ConfigurationFieldMetadata.BundledExecutableHint("System:AllowInteractiveLogon"), StringComparison.Ordinal);
+        Assert.Contains("lock_workstation", ConfigurationFieldMetadata.BundledExecutableHint("System:AllowInteractiveLogon"), StringComparison.Ordinal);
         Assert.Contains("consent", ConfigurationFieldMetadata.BundledExecutableHint("System:LogonConsentLifetime"), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ConsentLink_InstructsUserFacingBrowserAndForbidsHeadlessAgents()
+    {
+        string instruction = LogonConsentLink.PresentToUser;
+        Assert.Contains("visible desktop browser", instruction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("clickable", instruction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("headless", instruction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("embedded", instruction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Playwright", instruction, StringComparison.Ordinal);
+        Assert.Contains("WebFetch", instruction, StringComparison.Ordinal);
+        Assert.Contains("get_logon_request", instruction, StringComparison.Ordinal);
+        Assert.DoesNotContain("Do not fetch the URL yourself", instruction, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionHelper_ParsesLockWorkStationArguments()
+    {
+        string[] args = [.. SessionHelper.BuildLockWorkStationArguments()];
+        Assert.Equal(["--session-helper", "lock-workstation"], args);
+        Assert.True(SessionHelper.TryParseLockWorkStation(args, out string? error));
+        Assert.Null(error);
+        Assert.False(SessionHelper.TryParseLockWorkStation([SessionHelper.Flag, SessionHelper.LockWorkStationCommand, "--extra"], out error));
+        Assert.Contains("Unexpected argument", error!, StringComparison.Ordinal);
+        Assert.False(SessionHelper.TryParseLockWorkStation([SessionHelper.Flag, "other"], out _));
+    }
+
+    [Fact]
+    public async Task LockWorkstation_RefusesWhenGateIsOff()
+    {
+        FakeLock platform = new();
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("unlocked", 1, "lab"),
+            new MutableDispatcher(),
+            allow: false,
+            platform);
+        OperationResult<WorkstationLockResult> result = await service.LockWorkstationAsync(5, CancellationToken.None);
+        Assert.Equal("interactive_logon_disabled", result.ErrorCode);
+        Assert.Equal(0, platform.Calls);
+    }
+
+    [Fact]
+    public async Task LockWorkstation_IsIdempotentWhenAlreadyLocked()
+    {
+        FakeLock platform = new();
+        MutableDispatcher dispatcher = new() { LogonUiConnected = true };
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("locked", 1, "lab"),
+            dispatcher,
+            allow: true,
+            platform);
+        OperationResult<WorkstationLockResult> result = await service.LockWorkstationAsync(5, CancellationToken.None);
+        Assert.True(result.Success);
+        Assert.True(result.Value!.Locked);
+        Assert.True(result.Value.AlreadyLocked);
+        Assert.Equal(0, platform.Calls);
+    }
+
+    [Fact]
+    public async Task LockWorkstation_RejectsLogonScreen()
+    {
+        FakeLock platform = new();
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("logonScreen", 1, null),
+            new MutableDispatcher(),
+            allow: true,
+            platform);
+        OperationResult<WorkstationLockResult> result = await service.LockWorkstationAsync(5, CancellationToken.None);
+        Assert.Equal("no_console_session", result.ErrorCode);
+        Assert.Equal(0, platform.Calls);
+    }
+
+    [Fact]
+    public async Task LockWorkstation_InvokesHelperAndPollsUntilLockedAndConnected()
+    {
+        MutableDispatcher dispatcher = new() { LogonUiConnected = false, ProviderRegistered = true };
+        MutableConsole console = new("unlocked", 1, "lab");
+        console.BeforeRead = reads =>
+        {
+            if (reads >= 3)
+            {
+                dispatcher.LogonUiConnected = true;
+            }
+        };
+        console.AfterRead = reads =>
+        {
+            if (reads == 1)
+            {
+                console.State = "locked";
+            }
+        };
+        FakeLock platform = new();
+        InteractiveLogonService service = Interactive(console, dispatcher, allow: true, platform);
+        OperationResult<WorkstationLockResult> result = await service.LockWorkstationAsync(5, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.Value!.Locked);
+        Assert.False(result.Value.AlreadyLocked);
+        Assert.True(result.Value.LogonUiConnected);
+        Assert.Equal(1, platform.Calls);
+        Assert.True(console.Reads >= 3);
+    }
+
+    [Fact]
+    public async Task LockWorkstation_ReportsHelperFailure()
+    {
+        FakeLock platform = new()
+        {
+            OnLock = () => Task.FromResult(OperationResult<bool>.Fail("lock_failed", "Windows could not lock the workstation."))
+        };
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("unlocked", 1, "lab"),
+            new MutableDispatcher(),
+            allow: true,
+            platform);
+        OperationResult<WorkstationLockResult> result = await service.LockWorkstationAsync(5, CancellationToken.None);
+        Assert.Equal("lock_failed", result.ErrorCode);
+        Assert.Equal(1, platform.Calls);
+    }
+
+    [Fact]
+    public void RequestUnlock_RefusesWhenGateIsOff()
+    {
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("locked", 1, "lab"),
+            new MutableDispatcher { LogonUiConnected = true },
+            allow: false);
+        Assert.Equal("interactive_logon_disabled", service.RequestUnlock(null, null).ErrorCode);
+    }
+
+    [Fact]
+    public void RequestUnlock_RequiresRegisteredProvider()
+    {
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("locked", 1, "lab"),
+            new MutableDispatcher { ProviderRegistered = false, LogonUiConnected = true });
+        Assert.Equal("provider_not_registered", service.RequestUnlock(null, null).ErrorCode);
+    }
+
+    [Fact]
+    public void RequestUnlock_RefusesUnlockedAndLogonScreen()
+    {
+        MutableDispatcher dispatcher = new() { LogonUiConnected = true };
+        Assert.Equal(
+            "already_unlocked",
+            Interactive(new MutableConsole("unlocked", 1, "lab"), dispatcher).RequestUnlock(null, null).ErrorCode);
+        Assert.Equal(
+            "not_locked",
+            Interactive(new MutableConsole("logonScreen", 1, null), dispatcher).RequestUnlock(null, null).ErrorCode);
+    }
+
+    [Fact]
+    public void RequestUnlock_RequiresLogonUi()
+    {
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("locked", 1, "lab"),
+            new MutableDispatcher { LogonUiConnected = false });
+        Assert.Equal("logonui_not_connected", service.RequestUnlock(null, null).ErrorCode);
+    }
+
+    [Fact]
+    public void RequestUnlock_AutoFillsLockedConsoleUser()
+    {
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("locked", 1, @"BOX\lab"),
+            new MutableDispatcher { LogonUiConnected = true });
+        OperationResult<LogonConsentLink> issued = service.RequestUnlock(null, null);
+        Assert.True(issued.Success);
+        Assert.Equal("unlockWorkstation", issued.Value!.Kind);
+        Assert.Equal("lab", issued.Value.UserName);
+        Assert.Equal("BOX", issued.Value.Domain);
+        Assert.Equal(LogonConsentLink.PresentToUser, issued.Value.Instruction);
+    }
+
+    [Fact]
+    public void RequestUnlock_UsesExplicitAccountAndRejectsDomainWithoutUser()
+    {
+        InteractiveLogonService service = Interactive(
+            new MutableConsole("locked", 1, "lab"),
+            new MutableDispatcher { LogonUiConnected = true });
+        OperationResult<LogonConsentLink> issued = service.RequestUnlock("other", "BOX");
+        Assert.True(issued.Success);
+        Assert.Equal("other", issued.Value!.UserName);
+        Assert.Equal("BOX", issued.Value.Domain);
+        Assert.Equal("invalid_request", service.RequestUnlock(null, "BOX").ErrorCode);
+        Assert.Equal(
+            "console_user_unknown",
+            Interactive(
+                    new MutableConsole("locked", 1, null),
+                    new MutableDispatcher { LogonUiConnected = true })
+                .RequestUnlock(null, null)
+                .ErrorCode);
     }
 
     private static string Ticket(LogonConsentLink link)
@@ -262,6 +457,23 @@ public class AutoLogonTests
         }
 
         throw new InvalidOperationException("ticket missing");
+    }
+
+    private static InteractiveLogonService Interactive(
+        ISessionPlatform sessions,
+        IInteractiveLogonDispatcher dispatcher,
+        bool allow = true,
+        IWorkstationLockPlatform? lockPlatform = null)
+    {
+        VestigoOptions options = new() { System = { AllowInteractiveLogon = allow } };
+        return new InteractiveLogonService(
+            dispatcher,
+            sessions,
+            new FakeAutoLogon(),
+            new LogonConsentStore(TimeProvider.System, options),
+            options,
+            NullLogger<InteractiveLogonService>.Instance,
+            lockPlatform: lockPlatform);
     }
 
     private static AutoLogonHarness Service(FakeAutoLogon platform, bool allow)
@@ -294,6 +506,60 @@ public class AutoLogonTests
         public SessionTokenRead ReadToken(uint sessionId) => throw new NotSupportedException();
 
         public ConsoleLockRead ReadConsoleLock() => ConsoleLockRead.Ok("locked", 1, true, "lab");
+    }
+
+    private sealed class MutableConsole(string state, uint? sessionId, string? userName) : ISessionPlatform
+    {
+        public string State { get; set; } = state;
+
+        public int Reads { get; private set; }
+
+        public Action<int>? BeforeRead { get; set; }
+
+        public Action<int>? AfterRead { get; set; }
+
+        public SessionSnapshot Read() => throw new NotSupportedException();
+
+        public SessionTokenRead ReadToken(uint sessionId) => throw new NotSupportedException();
+
+        public ConsoleLockRead ReadConsoleLock()
+        {
+            Reads++;
+            BeforeRead?.Invoke(Reads);
+            ConsoleLockRead current = ConsoleLockRead.Ok(State, sessionId, userName is not null, userName);
+            AfterRead?.Invoke(Reads);
+            return current;
+        }
+    }
+
+    private sealed class MutableDispatcher : IInteractiveLogonDispatcher
+    {
+        public bool LogonUiConnected { get; set; }
+
+        public bool ProviderInstalled { get; set; } = true;
+
+        public bool ProviderRegistered { get; set; } = true;
+
+        public Task<OperationResult<string>> DispatchAsync(
+            string userName,
+            string? domain,
+            char[] password,
+            string? expectedSid,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(OperationResult<string>.Ok("submitted"));
+    }
+
+    private sealed class FakeLock : IWorkstationLockPlatform
+    {
+        public int Calls { get; private set; }
+
+        public Func<Task<OperationResult<bool>>>? OnLock { get; init; }
+
+        public Task<OperationResult<bool>> LockAsync(CancellationToken cancellationToken)
+        {
+            Calls++;
+            return OnLock?.Invoke() ?? Task.FromResult(OperationResult<bool>.Ok(true));
+        }
     }
 
     private sealed class ThrowingDispatcher : IInteractiveLogonDispatcher

@@ -392,6 +392,7 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
     {
         LogonConsentKind.AutoLogonEnable => "autoLogon",
         LogonConsentKind.InteractiveLogon => "interactiveLogon",
+        LogonConsentKind.UnlockWorkstation => "unlockWorkstation",
         _ => "unknown"
     };
 
