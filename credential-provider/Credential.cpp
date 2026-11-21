@@ -3,7 +3,6 @@
 #include "guid.h"
 #include "Serialization.h"
 
-#include <ntstatus.h>
 #include <shlwapi.h>
 
 #include <cstring>

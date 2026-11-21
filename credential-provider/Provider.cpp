@@ -138,7 +138,7 @@ IFACEMETHODIMP VestigoProvider::GetCredentialCount(DWORD* count, DWORD* defaultI
     if (!hasCredential_)
     {
         *count = 0;
-        *defaultIndex = CREDENTIAL_PROVIDER_NO_DEFAULT_CREDENTIAL;
+        *defaultIndex = CREDENTIAL_PROVIDER_NO_DEFAULT;
         *autoLogonWithDefault = FALSE;
         return S_OK;
     }

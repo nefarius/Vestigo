@@ -1,7 +1,5 @@
 #include "Serialization.h"
 
-#include <ntstatus.h>
-#include <ntsecapi.h>
 #include <sspi.h>
 
 #include <cstring>

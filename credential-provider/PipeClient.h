@@ -1,8 +1,8 @@
 #pragma once
 
+#include "Platform.h"
 #include "Protocol.h"
 
-#include <windows.h>
 #include <credentialprovider.h>
 
 #include <mutex>

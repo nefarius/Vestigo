@@ -3,7 +3,6 @@
 #include "Credential.h"
 #include "PipeClient.h"
 
-#include <windows.h>
 #include <credentialprovider.h>
 
 #include <string>

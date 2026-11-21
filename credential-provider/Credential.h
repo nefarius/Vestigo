@@ -1,6 +1,7 @@
 #pragma once
 
-#include <windows.h>
+#include "Platform.h"
+
 #include <credentialprovider.h>
 
 #include <string>
