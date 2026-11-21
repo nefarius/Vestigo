@@ -57,6 +57,7 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         string? domain,
         char[] password,
         string? expectedSid,
+        bool requireUnlock,
         CancellationToken cancellationToken)
     {
         ConnectedPeer? peer;
@@ -89,6 +90,13 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 return OperationResult<string>.Fail(
                     "logonui_not_connected",
                     "LogonUI is not attached to the active console session.");
+            }
+
+            if (requireUnlock && peer.Hello.Scenario != CredentialProviderProtocol.UsageScenario.Unlock)
+            {
+                return OperationResult<string>.Fail(
+                    "not_locked",
+                    "The console is at the logon screen, not locked. Use request_interactive_logon.");
             }
 
             if (peer.Hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&

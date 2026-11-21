@@ -301,6 +301,7 @@ public class LogonConsentEndpointTests : IDisposable
             string? domain,
             char[] password,
             string? expectedSid,
+            bool requireUnlock,
             CancellationToken cancellationToken)
         {
             DispatchCalls++;

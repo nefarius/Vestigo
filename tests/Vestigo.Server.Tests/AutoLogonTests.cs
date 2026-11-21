@@ -518,6 +518,39 @@ public class AutoLogonTests
         Assert.Equal("failed", store.Peek(link.RequestId)!.Status);
     }
 
+    [Fact]
+    public async Task ApproveUnlock_RejectsWhenLogonUiIsNotUnlockScenario()
+    {
+        VestigoOptions options = new() { System = { AllowInteractiveLogon = true } };
+        LogonConsentStore store = new(TimeProvider.System, options);
+        MutableDispatcher dispatcher = new() { LogonUiConnected = true, UnlockScenario = false };
+        InteractiveLogonService service = new(
+            dispatcher,
+            new MutableConsole("locked", 1, "lab"),
+            new FakeAutoLogon(),
+            store,
+            options,
+            NullLogger<InteractiveLogonService>.Instance);
+        LogonConsentLink link = store.Issue(
+            LogonConsentKind.UnlockWorkstation,
+            "lab",
+            null,
+            logonCount: null,
+            forceAutoLogon: false,
+            "http://127.0.0.1").Value!;
+        Assert.True(store.TryOpen(link.RequestId, Ticket(link), out LogonConsentStore.PendingConsent? pending, out _, out _));
+
+        OperationResult<LogonRequestView> result = await service.ApproveAsync(
+            pending!,
+            "secret".ToCharArray(),
+            CancellationToken.None);
+
+        Assert.Equal("not_locked", result.ErrorCode);
+        Assert.True(dispatcher.LastRequireUnlock);
+        Assert.Equal(1, dispatcher.DispatchCalls);
+        Assert.Equal("failed", store.Peek(link.RequestId)!.Status);
+    }
+
     private static string Ticket(LogonConsentLink link)
     {
         Uri uri = new(link.Url);
@@ -624,14 +657,27 @@ public class AutoLogonTests
 
         public bool ProviderRegistered { get; set; } = true;
 
+        public bool UnlockScenario { get; set; } = true;
+
+        public bool? LastRequireUnlock { get; private set; }
+
         public Task<OperationResult<string>> DispatchAsync(
             string userName,
             string? domain,
             char[] password,
             string? expectedSid,
+            bool requireUnlock,
             CancellationToken cancellationToken)
         {
+            LastRequireUnlock = requireUnlock;
             DispatchCalls++;
+            if (requireUnlock && !UnlockScenario)
+            {
+                return Task.FromResult(OperationResult<string>.Fail(
+                    "not_locked",
+                    "The console is at the logon screen, not locked. Use request_interactive_logon."));
+            }
+
             return Task.FromResult(OperationResult<string>.Ok("submitted"));
         }
     }
@@ -662,6 +708,7 @@ public class AutoLogonTests
             string? domain,
             char[] password,
             string? expectedSid,
+            bool requireUnlock,
             CancellationToken cancellationToken) =>
             throw new InvalidDataException("truncated");
     }

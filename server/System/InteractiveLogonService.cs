@@ -380,7 +380,13 @@ public sealed class InteractiveLogonService(
         try
         {
             dispatched = await dispatcher
-                .DispatchAsync(pending.UserName, pending.Domain, password, expectedSid: null, cancellationToken)
+                .DispatchAsync(
+                    pending.UserName,
+                    pending.Domain,
+                    password,
+                    expectedSid: null,
+                    requireUnlock: pending.Kind == LogonConsentKind.UnlockWorkstation,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception)
