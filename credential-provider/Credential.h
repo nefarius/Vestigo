@@ -4,6 +4,7 @@
 
 #include <credentialprovider.h>
 
+#include <cstdint>
 #include <string>
 
 class PipeClient;
@@ -70,5 +71,6 @@ private:
     std::wstring password_;
     std::wstring userSid_;
     PipeClient* pipe_ = nullptr;
+    std::uint64_t generation_ = 0;
     NTSTATUS lastStatus_ = 0;
 };

@@ -232,7 +232,7 @@ void VestigoProvider::ApplyDispatch()
         }
         if (!match)
         {
-            pipe_.Report(vestigo::protocol::ProviderStatus::Failed, ERROR_NO_SUCH_USER, L"sid_mismatch");
+            pipe_.Report(vestigo::protocol::ProviderStatus::Failed, ERROR_NO_SUCH_USER, L"sid_mismatch", pipe_.Generation());
             SecureZeroMemory(request.password.data(), request.password.size() * sizeof(wchar_t));
             return;
         }
@@ -246,7 +246,7 @@ void VestigoProvider::ApplyDispatch()
     credential_ = new (std::nothrow) VestigoCredential();
     if (credential_ == nullptr)
     {
-        pipe_.Report(vestigo::protocol::ProviderStatus::Failed, ERROR_OUTOFMEMORY, L"out_of_memory");
+        pipe_.Report(vestigo::protocol::ProviderStatus::Failed, ERROR_OUTOFMEMORY, L"out_of_memory", pipe_.Generation());
         SecureZeroMemory(request.password.data(), request.password.size() * sizeof(wchar_t));
         return;
     }

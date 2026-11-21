@@ -133,6 +133,12 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
             Drop(peer);
             return OperationResult<string>.Fail("logonui_not_connected", "LogonUI disconnected during dispatch.");
         }
+        catch (InvalidDataException exception)
+        {
+            _logger.LogWarning(exception, "Credential Provider sent an invalid dispatch reply.");
+            Drop(peer);
+            return OperationResult<string>.Fail("provider_protocol", exception.Message);
+        }
         finally
         {
             CryptographicOperations.ZeroMemory(payload);

@@ -143,6 +143,35 @@ public class AutoLogonTests
     }
 
     [Fact]
+    public async Task InteractiveLogonService_MarksFailedWhenDispatchThrows()
+    {
+        VestigoOptions options = new() { System = { AllowInteractiveLogon = true } };
+        LogonConsentStore store = new(TimeProvider.System, options);
+        InteractiveLogonService service = new(
+            new ThrowingDispatcher(),
+            new LockedConsole(),
+            new FakeAutoLogon(),
+            store,
+            options,
+            NullLogger<InteractiveLogonService>.Instance);
+        LogonConsentLink link = store.Issue(
+            LogonConsentKind.InteractiveLogon,
+            "lab",
+            null,
+            logonCount: null,
+            forceAutoLogon: false,
+            "http://127.0.0.1").Value!;
+        Assert.True(store.TryOpen(link.RequestId, Ticket(link), out LogonConsentStore.PendingConsent? pending, out _, out _));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            service.ApproveAsync(pending!, "secret".ToCharArray(), CancellationToken.None));
+
+        LogonRequestView? view = store.Peek(link.RequestId);
+        Assert.Equal("failed", view!.Status);
+        Assert.Equal("logon_failed", view.ErrorCode);
+    }
+
+    [Fact]
     public void AutoLogonService_RefusesWhenGateIsOff_AndDoesNotCallPlatform()
     {
         FakeAutoLogon platform = new();
@@ -256,6 +285,32 @@ public class AutoLogonTests
 
         public OperationResult<LogonRequestView> Approve(LogonConsentStore.PendingConsent pending, char[] password) =>
             service.Approve(pending, password);
+    }
+
+    private sealed class LockedConsole : ISessionPlatform
+    {
+        public SessionSnapshot Read() => throw new NotSupportedException();
+
+        public SessionTokenRead ReadToken(uint sessionId) => throw new NotSupportedException();
+
+        public ConsoleLockRead ReadConsoleLock() => ConsoleLockRead.Ok("locked", 1, true, "lab");
+    }
+
+    private sealed class ThrowingDispatcher : IInteractiveLogonDispatcher
+    {
+        public bool LogonUiConnected => true;
+
+        public bool ProviderInstalled => true;
+
+        public bool ProviderRegistered => true;
+
+        public Task<OperationResult<string>> DispatchAsync(
+            string userName,
+            string? domain,
+            char[] password,
+            string? expectedSid,
+            CancellationToken cancellationToken) =>
+            throw new InvalidDataException("truncated");
     }
 
     private sealed class FakeAutoLogon : IAutoLogonPlatform

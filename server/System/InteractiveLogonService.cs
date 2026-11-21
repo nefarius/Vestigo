@@ -145,9 +145,23 @@ public sealed class InteractiveLogonService(
         }
 
         store.Complete(pending.RequestId, LogonRequestStatus.Submitted, null, null);
-        OperationResult<string> dispatched = await dispatcher
-            .DispatchAsync(pending.UserName, pending.Domain, password, expectedSid: null, cancellationToken)
-            .ConfigureAwait(false);
+        OperationResult<string> dispatched;
+        try
+        {
+            dispatched = await dispatcher
+                .DispatchAsync(pending.UserName, pending.Domain, password, expectedSid: null, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            store.Complete(
+                pending.RequestId,
+                LogonRequestStatus.Failed,
+                "logon_failed",
+                "The Credential Provider dispatch failed before LogonUI accepted the credentials.");
+            throw;
+        }
+
         if (!dispatched.Success)
         {
             store.Complete(pending.RequestId, LogonRequestStatus.Failed, dispatched.ErrorCode, dispatched.Error);

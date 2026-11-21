@@ -50,6 +50,7 @@ void VestigoCredential::Initialize(
     password_ = std::move(password);
     userSid_ = userSid;
     pipe_ = pipe;
+    generation_ = pipe != nullptr ? pipe->Generation() : 0;
 }
 
 IFACEMETHODIMP VestigoCredential::QueryInterface(REFIID riid, void** ppv)
@@ -213,7 +214,7 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
         *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
         if (pipe_ != nullptr)
         {
-            pipe_->Report(vestigo::protocol::ProviderStatus::Failed, HRESULT_CODE(hr), L"pack_failed");
+            pipe_->Report(vestigo::protocol::ProviderStatus::Failed, HRESULT_CODE(hr), L"pack_failed", generation_);
         }
         return hr;
     }
@@ -228,7 +229,7 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
         *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
         if (pipe_ != nullptr)
         {
-            pipe_->Report(vestigo::protocol::ProviderStatus::Failed, HRESULT_CODE(hr), L"auth_package");
+            pipe_->Report(vestigo::protocol::ProviderStatus::Failed, HRESULT_CODE(hr), L"auth_package", generation_);
         }
         return hr;
     }
@@ -238,7 +239,7 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
     *response = CPGSR_RETURN_CREDENTIAL_FINISHED;
     if (pipe_ != nullptr)
     {
-        pipe_->Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"");
+        pipe_->Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"", generation_);
     }
     return S_OK;
 }

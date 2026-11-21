@@ -139,13 +139,19 @@ bool PipeClient::TryTakeDispatch(DispatchRequest& request)
     return true;
 }
 
-void PipeClient::Report(vestigo::protocol::ProviderStatus status, int win32Error, const std::wstring& message)
+std::uint64_t PipeClient::Generation()
 {
-    if (pipe_ == INVALID_HANDLE_VALUE)
-    {
-        return;
-    }
-    WriteFrame(vestigo::protocol::MessageType::Status, EncodeStatus(status, win32Error, message));
+    std::lock_guard lock(mutex_);
+    return generation_;
+}
+
+void PipeClient::Report(
+    vestigo::protocol::ProviderStatus status,
+    int win32Error,
+    const std::wstring& message,
+    std::uint64_t generation)
+{
+    WriteFrame(vestigo::protocol::MessageType::Status, EncodeStatus(status, win32Error, message), generation);
 }
 
 void PipeClient::Worker()
@@ -245,6 +251,7 @@ bool PipeClient::PublishPipe(HANDLE pipe)
     {
         return false;
     }
+    generation_++;
     pipe_ = pipe;
     return true;
 }
@@ -263,9 +270,22 @@ HANDLE PipeClient::CurrentPipe()
     return pipe_;
 }
 
-bool PipeClient::WriteFrame(vestigo::protocol::MessageType type, const std::vector<BYTE>& payload)
+bool PipeClient::WriteFrame(
+    vestigo::protocol::MessageType type,
+    const std::vector<BYTE>& payload,
+    std::uint64_t requiredGeneration)
 {
-    HANDLE pipe = CurrentPipe();
+    HANDLE pipe = INVALID_HANDLE_VALUE;
+    {
+        std::lock_guard lock(mutex_);
+        if (requiredGeneration != 0 && requiredGeneration != generation_)
+        {
+            return false;
+        }
+
+        pipe = pipe_;
+    }
+
     if (pipe == INVALID_HANDLE_VALUE || payload.size() > vestigo::protocol::kMaxPayload)
     {
         return false;
