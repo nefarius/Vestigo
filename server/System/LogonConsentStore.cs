@@ -44,6 +44,8 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
 
         public int FailedAttempts { get; set; }
 
+        public bool InFlight { get; set; }
+
         public bool Consumed { get; set; }
 
         public TaskCompletionSource Signal { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -84,7 +86,9 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
             if (_entries.Count >= MaxEntries)
             {
                 Entry? idle = _entries.Values
-                    .Where(entry => entry.Status is not LogonRequestStatus.Pending)
+                    .Where(entry => entry.Status is not LogonRequestStatus.Pending
+                                    and not LogonRequestStatus.Submitted
+                                    && !entry.InFlight)
                     .MinBy(entry => entry.ExpiresUtc);
                 if (idle is null)
                 {
@@ -146,7 +150,7 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
                 return null;
             }
 
-            if (entry.Status is not LogonRequestStatus.Pending)
+            if (entry.Status is not LogonRequestStatus.Pending and not LogonRequestStatus.Submitted)
             {
                 return View(entry);
             }
@@ -172,7 +176,19 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
         return Peek(requestId);
     }
 
-    public bool TryOpen(string? id, string? ticket, out PendingConsent? pending, out string? errorCode, out string? error)
+    public bool TryOpen(string? id, string? ticket, out PendingConsent? pending, out string? errorCode, out string? error) =>
+        TryOpen(id, ticket, claim: false, out pending, out errorCode, out error);
+
+    public bool TryBeginDecision(string? id, string? ticket, out PendingConsent? pending, out string? errorCode, out string? error) =>
+        TryOpen(id, ticket, claim: true, out pending, out errorCode, out error);
+
+    private bool TryOpen(
+        string? id,
+        string? ticket,
+        bool claim,
+        out PendingConsent? pending,
+        out string? errorCode,
+        out string? error)
     {
         pending = null;
         errorCode = null;
@@ -204,7 +220,7 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
                 return false;
             }
 
-            if (entry.Status is LogonRequestStatus.Expired || entry.ExpiresUtc <= time.GetUtcNow())
+            if (entry.Status is LogonRequestStatus.Pending && entry.ExpiresUtc <= time.GetUtcNow())
             {
                 Mark(entry, LogonRequestStatus.Expired, "expired", "The consent request has expired.");
                 errorCode = "expired";
@@ -212,23 +228,39 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
                 return false;
             }
 
-            if (entry.Status is not LogonRequestStatus.Pending)
+            if (entry.Status is LogonRequestStatus.Expired)
+            {
+                errorCode = "expired";
+                error = "The consent request has expired.";
+                return false;
+            }
+
+            if (entry.Status is not LogonRequestStatus.Pending || (claim && entry.InFlight))
             {
                 errorCode = "already_completed";
                 error = "This consent request was already completed.";
                 return false;
             }
 
-            pending = new PendingConsent(
-                entry.RequestId,
-                entry.Kind,
-                entry.UserName,
-                entry.Domain,
-                entry.LogonCount,
-                entry.ForceAutoLogon,
-                entry.ExpiresUtc,
-                MaxFailedAttempts - entry.FailedAttempts);
+            if (claim)
+            {
+                entry.InFlight = true;
+            }
+
+            pending = Snapshot(entry);
             return true;
+        }
+    }
+
+    public void ReleaseDecision(string requestId)
+    {
+        lock (_gate)
+        {
+            if (_entries.TryGetValue(requestId, out Entry? entry) &&
+                entry.Status is LogonRequestStatus.Pending)
+            {
+                entry.InFlight = false;
+            }
         }
     }
 
@@ -265,16 +297,22 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
         }
     }
 
-    public bool Cancel(string requestId)
+    public bool Cancel(string requestId) => Cancel(requestId, out _);
+
+    public bool Cancel(string requestId, out LogonRequestView? view)
     {
+        view = null;
         lock (_gate)
         {
-            if (!_entries.TryGetValue(requestId, out Entry? entry) || entry.Status is not LogonRequestStatus.Pending)
+            if (!_entries.TryGetValue(requestId, out Entry? entry) ||
+                entry.Status is not LogonRequestStatus.Pending ||
+                entry.InFlight)
             {
                 return false;
             }
 
             Mark(entry, LogonRequestStatus.Cancelled, "cancelled", "The consent request was cancelled.");
+            view = View(entry);
             return true;
         }
     }
@@ -298,11 +336,23 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
         }
     }
 
+    private static PendingConsent Snapshot(Entry entry) =>
+        new(
+            entry.RequestId,
+            entry.Kind,
+            entry.UserName,
+            entry.Domain,
+            entry.LogonCount,
+            entry.ForceAutoLogon,
+            entry.ExpiresUtc,
+            MaxFailedAttempts - entry.FailedAttempts);
+
     private static void Mark(Entry entry, LogonRequestStatus status, string? errorCode, string? error)
     {
         entry.Status = status;
         entry.ErrorCode = errorCode;
         entry.Error = error;
+        entry.InFlight = false;
         entry.Consumed = status is not LogonRequestStatus.Pending;
         entry.Signal.TrySetResult();
     }

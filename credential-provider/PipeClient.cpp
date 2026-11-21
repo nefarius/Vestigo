@@ -107,7 +107,7 @@ void PipeClient::Stop()
     }
     if (thread_ != nullptr)
     {
-        WaitForSingleObject(thread_, 5000);
+        WaitForSingleObject(thread_, INFINITE);
         CloseHandle(thread_);
         thread_ = nullptr;
     }
@@ -168,7 +168,7 @@ bool PipeClient::ConnectAndRun()
         0,
         nullptr,
         OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
+        FILE_ATTRIBUTE_NORMAL | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
         nullptr);
     if (pipe == INVALID_HANDLE_VALUE)
     {
@@ -217,7 +217,6 @@ bool PipeClient::ConnectAndRun()
         {
             callback_(callbackContext_);
         }
-        return true;
     }
 
     if (pipe_ == pipe)

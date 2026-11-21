@@ -92,7 +92,7 @@ public static class LogonConsentEndpoint
         char[] password = form["password"].ToString().ToCharArray();
         try
         {
-            if (!store.TryOpen(id, ticket, out LogonConsentStore.PendingConsent? pending, out _, out string? error))
+            if (!store.TryBeginDecision(id, ticket, out LogonConsentStore.PendingConsent? pending, out _, out string? error))
             {
                 return Page(new LogonConsentPageModel
                 {
@@ -117,14 +117,16 @@ public static class LogonConsentEndpoint
 
             if (!string.Equals(decision, "approve", StringComparison.OrdinalIgnoreCase))
             {
+                store.ReleaseDecision(pending!.RequestId);
                 AntiforgeryTokenSet tokens = antiforgery.GetAndStoreTokens(context);
-                return Page(FormModel(pending!, ticket, tokens, context, remaining: pending!.RemainingAttempts, error: "Choose Approve or Reject."));
+                return Page(FormModel(pending, ticket, tokens, context, remaining: pending.RemainingAttempts, error: "Choose Approve or Reject."));
             }
 
             if (password.Length == 0)
             {
+                store.ReleaseDecision(pending!.RequestId);
                 AntiforgeryTokenSet tokens = antiforgery.GetAndStoreTokens(context);
-                return Page(FormModel(pending!, ticket, tokens, context, remaining: pending!.RemainingAttempts, error: "Enter the Windows password."));
+                return Page(FormModel(pending, ticket, tokens, context, remaining: pending.RemainingAttempts, error: "Enter the Windows password."));
             }
 
             OperationResult<LogonRequestView> result = pending!.Kind == LogonConsentKind.InteractiveLogon
@@ -138,6 +140,7 @@ public static class LogonConsentEndpoint
                              view?.Status == LogonConsentStore.StatusName(LogonRequestStatus.Pending);
                 if (retry)
                 {
+                    store.ReleaseDecision(pending.RequestId);
                     AntiforgeryTokenSet tokens = antiforgery.GetAndStoreTokens(context);
                     return Page(FormModel(
                         pending,

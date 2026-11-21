@@ -48,9 +48,15 @@ public static class LogonAccount
             string[] parts = user.Split('\\', 2);
             parsedDomain = parts[0].Trim();
             user = parts[1].Trim();
-            if (user.Length == 0 || parsedDomain.Length == 0)
+            if (user.Length == 0 || parsedDomain.Length == 0 || user.Length > MaxNameLength || ContainsControl(user))
             {
                 error = "userName is invalid.";
+                return false;
+            }
+
+            if (IsReserved(user))
+            {
+                error = "That account cannot be used for AutoLogon or interactive logon.";
                 return false;
             }
         }

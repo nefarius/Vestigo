@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <wincred.h>
 #include <ntsecapi.h>
+#include <credentialprovider.h>
 
 #include <string>
 

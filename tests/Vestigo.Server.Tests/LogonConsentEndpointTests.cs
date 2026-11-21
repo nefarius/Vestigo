@@ -53,6 +53,7 @@ public class LogonConsentEndpointTests : IDisposable
         Assert.Contains("Approve this request", html, StringComparison.Ordinal);
         Assert.Contains("lab", html, StringComparison.Ordinal);
         Assert.Contains("type=\"password\"", html, StringComparison.Ordinal);
+        Assert.Contains("formnovalidate", html, StringComparison.Ordinal);
         Assert.DoesNotContain("secret-password", html, StringComparison.Ordinal);
         Assert.DoesNotContain("blazor.web.js", html, StringComparison.Ordinal);
         Assert.DoesNotContain("/_blazor", html, StringComparison.Ordinal);

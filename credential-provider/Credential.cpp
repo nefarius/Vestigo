@@ -8,6 +8,9 @@
 
 #include <cstring>
 
+extern "C" void DllAddRef();
+extern "C" void DllRelease();
+
 namespace {
 
 HRESULT CopyString(const std::wstring& value, LPWSTR* dest)
@@ -21,11 +24,15 @@ HRESULT CopyString(const std::wstring& value, LPWSTR* dest)
 
 }  // namespace
 
-VestigoCredential::VestigoCredential() = default;
+VestigoCredential::VestigoCredential()
+{
+    DllAddRef();
+}
 
 VestigoCredential::~VestigoCredential()
 {
     SecureZeroMemory(password_.data(), password_.size() * sizeof(wchar_t));
+    DllRelease();
 }
 
 void VestigoCredential::Initialize(

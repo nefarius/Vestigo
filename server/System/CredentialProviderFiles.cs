@@ -31,9 +31,15 @@ public static class CredentialProviderFiles
             return false;
         }
 
-        string live = CredentialProviderIdentity.LiveDirectory(installDir);
-        return path.StartsWith(live, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(path, CredentialProviderIdentity.StagingPath(installDir), StringComparison.OrdinalIgnoreCase);
+        string full = Path.GetFullPath(path);
+        string liveDir = NormalizeDirectory(CredentialProviderIdentity.LiveDirectory(installDir));
+        string? parent = Path.GetDirectoryName(full);
+        return (parent is not null &&
+                string.Equals(NormalizeDirectory(parent), liveDir, StringComparison.OrdinalIgnoreCase)) ||
+               string.Equals(
+                   full,
+                   Path.GetFullPath(CredentialProviderIdentity.StagingPath(installDir)),
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -72,4 +78,7 @@ public static class CredentialProviderFiles
 
         return removed;
     }
+
+    private static string NormalizeDirectory(string path) =>
+        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 }

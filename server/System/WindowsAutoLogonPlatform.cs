@@ -25,6 +25,8 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
     private const uint PolicyCreateSecret = 0x00000020;
     private const uint PolicyGetPrivateInformation = 0x00000004;
 
+    private readonly object _gate = new();
+
     /// <inheritdoc />
     public AutoLogonState Read()
     {
@@ -79,20 +81,38 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
             return verified.FailAs<AutoLogonChange>();
         }
 
-        try
+        lock (_gate)
         {
-            StoreLsaSecret(password);
-            WriteWinlogon(userName, domain, logonCount, forceAutoLogon, enabled: true);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return OperationResult<AutoLogonChange>.Fail(
-                "access_denied",
-                "Windows denied access to AutoLogon settings.");
-        }
-        catch (Exception exception)
-        {
-            return OperationResult<AutoLogonChange>.Fail("autologon_write_failed", exception.Message);
+            try
+            {
+                StoreLsaSecret(password);
+                try
+                {
+                    WriteWinlogon(userName, domain, logonCount, forceAutoLogon, enabled: true);
+                }
+                catch
+                {
+                    try
+                    {
+                        DeleteLsaSecret();
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    throw;
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return OperationResult<AutoLogonChange>.Fail(
+                    "access_denied",
+                    "Windows denied access to AutoLogon settings.");
+            }
+            catch (Exception exception)
+            {
+                return OperationResult<AutoLogonChange>.Fail("autologon_write_failed", exception.Message);
+            }
         }
 
         AutoLogonState after = Read();
@@ -108,20 +128,23 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
     /// <inheritdoc />
     public OperationResult<AutoLogonChange> Disable(bool clearDefaultUser)
     {
-        try
+        lock (_gate)
         {
-            DeleteLsaSecret();
-            ClearWinlogon(clearDefaultUser);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return OperationResult<AutoLogonChange>.Fail(
-                "access_denied",
-                "Windows denied access to AutoLogon settings.");
-        }
-        catch (Exception exception)
-        {
-            return OperationResult<AutoLogonChange>.Fail("autologon_write_failed", exception.Message);
+            try
+            {
+                DeleteLsaSecret();
+                ClearWinlogon(clearDefaultUser);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return OperationResult<AutoLogonChange>.Fail(
+                    "access_denied",
+                    "Windows denied access to AutoLogon settings.");
+            }
+            catch (Exception exception)
+            {
+                return OperationResult<AutoLogonChange>.Fail("autologon_write_failed", exception.Message);
+            }
         }
 
         AutoLogonState after = Read();
@@ -154,7 +177,7 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
                 {
                     ok = LogonUserW(
                         userName,
-                        string.IsNullOrEmpty(domain) ? null : domain,
+                        LogonDomain(userName, domain),
                         secret,
                         (uint)LOGON32_LOGON.LOGON32_LOGON_INTERACTIVE,
                         (uint)LOGON32_PROVIDER.LOGON32_PROVIDER_DEFAULT,
@@ -179,6 +202,19 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
 
             CryptographicOperations.ZeroMemory(MemoryMarshal.AsBytes(buffer.AsSpan()));
         }
+    }
+
+    /// <summary>
+    ///     <c>LogonUserW</c> requires a UPN when <c>lpszDomain</c> is null. A bare local account uses <c>.</c>.
+    /// </summary>
+    private static string? LogonDomain(string userName, string? domain)
+    {
+        if (!string.IsNullOrEmpty(domain))
+        {
+            return domain;
+        }
+
+        return userName.Contains('@', StringComparison.Ordinal) ? null : ".";
     }
 
     /// <summary>
@@ -233,10 +269,12 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
         if (forceAutoLogon)
         {
             winlogon.SetValue("ForceAutoLogon", "1", RegistryValueKind.String);
+            winlogon.SetValue("IgnoreShiftOverride", "1", RegistryValueKind.String);
         }
         else
         {
             DeleteValue(winlogon, "ForceAutoLogon");
+            DeleteValue(winlogon, "IgnoreShiftOverride");
         }
 
         DeleteValue(winlogon, "DefaultPassword");
@@ -255,6 +293,7 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
         DeleteValue(winlogon, "DefaultPassword");
         DeleteValue(winlogon, "AutoLogonCount");
         DeleteValue(winlogon, "ForceAutoLogon");
+        DeleteValue(winlogon, "IgnoreShiftOverride");
         if (clearDefaultUser)
         {
             DeleteValue(winlogon, "DefaultUserName");

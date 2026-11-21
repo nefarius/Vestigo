@@ -63,6 +63,15 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         lock (_gate)
         {
             peer = _peer is { Pipe.IsConnected: true } connected ? connected : null;
+            if (peer is not null)
+            {
+                if (peer.Busy)
+                {
+                    return OperationResult<string>.Fail("logon_busy", "An interactive logon is already in progress.");
+                }
+
+                peer.Busy = true;
+            }
         }
 
         if (peer is null)
@@ -72,24 +81,26 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 "LogonUI is not connected. Interactive logon works from the Windows logon or lock screen.");
         }
 
-        if (peer.Busy)
-        {
-            return OperationResult<string>.Fail("logon_busy", "An interactive logon is already in progress.");
-        }
-
-        if (peer.Hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
-            !string.IsNullOrWhiteSpace(expectedSid) &&
-            !peer.Hello.UserSids.Contains(expectedSid, StringComparer.OrdinalIgnoreCase))
-        {
-            return OperationResult<string>.Fail(
-                "sid_mismatch",
-                "The unlock target is not one of the users on the lock screen.");
-        }
-
-        peer.Busy = true;
-        byte[] payload = CredentialProviderProtocol.EncodeDispatch(userName, domain ?? "", password, expectedSid);
+        byte[] payload = [];
         try
         {
+            if (!PeerIsConsoleSession(peer))
+            {
+                return OperationResult<string>.Fail(
+                    "logonui_not_connected",
+                    "LogonUI is not attached to the active console session.");
+            }
+
+            if (peer.Hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
+                !string.IsNullOrWhiteSpace(expectedSid) &&
+                !peer.Hello.UserSids.Contains(expectedSid, StringComparer.OrdinalIgnoreCase))
+            {
+                return OperationResult<string>.Fail(
+                    "sid_mismatch",
+                    "The unlock target is not one of the users on the lock screen.");
+            }
+
+            payload = CredentialProviderProtocol.EncodeDispatch(userName, domain ?? "", password, expectedSid);
             await WriteFrameAsync(peer.Pipe, CredentialProviderProtocol.MessageType.Dispatch, payload, cancellationToken)
                 .ConfigureAwait(false);
             CredentialProviderProtocol.Frame frame = await ReadFrameAsync(peer.Pipe, cancellationToken).ConfigureAwait(false);
@@ -113,6 +124,7 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            Drop(peer);
             return OperationResult<string>.Fail("cancelled", "The interactive logon was cancelled.");
         }
         catch (IOException exception)
@@ -157,13 +169,19 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 }
 
                 CredentialProviderProtocol.HelloMessage hello = CredentialProviderProtocol.DecodeHello(helloFrame.Payload);
+                if (!GetClientProcessId(pipe, out uint processId))
+                {
+                    pipe.Dispose();
+                    continue;
+                }
+
                 byte[] status = CredentialProviderProtocol.EncodeStatus(
                     new CredentialProviderProtocol.StatusMessage(
                         CredentialProviderProtocol.ProviderStatus.Connected, 0, null));
                 await WriteFrameAsync(pipe, CredentialProviderProtocol.MessageType.Status, status, stoppingToken)
                     .ConfigureAwait(false);
 
-                ConnectedPeer peer = new(pipe, hello);
+                ConnectedPeer peer = new(pipe, hello, processId);
                 lock (_gate)
                 {
                     _peer?.Pipe.Dispose();
@@ -176,6 +194,8 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                     hello.SessionId);
 
                 await WaitUntilDisconnectedAsync(pipe, stoppingToken).ConfigureAwait(false);
+                pipe.Dispose();
+                pipe = null;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -459,11 +479,25 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
             &bytesLeft);
     }
 
-    private sealed class ConnectedPeer(NamedPipeServerStream pipe, CredentialProviderProtocol.HelloMessage hello)
+    private static unsafe bool PeerIsConsoleSession(ConnectedPeer peer)
+    {
+        uint session = 0;
+        if (!PInvoke.ProcessIdToSessionId(peer.ProcessId, &session))
+        {
+            return false;
+        }
+
+        uint console = PInvoke.WTSGetActiveConsoleSessionId();
+        return session == console && peer.Hello.SessionId == console;
+    }
+
+    private sealed class ConnectedPeer(NamedPipeServerStream pipe, CredentialProviderProtocol.HelloMessage hello, uint processId)
     {
         public NamedPipeServerStream Pipe { get; } = pipe;
 
         public CredentialProviderProtocol.HelloMessage Hello { get; } = hello;
+
+        public uint ProcessId { get; } = processId;
 
         public bool Busy { get; set; }
     }

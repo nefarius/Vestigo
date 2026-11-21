@@ -52,6 +52,7 @@ public class AutoLogonTests
         Assert.Equal("lab", user);
         Assert.Equal("CONTOSO", domain);
         Assert.False(LogonAccount.TryNormalize("SYSTEM", null, out _, out _, out _));
+        Assert.False(LogonAccount.TryNormalize(@"CONTOSO\SYSTEM", null, out _, out _, out _));
         Assert.False(LogonAccount.TryNormalize("lab", "SYSTEM", out _, out _, out _));
         Assert.False(LogonAccount.TryNormalize(@"CONTOSO\lab", "CONTOSO", out _, out _, out _));
         Assert.False(LogonAccount.TryNormalizeLogonCount(0, out _, out _));
@@ -108,6 +109,25 @@ public class AutoLogonTests
         Assert.Equal("failed", store.Peek(retry.RequestId)!.Status);
         Assert.False(store.TryOpen(retry.RequestId, Ticket(retry), out _, out code, out _));
         Assert.Equal("already_completed", code);
+
+        time.Advance(TimeSpan.FromMinutes(2));
+        Assert.False(store.TryOpen(retry.RequestId, Ticket(retry), out _, out code, out _));
+        Assert.Equal("already_completed", code);
+        Assert.Equal("failed", store.Peek(retry.RequestId)!.Status);
+    }
+
+    [Fact]
+    public void ConsentStore_ClaimsADecisionOnce()
+    {
+        LogonConsentStore store = new(TimeProvider.System, new VestigoOptions());
+        LogonConsentLink link = store.Issue(LogonConsentKind.AutoLogonEnable, "lab", null, null, false, "http://h").Value!;
+        Assert.True(store.TryBeginDecision(link.RequestId, Ticket(link), out _, out _, out _));
+        Assert.False(store.TryBeginDecision(link.RequestId, Ticket(link), out _, out string? code, out _));
+        Assert.Equal("already_completed", code);
+        Assert.False(store.Cancel(link.RequestId));
+        store.ReleaseDecision(link.RequestId);
+        Assert.True(store.Cancel(link.RequestId, out LogonRequestView? cancelled));
+        Assert.Equal("cancelled", cancelled!.Status);
     }
 
     [Fact]
@@ -164,6 +184,9 @@ public class AutoLogonTests
         Assert.Equal("S-1-5-21-1", decoded.UserSids.Single());
 
         byte[] dispatch = CredentialProviderProtocol.EncodeDispatch("lab", "BOX", "pw", "S-1-5-21-1");
+        byte[] emoji = CredentialProviderProtocol.EncodeDispatch("lab", "BOX", "pw😀", "S-1-5-21-1");
+        CredentialProviderProtocol.DispatchMessage emojiBody = CredentialProviderProtocol.DecodeDispatch(emoji);
+        Assert.Equal("pw😀", new string(emojiBody.Password));
         CredentialProviderProtocol.DispatchMessage body = CredentialProviderProtocol.DecodeDispatch(dispatch);
         Assert.Equal("lab", body.UserName);
         Assert.Equal("BOX", body.Domain);
@@ -306,7 +329,7 @@ public class CredentialProviderDeploymentTests
         Assert.Equal("unchanged", result.Action);
         Assert.False(result.RegistrationUpdated);
         Assert.Equal(live, result.LivePath);
-        Assert.Equal(0, store.WriteRegistrationCalls);
+        Assert.Equal(1, store.WriteRegistrationCalls);
     }
 
     [Fact]

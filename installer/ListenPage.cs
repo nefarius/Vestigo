@@ -91,9 +91,9 @@ static class ListenPage
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving),
             Sequence("VestigoPrepareWriteSettings", "Before", "VestigoWriteSettings", NotRemoving),
             Sequence("VestigoWriteSettings", "Before", "StartServices", NotRemoving),
-            Sequence("VestigoPrepareCredentialProvider", "After", "InstallFiles", installingInteractive + " OR (" + removingInteractive + ")"),
-            Sequence("VestigoDeployCredentialProvider", "After", "VestigoPrepareCredentialProvider", installingInteractive),
-            Sequence("VestigoRemoveCredentialProvider", "Before", "RemoveFiles", removingInteractive)));
+            Sequence("VestigoPrepareCredentialProvider", "After", "InstallInitialize", installingInteractive + " OR (" + removingInteractive + ")"),
+            Sequence("VestigoRemoveCredentialProvider", "Before", "RemoveFiles", removingInteractive),
+            Sequence("VestigoDeployCredentialProvider", "After", "InstallFiles", installingInteractive)));
         package.Add(new XElement(
             Wix + "InstallUISequence",
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving)));

@@ -8,7 +8,7 @@ public sealed class UnavailableInteractiveLogonDispatcher : IInteractiveLogonDis
     public bool ProviderInstalled => File.Exists(
         CredentialProviderIdentity.StagingPath(AppContext.BaseDirectory));
 
-    public bool ProviderRegistered => false;
+    public bool ProviderRegistered => CredentialProviderFiles.IsRegistered(AppContext.BaseDirectory);
 
     public Task<OperationResult<string>> DispatchAsync(
         string userName,

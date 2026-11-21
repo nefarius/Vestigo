@@ -11,6 +11,16 @@ HINSTANCE g_instance = nullptr;
 class ClassFactory final : public IClassFactory
 {
 public:
+    ClassFactory()
+    {
+        g_locks.fetch_add(1);
+    }
+
+    ~ClassFactory()
+    {
+        g_locks.fetch_sub(1);
+    }
+
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override
     {
         if (ppv == nullptr)

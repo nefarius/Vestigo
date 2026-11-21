@@ -207,6 +207,9 @@ public class ModuleSelectionTests
         Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopScreenshots, requestIsExplicit: false, currentlyInstalled: true));
         Assert.True(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.AudioSetDefault, requestIsExplicit: false, currentlyInstalled: false));
         Assert.True(ModuleSelection.ShouldWriteFeatureState("Desktop", requestIsExplicit: false, currentlyInstalled: false));
+        Assert.False(ModuleSelection.IsExplicitFeatureRequest(currentlyInstalled: false, requestIsAbsent: true));
+        Assert.True(ModuleSelection.IsExplicitFeatureRequest(currentlyInstalled: true, requestIsAbsent: true));
+        Assert.True(ModuleSelection.IsExplicitFeatureRequest(currentlyInstalled: false, requestIsAbsent: false));
     }
 
     [Fact]

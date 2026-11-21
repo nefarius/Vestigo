@@ -435,13 +435,19 @@ class Build : FalloutBuild
 
         Directory.CreateDirectory(CredentialProviderStageDir);
         string outDir = CredentialProviderStageDir.ToString().TrimEnd('\\') + "\\";
-        string arguments =
-            $"msbuild \"{CredentialProviderProject}\" -restore -p:Configuration=Release -p:Platform=x64 -p:OutDir=\"{outDir}\"";
-        using Process process = Process.Start(new ProcessStartInfo("dotnet", arguments)
+        string msbuild = ResolveVisualStudioMsBuild();
+        ProcessStartInfo startInfo = new(msbuild)
         {
             WorkingDirectory = RootDirectory,
             UseShellExecute = false
-        }) ?? throw new InvalidOperationException("dotnet msbuild could not be started.");
+        };
+        startInfo.ArgumentList.Add(CredentialProviderProject.ToString());
+        startInfo.ArgumentList.Add("-restore");
+        startInfo.ArgumentList.Add("-p:Configuration=Release");
+        startInfo.ArgumentList.Add("-p:Platform=x64");
+        startInfo.ArgumentList.Add("-p:OutDir=" + outDir);
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("MSBuild.exe could not be started.");
         process.WaitForExit();
         if (process.ExitCode != 0)
         {
@@ -453,6 +459,51 @@ class Build : FalloutBuild
             throw new InvalidOperationException(
                 $"MSBuild did not produce {StagedCredentialProviderDll}.");
         }
+    }
+
+    static string ResolveVisualStudioMsBuild()
+    {
+        string vswhere = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            "Microsoft Visual Studio",
+            "Installer",
+            "vswhere.exe");
+        if (!File.Exists(vswhere))
+        {
+            throw new InvalidOperationException(
+                "vswhere.exe was not found. Install Visual Studio with the MSVC v143 toolset.");
+        }
+
+        ProcessStartInfo startInfo = new(vswhere)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("-latest");
+        startInfo.ArgumentList.Add("-products");
+        startInfo.ArgumentList.Add("*");
+        startInfo.ArgumentList.Add("-requires");
+        startInfo.ArgumentList.Add("Microsoft.VisualStudio.Component.VC.Tools.x86.x64");
+        startInfo.ArgumentList.Add("-requires");
+        startInfo.ArgumentList.Add("Microsoft.Component.MSBuild");
+        startInfo.ArgumentList.Add("-find");
+        startInfo.ArgumentList.Add(@"MSBuild\**\Bin\MSBuild.exe");
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("vswhere.exe could not be started.");
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        string msbuild = output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault(File.Exists);
+        if (string.IsNullOrWhiteSpace(msbuild))
+        {
+            throw new InvalidOperationException(
+                "Visual Studio MSBuild.exe was not found. Install Visual Studio with the MSVC v143 toolset.");
+        }
+
+        return msbuild;
     }
 
     void PublishProject(Project project, AbsolutePath publishDirectory)

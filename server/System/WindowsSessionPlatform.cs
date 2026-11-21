@@ -319,13 +319,18 @@ public sealed class WindowsSessionPlatform : ISessionPlatform
 
         try
         {
-            if (bytes < 12)
+            if (bytes < (uint)sizeof(WTSINFOEXW))
             {
                 return "unknown";
             }
 
-            // WTSINFOEXW.Level (4) then WTSINFOEX_LEVEL1_W.SessionId (4), SessionState (4), SessionFlags (4).
-            int flags = *(int*)(buffer + 12);
+            WTSINFOEXW* info = (WTSINFOEXW*)buffer;
+            if (info->Level != 1)
+            {
+                return "unknown";
+            }
+
+            int flags = info->Data.WTSInfoExLevel1.SessionFlags;
             return flags switch
             {
                 0 => "locked",

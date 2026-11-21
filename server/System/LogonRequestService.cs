@@ -33,7 +33,7 @@ public sealed class LogonRequestService(LogonConsentStore store)
             return OperationResult<LogonRequestView>.Fail("invalid_request", "requestId is required.");
         }
 
-        if (!store.Cancel(requestId))
+        if (!store.Cancel(requestId, out LogonRequestView? cancelled) || cancelled is null)
         {
             LogonRequestView? existing = store.Peek(requestId);
             return existing is null
@@ -41,6 +41,6 @@ public sealed class LogonRequestService(LogonConsentStore store)
                 : OperationResult<LogonRequestView>.Fail("already_completed", "This consent request was already completed.");
         }
 
-        return OperationResult<LogonRequestView>.Ok(store.Peek(requestId)!);
+        return OperationResult<LogonRequestView>.Ok(cancelled);
     }
 }

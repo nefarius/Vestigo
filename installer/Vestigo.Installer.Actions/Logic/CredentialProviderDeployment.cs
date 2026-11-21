@@ -128,18 +128,20 @@ namespace Vestigo.Installer.Actions.Logic
             RejectReparse(store, liveDir);
             string live = LivePath(installDir, hash);
             string? registered = store.ReadInprocServer32();
+            bool liveMatches = store.Exists(live) && LiveBytesMatch(store, live, bytes);
             bool same = !string.IsNullOrWhiteSpace(registered) &&
                         string.Equals(registered, live, StringComparison.OrdinalIgnoreCase) &&
-                        store.Exists(live);
+                        liveMatches;
 
             if (same)
             {
+                store.WriteRegistration(live);
                 IReadOnlyList<string> leftover = Sweep(store, liveDir, live);
                 return new CredentialProviderDeployResult("unchanged", live, false, leftover);
             }
 
             store.CreateDirectory(liveDir);
-            if (!store.Exists(live))
+            if (!liveMatches)
             {
                 store.WriteAllBytes(live, bytes);
             }
@@ -200,6 +202,25 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             return locked;
+        }
+
+        private static bool LiveBytesMatch(ICredentialProviderStore store, string live, byte[] expected)
+        {
+            byte[] existing = store.ReadAllBytes(live);
+            if (existing == null || existing.Length != expected.Length)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < existing.Length; index++)
+            {
+                if (existing[index] != expected[index])
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static void RejectReparse(ICredentialProviderStore store, string path)

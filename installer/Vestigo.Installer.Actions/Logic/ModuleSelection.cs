@@ -324,6 +324,15 @@ namespace Vestigo.Installer.Actions.Logic
         }
 
         /// <summary>
+        ///     An unselected feature that was never installed reports <c>Absent</c>. That is not an explicit
+        ///     removal, so preserved option toggles keep their existing JSON value.
+        /// </summary>
+        public static bool IsExplicitFeatureRequest(bool currentlyInstalled, bool requestIsAbsent)
+        {
+            return !requestIsAbsent || currentlyInstalled;
+        }
+
+        /// <summary>
         ///     Serializes states as <c>Name=1;Name=0</c> for the deferred action's CustomActionData.
         ///     Names that are omitted are left unchanged by <see cref="Apply" />.
         /// </summary>

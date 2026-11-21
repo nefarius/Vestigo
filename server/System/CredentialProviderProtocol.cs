@@ -181,7 +181,7 @@ public static class CredentialProviderProtocol
         writer.Write((ushort)value.Length);
         foreach (char c in value)
         {
-            writer.Write(c);
+            writer.Write((ushort)c);
         }
     }
 
@@ -198,7 +198,7 @@ public static class CredentialProviderProtocol
         char[] buffer = new char[length];
         for (int index = 0; index < length; index++)
         {
-            buffer[index] = reader.ReadChar();
+            buffer[index] = (char)reader.ReadUInt16();
         }
 
         return buffer;

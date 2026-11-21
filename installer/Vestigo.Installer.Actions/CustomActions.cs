@@ -424,10 +424,13 @@ namespace Vestigo.Installer.Actions
                 {
                     FeatureInfo feature = session.Features[module.Name];
                     InstallState request = feature.RequestState;
+                    bool currentlyInstalled = feature.CurrentState == InstallState.Local;
                     bool requestIsExplicit = request != InstallState.Unknown &&
                                              request != InstallState.Default &&
-                                             request != InstallState.NotUsed;
-                    bool currentlyInstalled = feature.CurrentState == InstallState.Local;
+                                             request != InstallState.NotUsed &&
+                                             ModuleSelection.IsExplicitFeatureRequest(
+                                                 currentlyInstalled,
+                                                 request == InstallState.Absent);
                     if (!ModuleSelection.ShouldWriteFeatureState(module.Name, requestIsExplicit, currentlyInstalled))
                     {
                         continue;
