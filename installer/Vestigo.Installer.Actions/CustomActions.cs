@@ -656,12 +656,12 @@ namespace Vestigo.Installer.Actions
             {
                 if (File.Exists(path))
                 {
-                    return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+                    return (File.GetAttributes(path) & System.IO.FileAttributes.ReparsePoint) != 0;
                 }
 
                 if (Directory.Exists(path))
                 {
-                    return (new DirectoryInfo(path).Attributes & FileAttributes.ReparsePoint) != 0;
+                    return (new DirectoryInfo(path).Attributes & System.IO.FileAttributes.ReparsePoint) != 0;
                 }
 
                 return false;
