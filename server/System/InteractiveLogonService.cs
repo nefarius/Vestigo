@@ -144,44 +144,40 @@ public sealed class InteractiveLogonService(
             return OperationResult<WorkstationLockResult>.Fail(lockState.ErrorCode!, lockState.Error!);
         }
 
-        if (lockState.State == "locked")
+        bool alreadyLocked = lockState.State == "locked";
+        if (!alreadyLocked)
         {
-            return LockResult(
-                alreadyLocked: true,
-                lockState,
-                ["The console session is already locked."]);
-        }
+            if (lockState.State == "logonScreen" || lockState.SessionId is null)
+            {
+                return OperationResult<WorkstationLockResult>.Fail(
+                    "no_console_session",
+                    "There is no signed-in console session to lock.");
+            }
 
-        if (lockState.State == "logonScreen" || lockState.SessionId is null)
-        {
-            return OperationResult<WorkstationLockResult>.Fail(
-                "no_console_session",
-                "There is no signed-in console session to lock.");
-        }
+            if (lockState.State != "unlocked")
+            {
+                return OperationResult<WorkstationLockResult>.Fail(
+                    "lock_state_unknown",
+                    "The console lock state could not be determined.");
+            }
 
-        if (lockState.State != "unlocked")
-        {
-            return OperationResult<WorkstationLockResult>.Fail(
-                "lock_state_unknown",
-                "The console lock state could not be determined.");
-        }
+            if (lockPlatform is null)
+            {
+                return OperationResult<WorkstationLockResult>.Fail(
+                    "lock_failed",
+                    "Workstation lock is unavailable.");
+            }
 
-        if (lockPlatform is null)
-        {
-            return OperationResult<WorkstationLockResult>.Fail(
-                "lock_failed",
-                "Workstation lock is unavailable.");
-        }
-
-        OperationResult<bool> locked = await lockPlatform.LockAsync(cancellationToken).ConfigureAwait(false);
-        if (!locked.Success)
-        {
-            return locked.FailAs<WorkstationLockResult>();
+            OperationResult<bool> locked = await lockPlatform.LockAsync(cancellationToken).ConfigureAwait(false);
+            if (!locked.Success)
+            {
+                return locked.FailAs<WorkstationLockResult>();
+            }
         }
 
         TimeProvider clock = time ?? TimeProvider.System;
         DateTimeOffset deadline = clock.GetUtcNow() + TimeSpan.FromSeconds(waitSeconds);
-        ConsoleLockRead observed = sessions.ReadConsoleLock();
+        ConsoleLockRead observed = alreadyLocked ? lockState : sessions.ReadConsoleLock();
         while (waitSeconds > 0 && !LockReady(observed))
         {
             if (clock.GetUtcNow() >= deadline)
@@ -197,7 +193,9 @@ public sealed class InteractiveLogonService(
         bool isLocked = observed.Success && observed.State == "locked";
         if (!isLocked)
         {
-            notes.Add("Windows accepted LockWorkStation. The console has not reported locked yet.");
+            notes.Add(alreadyLocked
+                ? "The console session is no longer locked."
+                : "Windows accepted LockWorkStation. The console has not reported locked yet.");
         }
         else if (dispatcher.ProviderRegistered && !dispatcher.LogonUiConnected)
         {
@@ -205,10 +203,12 @@ public sealed class InteractiveLogonService(
         }
         else
         {
-            notes.Add("The console session is locked.");
+            notes.Add(alreadyLocked
+                ? "The console session is already locked."
+                : "The console session is locked.");
         }
 
-        return LockResult(alreadyLocked: false, observed.Success ? observed : lockState, notes);
+        return LockResult(alreadyLocked, observed.Success ? observed : lockState, notes);
     }
 
     public OperationResult<LogonConsentLink> RequestUnlock(string? userName, string? domain)
@@ -346,6 +346,30 @@ public sealed class InteractiveLogonService(
             }
 
             return OperationResult<LogonRequestView>.Fail(verified.ErrorCode!, verified.Error!);
+        }
+
+        if (pending.Kind == LogonConsentKind.UnlockWorkstation)
+        {
+            ConsoleLockRead lockState = sessions.ReadConsoleLock();
+            if (!lockState.Success || lockState.State != "locked")
+            {
+                string code = !lockState.Success
+                    ? lockState.ErrorCode!
+                    : lockState.State == "unlocked"
+                        ? "already_unlocked"
+                        : lockState.State == "logonScreen"
+                            ? "not_locked"
+                            : "lock_state_unknown";
+                string error = !lockState.Success
+                    ? lockState.Error!
+                    : lockState.State == "unlocked"
+                        ? "The console session is already unlocked."
+                        : lockState.State == "logonScreen"
+                            ? "The console is at the logon screen, not locked. Use request_interactive_logon."
+                            : "The console lock state could not be determined.";
+                store.Complete(pending.RequestId, LogonRequestStatus.Failed, code, error);
+                return OperationResult<LogonRequestView>.Fail(code, error);
+            }
         }
 
         store.Complete(pending.RequestId, LogonRequestStatus.Submitted, null, null);

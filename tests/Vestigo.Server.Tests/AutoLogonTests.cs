@@ -309,6 +309,30 @@ public class AutoLogonTests
     }
 
     [Fact]
+    public async Task LockWorkstation_WaitsForLogonUiWhenAlreadyLocked()
+    {
+        MutableDispatcher dispatcher = new() { LogonUiConnected = false, ProviderRegistered = true };
+        MutableConsole console = new("locked", 1, "lab");
+        console.BeforeRead = reads =>
+        {
+            if (reads >= 2)
+            {
+                dispatcher.LogonUiConnected = true;
+            }
+        };
+        FakeLock platform = new();
+        InteractiveLogonService service = Interactive(console, dispatcher, allow: true, platform);
+        OperationResult<WorkstationLockResult> result = await service.LockWorkstationAsync(5, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.Value!.Locked);
+        Assert.True(result.Value.AlreadyLocked);
+        Assert.True(result.Value.LogonUiConnected);
+        Assert.Equal(0, platform.Calls);
+        Assert.True(console.Reads >= 2);
+    }
+
+    [Fact]
     public async Task LockWorkstation_RejectsLogonScreen()
     {
         FakeLock platform = new();
@@ -444,6 +468,38 @@ public class AutoLogonTests
                 .ErrorCode);
     }
 
+    [Fact]
+    public async Task ApproveUnlock_FailsWhenConsoleIsNoLongerLocked()
+    {
+        VestigoOptions options = new() { System = { AllowInteractiveLogon = true } };
+        LogonConsentStore store = new(TimeProvider.System, options);
+        MutableDispatcher dispatcher = new() { LogonUiConnected = true };
+        InteractiveLogonService service = new(
+            dispatcher,
+            new MutableConsole("logonScreen", 1, null),
+            new FakeAutoLogon(),
+            store,
+            options,
+            NullLogger<InteractiveLogonService>.Instance);
+        LogonConsentLink link = store.Issue(
+            LogonConsentKind.UnlockWorkstation,
+            "lab",
+            null,
+            logonCount: null,
+            forceAutoLogon: false,
+            "http://127.0.0.1").Value!;
+        Assert.True(store.TryOpen(link.RequestId, Ticket(link), out LogonConsentStore.PendingConsent? pending, out _, out _));
+
+        OperationResult<LogonRequestView> result = await service.ApproveAsync(
+            pending!,
+            "secret".ToCharArray(),
+            CancellationToken.None);
+
+        Assert.Equal("not_locked", result.ErrorCode);
+        Assert.Equal(0, dispatcher.DispatchCalls);
+        Assert.Equal("failed", store.Peek(link.RequestId)!.Status);
+    }
+
     private static string Ticket(LogonConsentLink link)
     {
         Uri uri = new(link.Url);
@@ -534,6 +590,8 @@ public class AutoLogonTests
 
     private sealed class MutableDispatcher : IInteractiveLogonDispatcher
     {
+        public int DispatchCalls { get; private set; }
+
         public bool LogonUiConnected { get; set; }
 
         public bool ProviderInstalled { get; set; } = true;
@@ -545,8 +603,11 @@ public class AutoLogonTests
             string? domain,
             char[] password,
             string? expectedSid,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(OperationResult<string>.Ok("submitted"));
+            CancellationToken cancellationToken)
+        {
+            DispatchCalls++;
+            return Task.FromResult(OperationResult<string>.Ok("submitted"));
+        }
     }
 
     private sealed class FakeLock : IWorkstationLockPlatform
