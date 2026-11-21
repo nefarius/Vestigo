@@ -384,6 +384,19 @@ public class SystemToolsTests
     }
 
     [Fact]
+    public void PrivilegedWarning_NamesAutoLogonAndInteractiveLogonWithoutTokens()
+    {
+        VestigoOptions open = new() { System = { AllowAutoLogonChanges = true, AllowInteractiveLogon = true } };
+        VestigoOptions tokens = new() { ApiTokens = ["t"], System = { AllowAutoLogonChanges = true, AllowInteractiveLogon = true } };
+
+        ModuleRegistry.ValidateConfiguration(open);
+        Assert.Contains("Auto-logon changes", ModuleRegistry.GetPrivilegedModuleWarning(open));
+        Assert.Contains("Interactive logon/unlock", ModuleRegistry.GetPrivilegedModuleWarning(open));
+        ModuleRegistry.ValidateConfiguration(tokens);
+        Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
+    }
+
+    [Fact]
     public void RebootMachine_RefusesWhenGateIsOff_WithoutTouchingPlatform()
     {
         (SystemService service, FakeRebootPlatform reboot) = CreateReboot(allowReboot: false);

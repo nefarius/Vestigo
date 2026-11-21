@@ -43,6 +43,35 @@ public sealed class WindowsSessionPlatform : ISessionPlatform
         return new SessionTokenRead(true, ReadElevation(token), ReadAdministrator(token), ReadLogonId(token));
     }
 
+    /// <inheritdoc />
+    public ConsoleLockRead ReadConsoleLock()
+    {
+        SessionSnapshot snapshot = Read();
+        if (!snapshot.Success)
+        {
+            return ConsoleLockRead.Fail(snapshot.ErrorCode!, snapshot.Error!);
+        }
+
+        uint? consoleId = snapshot.ConsoleSessionId;
+        RawLogonSession? console = consoleId is uint id
+            ? snapshot.Sessions.FirstOrDefault(session => session.SessionId == id)
+            : null;
+        string? userName = console?.UserName;
+        bool hasUser = snapshot.ConsoleHasToken;
+        if (consoleId is not uint sessionId)
+        {
+            return ConsoleLockRead.Ok("unknown", null, false, null);
+        }
+
+        if (!hasUser)
+        {
+            return ConsoleLockRead.Ok("logonScreen", sessionId, false, userName);
+        }
+
+        string flags = ReadSessionFlags(sessionId);
+        return ConsoleLockRead.Ok(flags, sessionId, true, userName);
+    }
+
     private static bool HasUserToken(uint sessionId)
     {
         unsafe
@@ -276,6 +305,38 @@ public sealed class WindowsSessionPlatform : ISessionPlatform
         }
 
         return SessionMaps.LogonId(stats.AuthenticationId.HighPart, stats.AuthenticationId.LowPart);
+    }
+
+    /// <summary>
+    ///     Windows 8+ <c>WTSINFOEX</c> session flags: 0 locked, 1 unlocked, 0xFFFFFFFF unknown.
+    /// </summary>
+    private static unsafe string ReadSessionFlags(uint sessionId)
+    {
+        if (!TryQuery(sessionId, WTS_INFO_CLASS.WTSSessionInfoEx, out byte* buffer, out uint bytes) || buffer == null)
+        {
+            return "unknown";
+        }
+
+        try
+        {
+            if (bytes < 12)
+            {
+                return "unknown";
+            }
+
+            // WTSINFOEXW.Level (4) then WTSINFOEX_LEVEL1_W.SessionId (4), SessionState (4), SessionFlags (4).
+            int flags = *(int*)(buffer + 12);
+            return flags switch
+            {
+                0 => "locked",
+                1 => "unlocked",
+                _ => "unknown"
+            };
+        }
+        finally
+        {
+            PInvoke.WTSFreeMemory(buffer);
+        }
     }
 
     private static (string Code, string Error) Win32Failure()

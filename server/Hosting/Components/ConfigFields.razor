@@ -13,6 +13,10 @@
         @if (field.Value is JsonValue flagValue && flagValue.TryGetValue<bool>(out bool flag))
         {
             <MudSwitch T="bool" Value="flag" ValueChanged="@(value => Set(key, JsonValue.Create(value)))" Label="@path" Color="Color.Primary" />
+            @if (ConfigurationFieldMetadata.BundledExecutableHint(path) is string flagHint)
+            {
+                <MudText Typo="Typo.caption" Class="mb-3">@flagHint</MudText>
+            }
         }
         else if (ConfigurationFieldMetadata.TryGetEnum(path, out Type enumType, out bool flags) &&
                  field.Value is JsonValue enumValue && enumValue.TryGetValue<string>(out string? enumName))

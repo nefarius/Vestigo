@@ -195,6 +195,8 @@ public class ModuleSelectionTests
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopDisplayLayout));
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.DesktopSessions));
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.SystemReboot));
+        Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.SystemAutoLogon));
+        Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.SystemInteractiveLogon));
         Assert.False(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.AudioSetDefault));
         Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopWindowPlacement, requestIsExplicit: false, currentlyInstalled: false));
         Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopDisplayLayout, requestIsExplicit: false, currentlyInstalled: false));
@@ -221,6 +223,24 @@ public class ModuleSelectionTests
 
         Assert.True(ModuleSelection.ReadExisting(merged)["SystemReboot"]);
         Assert.DoesNotContain("SystemReboot=", ModuleSelection.Serialize(new Dictionary<string, bool> { ["System"] = true }));
+    }
+
+    [Fact]
+    public void Merge_WithoutSystemAutoLogon_KeepsExistingAllowAutoLogonChanges()
+    {
+        const string existing = """
+            { "Vestigo": { "System": { "AllowAutoLogonChanges": true, "AllowInteractiveLogon": true }, "Modules": { "System": { "Enabled": true } } } }
+            """;
+
+        string merged = ListenSettings.Merge(
+            existing,
+            Open(),
+            new Dictionary<string, bool> { ["System"] = true });
+
+        Assert.True(ModuleSelection.ReadExisting(merged)["SystemAutoLogon"]);
+        Assert.True(ModuleSelection.ReadExisting(merged)["SystemInteractiveLogon"]);
+        Assert.DoesNotContain("SystemAutoLogon=", ModuleSelection.Serialize(new Dictionary<string, bool> { ["System"] = true }));
+        Assert.DoesNotContain("SystemInteractiveLogon=", ModuleSelection.Serialize(new Dictionary<string, bool> { ["System"] = true }));
     }
 
     [Fact]

@@ -62,6 +62,9 @@ internal static class ConfigurationFieldMetadata
         "Devices:NefconPath" => @"Leave empty to use tools\nefconc.exe next to Vestigo.exe.",
         "DebugOutput:ExecutablePath" => @"Leave empty to use tools\DebugViewConsole.exe next to Vestigo.exe.",
         "Logs:RipgrepPath" => @"Leave empty to use tools\rg.exe next to Vestigo.exe.",
+        "System:AllowAutoLogonChanges" => "Allows request_autologon_enable and disable_autologon. The Windows password is collected through a one-time consent link and stored as an LSA secret.",
+        "System:AllowInteractiveLogon" => "Allows request_interactive_logon. Also requires the MSI Interactive logon feature so the Credential Provider DLL is installed.",
+        "System:LogonConsentLifetime" => "How long a one-time consent URL stays valid. The user opens it to enter a Windows password; MCP tools never receive the password.",
         _ => null
     };
 

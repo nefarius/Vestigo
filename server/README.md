@@ -4,7 +4,7 @@ ASP.NET Core 10 host for the Vestigo MCP server: Streamable HTTP at `/mcp`, an a
 
 Settings and spools are outside the content root; see [configuration](../docs/configuration.md).
 
-`/config` is the MudBlazor settings page for direct loopback connections. It edits every `Vestigo` setting and can restart the installed Windows service. It bypasses API-token authentication for local users, so never proxy it or its `/_blazor`, `/_framework` and `/_content` routes. See the [local administration security boundary](../docs/security.md#local-configuration).
+`/config` is the MudBlazor settings page for direct loopback connections. It edits every `Vestigo` setting and can restart the installed Windows service. It bypasses API-token authentication for local users, so never proxy it or its `/_blazor`, `/_framework` and `/_content` routes. MudBlazor CSS and fonts under `/_content/MudBlazor/` (not `.js`) are also used by the one-time `/system/logon/consent/{id}` page and are reachable off loopback; scripts stay loopback-only. See the [local administration security boundary](../docs/security.md#local-configuration).
 
 API 1.1 plugin tool providers share `/mcp` with built-in tools. An authenticated client
 can select an application session using `X-Vestigo-Session-Id` or request metadata

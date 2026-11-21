@@ -82,6 +82,12 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowReboot</c>.</summary>
         public const string SystemReboot = "SystemReboot";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowAutoLogonChanges</c>.</summary>
+        public const string SystemAutoLogon = "SystemAutoLogon";
+
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowInteractiveLogon</c>.</summary>
+        public const string SystemInteractiveLogon = "SystemInteractiveLogon";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowScreenshots</c>.</summary>
         public const string DesktopScreenshots = "DesktopScreenshots";
 
@@ -127,6 +133,8 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges"),
             new OptionToggle(UacChanges, "System", "AllowUacChanges"),
             new OptionToggle(SystemReboot, "System", "AllowReboot"),
+            new OptionToggle(SystemAutoLogon, "System", "AllowAutoLogonChanges"),
+            new OptionToggle(SystemInteractiveLogon, "System", "AllowInteractiveLogon"),
             new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots"),
             new OptionToggle(DesktopWindowPlacement, "Desktop", "AllowWindowPlacement"),
             new OptionToggle(DesktopDisplayLayout, "Desktop", "AllowDisplayLayoutChanges"),
@@ -147,7 +155,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Trace", "Trace", "Offline ETL/WPP conversion and managed realtime capture.", true, null),
             new ModuleDefinition("Files", "Files", "Root-confined file tools plus authenticated PUT/GET transfer endpoints.", true, null),
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
-            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, UAC, code-integrity settings, boot state, logon sessions, and opt-in machine reboot.", true, null),
+            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, UAC, code-integrity settings, boot state, logon sessions, opt-in machine reboot, AutoLogon, and interactive logon.", true, null),
             new ModuleDefinition("Power", "Power", "Read AC and battery state, the active power scheme, platform capabilities, AC/DC sleep policy, and the newest Power-Troubleshooter wake event. There is no write tool and no power-request list.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail, incremental reads and regex search of text log files.", true, null),
             new ModuleDefinition("Registry", "Registry", "Read allow-listed registry values and key metadata. Opt-in. There is no write tool.", false, null),
@@ -183,6 +191,8 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition(BootConfigurationChanges, "Boot configuration", "Allow changing BCD test-signing and WHQL developer test mode (Vestigo:System:AllowBootConfigurationChanges). Administrator-equivalent. Takes effect after reboot.", false, "System"),
             new ModuleDefinition(UacChanges, "UAC changes", "Allow changing the UAC slider and EnableLUA (Vestigo:System:AllowUacChanges). Administrator-equivalent. Turning UAC off takes effect after reboot.", false, "System"),
             new ModuleDefinition(SystemReboot, "Machine reboot", "Allow reboot_machine and cancel_reboot (Vestigo:System:AllowReboot). Immediate, scheduled, and forced restarts of this machine. Administrator-equivalent. Unsaved work is lost when force is true.", false, "System"),
+            new ModuleDefinition(SystemAutoLogon, "Automatic logon", "Allow enabling and disabling Windows AutoLogon for a consented account (Vestigo:System:AllowAutoLogonChanges). The password is stored as an LSA secret, never in appsettings.json or MCP tool arguments. Administrator-equivalent.", false, "System"),
+            new ModuleDefinition(SystemInteractiveLogon, "Interactive logon", "Allow signing in or unlocking the console from the Windows logon or lock screen (Vestigo:System:AllowInteractiveLogon). Installs the Vestigo Credential Provider DLL. Administrator-equivalent.", false, "System"),
             new ModuleDefinition("Updates", "Updates", "Check the signed Buildbot feed for a newer Vestigo release.", true, null),
             new ModuleDefinition(SelfUpdate, "Silent self-update", "Allow start_self_update to run the packaged Vicius updater (Vestigo:Updates:AllowSelfUpdate). Needs the Automatic updates feature. Administrator-equivalent: installs the signed MSI and restarts the service.", false, "Updates")
         };
@@ -299,7 +309,9 @@ namespace Vestigo.Installer.Actions.Logic
                    || string.Equals(name, DesktopDisplayLayout, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, DesktopSessions, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, InputInjection, StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(name, SystemReboot, StringComparison.OrdinalIgnoreCase);
+                   || string.Equals(name, SystemReboot, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, SystemAutoLogon, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, SystemInteractiveLogon, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

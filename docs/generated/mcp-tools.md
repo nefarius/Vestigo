@@ -39,6 +39,14 @@ Requests cancellation of a running job. Process jobs kill their process tree.
 | --- | --- | --- | --- | --- |
 | `jobId` | `string` | yes |  | Job identifier. |
 
+## `cancel_logon_request`
+
+Cancels a pending AutoLogon or interactive-logon consent request so the URL stops working.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `requestId` | `string` | yes |  | Request id from request_autologon_enable or request_interactive_logon. |
+
 ## `cancel_reboot`
 
 Aborts a pending reboot countdown started by reboot_machine or another InitiateShutdown caller. Requires Vestigo:System:AllowReboot. Fails with no_reboot_in_progress when nothing is pending. An immediate reboot that has already started cannot be cancelled. Local machine only.
@@ -184,6 +192,14 @@ Deletes a kernel driver service through nefcon. Win32 services are refused. Stop
 | --- | --- | --- | --- | --- |
 | `name` | `string` | yes |  | Driver service name (not a path). |
 
+## `disable_autologon`
+
+Turns AutoAdminLogon off, deletes the LSA DefaultPassword secret, and removes any legacy plaintext Winlogon DefaultPassword value. Requires Vestigo:System:AllowAutoLogonChanges. clearDefaultUser also removes DefaultUserName and DefaultDomainName.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `clearDefaultUser` | `bool` | no | `false` | Also clear DefaultUserName and DefaultDomainName. |
+
 ## `disable_device`
 
 Disables a device by instance ID.
@@ -315,6 +331,12 @@ Finds things on the console user's screen. text matches UI Automation names and 
 | `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
 | `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Desktop, display, and region searches need that session to be the input desktop. |
 
+## `get_autologon_state`
+
+Returns whether Windows AutoLogon is enabled, the default user and domain, AutoLogonCount, ForceAutoLogon, whether an LSA DefaultPassword secret is present, and whether a legacy plaintext Winlogon DefaultPassword value exists. The password is never returned.
+
+No parameters.
+
 ## `get_boot_security`
 
 Returns UEFI vs legacy BIOS, Secure Boot, BCD test-signing (configured, takes effect at next boot), the running kernel test-signing state, WHQL developer test mode, and rebootPending when the BCD value and the running state differ. Notes cover Secure Boot, a pending reboot, and that BCD changes apply only to the default boot entry.
@@ -432,6 +454,12 @@ Returns one entry by id (from list_installed_software) with the silent uninstall
 | --- | --- | --- | --- | --- |
 | `id` | `string` | yes |  | Entry id such as machine-x64:{KeyName}. |
 
+## `get_interactive_logon_status`
+
+Returns whether interactive logon is allowed, whether the Credential Provider DLL is installed and registered, whether LogonUI is connected, and the console lock state (locked, unlocked, logonScreen, or unknown). Passwords are never returned.
+
+No parameters.
+
 ## `get_job`
 
 Returns state, exit code, and output size for one job.
@@ -454,6 +482,15 @@ Returns the root type, SHA-256, and top-level shape of a UTF-8 JSON document und
 Returns the newest Microsoft-Windows-Power-Troubleshooter event 1 from the System log: WakeTime, SleepTime, the WakeSourceType number, WakeSourceText, and any wake-timer owner and context. eventFound is false when that event is absent, and the other fields are then null. WakeSourceType is not translated to a name. Text fields are capped at 512 characters. This does not list power-request owners. There is no write.
 
 No parameters.
+
+## `get_logon_request`
+
+Returns the status of a request_autologon_enable or request_interactive_logon consent request. waitSeconds 0 returns immediately; 1 through 30 waits for completion. The password is never returned.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `requestId` | `string` | yes |  | Request id from request_autologon_enable or request_interactive_logon. |
+| `waitSeconds` | `int` | no | `0` | Seconds to wait for completion, 0 to 30. |
 
 ## `get_logon_session`
 
@@ -1261,6 +1298,26 @@ Removes driver store packages by original INF file name (for example mydriver.in
 | `infName` | `string` | yes |  | Original INF base name, no directory, for example mydriver.inf. |
 | `classGuid` | `string` | no | `null` | Optional device class GUID to narrow the match. |
 | `serviceName` | `string` | no | `null` | Optional driver service name to narrow the match. |
+
+## `request_autologon_enable`
+
+Starts a one-time consent request to enable Windows AutoLogon for userName (optional domain, optional logonCount, optional forceAutoLogon). Returns a URL the user must open to enter the Windows password. Present that URL; do not fetch it and do not ask for the password in chat. Requires Vestigo:System:AllowAutoLogonChanges. The password is stored as an LSA private secret, never in appsettings.json, MCP results, or logs.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `userName` | `string` | yes |  | Account name, or DOMAIN\user. |
+| `domain` | `string` | no | `null` | Domain or computer name. Omit for a local account. |
+| `logonCount` | `int?` | no | `null` | Optional remaining automatic logons. Omit for persistent AutoLogon. |
+| `forceAutoLogon` | `bool` | no | `false` | Ignore the Shift key that would skip AutoLogon. |
+
+## `request_interactive_logon`
+
+Starts a one-time consent request to sign in or unlock the console as userName from the Windows logon or lock screen. Returns a URL the user must open to enter the Windows password. Present that URL; do not fetch it and do not ask for the password in chat. Requires Vestigo:System:AllowInteractiveLogon, the MSI Interactive logon feature, and a locked or logon-screen console. The password is sent only to LogonUI over a SYSTEM-only named pipe.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `userName` | `string` | yes |  | Account name, or DOMAIN\user. |
+| `domain` | `string` | no | `null` | Domain or computer name. Omit for a local account. |
 
 ## `reset_driver_verifier`
 

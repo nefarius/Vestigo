@@ -323,10 +323,30 @@ WTSFreeMemory
 WTS_INFO_CLASS
 WTS_CONNECTSTATE_CLASS
 WTS_CLIENT_ADDRESS
+WTSINFOEXW
 CheckTokenMembership
 CreateWellKnownSid
 WELL_KNOWN_SID_TYPE
 TOKEN_STATISTICS
+
+// System module: AutoLogon LSA secret and credential verification. Passwords are never logged.
+LsaOpenPolicy
+LsaClose
+LsaStorePrivateData
+LsaRetrievePrivateData
+LsaFreeMemory
+LsaNtStatusToWinError
+LSA_OBJECT_ATTRIBUTES
+LSA_UNICODE_STRING
+POLICY_CREATE_SECRET
+POLICY_GET_PRIVATE_INFORMATION
+LogonUser
+LOGON32_LOGON
+LOGON32_PROVIDER
+
+// System module: Credential Provider named pipe (SYSTEM-only, LogonUI.exe peer check).
+GetNamedPipeClientProcessId
+PeekNamedPipe
 
 // System module: uptime. Safe mode uses GetSystemMetrics, already listed above.
 GetTickCount64

@@ -55,7 +55,7 @@ public class HostTests : IDisposable
         Assert.Contains("TLS-terminating proxy", body, StringComparison.Ordinal);
         Assert.Contains("https://github.com/nefarius/Vestigo", body, StringComparison.Ordinal);
         Assert.Contains(
-            "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, system diagnostics, and opt-in machine reboot.",
+            "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, system diagnostics, opt-in machine reboot, AutoLogon, and interactive logon from the Windows logon or lock screen.",
             body,
             StringComparison.Ordinal);
         Assert.Contains("Explicit configuration gates many sensitive features.", body, StringComparison.Ordinal);
@@ -83,11 +83,14 @@ public class HostTests : IDisposable
     {
         await using VestigoApplication application = CreateApplication(["secret-token"]);
         using HttpClient client = application.CreateClient();
-        foreach (string path in new[] { "/config", "/_blazor/negotiate", "/_framework/blazor.web.js", "/_content/MudBlazor/MudBlazor.min.css" })
+        foreach (string path in new[] { "/config", "/_blazor/negotiate", "/_framework/blazor.web.js", "/_content/MudBlazor/MudBlazor.min.js" })
         {
             using HttpResponseMessage response = await client.GetAsync(path);
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         }
+
+        using HttpResponseMessage css = await client.GetAsync("/_content/MudBlazor/MudBlazor.min.css");
+        Assert.NotEqual(HttpStatusCode.Forbidden, css.StatusCode);
     }
 
     [Fact]
@@ -245,6 +248,9 @@ public class RepositoryBoundaryTests
                      "System:AllowBootConfigurationChanges",
                      "System:AllowUacChanges",
                      "System:AllowReboot",
+                     "System:AllowAutoLogonChanges",
+                     "System:AllowInteractiveLogon",
+                     "System:LogonConsentLifetime",
                      "Updates:AllowSelfUpdate",
                      "Software:MaxUninstallDuration", "Devices:NefconPath", "Devices:NefconTimeout",
                      "Services:ProtectedNames", "ScheduledTasks:AllowChanges", "ScheduledTasks:ProtectedPaths", "Processes:AllowPathLookup", "Files:MaxUploadBytes",

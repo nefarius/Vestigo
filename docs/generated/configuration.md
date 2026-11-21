@@ -126,9 +126,12 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `SymbolServerAuth:Secret` | `null` |
 | `SymbolServerAuth:SecretFile` | `null` |
 | `SymbolServerAuth:Username` | `null` |
+| `System:AllowAutoLogonChanges` | `false` |
 | `System:AllowBootConfigurationChanges` | `false` |
+| `System:AllowInteractiveLogon` | `false` |
 | `System:AllowReboot` | `false` |
 | `System:AllowUacChanges` | `false` |
+| `System:LogonConsentLifetime` | `00:05:00` |
 | `Updates:AllowSelfUpdate` | `false` |
 | `VolumeRootAccess` | `Read, Write, Execute` |
 | `VolumeRoots` | `None` |
