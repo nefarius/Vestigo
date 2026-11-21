@@ -347,8 +347,15 @@ jobs:
             publish-x64/installer/updates.json.minisig
           if-no-files-found: error
 
+  notify-buildbot:
+    needs: build-installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
       - name: Send webhook to Buildbot
-        if: success() && startsWith(github.ref, 'refs/tags/v')
         uses: nefarius/AppVeyorArtifactsReceiver@35ce2f75ea464aec25c8e17b30d607b310942fe7
         with:
           webhook-url: ${{ secrets.WEBHOOK_URL }}
