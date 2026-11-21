@@ -230,7 +230,7 @@ public class LogonConsentEndpointTests : IDisposable
                 ListenAddress = "127.0.0.1",
                 ListenPort = port,
                 ApiTokens = Array.Empty<string>(),
-                System = new { AllowAutoLogonChanges = true }
+                System = new { AllowAutoLogonChanges = true, AllowInteractiveLogon = unlock }
             }
         });
         File.WriteAllText(Path.Combine(_settings, "appsettings.json"), json);
@@ -244,6 +244,8 @@ public class LogonConsentEndpointTests : IDisposable
                 {
                     services.RemoveAll<IInteractiveLogonDispatcher>();
                     services.AddSingleton<IInteractiveLogonDispatcher, FakeDispatcher>();
+                    services.RemoveAll<ISessionPlatform>();
+                    services.AddSingleton<ISessionPlatform, LockedConsole>();
                 }
             });
         });
@@ -273,6 +275,15 @@ public class LogonConsentEndpointTests : IDisposable
 
         public OperationResult<bool> VerifyCredentials(string userName, string? domain, ReadOnlySpan<char> password) =>
             OperationResult<bool>.Ok(true);
+    }
+
+    private sealed class LockedConsole : ISessionPlatform
+    {
+        public SessionSnapshot Read() => throw new NotSupportedException();
+
+        public SessionTokenRead ReadToken(uint sessionId) => throw new NotSupportedException();
+
+        public ConsoleLockRead ReadConsoleLock() => ConsoleLockRead.Ok("locked", 1, true, "lab");
     }
 
     private sealed class FakeDispatcher : IInteractiveLogonDispatcher
