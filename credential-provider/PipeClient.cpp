@@ -134,7 +134,10 @@ bool WriteExactOverlapped(HANDLE pipe, HANDLE stopEvent, const BYTE* buffer, DWO
             if (waited != WAIT_OBJECT_0)
             {
                 CancelIoEx(pipe, &ov);
-                GetOverlappedResult(pipe, &ov, &written, TRUE);
+                if (GetOverlappedResult(pipe, &ov, &written, TRUE) && written == bytes - total)
+                {
+                    return true;
+                }
                 return false;
             }
             if (!GetOverlappedResult(pipe, &ov, &written, FALSE))

@@ -118,54 +118,94 @@ public class CredentialProviderHostTests
     public async Task ExchangeDispatchAsync_ReturnsLogonFailed_AndDropsPeer_WhenProviderTimesOut()
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
+        using CancellationTokenSource readerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readerCts.CancelAfter(TimeSpan.FromSeconds(5));
         (DuplexTestStream serverSide, DuplexTestStream clientSide) = DuplexTestStream.CreatePair();
         using (serverSide)
         using (clientSide)
         {
             Task readOnly = Task.Run(async () =>
             {
-                _ = await CredentialProviderHost.ReadFrameAsync(clientSide, ct);
-            }, ct);
+                _ = await CredentialProviderHost.ReadFrameAsync(clientSide, readerCts.Token);
+            }, readerCts.Token);
 
-            (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.ExchangeDispatchAsync(
-                serverSide,
-                "Administrator",
-                null,
-                "pw".ToCharArray(),
-                null,
-                TimeSpan.FromMilliseconds(100),
-                NullLogger.Instance,
-                ct);
+            try
+            {
+                (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.ExchangeDispatchAsync(
+                    serverSide,
+                    "Administrator",
+                    null,
+                    "pw".ToCharArray(),
+                    "S-1-5-21-1-2-3-500",
+                    TimeSpan.FromMilliseconds(150),
+                    NullLogger.Instance,
+                    ct);
 
-            await readOnly;
-            Assert.False(result.Success);
-            Assert.Equal("logon_failed", result.ErrorCode);
-            Assert.Contains("timed out", result.Error, StringComparison.OrdinalIgnoreCase);
-            Assert.True(dropPeer);
+                await readOnly;
+                Assert.False(result.Success);
+                Assert.Equal("logon_failed", result.ErrorCode);
+                Assert.Contains("timed out", result.Error, StringComparison.OrdinalIgnoreCase);
+                Assert.True(dropPeer);
+            }
+            finally
+            {
+                readerCts.Cancel();
+                try
+                {
+                    await readOnly;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
         }
     }
 
     [Fact]
     public async Task ExchangeDispatchAsync_ReturnsCancelled_AndDropsPeer_WhenCallerCancels()
     {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using CancellationTokenSource readerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readerCts.CancelAfter(TimeSpan.FromSeconds(5));
         (DuplexTestStream serverSide, DuplexTestStream clientSide) = DuplexTestStream.CreatePair();
         using (serverSide)
         using (clientSide)
         {
-            using CancellationTokenSource cts = new(TimeSpan.FromMilliseconds(80));
-            (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.ExchangeDispatchAsync(
-                serverSide,
-                "Administrator",
-                null,
-                "pw".ToCharArray(),
-                null,
-                TimeSpan.FromSeconds(10),
-                NullLogger.Instance,
-                cts.Token);
+            Task cancelAfterDispatchRead = Task.Run(async () =>
+            {
+                _ = await CredentialProviderHost.ReadFrameAsync(clientSide, readerCts.Token);
+                cts.Cancel();
+            }, readerCts.Token);
 
-            Assert.False(result.Success);
-            Assert.Equal("cancelled", result.ErrorCode);
-            Assert.True(dropPeer);
+            try
+            {
+                (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.ExchangeDispatchAsync(
+                    serverSide,
+                    "Administrator",
+                    null,
+                    "pw".ToCharArray(),
+                    "S-1-5-21-1-2-3-500",
+                    TimeSpan.FromSeconds(10),
+                    NullLogger.Instance,
+                    cts.Token);
+
+                await cancelAfterDispatchRead;
+                Assert.False(result.Success);
+                Assert.Equal("cancelled", result.ErrorCode);
+                Assert.True(dropPeer);
+            }
+            finally
+            {
+                readerCts.Cancel();
+                try
+                {
+                    await cancelAfterDispatchRead;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
         }
     }
 
