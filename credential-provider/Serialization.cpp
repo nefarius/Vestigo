@@ -1,13 +1,11 @@
 #include "Serialization.h"
 
-#include <sspi.h>
-
 #include <cstring>
 #include <vector>
 
 namespace {
 
-void AppendUnicodeString(KERB_INTERACTIVE_LOGON* logon, UNICODE_STRING* field, wchar_t*& cursor, const std::wstring& value)
+void AppendUnicodeString(UNICODE_STRING* field, wchar_t*& cursor, const std::wstring& value)
 {
     field->Buffer = cursor;
     field->Length = static_cast<USHORT>(value.size() * sizeof(wchar_t));
@@ -53,9 +51,9 @@ HRESULT PackInteractiveLogon(
         : KerbInteractiveLogon;
 
     auto* cursor = reinterpret_cast<wchar_t*>(packed + 1);
-    AppendUnicodeString(&packed->Logon, &packed->Logon.LogonDomainName, cursor, domain);
-    AppendUnicodeString(&packed->Logon, &packed->Logon.UserName, cursor, userName);
-    AppendUnicodeString(&packed->Logon, &packed->Logon.Password, cursor, password);
+    AppendUnicodeString(&packed->Logon.LogonDomainName, cursor, domain);
+    AppendUnicodeString(&packed->Logon.UserName, cursor, userName);
+    AppendUnicodeString(&packed->Logon.Password, cursor, password);
 
     packed->Logon.LogonDomainName.Buffer = reinterpret_cast<PWSTR>(
         reinterpret_cast<BYTE*>(packed->Logon.LogonDomainName.Buffer) - reinterpret_cast<BYTE*>(packed));
@@ -84,9 +82,10 @@ HRESULT RetrieveNegotiateAuthPackage(ULONG* authPackage)
         return HRESULT_FROM_NT(status);
     }
 
+    const char negotiate[] = "Negotiate";
     LSA_STRING name{};
-    name.Buffer = const_cast<PCHAR>(NEGOSSP_NAME_A);
-    name.Length = static_cast<USHORT>(strlen(NEGOSSP_NAME_A));
+    name.Buffer = const_cast<PCHAR>(negotiate);
+    name.Length = static_cast<USHORT>(sizeof(negotiate) - 1);
     name.MaximumLength = static_cast<USHORT>(name.Length + 1);
     ULONG package = 0;
     status = LsaLookupAuthenticationPackage(lsa, &name, &package);

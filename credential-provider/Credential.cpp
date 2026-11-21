@@ -1,6 +1,7 @@
 #include "Credential.h"
 
 #include "guid.h"
+#include "PipeClient.h"
 #include "Serialization.h"
 
 #include <shlwapi.h>
@@ -39,7 +40,8 @@ void VestigoCredential::Initialize(
     const std::wstring& userName,
     const std::wstring& domain,
     std::wstring password,
-    const std::wstring& userSid)
+    const std::wstring& userSid,
+    PipeClient* pipe)
 {
     scenario_ = scenario;
     userName_ = userName;
@@ -47,6 +49,7 @@ void VestigoCredential::Initialize(
     SecureZeroMemory(password_.data(), password_.size() * sizeof(wchar_t));
     password_ = std::move(password);
     userSid_ = userSid;
+    pipe_ = pipe;
 }
 
 IFACEMETHODIMP VestigoCredential::QueryInterface(REFIID riid, void** ppv)
@@ -208,6 +211,10 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
     if (FAILED(hr))
     {
         *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        if (pipe_ != nullptr)
+        {
+            pipe_->Report(vestigo::protocol::ProviderStatus::Failed, HRESULT_CODE(hr), L"pack_failed");
+        }
         return hr;
     }
 
@@ -219,12 +226,20 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
         serialization->rgbSerialization = nullptr;
         serialization->cbSerialization = 0;
         *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        if (pipe_ != nullptr)
+        {
+            pipe_->Report(vestigo::protocol::ProviderStatus::Failed, HRESULT_CODE(hr), L"auth_package");
+        }
         return hr;
     }
 
     serialization->ulAuthenticationPackage = authPackage;
     serialization->clsidCredentialProvider = CLSID_VestigoCredentialProvider;
     *response = CPGSR_RETURN_CREDENTIAL_FINISHED;
+    if (pipe_ != nullptr)
+    {
+        pipe_->Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"");
+    }
     return S_OK;
 }
 

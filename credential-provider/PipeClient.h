@@ -40,6 +40,9 @@ public:
 
 private:
     bool ConnectAndRun();
+    bool PublishPipe(HANDLE pipe);
+    HANDLE TakePipe();
+    HANDLE CurrentPipe();
     bool WriteFrame(vestigo::protocol::MessageType type, const std::vector<BYTE>& payload);
     bool ReadFrame(vestigo::protocol::MessageType& type, std::vector<BYTE>& payload);
     static std::vector<BYTE> EncodeHello(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario, const std::vector<std::wstring>& sids);

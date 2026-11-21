@@ -30,6 +30,14 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
     /// <inheritdoc />
     public AutoLogonState Read()
     {
+        lock (_gate)
+        {
+            return ReadUnlocked();
+        }
+    }
+
+    private AutoLogonState ReadUnlocked()
+    {
         if (!OperatingSystem.IsWindows())
         {
             return new AutoLogonState(false, null, null, null, false, false, false, null, ["Windows is required."]);
@@ -113,16 +121,16 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
             {
                 return OperationResult<AutoLogonChange>.Fail("autologon_write_failed", exception.Message);
             }
-        }
 
-        AutoLogonState after = Read();
-        return OperationResult<AutoLogonChange>.Ok(new AutoLogonChange(
-            after.Enabled,
-            after.UserName,
-            after.Domain,
-            after.LogonCount,
-            after.ForceAutoLogon,
-            after.Notes));
+            AutoLogonState after = ReadUnlocked();
+            return OperationResult<AutoLogonChange>.Ok(new AutoLogonChange(
+                after.Enabled,
+                after.UserName,
+                after.Domain,
+                after.LogonCount,
+                after.ForceAutoLogon,
+                after.Notes));
+        }
     }
 
     /// <inheritdoc />
@@ -145,16 +153,16 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
             {
                 return OperationResult<AutoLogonChange>.Fail("autologon_write_failed", exception.Message);
             }
-        }
 
-        AutoLogonState after = Read();
-        return OperationResult<AutoLogonChange>.Ok(new AutoLogonChange(
-            after.Enabled,
-            after.UserName,
-            after.Domain,
-            after.LogonCount,
-            after.ForceAutoLogon,
-            after.Notes));
+            AutoLogonState after = ReadUnlocked();
+            return OperationResult<AutoLogonChange>.Ok(new AutoLogonChange(
+                after.Enabled,
+                after.UserName,
+                after.Domain,
+                after.LogonCount,
+                after.ForceAutoLogon,
+                after.Notes));
+        }
     }
 
     /// <inheritdoc />
@@ -217,6 +225,16 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
         return userName.Contains('@', StringComparison.Ordinal) ? null : ".";
     }
 
+    private static string? WinlogonDomain(string userName, string? domain)
+    {
+        if (!string.IsNullOrEmpty(domain))
+        {
+            return domain;
+        }
+
+        return userName.Contains('@', StringComparison.Ordinal) ? null : Environment.MachineName;
+    }
+
     /// <summary>
     ///     CsWin32 generates <c>LogonUser</c> with a <see cref="string" /> password under the current
     ///     NativeMethods.json settings, which would copy the secret. This fallback pins the buffer.
@@ -248,13 +266,14 @@ public sealed class WindowsAutoLogonPlatform : IAutoLogonPlatform
             ?? throw new InvalidOperationException("Winlogon key could not be opened.");
         winlogon.SetValue("AutoAdminLogon", enabled ? "1" : "0", RegistryValueKind.String);
         winlogon.SetValue("DefaultUserName", userName, RegistryValueKind.String);
-        if (string.IsNullOrWhiteSpace(domain))
+        string? storedDomain = WinlogonDomain(userName, domain);
+        if (string.IsNullOrWhiteSpace(storedDomain))
         {
             DeleteValue(winlogon, "DefaultDomainName");
         }
         else
         {
-            winlogon.SetValue("DefaultDomainName", domain, RegistryValueKind.String);
+            winlogon.SetValue("DefaultDomainName", storedDomain, RegistryValueKind.String);
         }
 
         if (logonCount is { } count)

@@ -6,6 +6,8 @@
 
 #include <string>
 
+class PipeClient;
+
 class VestigoCredential final : public ICredentialProviderCredential2
 {
 public:
@@ -17,7 +19,8 @@ public:
         const std::wstring& userName,
         const std::wstring& domain,
         std::wstring password,
-        const std::wstring& userSid);
+        const std::wstring& userSid,
+        PipeClient* pipe);
 
     // IUnknown
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -66,5 +69,6 @@ private:
     std::wstring domain_;
     std::wstring password_;
     std::wstring userSid_;
+    PipeClient* pipe_ = nullptr;
     NTSTATUS lastStatus_ = 0;
 };

@@ -330,7 +330,9 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
     private void PruneExpired()
     {
         DateTimeOffset now = time.GetUtcNow();
-        foreach (Entry entry in _entries.Values.Where(item => item.Status == LogonRequestStatus.Pending && item.ExpiresUtc <= now).ToList())
+        foreach (Entry entry in _entries.Values
+                     .Where(item => item.Status == LogonRequestStatus.Pending && !item.InFlight && item.ExpiresUtc <= now)
+                     .ToList())
         {
             Mark(entry, LogonRequestStatus.Expired, "expired", "The consent request has expired.");
         }
@@ -354,7 +356,10 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
         entry.Error = error;
         entry.InFlight = false;
         entry.Consumed = status is not LogonRequestStatus.Pending;
-        entry.Signal.TrySetResult();
+        if (status is not LogonRequestStatus.Submitted)
+        {
+            entry.Signal.TrySetResult();
+        }
     }
 
     private static LogonRequestView View(Entry entry) =>

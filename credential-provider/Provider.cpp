@@ -250,7 +250,6 @@ void VestigoProvider::ApplyDispatch()
         SecureZeroMemory(request.password.data(), request.password.size() * sizeof(wchar_t));
         return;
     }
-    credential_->Initialize(scenario_, request.userName, request.domain, std::move(request.password), request.targetSid);
+    credential_->Initialize(scenario_, request.userName, request.domain, std::move(request.password), request.targetSid, &pipe_);
     hasCredential_ = true;
-    pipe_.Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"");
 }

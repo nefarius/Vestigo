@@ -129,9 +129,34 @@ public static class LogonConsentEndpoint
                 return Page(FormModel(pending, ticket, tokens, context, remaining: pending.RemainingAttempts, error: "Enter the Windows password."));
             }
 
-            OperationResult<LogonRequestView> result = pending!.Kind == LogonConsentKind.InteractiveLogon
-                ? await interactive.ApproveAsync(pending, password, context.RequestAborted).ConfigureAwait(false)
-                : autoLogon.Approve(pending, password);
+            OperationResult<LogonRequestView> result;
+            try
+            {
+                result = pending!.Kind == LogonConsentKind.InteractiveLogon
+                    ? await interactive.ApproveAsync(pending, password, context.RequestAborted).ConfigureAwait(false)
+                    : autoLogon.Approve(pending, password);
+            }
+            catch (Exception)
+            {
+                LogonRequestView? view = store.Peek(pending.RequestId);
+                if (view is null || view.Status == LogonConsentStore.StatusName(LogonRequestStatus.Pending))
+                {
+                    store.Complete(
+                        pending.RequestId,
+                        LogonRequestStatus.Failed,
+                        "consent_failed",
+                        "The consent request failed before it completed.");
+                }
+
+                return Page(new LogonConsentPageModel
+                {
+                    Title = "Consent failed",
+                    Operation = OperationName(pending.Kind),
+                    Account = LogonAccount.Display(pending.UserName, pending.Domain),
+                    Error = "The consent request failed before it completed.",
+                    ShowForm = false
+                });
+            }
 
             if (!result.Success)
             {

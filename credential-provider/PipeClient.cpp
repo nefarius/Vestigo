@@ -99,17 +99,21 @@ void PipeClient::Stop()
     {
         SetEvent(stop_);
     }
-    if (pipe_ != INVALID_HANDLE_VALUE)
+    HANDLE pipe = CurrentPipe();
+    if (pipe != INVALID_HANDLE_VALUE)
     {
-        CancelIoEx(pipe_, nullptr);
-        CloseHandle(pipe_);
-        pipe_ = INVALID_HANDLE_VALUE;
+        CancelIoEx(pipe, nullptr);
     }
     if (thread_ != nullptr)
     {
-        WaitForSingleObject(thread_, INFINITE);
+        WaitForSingleObject(thread_, 10000);
         CloseHandle(thread_);
         thread_ = nullptr;
+    }
+    pipe = TakePipe();
+    if (pipe != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(pipe);
     }
     if (stop_ != nullptr)
     {
@@ -175,11 +179,18 @@ bool PipeClient::ConnectAndRun()
         return false;
     }
 
-    pipe_ = pipe;
-    if (!WriteFrame(vestigo::protocol::MessageType::Hello, EncodeHello(scenario_, sids_)))
+    if (!PublishPipe(pipe))
     {
         CloseHandle(pipe);
-        pipe_ = INVALID_HANDLE_VALUE;
+        return false;
+    }
+    if (!WriteFrame(vestigo::protocol::MessageType::Hello, EncodeHello(scenario_, sids_)))
+    {
+        HANDLE published = TakePipe();
+        if (published != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(published);
+        }
         return false;
     }
 
@@ -219,17 +230,43 @@ bool PipeClient::ConnectAndRun()
         }
     }
 
-    if (pipe_ == pipe)
+    HANDLE published = TakePipe();
+    if (published != INVALID_HANDLE_VALUE)
     {
-        CloseHandle(pipe);
-        pipe_ = INVALID_HANDLE_VALUE;
+        CloseHandle(published);
     }
     return false;
 }
 
+bool PipeClient::PublishPipe(HANDLE pipe)
+{
+    std::lock_guard lock(mutex_);
+    if (stop_ != nullptr && WaitForSingleObject(stop_, 0) == WAIT_OBJECT_0)
+    {
+        return false;
+    }
+    pipe_ = pipe;
+    return true;
+}
+
+HANDLE PipeClient::TakePipe()
+{
+    std::lock_guard lock(mutex_);
+    HANDLE pipe = pipe_;
+    pipe_ = INVALID_HANDLE_VALUE;
+    return pipe;
+}
+
+HANDLE PipeClient::CurrentPipe()
+{
+    std::lock_guard lock(mutex_);
+    return pipe_;
+}
+
 bool PipeClient::WriteFrame(vestigo::protocol::MessageType type, const std::vector<BYTE>& payload)
 {
-    if (pipe_ == INVALID_HANDLE_VALUE || payload.size() > vestigo::protocol::kMaxPayload)
+    HANDLE pipe = CurrentPipe();
+    if (pipe == INVALID_HANDLE_VALUE || payload.size() > vestigo::protocol::kMaxPayload)
     {
         return false;
     }
@@ -250,23 +287,24 @@ bool PipeClient::WriteFrame(vestigo::protocol::MessageType type, const std::vect
     header[11] = static_cast<BYTE>(length >> 24);
 
     DWORD written = 0;
-    if (!WriteFile(pipe_, header, sizeof(header), &written, nullptr) || written != sizeof(header))
+    if (!WriteFile(pipe, header, sizeof(header), &written, nullptr) || written != sizeof(header))
     {
         return false;
     }
     if (!payload.empty() &&
-        (!WriteFile(pipe_, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) ||
+        (!WriteFile(pipe, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) ||
          written != payload.size()))
     {
         return false;
     }
-    return FlushFileBuffers(pipe_) != FALSE;
+    return FlushFileBuffers(pipe) != FALSE;
 }
 
 bool PipeClient::ReadFrame(vestigo::protocol::MessageType& type, std::vector<BYTE>& payload)
 {
+    HANDLE pipe = CurrentPipe();
     BYTE header[vestigo::protocol::kHeaderSize]{};
-    if (!ReadExact(pipe_, header, sizeof(header)))
+    if (pipe == INVALID_HANDLE_VALUE || !ReadExact(pipe, header, sizeof(header)))
     {
         return false;
     }
@@ -281,7 +319,7 @@ bool PipeClient::ReadFrame(vestigo::protocol::MessageType& type, std::vector<BYT
         return false;
     }
     payload.assign(static_cast<size_t>(length), 0);
-    return length == 0 || ReadExact(pipe_, payload.data(), static_cast<DWORD>(length));
+    return length == 0 || ReadExact(pipe, payload.data(), static_cast<DWORD>(length));
 }
 
 std::vector<BYTE> PipeClient::EncodeHello(
