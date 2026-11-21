@@ -92,20 +92,9 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                     "LogonUI is not attached to the active console session.");
             }
 
-            if (requireUnlock && peer.Hello.Scenario != CredentialProviderProtocol.UsageScenario.Unlock)
+            if (RejectDispatchPeer(peer.Hello, requireUnlock, expectedSid) is { } rejected)
             {
-                return OperationResult<string>.Fail(
-                    "not_locked",
-                    "The console is at the logon screen, not locked. Use request_interactive_logon.");
-            }
-
-            if (peer.Hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
-                !string.IsNullOrWhiteSpace(expectedSid) &&
-                !peer.Hello.UserSids.Contains(expectedSid, StringComparer.OrdinalIgnoreCase))
-            {
-                return OperationResult<string>.Fail(
-                    "sid_mismatch",
-                    "The unlock target is not one of the users on the lock screen.");
+                return rejected;
             }
 
             payload = CredentialProviderProtocol.EncodeDispatch(userName, domain ?? "", password, expectedSid);
@@ -491,6 +480,33 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
             &read,
             &available,
             &bytesLeft);
+    }
+
+    /// <summary>
+    ///     Refuses unlock dispatch when LogonUI is not in the unlock scenario, before credentials are encoded.
+    /// </summary>
+    internal static OperationResult<string>? RejectDispatchPeer(
+        CredentialProviderProtocol.HelloMessage hello,
+        bool requireUnlock,
+        string? expectedSid)
+    {
+        if (requireUnlock && hello.Scenario != CredentialProviderProtocol.UsageScenario.Unlock)
+        {
+            return OperationResult<string>.Fail(
+                "not_locked",
+                "The console is at the logon screen, not locked. Use request_interactive_logon.");
+        }
+
+        if (hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
+            !string.IsNullOrWhiteSpace(expectedSid) &&
+            !hello.UserSids.Contains(expectedSid, StringComparer.OrdinalIgnoreCase))
+        {
+            return OperationResult<string>.Fail(
+                "sid_mismatch",
+                "The unlock target is not one of the users on the lock screen.");
+        }
+
+        return null;
     }
 
     private static unsafe bool PeerIsConsoleSession(ConnectedPeer peer)

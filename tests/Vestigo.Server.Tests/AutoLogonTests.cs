@@ -233,6 +233,24 @@ public class AutoLogonTests
     }
 
     [Fact]
+    public void CredentialProviderHost_RejectsUnlockDispatchForLogonScenarioBeforeEncode()
+    {
+        CredentialProviderProtocol.HelloMessage logon = new(CredentialProviderProtocol.UsageScenario.Logon, 1, []);
+        CredentialProviderProtocol.HelloMessage unlock = new(
+            CredentialProviderProtocol.UsageScenario.Unlock, 1, ["S-1-5-21-1"]);
+
+        OperationResult<string>? rejected = CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: true, expectedSid: null);
+        Assert.NotNull(rejected);
+        Assert.Equal("not_locked", rejected.ErrorCode);
+
+        Assert.Null(CredentialProviderHost.RejectDispatchPeer(unlock, requireUnlock: true, expectedSid: null));
+        Assert.Null(CredentialProviderHost.RejectDispatchPeer(logon, requireUnlock: false, expectedSid: null));
+        Assert.Equal(
+            "sid_mismatch",
+            CredentialProviderHost.RejectDispatchPeer(unlock, requireUnlock: true, expectedSid: "S-1-5-21-9")!.ErrorCode);
+    }
+
+    [Fact]
     public void Identity_MatchesInstallerDeploymentConstants()
     {
         Assert.Equal(CredentialProviderIdentity.ClsidBraced, CredentialProviderDeployment.ClsidBraced);
