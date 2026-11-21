@@ -333,6 +333,24 @@ public class AutoLogonTests
     }
 
     [Fact]
+    public async Task LockWorkstation_ReportsUnknownWhenLaterObservationFails()
+    {
+        MutableDispatcher dispatcher = new() { LogonUiConnected = false, ProviderRegistered = true };
+        MutableConsole console = new("locked", 1, "lab");
+        console.AfterRead = _ => console.FailNext = true;
+        FakeLock platform = new();
+        InteractiveLogonService service = Interactive(console, dispatcher, allow: true, platform);
+        OperationResult<WorkstationLockResult> result = await service.LockWorkstationAsync(1, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.False(result.Value!.Locked);
+        Assert.True(result.Value.AlreadyLocked);
+        Assert.Equal("unknown", result.Value.ConsoleLockState);
+        Assert.Contains(result.Value.Notes, note => note.Contains("could not be determined", StringComparison.Ordinal));
+        Assert.Equal(0, platform.Calls);
+    }
+
+    [Fact]
     public async Task LockWorkstation_RejectsLogonScreen()
     {
         FakeLock platform = new();
@@ -574,6 +592,8 @@ public class AutoLogonTests
 
         public Action<int>? AfterRead { get; set; }
 
+        public bool FailNext { get; set; }
+
         public SessionSnapshot Read() => throw new NotSupportedException();
 
         public SessionTokenRead ReadToken(uint sessionId) => throw new NotSupportedException();
@@ -582,6 +602,12 @@ public class AutoLogonTests
         {
             Reads++;
             BeforeRead?.Invoke(Reads);
+            if (FailNext)
+            {
+                AfterRead?.Invoke(Reads);
+                return ConsoleLockRead.Fail("lock_state_unknown", "The console lock state could not be determined.");
+            }
+
             ConsoleLockRead current = ConsoleLockRead.Ok(State, sessionId, userName is not null, userName);
             AfterRead?.Invoke(Reads);
             return current;

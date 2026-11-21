@@ -88,7 +88,7 @@ cancellation stops waiting and retains that slot until Windows returns.
 
 ## Plain HTTP
 
-Traffic is not TLS. Tokens, tickets, traces, and screenshots cross the network in the clear. Use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine. One-time `/files` tickets expire, bind to one path, and are consumed on first use; treat the URL as a secret until then. A `take_screenshot` share URL is the same kind of secret for a downscaled preview: it lasts 10 minutes, works once, and does not require the API token.
+Traffic is not TLS. Tokens, tickets, traces, screenshots, and Windows passwords typed on the logon consent page cross the network in the clear unless a TLS-terminating proxy is in front. The consent page warns on plain HTTP from a non-loopback client and still accepts the form. Use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine. One-time `/files` tickets expire, bind to one path, and are consumed on first use; treat the URL as a secret until then. A `take_screenshot` share URL is the same kind of secret for a downscaled preview: it lasts 10 minutes, works once, and does not require the API token.
 
 ## Trusted plugins
 

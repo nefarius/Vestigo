@@ -190,8 +190,11 @@ public sealed class InteractiveLogonService(
         }
 
         List<string> notes = [];
-        bool isLocked = observed.Success && observed.State == "locked";
-        if (!isLocked)
+        if (!observed.Success)
+        {
+            notes.Add("The console lock state could not be determined.");
+        }
+        else if (observed.State != "locked")
         {
             notes.Add(alreadyLocked
                 ? "The console session is no longer locked."
@@ -208,7 +211,7 @@ public sealed class InteractiveLogonService(
                 : "The console session is locked.");
         }
 
-        return LockResult(alreadyLocked, observed.Success ? observed : lockState, notes);
+        return LockResult(alreadyLocked, observed, notes);
     }
 
     public OperationResult<LogonConsentLink> RequestUnlock(string? userName, string? domain)
