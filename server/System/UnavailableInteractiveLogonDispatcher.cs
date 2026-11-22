@@ -15,6 +15,7 @@ public sealed class UnavailableInteractiveLogonDispatcher : IInteractiveLogonDis
         string? domain,
         char[] password,
         string? expectedSid,
+        bool requireUnlock,
         CancellationToken cancellationToken) =>
         Task.FromResult(OperationResult<string>.Fail(
             "interactive_logon_disabled",
