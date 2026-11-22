@@ -63,6 +63,7 @@ public:
     IFACEMETHODIMP GetUserSid(LPWSTR* sid) override;
 
     NTSTATUS LastStatus() const { return lastStatus_; }
+    bool IsAvailable() const;
 
 private:
     LONG refs_ = 1;
@@ -74,4 +75,5 @@ private:
     PipeClient* pipe_ = nullptr;
     std::uint64_t generation_ = 0;
     NTSTATUS lastStatus_ = 0;
+    bool consumed_ = false;
 };

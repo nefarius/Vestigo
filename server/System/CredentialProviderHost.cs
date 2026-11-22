@@ -21,6 +21,7 @@ namespace Vestigo.SystemInfo;
 public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogonDispatcher
 {
     private static readonly SecurityIdentifier LocalSystem = new(WellKnownSidType.LocalSystemSid, null);
+    internal static readonly TimeSpan DefaultDispatchTimeout = TimeSpan.FromSeconds(25);
 
     private readonly ILogger<CredentialProviderHost> _logger;
     private readonly ISessionPlatform _sessions;
@@ -84,7 +85,6 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 "LogonUI is not connected. Interactive logon works from the Windows logon or lock screen.");
         }
 
-        byte[] payload = [];
         try
         {
             if (!PeerIsConsoleSession(peer))
@@ -100,17 +100,107 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 return rejected;
             }
 
-            payload = CredentialProviderProtocol.EncodeDispatch(userName, domain ?? "", password, expectedSid);
-            await WriteFrameAsync(peer.Pipe, CredentialProviderProtocol.MessageType.Dispatch, payload, cancellationToken)
+            (OperationResult<string> result, bool dropPeer) = await DispatchToStreamAsync(
+                peer.Pipe,
+                peer.Hello,
+                userName,
+                domain,
+                password,
+                expectedSid,
+                requireUnlock,
+                consoleLock,
+                DefaultDispatchTimeout,
+                ResolveUserSid,
+                _logger,
+                cancellationToken).ConfigureAwait(false);
+            if (dropPeer)
+            {
+                Drop(peer);
+            }
+
+            return result;
+        }
+        finally
+        {
+            peer.Busy = false;
+        }
+    }
+
+    internal static Task<(OperationResult<string> Result, bool DropPeer)> ExchangeDispatchAsync(
+        Stream stream,
+        string userName,
+        string? domain,
+        char[] password,
+        string? targetSid,
+        TimeSpan timeout,
+        ILogger? logger,
+        CancellationToken cancellationToken) =>
+        DispatchToStreamAsync(
+            stream,
+            new CredentialProviderProtocol.HelloMessage(CredentialProviderProtocol.UsageScenario.Logon, 0, []),
+            userName,
+            domain,
+            password,
+            targetSid,
+            requireUnlock: false,
+            consoleLock: null,
+            timeout,
+            static (_, _) => null,
+            logger,
+            cancellationToken);
+
+    internal static async Task<(OperationResult<string> Result, bool DropPeer)> DispatchToStreamAsync(
+        Stream stream,
+        CredentialProviderProtocol.HelloMessage hello,
+        string userName,
+        string? domain,
+        char[] password,
+        string? expectedSid,
+        bool requireUnlock,
+        ConsoleLockRead? consoleLock,
+        TimeSpan timeout,
+        Func<string, string?, string?> sidResolver,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
+        byte[] payload = [];
+        bool sentDispatch = false;
+        using CancellationTokenSource dispatchCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        dispatchCts.CancelAfter(timeout);
+        CancellationToken token = dispatchCts.Token;
+
+        try
+        {
+            if (RejectDispatchPeer(hello, requireUnlock, expectedSid, consoleLock) is { } preRejected)
+            {
+                return (preRejected, false);
+            }
+
+            string? targetSid = !string.IsNullOrWhiteSpace(expectedSid)
+                ? expectedSid
+                : await ResolveUserSidAsync(userName, domain, sidResolver, token).ConfigureAwait(false);
+
+            token.ThrowIfCancellationRequested();
+
+            if (RejectDispatchPeer(hello, requireUnlock, targetSid, consoleLock) is { } postRejected)
+            {
+                return (postRejected, false);
+            }
+
+            payload = CredentialProviderProtocol.EncodeDispatch(userName, domain ?? "", password, targetSid);
+            sentDispatch = true;
+            await WriteFrameAsync(stream, CredentialProviderProtocol.MessageType.Dispatch, payload, token)
                 .ConfigureAwait(false);
-            CredentialProviderProtocol.Frame frame = await ReadFrameAsync(peer.Pipe, cancellationToken).ConfigureAwait(false);
+            CredentialProviderProtocol.Frame frame = await ReadFrameAsync(stream, token).ConfigureAwait(false);
             if (frame.Type != CredentialProviderProtocol.MessageType.Status)
             {
-                return OperationResult<string>.Fail("provider_protocol", "The Credential Provider sent an unexpected frame.");
+                return (
+                    OperationResult<string>.Fail("provider_protocol", "The Credential Provider sent an unexpected frame."),
+                    true);
             }
 
             CredentialProviderProtocol.StatusMessage status = CredentialProviderProtocol.DecodeStatus(frame.Payload);
-            return status.Status switch
+            OperationResult<string> mapped = status.Status switch
             {
                 CredentialProviderProtocol.ProviderStatus.Submitted or
                     CredentialProviderProtocol.ProviderStatus.Succeeded =>
@@ -121,28 +211,102 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                     "logon_failed",
                     status.Message ?? $"The Credential Provider reported Win32 {status.Win32Error}.")
             };
+            return (mapped, false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Drop(peer);
-            return OperationResult<string>.Fail("cancelled", "The interactive logon was cancelled.");
+            return (OperationResult<string>.Fail("cancelled", "The interactive logon was cancelled."), sentDispatch);
         }
-        catch (IOException exception)
+        catch (OperationCanceledException)
         {
-            _logger.LogWarning(exception, "Credential Provider pipe closed during dispatch.");
-            Drop(peer);
-            return OperationResult<string>.Fail("logonui_not_connected", "LogonUI disconnected during dispatch.");
+            if (sentDispatch)
+            {
+                logger?.LogWarning("Credential Provider timed out waiting for dispatch reply after {TimeoutSeconds}s.", timeout.TotalSeconds);
+                return (
+                    OperationResult<string>.Fail("logon_failed", "LogonUI did not respond before the dispatch timed out."),
+                    true);
+            }
+
+            logger?.LogWarning("Account SID resolution timed out before dispatch after {TimeoutSeconds}s.", timeout.TotalSeconds);
+            return (
+                OperationResult<string>.Fail("logon_failed", "Account SID resolution timed out before dispatch."),
+                false);
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+        {
+            logger?.LogWarning(exception, "Credential Provider pipe closed during dispatch.");
+            return (OperationResult<string>.Fail("logonui_not_connected", "LogonUI disconnected during dispatch."), true);
         }
         catch (InvalidDataException exception)
         {
-            _logger.LogWarning(exception, "Credential Provider sent an invalid dispatch reply.");
-            Drop(peer);
-            return OperationResult<string>.Fail("provider_protocol", exception.Message);
+            logger?.LogWarning(exception, "Credential Provider sent an invalid dispatch reply.");
+            return (OperationResult<string>.Fail("provider_protocol", exception.Message), true);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(payload);
-            peer.Busy = false;
+        }
+    }
+
+    internal static async Task<string?> ResolveUserSidAsync(
+        string userName,
+        string? domain,
+        Func<string, string?, string?> resolver,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Task<string?> lookup = Task.Run(() =>
+        {
+            try
+            {
+                return resolver(userName, domain);
+            }
+            catch (Exception exception) when (exception is IdentityNotMappedException or SystemException or ArgumentException)
+            {
+                return null;
+            }
+        }, CancellationToken.None);
+
+        return await lookup.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static string? ResolveUserSid(string userName, string? domain)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(userName))
+        {
+            return null;
+        }
+
+        try
+        {
+            NTAccount account;
+            if (userName.Contains('\\') || userName.Contains('@'))
+            {
+                account = new NTAccount(userName);
+            }
+            else if (!string.IsNullOrWhiteSpace(domain))
+            {
+                string trimmedDomain = domain.Trim();
+                string normalizedDomain = trimmedDomain == "." ? Environment.MachineName : trimmedDomain;
+                account = new NTAccount(normalizedDomain, userName);
+            }
+            else
+            {
+                account = new NTAccount(userName);
+            }
+
+            return account.Translate(typeof(SecurityIdentifier)) is SecurityIdentifier sid
+                ? sid.Value
+                : null;
+        }
+        catch (Exception exception) when (exception is IdentityNotMappedException or SystemException or ArgumentException)
+        {
+            return null;
         }
     }
 
@@ -208,7 +372,7 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 pipe?.Dispose();
                 break;
             }
-            catch (IOException exception)
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException)
             {
                 _logger.LogDebug(exception, "Credential Provider pipe ended.");
                 pipe?.Dispose();
@@ -264,7 +428,7 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         {
             peer.Pipe.Dispose();
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
         }
     }
@@ -400,28 +564,28 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         }
     }
 
-    private static async Task WriteFrameAsync(
-        PipeStream pipe,
+    internal static async Task WriteFrameAsync(
+        Stream stream,
         CredentialProviderProtocol.MessageType type,
         byte[] payload,
         CancellationToken cancellationToken)
     {
         byte[] header = CredentialProviderProtocol.WriteHeader(type, payload.Length);
-        await pipe.WriteAsync(header, cancellationToken).ConfigureAwait(false);
+        await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
         if (payload.Length > 0)
         {
-            await pipe.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
         }
 
-        await pipe.FlushAsync(cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<CredentialProviderProtocol.Frame> ReadFrameAsync(
-        PipeStream pipe,
+    internal static async Task<CredentialProviderProtocol.Frame> ReadFrameAsync(
+        Stream stream,
         CancellationToken cancellationToken)
     {
         byte[] header = new byte[CredentialProviderProtocol.HeaderSize];
-        await ReadExactAsync(pipe, header, cancellationToken).ConfigureAwait(false);
+        await ReadExactAsync(stream, header, cancellationToken).ConfigureAwait(false);
         if (!CredentialProviderProtocol.TryReadHeader(header, out CredentialProviderProtocol.MessageType type, out int length, out string? error))
         {
             throw new InvalidDataException(error);
@@ -430,18 +594,18 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         byte[] payload = length == 0 ? [] : new byte[length];
         if (length > 0)
         {
-            await ReadExactAsync(pipe, payload, cancellationToken).ConfigureAwait(false);
+            await ReadExactAsync(stream, payload, cancellationToken).ConfigureAwait(false);
         }
 
         return new CredentialProviderProtocol.Frame(type, payload);
     }
 
-    private static async Task ReadExactAsync(PipeStream pipe, byte[] buffer, CancellationToken cancellationToken)
+    private static async Task ReadExactAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
     {
         int offset = 0;
         while (offset < buffer.Length)
         {
-            int read = await pipe.ReadAsync(buffer.AsMemory(offset), cancellationToken).ConfigureAwait(false);
+            int read = await stream.ReadAsync(buffer.AsMemory(offset), cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 throw new EndOfStreamException();
@@ -471,18 +635,54 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         }
     }
 
-    private static unsafe bool ClientStillConnected(NamedPipeServerStream pipe)
+    internal static unsafe bool ClientStillConnected(NamedPipeServerStream pipe)
     {
-        uint available = 0;
-        uint bytesLeft = 0;
-        uint read = 0;
-        return PInvoke.PeekNamedPipe(
-            (HANDLE)pipe.SafePipeHandle.DangerousGetHandle(),
-            null,
-            0,
-            &read,
-            &available,
-            &bytesLeft);
+        SafePipeHandle handle;
+        try
+        {
+            handle = pipe.SafePipeHandle;
+        }
+        catch (Exception exception) when (exception is ObjectDisposedException or InvalidOperationException)
+        {
+            return false;
+        }
+
+        if (handle.IsInvalid || handle.IsClosed)
+        {
+            return false;
+        }
+
+        bool addedRef = false;
+        try
+        {
+            handle.DangerousAddRef(ref addedRef);
+            if (!addedRef)
+            {
+                return false;
+            }
+
+            uint available = 0;
+            uint bytesLeft = 0;
+            uint read = 0;
+            return PInvoke.PeekNamedPipe(
+                (HANDLE)handle.DangerousGetHandle(),
+                null,
+                0,
+                &read,
+                &available,
+                &bytesLeft);
+        }
+        catch (Exception exception) when (exception is ObjectDisposedException or InvalidOperationException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (addedRef)
+            {
+                handle.DangerousRelease();
+            }
+        }
     }
 
     /// <summary>
@@ -521,7 +721,8 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(expectedSid) &&
+        if ((requireUnlock || hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock) &&
+            !string.IsNullOrWhiteSpace(expectedSid) &&
             hello.UserSids.Count > 0 &&
             !hello.UserSids.Contains(expectedSid, StringComparer.OrdinalIgnoreCase))
         {

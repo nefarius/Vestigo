@@ -52,6 +52,7 @@ void VestigoCredential::Initialize(
     userSid_ = userSid;
     pipe_ = pipe;
     generation_ = generation;
+    consumed_ = false;
 }
 
 IFACEMETHODIMP VestigoCredential::QueryInterface(REFIID riid, void** ppv)
@@ -118,7 +119,7 @@ IFACEMETHODIMP VestigoCredential::SetDeselected()
 }
 
 IFACEMETHODIMP VestigoCredential::GetFieldState(
-    DWORD,
+    DWORD field,
     CREDENTIAL_PROVIDER_FIELD_STATE* state,
     CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE* interactive)
 {
@@ -126,14 +127,22 @@ IFACEMETHODIMP VestigoCredential::GetFieldState(
     {
         return E_INVALIDARG;
     }
-    *state = CPFS_HIDDEN;
+    if (field != 0)
+    {
+        return E_INVALIDARG;
+    }
+    *state = CPFS_DISPLAY_IN_BOTH;
     *interactive = CPFIS_NONE;
     return S_OK;
 }
 
-IFACEMETHODIMP VestigoCredential::GetStringValue(DWORD, LPWSTR* value)
+IFACEMETHODIMP VestigoCredential::GetStringValue(DWORD field, LPWSTR* value)
 {
-    return CopyString(L"", value);
+    if (field != 0)
+    {
+        return E_INVALIDARG;
+    }
+    return CopyString(L"Vestigo", value);
 }
 
 IFACEMETHODIMP VestigoCredential::GetBitmapValue(DWORD, HBITMAP* bitmap)
@@ -206,6 +215,15 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
     }
 
     std::memset(serialization, 0, sizeof(*serialization));
+    if (!IsAvailable())
+    {
+        consumed_ = true;
+        SecureZeroMemory(password_.data(), password_.size() * sizeof(wchar_t));
+        password_.clear();
+        *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        return HRESULT_FROM_WIN32(ERROR_CANCELLED);
+    }
+    consumed_ = true;
     HRESULT hr = PackInteractiveLogon(
         scenario_, domain_, userName_, password_, &serialization->rgbSerialization, &serialization->cbSerialization);
     SecureZeroMemory(password_.data(), password_.size() * sizeof(wchar_t));
@@ -224,6 +242,7 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
     hr = RetrieveNegotiateAuthPackage(&authPackage);
     if (FAILED(hr))
     {
+        SecureZeroMemory(serialization->rgbSerialization, serialization->cbSerialization);
         CoTaskMemFree(serialization->rgbSerialization);
         serialization->rgbSerialization = nullptr;
         serialization->cbSerialization = 0;
@@ -235,13 +254,19 @@ IFACEMETHODIMP VestigoCredential::GetSerialization(
         return hr;
     }
 
+    if (pipe_ == nullptr || !pipe_->Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"", generation_))
+    {
+        SecureZeroMemory(serialization->rgbSerialization, serialization->cbSerialization);
+        CoTaskMemFree(serialization->rgbSerialization);
+        serialization->rgbSerialization = nullptr;
+        serialization->cbSerialization = 0;
+        *response = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        return HRESULT_FROM_WIN32(ERROR_CANCELLED);
+    }
+
     serialization->ulAuthenticationPackage = authPackage;
     serialization->clsidCredentialProvider = CLSID_VestigoCredentialProvider;
     *response = CPGSR_RETURN_CREDENTIAL_FINISHED;
-    if (pipe_ != nullptr)
-    {
-        pipe_->Report(vestigo::protocol::ProviderStatus::Submitted, 0, L"", generation_);
-    }
     return S_OK;
 }
 
@@ -274,4 +299,9 @@ IFACEMETHODIMP VestigoCredential::GetUserSid(LPWSTR* sid)
         return S_FALSE;
     }
     return CopyString(userSid_, sid);
+}
+
+bool VestigoCredential::IsAvailable() const
+{
+    return !consumed_ && pipe_ != nullptr && pipe_->IsGenerationActive(generation_);
 }
