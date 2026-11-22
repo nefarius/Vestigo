@@ -39,6 +39,20 @@ Requests cancellation of a running job. Process jobs kill their process tree.
 | --- | --- | --- | --- | --- |
 | `jobId` | `string` | yes |  | Job identifier. |
 
+## `cancel_logon_request`
+
+Cancels a pending AutoLogon, interactive-logon, or unlock consent request so the URL stops working.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `requestId` | `string` | yes |  | Request id from request_autologon_enable, request_interactive_logon, or request_unlock_workstation. |
+
+## `cancel_reboot`
+
+Aborts a pending reboot countdown started by reboot_machine or another InitiateShutdown caller. Requires Vestigo:System:AllowReboot. Fails with no_reboot_in_progress when nothing is pending. An immediate reboot that has already started cannot be cancelled. Local machine only.
+
+No parameters.
+
 ## `capture_process_dump`
 
 Writes a minidump of one process as a job. Requires Vestigo:Diagnostics:AllowProcessDumps. output is a new .dmp file in a root with Write access. expectedStartTime, from list_processes, is required and is checked again immediately before the write. dumpType mini writes a small snapshot. dumpType full writes process memory and can contain credentials that were in the process. The dump runs as the Vestigo service. Protected processes and a fixed refusal list are rejected. The output volume must keep Vestigo:Diagnostics:MinDumpFreeBytes free after reserving Vestigo:Diagnostics:MaxDumpBytes. A dump over that cap is deleted. Vestigo does not upload the file and does not create a download ticket. wait > 0 waits that many seconds. The job output is a status line, never dump bytes.
@@ -178,6 +192,14 @@ Deletes a kernel driver service through nefcon. Win32 services are refused. Stop
 | --- | --- | --- | --- | --- |
 | `name` | `string` | yes |  | Driver service name (not a path). |
 
+## `disable_autologon`
+
+Turns AutoAdminLogon off, deletes the LSA DefaultPassword secret, and removes any legacy plaintext Winlogon DefaultPassword value. Requires Vestigo:System:AllowAutoLogonChanges. clearDefaultUser also removes DefaultUserName and DefaultDomainName.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `clearDefaultUser` | `bool` | no | `false` | Also clear DefaultUserName and DefaultDomainName. |
+
 ## `disable_device`
 
 Disables a device by instance ID.
@@ -309,6 +331,12 @@ Finds things on the console user's screen. text matches UI Automation names and 
 | `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
 | `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Desktop, display, and region searches need that session to be the input desktop. |
 
+## `get_autologon_state`
+
+Returns whether Windows AutoLogon is enabled, the default user and domain, AutoLogonCount, ForceAutoLogon, whether an LSA DefaultPassword secret is present, and whether a legacy plaintext Winlogon DefaultPassword value exists. The password is never returned.
+
+No parameters.
+
 ## `get_boot_security`
 
 Returns UEFI vs legacy BIOS, Secure Boot, BCD test-signing (configured, takes effect at next boot), the running kernel test-signing state, WHQL developer test mode, and rebootPending when the BCD value and the running state differ. Notes cover Secure Boot, a pending reboot, and that BCD changes apply only to the default boot entry.
@@ -426,6 +454,12 @@ Returns one entry by id (from list_installed_software) with the silent uninstall
 | --- | --- | --- | --- | --- |
 | `id` | `string` | yes |  | Entry id such as machine-x64:{KeyName}. |
 
+## `get_interactive_logon_status`
+
+Returns whether interactive logon is allowed, whether the Credential Provider DLL is installed and registered, whether LogonUI is connected, and the console lock state (locked, unlocked, logonScreen, or unknown). Passwords are never returned.
+
+No parameters.
+
 ## `get_job`
 
 Returns state, exit code, and output size for one job.
@@ -448,6 +482,15 @@ Returns the root type, SHA-256, and top-level shape of a UTF-8 JSON document und
 Returns the newest Microsoft-Windows-Power-Troubleshooter event 1 from the System log: WakeTime, SleepTime, the WakeSourceType number, WakeSourceText, and any wake-timer owner and context. eventFound is false when that event is absent, and the other fields are then null. WakeSourceType is not translated to a name. Text fields are capped at 512 characters. This does not list power-request owners. There is no write.
 
 No parameters.
+
+## `get_logon_request`
+
+Returns the status of a request_autologon_enable, request_interactive_logon, or request_unlock_workstation consent request. waitSeconds 0 returns immediately; 1 through 30 waits for the human to finish the consent page. The password is never returned.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `requestId` | `string` | yes |  | Request id from request_autologon_enable, request_interactive_logon, or request_unlock_workstation. |
+| `waitSeconds` | `int` | no | `0` | Seconds to wait for completion, 0 to 30. |
 
 ## `get_logon_session`
 
@@ -1038,6 +1081,14 @@ Starts an offline-only WUA applicability inventory job. Returns a Jobs id; read_
 | `includeHidden` | `bool` | no | `false` | Include hidden updates. |
 | `limit` | `int` | no | `100` | Maximum returned updates; clamped to WindowsServicing:MaxResults. |
 
+## `lock_workstation`
+
+Locks the active console session through LockWorkStation in that session. Requires Vestigo:System:AllowInteractiveLogon. waitSeconds 0 returns after the lock call; 1 through 15 waits for the console to report locked and, when the Credential Provider is registered, for LogonUI to connect. Idempotent when already locked. Does not lock the logon screen.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `waitSeconds` | `int` | no | `5` | Seconds to wait for the lock screen and LogonUI, 0 to 15. |
+
 ## `make_directory`
 
 Creates a directory, including missing parents, inside a root with Write access.
@@ -1215,6 +1266,18 @@ Reads window-event records after afterSequence. waitSeconds long-polls for new r
 | `limit` | `int?` | no | `null` | Maximum records, clamped to Vestigo:MaxReadBatch. |
 | `waitSeconds` | `double` | no | `0` | Seconds to wait for new records, up to Vestigo:MaxReadWait. |
 
+## `reboot_machine`
+
+Restarts this machine with InitiateShutdown SHUTDOWN_RESTART. Requires Vestigo:System:AllowReboot. delaySeconds 0 is immediate (MCP clients drop); 1..315360000 is a cancellable countdown and includes SHUTDOWN_FORCE_SELF because Windows requires it. force adds SHUTDOWN_FORCE_OTHERS so other sessions close without prompting and unsaved work is lost. planned marks the shutdown reason. message is shown during a countdown, at most 512 characters, no control characters. dryRun returns the plan without calling Windows. Local machine only. Never logs the message.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `delaySeconds` | `int` | no | `0` | Seconds to wait. 0 restarts immediately. Maximum 315360000 (ten years). |
+| `force` | `bool` | no | `false` | Close applications without prompting. Unsaved work is lost. |
+| `message` | `string` | no | `null` | Countdown text shown to logged-on users. At most 512 characters. No control characters. |
+| `planned` | `bool` | no | `true` | Mark the shutdown reason as planned. Default true. |
+| `dryRun` | `bool` | no | `false` | Return the planned reboot without calling Windows. |
+
 ## `remove_class_filter`
 
 Removes a driver service from a device class's upper or lower filter list.
@@ -1243,6 +1306,35 @@ Removes driver store packages by original INF file name (for example mydriver.in
 | `infName` | `string` | yes |  | Original INF base name, no directory, for example mydriver.inf. |
 | `classGuid` | `string` | no | `null` | Optional device class GUID to narrow the match. |
 | `serviceName` | `string` | no | `null` | Optional driver service name to narrow the match. |
+
+## `request_autologon_enable`
+
+Starts a one-time consent request to enable Windows AutoLogon for userName (optional domain, optional logonCount, optional forceAutoLogon). Returns a URL. Display that full URL as a clickable link so a human can open it in their visible desktop browser, or launch that OS browser; do not fetch or open it in a headless, embedded, IDE, or automated browser, and do not ask for the password in chat. After they submit, call get_logon_request. Requires Vestigo:System:AllowAutoLogonChanges. The password is stored as an LSA private secret, never in appsettings.json, MCP results, or logs.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `userName` | `string` | yes |  | Account name, or DOMAIN\user. |
+| `domain` | `string` | no | `null` | Domain or computer name. Omit for a local account. |
+| `logonCount` | `int?` | no | `null` | Optional remaining automatic logons. Omit for persistent AutoLogon. |
+| `forceAutoLogon` | `bool` | no | `false` | Ignore the Shift key that would skip AutoLogon. |
+
+## `request_interactive_logon`
+
+Starts a one-time consent request to sign in or unlock the console as userName from the Windows logon or lock screen. Returns a URL. Display that full URL as a clickable link so a human can open it in their visible desktop browser, or launch that OS browser; do not fetch or open it in a headless, embedded, IDE, or automated browser, and do not ask for the password in chat. After they submit, call get_logon_request. Requires Vestigo:System:AllowInteractiveLogon, the MSI Interactive logon feature, and a locked or logon-screen console. The password is sent only to LogonUI over a SYSTEM-only named pipe.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `userName` | `string` | yes |  | Account name, or DOMAIN\user. |
+| `domain` | `string` | no | `null` | Domain or computer name. Omit for a local account. |
+
+## `request_unlock_workstation`
+
+Starts a one-time consent request to unlock the locked console. Omitting userName uses the locked console user. Returns a URL. Display that full URL as a clickable link so a human can open it in their visible desktop browser, or launch that OS browser; do not fetch or open it in a headless, embedded, IDE, or automated browser, and do not ask for the password in chat. After they submit, call get_logon_request. Requires Vestigo:System:AllowInteractiveLogon, the MSI Interactive logon feature, a locked console, and a connected LogonUI. The password is sent only to LogonUI over a SYSTEM-only named pipe.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `userName` | `string` | no | `null` | Account name, or DOMAIN\user. Omit to use the locked console user. |
+| `domain` | `string` | no | `null` | Domain or computer name. Omit for a local account or when userName is omitted. |
 
 ## `reset_driver_verifier`
 

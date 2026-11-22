@@ -17,7 +17,34 @@ public sealed class SystemOptions
     /// </summary>
     public bool AllowUacChanges { get; set; }
 
+    /// <summary>
+    ///     Enables <c>reboot_machine</c> and <c>cancel_reboot</c>. Reads work regardless.
+    /// </summary>
+    public bool AllowReboot { get; set; }
+
+    /// <summary>
+    ///     Enables <c>request_autologon_enable</c> and <c>disable_autologon</c>. Reads work regardless.
+    /// </summary>
+    public bool AllowAutoLogonChanges { get; set; }
+
+    /// <summary>
+    ///     Enables <c>request_interactive_logon</c>, <c>lock_workstation</c>, and
+    ///     <c>request_unlock_workstation</c>, and starts the Credential Provider named-pipe host.
+    ///     Unlock and interactive logon also need the MSI Interactive logon feature.
+    /// </summary>
+    public bool AllowInteractiveLogon { get; set; }
+
+    /// <summary>
+    ///     Lifetime of a one-time consent link used to collect a Windows password outside MCP.
+    /// </summary>
+    public TimeSpan LogonConsentLifetime { get; set; } = TimeSpan.FromMinutes(5);
+
     public void Validate()
     {
+        if (LogonConsentLifetime <= TimeSpan.Zero || LogonConsentLifetime > TimeSpan.FromMinutes(30))
+        {
+            throw new InvalidOperationException(
+                "Vestigo:System:LogonConsentLifetime must be positive and at most 00:30:00.");
+        }
     }
 }

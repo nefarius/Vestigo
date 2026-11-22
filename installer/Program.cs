@@ -21,6 +21,8 @@ static class Program
     internal const string EnvNefcon = "VESTIGO_INSTALLER_NEFCON";
     internal const string EnvDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
     internal const string EnvRipgrep = "VESTIGO_INSTALLER_RIPGREP";
+    internal const string EnvCredentialProvider = "VESTIGO_INSTALLER_CREDPROVIDER";
+    const string CredentialProviderFileName = "Vestigo.CredentialProvider.dll";
     const string NefconExecutableName = "nefconc.exe";
     const string NefconLicenseName = "nefcon-LICENSE.txt";
     const string DebugViewExecutableName = "DebugViewConsole.exe";
@@ -91,6 +93,11 @@ static class Program
                 throw new ArgumentException($"The ripgrep executable must be named {RipgrepExecutableName}.");
             }
 
+            if (!string.Equals(Path.GetFileName(options.CredentialProviderDll), CredentialProviderFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"The Credential Provider DLL must be named {CredentialProviderFileName}.");
+            }
+
             if (!string.Equals(Path.GetFileName(options.UpdaterExe), UpdaterExecutableName, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException(
@@ -128,6 +135,8 @@ static class Program
                     Win64 = true
                 });
             }
+
+            Feature interactiveLogon = moduleFeatures[ModuleSelection.SystemInteractiveLogon];
 
             Files files = new(feature, Path.Combine(options.ServerPublishDir, "*.*"), IncludeInPublishedFile)
             {
@@ -172,7 +181,11 @@ static class Program
                         new WixSharp.File(feature, options.DebugViewExe),
                         new WixSharp.File(feature, debugViewLicensePath),
                         new WixSharp.File(feature, options.RipgrepExe),
-                        new WixSharp.File(feature, ripgrepLicensePath))),
+                        new WixSharp.File(feature, ripgrepLicensePath)),
+                    new Dir(
+                        interactiveLogon,
+                        "credential-provider",
+                        new WixSharp.File(interactiveLogon, options.CredentialProviderDll))),
                 new RegKey(
                     updaterFeature,
                     RegistryHive.LocalMachine,
@@ -336,6 +349,8 @@ static class Program
 
         public required string RipgrepExe { get; init; }
 
+        public required string CredentialProviderDll { get; init; }
+
         public static Options Parse(string[] args)
         {
             string cwd = Directory.GetCurrentDirectory();
@@ -345,7 +360,8 @@ static class Program
             string nefcon = "";
             string debugView = "";
             string ripgrep = "";
-            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon, ref debugView, ref ripgrep);
+            string credprovider = "";
+            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon, ref debugView, ref ripgrep, ref credprovider);
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -374,6 +390,10 @@ static class Program
                 {
                     ripgrep = RequirePath(args, ref i, "ripgrep");
                 }
+                else if (argument is "--credprovider")
+                {
+                    credprovider = RequirePath(args, ref i, "credprovider");
+                }
                 else if (argument is "--help" or "-h")
                 {
                     Console.WriteLine("""
@@ -385,8 +405,9 @@ static class Program
                           --nefcon,    -n <file>  Staged nefconc.exe (installed under tools\)
                           --debugview     <file>  Staged DebugViewConsole.exe (installed under tools\)
                           --ripgrep       <file>  Staged rg.exe (installed under tools\)
+                          --credprovider  <file>  Staged Vestigo.CredentialProvider.dll (installed under credential-provider\)
 
-                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON, VESTIGO_INSTALLER_DEBUGVIEW, VESTIGO_INSTALLER_RIPGREP
+                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON, VESTIGO_INSTALLER_DEBUGVIEW, VESTIGO_INSTALLER_RIPGREP, VESTIGO_INSTALLER_CREDPROVIDER
                         """);
                     Environment.Exit(0);
                 }
@@ -403,7 +424,8 @@ static class Program
                 UpdaterExe = updater,
                 NefconExe = nefcon,
                 DebugViewExe = debugView,
-                RipgrepExe = ripgrep
+                RipgrepExe = ripgrep,
+                CredentialProviderDll = credprovider
             };
         }
 
@@ -446,6 +468,16 @@ static class Program
                 throw new FileNotFoundException($"ripgrep executable not found: {RipgrepExe}");
             }
 
+            if (!string.Equals(Path.GetFileName(CredentialProviderDll), CredentialProviderFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"The Credential Provider DLL must be named {CredentialProviderFileName}.");
+            }
+
+            if (!System.IO.File.Exists(CredentialProviderDll))
+            {
+                throw new FileNotFoundException($"Credential Provider DLL not found: {CredentialProviderDll}");
+            }
+
             Directory.CreateDirectory(OutputDir);
         }
 
@@ -455,7 +487,8 @@ static class Program
             ref string updater,
             ref string nefcon,
             ref string debugView,
-            ref string ripgrep)
+            ref string ripgrep,
+            ref string credprovider)
         {
             string? ripgrepOverride = Environment.GetEnvironmentVariable(EnvRipgrep);
             if (!string.IsNullOrWhiteSpace(ripgrepOverride))
@@ -491,6 +524,12 @@ static class Program
             if (!string.IsNullOrWhiteSpace(updaterOverride))
             {
                 updater = Path.GetFullPath(updaterOverride);
+            }
+
+            string? credproviderOverride = Environment.GetEnvironmentVariable(EnvCredentialProvider);
+            if (!string.IsNullOrWhiteSpace(credproviderOverride))
+            {
+                credprovider = Path.GetFullPath(credproviderOverride);
             }
         }
 

@@ -58,4 +58,7 @@ public interface ISessionPlatform
 
     /// <summary>Reads token elevation, administrator membership, and the logon id for one session.</summary>
     SessionTokenRead ReadToken(uint sessionId);
+
+    /// <summary>Reads whether the console session is locked, unlocked, or sitting at the logon screen.</summary>
+    ConsoleLockRead ReadConsoleLock();
 }

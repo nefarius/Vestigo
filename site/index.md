@@ -5,7 +5,7 @@ description: Vestigo is a Windows MCP server for driver and application developm
 
 # A Windows lab that an agent can operate
 
-Vestigo is a Windows MCP server for driver and application development. It runs as a Windows service and hosts a stateless Streamable HTTP endpoint at `/mcp`. A remote agent uses that endpoint to convert WPP traces, capture ETW live, move files, inspect the machine and Windows servicing state, read and drive the desktop UI, and change the things a driver or QA lab actually needs changed.
+Vestigo is a Windows MCP server for driver and application development. It runs as a Windows service and hosts a stateless Streamable HTTP endpoint at `/mcp`. A remote agent uses that endpoint to convert WPP traces, capture ETW live, move files, inspect the machine and Windows servicing state, read and drive the desktop UI, restart the machine, enable AutoLogon, or sign in from the logon or lock screen when those are opted in, and change the things a driver or QA lab actually needs changed.
 
 This booklet is for developers and QA personnel who will point an MCP client at a lab PC. The source repository is public. [Features](features.md) is the catalogue. [Developers](developers.md) and [QA](qa.md) are the two common workflows. [Security](security.md) is the short model you should read before binding anything beyond loopback.
 
@@ -26,7 +26,7 @@ A fresh MSI install binds every interface and writes a generated bearer token. `
 
 The opt-in Registry module reads allow-listed registry values. `HKCU` is the console user, the 32-bit and 64-bit views are explicit, and there is no write tool. See [the features](features.md).
 
-The opt-in WindowsServicing module adds read-only reboot signals, queued file operations, Windows Update inventory and history, CBS package state, bounded failure evidence, storage metadata, and file-locker inspection. It requires Jobs and is separate from Vestigo's own Updates module. See [the features](features.md) and [the QA walkthrough](qa.md#investigate-windows-update-and-servicing). It does not install or repair Windows updates, clear queues, or reboot the PC.
+The opt-in WindowsServicing module adds read-only reboot signals, queued file operations, Windows Update inventory and history, CBS package state, bounded failure evidence, storage metadata, and file-locker inspection. It requires Jobs and is separate from Vestigo's own Updates module. See [the features](features.md) and [the QA walkthrough](qa.md#investigate-windows-update-and-servicing). It does not install or repair Windows updates, clear queues, or reboot the PC. Use `reboot_machine` when `System:AllowReboot` is true.
 
 Power is on by default and read-only. `get_power_state` reports AC, battery, the active scheme, and approximate last sleep and wake times. `get_sleep_configuration` reports lid and timeout policy. `get_last_wake_source` reports the newest Power-Troubleshooter resume event. See [the features](features.md) and [the QA walkthrough](qa.md#see-whether-the-machine-slept).
 

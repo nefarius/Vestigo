@@ -7,7 +7,19 @@ internal sealed class LocalConfigurationAccess(RequestDelegate next)
 {
     internal static bool IsProtectedPath(PathString path) =>
         path.StartsWithSegments("/config") || path.StartsWithSegments("/_blazor") ||
-        path.StartsWithSegments("/_framework") || path.StartsWithSegments("/_content");
+        path.StartsWithSegments("/_framework") || IsProtectedContent(path);
+
+    /// <summary>
+    ///     MudBlazor static CSS and fonts for the remote-reachable logon consent page. Everything else under
+    ///     <c>/_content</c>, including scripts that would start a Blazor circuit, stays loopback-only.
+    /// </summary>
+    internal static bool IsMudBlazorStaticAsset(PathString path) =>
+        path.StartsWithSegments("/_content/MudBlazor", out PathString remainder) &&
+        remainder.HasValue &&
+        !remainder.Value.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsProtectedContent(PathString path) =>
+        path.StartsWithSegments("/_content") && !IsMudBlazorStaticAsset(path);
 
     internal static bool IsAllowed(HttpContext context)
     {
@@ -32,6 +44,14 @@ internal sealed class LocalConfigurationAccess(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context)
     {
+        if (IsMudBlazorStaticAsset(context.Request.Path) &&
+            HttpMethods.IsGet(context.Request.Method) == false &&
+            HttpMethods.IsHead(context.Request.Method) == false)
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
         if (IsProtectedPath(context.Request.Path))
         {
             context.Response.Headers.CacheControl = "no-store";

@@ -50,7 +50,10 @@ static class ListenPage
                 new XAttribute("DllEntry", "VestigoWriteSettings"),
                 new XAttribute("Execute", "deferred"),
                 new XAttribute("Impersonate", "no"),
-                new XAttribute("Return", "check")));
+                new XAttribute("Return", "check")),
+            ImmediateAction("VestigoPrepareCredentialProvider"),
+            DeferredElevatedAction("VestigoDeployCredentialProvider"),
+            DeferredElevatedAction("VestigoRemoveCredentialProvider"));
 
         // Public, secure properties so silent installs (and the UI-to-server hand-off) can carry the choices.
         // Hidden keeps the token out of the MSI log by adding it to MsiHiddenProperties.
@@ -76,12 +79,21 @@ static class ListenPage
 
         // CustomActionData of the deferred action carries the token.
         package.Add(new XElement(Wix + "Property", new XAttribute("Id", "VestigoWriteSettings"), new XAttribute("Hidden", "yes")));
+        package.Add(new XElement(Wix + "Property", new XAttribute("Id", "VestigoDeployCredentialProvider"), new XAttribute("Hidden", "yes")));
+        package.Add(new XElement(Wix + "Property", new XAttribute("Id", "VestigoRemoveCredentialProvider"), new XAttribute("Hidden", "yes")));
+
+        const string installingInteractive = "&SystemInteractiveLogon=3";
+        const string removingInteractive =
+            "NOT UPGRADINGPRODUCTCODE AND (REMOVE~=\"ALL\" OR (!SystemInteractiveLogon=3 AND &SystemInteractiveLogon=2))";
 
         package.Add(new XElement(
             Wix + "InstallExecuteSequence",
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving),
             Sequence("VestigoPrepareWriteSettings", "Before", "VestigoWriteSettings", NotRemoving),
-            Sequence("VestigoWriteSettings", "Before", "StartServices", NotRemoving)));
+            Sequence("VestigoWriteSettings", "Before", "StartServices", NotRemoving),
+            Sequence("VestigoPrepareCredentialProvider", "After", "InstallInitialize", installingInteractive + " OR (" + removingInteractive + ")"),
+            Sequence("VestigoRemoveCredentialProvider", "Before", "RemoveFiles", removingInteractive),
+            Sequence("VestigoDeployCredentialProvider", "After", "InstallFiles", installingInteractive)));
         package.Add(new XElement(
             Wix + "InstallUISequence",
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving)));
@@ -98,6 +110,16 @@ static class ListenPage
             new XAttribute("BinaryRef", BinaryId),
             new XAttribute("DllEntry", name),
             new XAttribute("Execute", "immediate"),
+            new XAttribute("Return", "check"));
+
+    static XElement DeferredElevatedAction(string name) =>
+        new(
+            Wix + "CustomAction",
+            new XAttribute("Id", name),
+            new XAttribute("BinaryRef", BinaryId),
+            new XAttribute("DllEntry", name),
+            new XAttribute("Execute", "deferred"),
+            new XAttribute("Impersonate", "no"),
             new XAttribute("Return", "check"));
 
     static XElement Sequence(string action, string placement, string anchor, string condition) =>

@@ -79,6 +79,15 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowUacChanges</c>.</summary>
         public const string UacChanges = "UacChanges";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowReboot</c>.</summary>
+        public const string SystemReboot = "SystemReboot";
+
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowAutoLogonChanges</c>.</summary>
+        public const string SystemAutoLogon = "SystemAutoLogon";
+
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:System:AllowInteractiveLogon</c>.</summary>
+        public const string SystemInteractiveLogon = "SystemInteractiveLogon";
+
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Desktop:AllowScreenshots</c>.</summary>
         public const string DesktopScreenshots = "DesktopScreenshots";
 
@@ -123,6 +132,9 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(AudioSetDefault, "Audio", "AllowSetDefault"),
             new OptionToggle(BootConfigurationChanges, "System", "AllowBootConfigurationChanges"),
             new OptionToggle(UacChanges, "System", "AllowUacChanges"),
+            new OptionToggle(SystemReboot, "System", "AllowReboot"),
+            new OptionToggle(SystemAutoLogon, "System", "AllowAutoLogonChanges"),
+            new OptionToggle(SystemInteractiveLogon, "System", "AllowInteractiveLogon"),
             new OptionToggle(DesktopScreenshots, "Desktop", "AllowScreenshots"),
             new OptionToggle(DesktopWindowPlacement, "Desktop", "AllowWindowPlacement"),
             new OptionToggle(DesktopDisplayLayout, "Desktop", "AllowDisplayLayoutChanges"),
@@ -143,7 +155,7 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Trace", "Trace", "Offline ETL/WPP conversion and managed realtime capture.", true, null),
             new ModuleDefinition("Files", "Files", "Root-confined file tools plus authenticated PUT/GET transfer endpoints.", true, null),
             new ModuleDefinition("Environment", "Environment", "Read and change machine, user, and process environment variables.", true, null),
-            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, UAC, and code-integrity settings.", true, null),
+            new ModuleDefinition("System", "System", "Host Windows version, UEFI, Secure Boot, test signing, UAC, code-integrity settings, boot state, logon sessions, opt-in machine reboot, AutoLogon, and interactive logon.", true, null),
             new ModuleDefinition("Power", "Power", "Read AC and battery state, the active power scheme, platform capabilities, AC/DC sleep policy, and the newest Power-Troubleshooter wake event. There is no write tool and no power-request list.", true, null),
             new ModuleDefinition("Logs", "Logs", "Tail, incremental reads and regex search of text log files.", true, null),
             new ModuleDefinition("Registry", "Registry", "Read allow-listed registry values and key metadata. Opt-in. There is no write tool.", false, null),
@@ -171,13 +183,16 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition(DiagnosticsProcessDumps, "Process dumps", "Allow capture_process_dump to write a minidump into a Write root (Vestigo:Diagnostics:AllowProcessDumps). Dumps are not uploaded and no download ticket is created.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsKernelDumpStaging, "Kernel dump staging", "Allow stage_kernel_dump to copy a dump selected by list_kernel_dumps into a Write root and issue a one-time download ticket (Vestigo:Diagnostics:AllowKernelDumpStaging). The tool result does not contain dump bytes.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsFirewallInventory, "Firewall inventory", "Allow get_firewall_profiles and list_firewall_rules (Vestigo:Diagnostics:AllowFirewallInventory). Reads stored policy and rule expressions, including application paths. Does not change rules and does not decide whether traffic was blocked.", false, "Diagnostics"),
-            new ModuleDefinition(DiagnosticsDriverVerifier, "Driver Verifier changes", "Allow set_driver_verifier (Vestigo:Diagnostics:AllowDriverVerifier). reset_driver_verifier stays available. Vestigo does not reboot.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsDriverVerifier, "Driver Verifier changes", "Allow set_driver_verifier (Vestigo:Diagnostics:AllowDriverVerifier). reset_driver_verifier stays available. Those tools do not reboot.", false, "Diagnostics"),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
             new ModuleDefinition(SoftwareUninstall, "Silent uninstall", "Allow silent uninstalls of installed software as the service account (Vestigo:Software:AllowUninstall). Administrator-equivalent.", false, "Software"),
             new ModuleDefinition(BootConfigurationChanges, "Boot configuration", "Allow changing BCD test-signing and WHQL developer test mode (Vestigo:System:AllowBootConfigurationChanges). Administrator-equivalent. Takes effect after reboot.", false, "System"),
             new ModuleDefinition(UacChanges, "UAC changes", "Allow changing the UAC slider and EnableLUA (Vestigo:System:AllowUacChanges). Administrator-equivalent. Turning UAC off takes effect after reboot.", false, "System"),
+            new ModuleDefinition(SystemReboot, "Machine reboot", "Allow reboot_machine and cancel_reboot (Vestigo:System:AllowReboot). Immediate, scheduled, and forced restarts of this machine. Administrator-equivalent. Unsaved work is lost when force is true.", false, "System"),
+            new ModuleDefinition(SystemAutoLogon, "Automatic logon", "Allow enabling and disabling Windows AutoLogon for a consented account (Vestigo:System:AllowAutoLogonChanges). The password is stored as an LSA secret, never in appsettings.json or MCP tool arguments. Administrator-equivalent.", false, "System"),
+            new ModuleDefinition(SystemInteractiveLogon, "Interactive logon", "Allow signing in or unlocking the console from the Windows logon or lock screen (Vestigo:System:AllowInteractiveLogon). Installs the Vestigo Credential Provider DLL. Administrator-equivalent.", false, "System"),
             new ModuleDefinition("Updates", "Updates", "Check the signed Buildbot feed for a newer Vestigo release.", true, null),
             new ModuleDefinition(SelfUpdate, "Silent self-update", "Allow start_self_update to run the packaged Vicius updater (Vestigo:Updates:AllowSelfUpdate). Needs the Automatic updates feature. Administrator-equivalent: installs the signed MSI and restarts the service.", false, "Updates")
         };
@@ -293,7 +308,10 @@ namespace Vestigo.Installer.Actions.Logic
                    || string.Equals(name, DesktopWindowPlacement, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, DesktopDisplayLayout, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, DesktopSessions, StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(name, InputInjection, StringComparison.OrdinalIgnoreCase);
+                   || string.Equals(name, InputInjection, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, SystemReboot, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, SystemAutoLogon, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, SystemInteractiveLogon, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -303,6 +321,15 @@ namespace Vestigo.Installer.Actions.Logic
         public static bool ShouldWriteFeatureState(string name, bool requestIsExplicit, bool currentlyInstalled)
         {
             return requestIsExplicit || currentlyInstalled || !PreservesExistingWhenUnselected(name);
+        }
+
+        /// <summary>
+        ///     An unselected feature that was never installed reports <c>Absent</c>. That is not an explicit
+        ///     removal, so preserved option toggles keep their existing JSON value.
+        /// </summary>
+        public static bool IsExplicitFeatureRequest(bool currentlyInstalled, bool requestIsAbsent)
+        {
+            return !requestIsAbsent || currentlyInstalled;
         }
 
         /// <summary>

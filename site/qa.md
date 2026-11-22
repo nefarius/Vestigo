@@ -22,7 +22,7 @@ Use the Devices module when the case needs a driver stack, a filter, or a device
 
 1. `find_devices` / `get_device` to locate the instance ID.
 2. `enable_device`, `disable_device`, or `restart_device`.
-3. Install or uninstall a package with `install_driver` / `uninstall_driver` when the build under test is a driver. Reboot yourself when `rebootRequired` is true.
+3. Install or uninstall a package with `install_driver` / `uninstall_driver` when the build under test is a driver. When `rebootRequired` is true, call `reboot_machine` if `System:AllowReboot` is on, or restart the PC yourself.
 
 ## Screenshot the failure
 

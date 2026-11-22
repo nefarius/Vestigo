@@ -111,6 +111,34 @@ public class SystemToolsTests
         }
     }
 
+    private sealed class FakeRebootPlatform : IRebootPlatform
+    {
+        public RebootPlatformOutcome InitiateResult { get; set; } = new(true, 0, "initiate");
+        public RebootPlatformOutcome AbortResult { get; set; } = new(true, 0, "abort");
+        public int InitiateCalls { get; private set; }
+        public int AbortCalls { get; private set; }
+        public uint? LastDelay { get; private set; }
+        public bool? LastForce { get; private set; }
+        public bool? LastPlanned { get; private set; }
+        public string? LastMessage { get; private set; }
+
+        public RebootPlatformOutcome InitiateReboot(uint delaySeconds, bool force, bool planned, string? message)
+        {
+            InitiateCalls++;
+            LastDelay = delaySeconds;
+            LastForce = force;
+            LastPlanned = planned;
+            LastMessage = message;
+            return InitiateResult;
+        }
+
+        public RebootPlatformOutcome AbortReboot()
+        {
+            AbortCalls++;
+            return AbortResult;
+        }
+    }
+
     private static (SystemService Service, FakePlatform Platform) Create(
         bool allowWrites = true,
         bool allowUac = true)
@@ -125,6 +153,13 @@ public class SystemToolsTests
             }
         };
         return (new SystemService(platform, options), platform);
+    }
+
+    private static (SystemService Service, FakeRebootPlatform Reboot) CreateReboot(bool allowReboot = true)
+    {
+        FakeRebootPlatform reboot = new();
+        VestigoOptions options = new() { System = { AllowReboot = allowReboot } };
+        return (new SystemService(new FakePlatform(), options, reboot: reboot), reboot);
     }
 
     [Fact]
@@ -334,6 +369,229 @@ public class SystemToolsTests
         Assert.Contains("UAC changes", ModuleRegistry.GetPrivilegedModuleWarning(open));
         ModuleRegistry.ValidateConfiguration(tokens);
         Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
+    }
+
+    [Fact]
+    public void PrivilegedWarning_NamesMachineRebootWithoutTokens()
+    {
+        VestigoOptions open = new() { System = { AllowReboot = true } };
+        VestigoOptions tokens = new() { ApiTokens = ["t"], System = { AllowReboot = true } };
+
+        ModuleRegistry.ValidateConfiguration(open);
+        Assert.Contains("Machine reboot", ModuleRegistry.GetPrivilegedModuleWarning(open));
+        ModuleRegistry.ValidateConfiguration(tokens);
+        Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
+    }
+
+    [Fact]
+    public void PrivilegedWarning_NamesAutoLogonAndInteractiveLogonWithoutTokens()
+    {
+        VestigoOptions open = new() { System = { AllowAutoLogonChanges = true, AllowInteractiveLogon = true } };
+        VestigoOptions tokens = new() { ApiTokens = ["t"], System = { AllowAutoLogonChanges = true, AllowInteractiveLogon = true } };
+
+        ModuleRegistry.ValidateConfiguration(open);
+        Assert.Contains("Auto-logon changes", ModuleRegistry.GetPrivilegedModuleWarning(open));
+        Assert.Contains("Interactive logon/unlock", ModuleRegistry.GetPrivilegedModuleWarning(open));
+        ModuleRegistry.ValidateConfiguration(tokens);
+        Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(tokens));
+    }
+
+    [Fact]
+    public void RebootMachine_RefusesWhenGateIsOff_WithoutTouchingPlatform()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot(allowReboot: false);
+
+        OperationResult<RebootResult> result = service.RebootMachine();
+
+        Assert.False(result.Success);
+        Assert.Equal("reboot_disabled", result.ErrorCode);
+        Assert.Equal(0, reboot.InitiateCalls);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(315_360_001)]
+    public void RebootMachine_RejectsDelayOutsideRange(int delay)
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+
+        OperationResult<RebootResult> result = service.RebootMachine(delaySeconds: delay);
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_delay", result.ErrorCode);
+        Assert.Equal(0, reboot.InitiateCalls);
+    }
+
+    [Fact]
+    public void RebootMachine_RejectsMessageLongerThan512()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+
+        OperationResult<RebootResult> result = service.RebootMachine(message: new string('a', 513));
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_message", result.ErrorCode);
+        Assert.Equal(0, reboot.InitiateCalls);
+    }
+
+    [Theory]
+    [InlineData("line\nbreak")]
+    [InlineData("tab\there")]
+    [InlineData("null\0byte")]
+    public void RebootMachine_RejectsControlCharactersInMessage(string message)
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+
+        OperationResult<RebootResult> result = service.RebootMachine(message: message);
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_message", result.ErrorCode);
+        Assert.Equal(0, reboot.InitiateCalls);
+    }
+
+    [Fact]
+    public void RebootMachine_DryRunDoesNotCallWindows()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+        DateTimeOffset now = new(2026, 11, 21, 20, 0, 0, TimeSpan.Zero);
+
+        RebootResult value = service.RebootMachine(delaySeconds: 30, force: true, message: "  lab  ", dryRun: true, utcNow: now).Value!;
+
+        Assert.Equal("scheduled", value.Mode);
+        Assert.Equal(30, value.DelaySeconds);
+        Assert.True(value.Force);
+        Assert.True(value.Planned);
+        Assert.Equal("lab", value.Message);
+        Assert.Equal(now.AddSeconds(30), value.ScheduledAtUtc);
+        Assert.True(value.DryRun);
+        Assert.Contains(value.Notes, note => note.Contains("dryRun", StringComparison.Ordinal));
+        Assert.Contains(value.Notes, note => note.Contains("force", StringComparison.Ordinal));
+        Assert.Equal(0, reboot.InitiateCalls);
+    }
+
+    [Fact]
+    public void RebootMachine_ImmediateCallsPlatformWithGraceOverrideSemantics()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+        DateTimeOffset now = new(2026, 11, 21, 20, 0, 0, TimeSpan.Zero);
+
+        RebootResult value = service.RebootMachine(force: true, planned: false, utcNow: now).Value!;
+
+        Assert.Equal("immediate", value.Mode);
+        Assert.Equal(0, value.DelaySeconds);
+        Assert.True(value.Force);
+        Assert.False(value.Planned);
+        Assert.Null(value.Message);
+        Assert.Equal(now, value.ScheduledAtUtc);
+        Assert.False(value.DryRun);
+        Assert.Equal((uint)0, reboot.LastDelay);
+        Assert.True(reboot.LastForce);
+        Assert.False(reboot.LastPlanned);
+        Assert.Contains(value.Notes, note => note.Contains("immediately", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RebootMachine_ScheduledPassesTrimmedMessage()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+
+        RebootResult value = service.RebootMachine(delaySeconds: 60, message: " Driver install ").Value!;
+
+        Assert.Equal("scheduled", value.Mode);
+        Assert.Equal("Driver install", value.Message);
+        Assert.Equal((uint)60, reboot.LastDelay);
+        Assert.Equal("Driver install", reboot.LastMessage);
+        Assert.Contains(value.Notes, note => note.Contains("cancel_reboot", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(5, "access_denied")]
+    [InlineData(1300, "access_denied")]
+    [InlineData(1314, "access_denied")]
+    [InlineData(1115, "reboot_already_in_progress")]
+    [InlineData(1190, "reboot_already_in_progress")]
+    [InlineData(1271, "machine_locked")]
+    [InlineData(87, "invalid_parameter")]
+    [InlineData(1, "reboot_failed")]
+    public void RebootMachine_MapsWin32Errors(int win32, string code)
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+        reboot.InitiateResult = new RebootPlatformOutcome(false, win32, "initiate");
+
+        OperationResult<RebootResult> result = service.RebootMachine();
+
+        Assert.False(result.Success);
+        Assert.Equal(code, result.ErrorCode);
+        Assert.Equal(1, reboot.InitiateCalls);
+    }
+
+    [Fact]
+    public void CancelReboot_RefusesWhenGateIsOff()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot(allowReboot: false);
+
+        OperationResult<CancelRebootResult> result = service.CancelReboot();
+
+        Assert.False(result.Success);
+        Assert.Equal("reboot_disabled", result.ErrorCode);
+        Assert.Equal(0, reboot.AbortCalls);
+    }
+
+    [Fact]
+    public void CancelReboot_ReportsSuccess()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+
+        CancelRebootResult value = service.CancelReboot().Value!;
+
+        Assert.True(value.Cancelled);
+        Assert.Equal(1, reboot.AbortCalls);
+    }
+
+    [Fact]
+    public void CancelReboot_MapsNoRebootInProgress()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+        reboot.AbortResult = new RebootPlatformOutcome(false, 1116, "abort");
+
+        OperationResult<CancelRebootResult> result = service.CancelReboot();
+
+        Assert.False(result.Success);
+        Assert.Equal("no_reboot_in_progress", result.ErrorCode);
+    }
+
+    [Fact]
+    public void CancelReboot_MapsAccessDenied()
+    {
+        (SystemService service, FakeRebootPlatform reboot) = CreateReboot();
+        reboot.AbortResult = new RebootPlatformOutcome(false, 5, "abort");
+
+        OperationResult<CancelRebootResult> result = service.CancelReboot();
+
+        Assert.False(result.Success);
+        Assert.Equal("access_denied", result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(0u, false, 0x00000024u)]
+    [InlineData(60u, false, 0x00000006u)]
+    [InlineData(30u, false, 0x00000006u)]
+    [InlineData(0u, true, 0x00000027u)]
+    [InlineData(60u, true, 0x00000007u)]
+    public void RebootPolicy_FlagsCombineRestartGraceAndForce(uint delay, bool force, uint expected) =>
+        Assert.Equal(expected, RebootPolicy.Flags(delay, force));
+
+    [Fact]
+    public void RebootPolicy_PositiveDelayWithoutForceIncludesForceSelf() =>
+        Assert.Equal(
+            RebootPolicy.ShutdownRestart | RebootPolicy.ShutdownForceSelf,
+            RebootPolicy.Flags(30, force: false));
+
+    [Fact]
+    public void RebootPolicy_ReasonAddsPlannedFlag()
+    {
+        Assert.Equal(0x80040001u, RebootPolicy.Reason(planned: true));
+        Assert.Equal(0x00040001u, RebootPolicy.Reason(planned: false));
     }
 
     [Theory]

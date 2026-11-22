@@ -13,6 +13,7 @@ SERVICE_STATUS_PROCESS
 SERVICE_NO_CHANGE
 
 // Processes module: interactive-user launch, job objects, window close helper
+LockWorkStation
 WTSGetActiveConsoleSessionId
 WTSQueryUserToken
 GetTokenInformation
@@ -323,13 +324,47 @@ WTSFreeMemory
 WTS_INFO_CLASS
 WTS_CONNECTSTATE_CLASS
 WTS_CLIENT_ADDRESS
+WTSINFOEXW
 CheckTokenMembership
 CreateWellKnownSid
 WELL_KNOWN_SID_TYPE
 TOKEN_STATISTICS
 
+// System module: AutoLogon LSA secret and credential verification. Passwords are never logged.
+LsaOpenPolicy
+LsaClose
+LsaStorePrivateData
+LsaRetrievePrivateData
+LsaFreeMemory
+LsaNtStatusToWinError
+LSA_OBJECT_ATTRIBUTES
+LSA_UNICODE_STRING
+POLICY_CREATE_SECRET
+POLICY_GET_PRIVATE_INFORMATION
+LogonUser
+LOGON32_LOGON
+LOGON32_PROVIDER
+
+// System module: Credential Provider named pipe (SYSTEM-only, LogonUI.exe peer check).
+GetNamedPipeClientProcessId
+PeekNamedPipe
+
 // System module: uptime. Safe mode uses GetSystemMetrics, already listed above.
 GetTickCount64
+
+// System module: local machine reboot. Always pass a null machine name.
+GetCurrentProcess
+LookupPrivilegeValue
+AdjustTokenPrivileges
+LUID
+TOKEN_PRIVILEGES
+LUID_AND_ATTRIBUTES
+TOKEN_PRIVILEGES_ATTRIBUTES
+SE_SHUTDOWN_NAME
+InitiateShutdown
+AbortSystemShutdown
+SHUTDOWN_FLAGS
+SHUTDOWN_REASON
 
 // Desktop module: detailed window inspection, placement, window-event capture, and display-layout transactions.
 // GetProcessTimes stays in Processes/ProcessStartTime.cs. CsWin32's generated FILETIME is not public with these settings.
