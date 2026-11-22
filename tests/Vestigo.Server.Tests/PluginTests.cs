@@ -1,13 +1,16 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Runtime.Loader;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -116,6 +119,27 @@ public sealed class PluginTests : IDisposable
     {
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => new PluginOptions { Root = root }.Validate());
         Assert.Contains("device-path prefix", exception.Message);
+    }
+
+    [Fact]
+    public void FrameworkAllowlist_IncludesSharedFrameworkAssembliesTheHostReplaced()
+    {
+        Assembly abstractions = typeof(IServiceCollection).Assembly;
+        string name = abstractions.GetName().Name!;
+        Assert.Contains(name, VestigoPluginLoadContext.GetFrameworkNames());
+
+        string location = Path.GetDirectoryName(abstractions.Location)!;
+        string runtime = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        string aspnet = Path.GetDirectoryName(typeof(WebApplication).Assembly.Location)!;
+        bool replaced = !string.Equals(location, runtime, StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(location, aspnet, StringComparison.OrdinalIgnoreCase);
+        if (!replaced)
+            return;
+
+        Install();
+        PluginManager manager = new();
+        Assert.Single(manager.LoadModules(Options(), _configuration));
+        Assert.Equal("loaded", Assert.Single(manager.Diagnostics).Status);
     }
 
     [Fact]

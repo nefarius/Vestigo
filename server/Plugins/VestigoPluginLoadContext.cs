@@ -11,7 +11,8 @@ internal sealed class VestigoPluginLoadContext : AssemblyLoadContext
     private readonly AssemblyDependencyResolver _resolver;
     private readonly string _directory;
     // Only plugin contracts and SDK contracts share host package identity. Framework assemblies
-    // are separately allowlisted from the runtime's trusted platform assembly list.
+    // are allowlisted by the names that ship in the runtime directories, including when the host
+    // has replaced one with a newer package copy outside those directories.
     private static readonly HashSet<string> Shared = new(StringComparer.OrdinalIgnoreCase)
     {
         typeof(IVestigoPlugin).Assembly.GetName().Name!,
@@ -71,15 +72,31 @@ internal sealed class VestigoPluginLoadContext : AssemblyLoadContext
         PluginDeployment.RequireSafePath(path);
     }
 
-    private static HashSet<string> GetFrameworkNames()
+    internal static HashSet<string> GetFrameworkNames()
     {
+        // Intersect the trusted platform assemblies with the files that ship in the runtime and
+        // ASP.NET Core directories. A newer Microsoft.Extensions package is loaded from the
+        // application directory, so its trusted path is no longer the shared-framework file, but
+        // the assembly name still belongs to the framework allowlist. Plugins then share the
+        // host's loaded version instead of expecting a private copy beside the plugin.
         string runtime = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
         string aspnet = Path.GetDirectoryName(typeof(WebApplication).Assembly.Location)!;
+        HashSet<string> shipped = new(StringComparer.OrdinalIgnoreCase);
+        AddShipped(runtime);
+        AddShipped(aspnet);
         return ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? "")
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Where(path => string.Equals(Path.GetDirectoryName(path), runtime, StringComparison.OrdinalIgnoreCase) ||
-                           string.Equals(Path.GetDirectoryName(path), aspnet, StringComparison.OrdinalIgnoreCase))
-            .Select(path => Path.GetFileNameWithoutExtension(path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Select(path => Path.GetFileNameWithoutExtension(path))
+            .Where(name => shipped.Contains(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        void AddShipped(string directory)
+        {
+            if (!Directory.Exists(directory))
+                return;
+            foreach (string path in Directory.EnumerateFiles(directory, "*.dll"))
+                shipped.Add(Path.GetFileNameWithoutExtension(path));
+        }
     }
 
     internal void ValidateReferences(Assembly entry)
