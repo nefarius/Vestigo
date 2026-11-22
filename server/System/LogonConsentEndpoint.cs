@@ -10,7 +10,7 @@ using Vestigo.Hosting.Components;
 namespace Vestigo.SystemInfo;
 
 /// <summary>
-///     One-time consent form for AutoLogon and interactive logon. The ticket is the only credential.
+///     One-time consent form for AutoLogon, interactive logon, and workstation unlock. The ticket is the only credential.
 ///     The page is MudBlazor SSR: no <c>/_blazor</c> circuit and no API token.
 /// </summary>
 public static class LogonConsentEndpoint
@@ -132,7 +132,7 @@ public static class LogonConsentEndpoint
             OperationResult<LogonRequestView> result;
             try
             {
-                result = pending!.Kind == LogonConsentKind.InteractiveLogon
+                result = DispatchesToLogonUi(pending!.Kind)
                     ? await interactive.ApproveAsync(pending, password, context.RequestAborted).ConfigureAwait(false)
                     : autoLogon.Approve(pending, password);
             }
@@ -191,9 +191,7 @@ public static class LogonConsentEndpoint
                 Title = "Request completed",
                 Operation = OperationName(pending.Kind),
                 Account = LogonAccount.Display(pending.UserName, pending.Domain),
-                Message = pending.Kind == LogonConsentKind.InteractiveLogon
-                    ? "Windows received the credentials. The console should unlock or sign in shortly."
-                    : "AutoLogon is enabled. The password was stored as an LSA secret.",
+                Message = CompletionMessage(pending.Kind),
                 ShowForm = false
             });
         }
@@ -228,8 +226,22 @@ public static class LogonConsentEndpoint
             Error = error
         };
 
-    private static string OperationName(LogonConsentKind kind) =>
-        kind == LogonConsentKind.InteractiveLogon ? "Sign in / Unlock" : "Auto-Logon";
+    private static bool DispatchesToLogonUi(LogonConsentKind kind) =>
+        kind is LogonConsentKind.InteractiveLogon or LogonConsentKind.UnlockWorkstation;
+
+    private static string OperationName(LogonConsentKind kind) => kind switch
+    {
+        LogonConsentKind.UnlockWorkstation => "Unlock workstation",
+        LogonConsentKind.InteractiveLogon => "Sign in / Unlock",
+        _ => "Auto-Logon"
+    };
+
+    private static string CompletionMessage(LogonConsentKind kind) => kind switch
+    {
+        LogonConsentKind.UnlockWorkstation => "Windows received the credentials. The workstation should unlock shortly.",
+        LogonConsentKind.InteractiveLogon => "Windows received the credentials. The console should unlock or sign in shortly.",
+        _ => "AutoLogon is enabled. The password was stored as an LSA secret."
+    };
 
     private static string Details(LogonConsentStore.PendingConsent pending)
     {

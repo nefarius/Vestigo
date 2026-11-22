@@ -24,12 +24,14 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
     internal static readonly TimeSpan DefaultDispatchTimeout = TimeSpan.FromSeconds(25);
 
     private readonly ILogger<CredentialProviderHost> _logger;
+    private readonly ISessionPlatform _sessions;
     private readonly object _gate = new();
     private ConnectedPeer? _peer;
 
-    public CredentialProviderHost(ILogger<CredentialProviderHost> logger)
+    public CredentialProviderHost(ILogger<CredentialProviderHost> logger, ISessionPlatform sessions)
     {
         _logger = logger;
+        _sessions = sessions;
         string installDir = AppContext.BaseDirectory;
         CredentialProviderFiles.SweepUnlockedOrphans(installDir, CredentialProviderFiles.ReadRegisteredPath());
     }
@@ -58,6 +60,7 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         string? domain,
         char[] password,
         string? expectedSid,
+        bool requireUnlock,
         CancellationToken cancellationToken)
     {
         ConnectedPeer? peer;
@@ -91,6 +94,12 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                     "LogonUI is not attached to the active console session.");
             }
 
+            ConsoleLockRead? consoleLock = requireUnlock ? _sessions.ReadConsoleLock() : null;
+            if (RejectDispatchPeer(peer.Hello, requireUnlock, expectedSid, consoleLock) is { } rejected)
+            {
+                return rejected;
+            }
+
             (OperationResult<string> result, bool dropPeer) = await DispatchToStreamAsync(
                 peer.Pipe,
                 peer.Hello,
@@ -98,6 +107,8 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 domain,
                 password,
                 expectedSid,
+                requireUnlock,
+                consoleLock,
                 DefaultDispatchTimeout,
                 ResolveUserSid,
                 _logger,
@@ -131,6 +142,8 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
             domain,
             password,
             targetSid,
+            requireUnlock: false,
+            consoleLock: null,
             timeout,
             static (_, _) => null,
             logger,
@@ -143,6 +156,8 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
         string? domain,
         char[] password,
         string? expectedSid,
+        bool requireUnlock,
+        ConsoleLockRead? consoleLock,
         TimeSpan timeout,
         Func<string, string?, string?> sidResolver,
         ILogger? logger,
@@ -156,21 +171,20 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
 
         try
         {
+            if (RejectDispatchPeer(hello, requireUnlock, expectedSid, consoleLock) is { } preRejected)
+            {
+                return (preRejected, false);
+            }
+
             string? targetSid = !string.IsNullOrWhiteSpace(expectedSid)
                 ? expectedSid
                 : await ResolveUserSidAsync(userName, domain, sidResolver, token).ConfigureAwait(false);
 
             token.ThrowIfCancellationRequested();
 
-            if (hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock &&
-                !string.IsNullOrWhiteSpace(targetSid) &&
-                !hello.UserSids.Contains(targetSid, StringComparer.OrdinalIgnoreCase))
+            if (RejectDispatchPeer(hello, requireUnlock, targetSid, consoleLock) is { } postRejected)
             {
-                return (
-                    OperationResult<string>.Fail(
-                        "sid_mismatch",
-                        "The unlock target is not one of the users on the lock screen."),
-                    false);
+                return (postRejected, false);
             }
 
             payload = CredentialProviderProtocol.EncodeDispatch(userName, domain ?? "", password, targetSid);
@@ -669,6 +683,55 @@ public sealed class CredentialProviderHost : BackgroundService, IInteractiveLogo
                 handle.DangerousRelease();
             }
         }
+    }
+
+    /// <summary>
+    ///     Refuses unlock dispatch when the console is not locked. Windows 10+ often reports
+    ///     <see cref="CredentialProviderProtocol.UsageScenario.Logon" /> for a lock screen, so Hello scenario is not the unlock signal.
+    /// </summary>
+    internal static OperationResult<string>? RejectDispatchPeer(
+        CredentialProviderProtocol.HelloMessage hello,
+        bool requireUnlock,
+        string? expectedSid,
+        ConsoleLockRead? consoleLock)
+    {
+        if (requireUnlock)
+        {
+            string state = consoleLock is { Success: true } read ? read.State : "unknown";
+            if (state != "locked")
+            {
+                return OperationResult<string>.Fail(
+                    state == "unlocked"
+                        ? "already_unlocked"
+                        : state == "logonScreen"
+                            ? "not_locked"
+                            : "lock_state_unknown",
+                    state == "unlocked"
+                        ? "The console session is already unlocked."
+                        : state == "logonScreen"
+                            ? "The console is at the logon screen, not locked. Use request_interactive_logon."
+                            : "The console lock state could not be determined.");
+            }
+
+            if (consoleLock!.SessionId != hello.SessionId)
+            {
+                return OperationResult<string>.Fail(
+                    "logonui_not_connected",
+                    "LogonUI is not attached to the active console session.");
+            }
+        }
+
+        if ((requireUnlock || hello.Scenario == CredentialProviderProtocol.UsageScenario.Unlock) &&
+            !string.IsNullOrWhiteSpace(expectedSid) &&
+            hello.UserSids.Count > 0 &&
+            !hello.UserSids.Contains(expectedSid, StringComparer.OrdinalIgnoreCase))
+        {
+            return OperationResult<string>.Fail(
+                "sid_mismatch",
+                "The unlock target is not one of the users on the lock screen.");
+        }
+
+        return null;
     }
 
     private static unsafe bool PeerIsConsoleSession(ConnectedPeer peer)

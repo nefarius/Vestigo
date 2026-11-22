@@ -28,8 +28,9 @@ public sealed class SystemOptions
     public bool AllowAutoLogonChanges { get; set; }
 
     /// <summary>
-    ///     Enables <c>request_interactive_logon</c> and starts the Credential Provider named-pipe host.
-    ///     The MSI Interactive logon feature must also install the provider DLL.
+    ///     Enables <c>request_interactive_logon</c>, <c>lock_workstation</c>, and
+    ///     <c>request_unlock_workstation</c>, and starts the Credential Provider named-pipe host.
+    ///     Unlock and interactive logon also need the MSI Interactive logon feature.
     /// </summary>
     public bool AllowInteractiveLogon { get; set; }
 

@@ -321,6 +321,8 @@ public class CredentialProviderHostTests
                     "CORP",
                     "pw".ToCharArray(),
                     expectedSid: null,
+                    requireUnlock: false,
+                    consoleLock: null,
                     TimeSpan.FromMilliseconds(100),
                     (_, _) =>
                     {
@@ -361,6 +363,8 @@ public class CredentialProviderHostTests
                     "CORP",
                     "pw".ToCharArray(),
                     expectedSid: null,
+                    requireUnlock: false,
+                    consoleLock: null,
                     TimeSpan.FromSeconds(10),
                     (_, _) =>
                     {
@@ -393,13 +397,15 @@ public class CredentialProviderHostTests
             (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.DispatchToStreamAsync(
                 serverSide,
                 new CredentialProviderProtocol.HelloMessage(
-                    CredentialProviderProtocol.UsageScenario.Unlock,
+                    CredentialProviderProtocol.UsageScenario.Logon,
                     1,
                     ["S-1-5-21-1-2-3-1001"]),
                 "Administrator",
                 "TESTBOX",
                 "pw".ToCharArray(),
                 expectedSid: null,
+                requireUnlock: true,
+                consoleLock: ConsoleLockRead.Ok("locked", 1, true, "lab"),
                 TimeSpan.FromSeconds(5),
                 (_, _) => "S-1-5-21-1-2-3-500",
                 NullLogger.Instance,
@@ -409,6 +415,53 @@ public class CredentialProviderHostTests
             Assert.Equal("sid_mismatch", result.ErrorCode);
             Assert.False(dropPeer);
             Assert.Equal(0, serverSide.WritesCount);
+        }
+    }
+
+    [Fact]
+    public async Task DispatchToStreamAsync_AllowsLogonOtherUserSid_NotListedInHelloUserSids()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        (DuplexTestStream serverSide, DuplexTestStream clientSide) = DuplexTestStream.CreatePair();
+        using (serverSide)
+        using (clientSide)
+        {
+            Task clientTask = Task.Run(async () =>
+            {
+                _ = await CredentialProviderHost.ReadFrameAsync(clientSide, ct);
+                byte[] reply = CredentialProviderProtocol.EncodeStatus(
+                    new CredentialProviderProtocol.StatusMessage(
+                        CredentialProviderProtocol.ProviderStatus.Submitted,
+                        0,
+                        null));
+                await CredentialProviderHost.WriteFrameAsync(
+                    clientSide,
+                    CredentialProviderProtocol.MessageType.Status,
+                    reply,
+                    ct);
+            }, ct);
+
+            (OperationResult<string> result, bool dropPeer) = await CredentialProviderHost.DispatchToStreamAsync(
+                serverSide,
+                new CredentialProviderProtocol.HelloMessage(
+                    CredentialProviderProtocol.UsageScenario.Logon,
+                    1,
+                    ["S-1-5-21-1-2-3-1001"]),
+                "Administrator",
+                "TESTBOX",
+                "pw".ToCharArray(),
+                expectedSid: null,
+                requireUnlock: false,
+                consoleLock: null,
+                TimeSpan.FromSeconds(5),
+                (_, _) => "S-1-5-21-1-2-3-500",
+                NullLogger.Instance,
+                ct);
+
+            await clientTask;
+            Assert.True(result.Success);
+            Assert.Equal("Submitted", result.Value);
+            Assert.False(dropPeer);
         }
     }
 

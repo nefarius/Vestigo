@@ -14,5 +14,6 @@ public interface IInteractiveLogonDispatcher
         string? domain,
         char[] password,
         string? expectedSid,
+        bool requireUnlock,
         CancellationToken cancellationToken);
 }

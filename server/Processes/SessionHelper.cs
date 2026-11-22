@@ -29,6 +29,8 @@ public static partial class SessionHelper
 
     public const string InspectInputStateCommand = "inspect-input-state";
 
+    public const string LockWorkStationCommand = "lock-workstation";
+
     public const string ProbeCaptureCommand = "probe-capture";
 
     public const string ProbeAudioFormatCommand = "probe-audio-format";
@@ -43,7 +45,7 @@ public static partial class SessionHelper
     {
         if (args.Length < 2 || args[0] != Flag)
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}|{DesktopHostCommand}|{DesktopRecoverCommand}|{DesktopEnumerateCommand}|{InspectInputStateCommand}> ..." }, Json));
+            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}|{DesktopHostCommand}|{DesktopRecoverCommand}|{DesktopEnumerateCommand}|{InspectInputStateCommand}|{LockWorkStationCommand}> ..." }, Json));
             return 2;
         }
 
@@ -69,6 +71,7 @@ public static partial class SessionHelper
             DesktopRecoverCommand => RunDesktopRecover(args),
             DesktopEnumerateCommand => RunDesktopEnumerate(args),
             InspectInputStateCommand => RunInspectInputState(args),
+            LockWorkStationCommand => RunLockWorkStation(args),
             _ => Reject($"Unknown session-helper command '{args[1]}'.")
         };
     }

@@ -12,7 +12,9 @@ public sealed class InteractiveLogonService(
     LogonConsentStore store,
     VestigoOptions options,
     ILogger<InteractiveLogonService> logger,
-    IHttpContextAccessor? httpContext = null)
+    IHttpContextAccessor? httpContext = null,
+    IWorkstationLockPlatform? lockPlatform = null,
+    TimeProvider? time = null)
 {
     public OperationResult<InteractiveLogonStatus> GetStatus()
     {
@@ -118,6 +120,211 @@ public sealed class InteractiveLogonService(
         return issued;
     }
 
+    public async Task<OperationResult<WorkstationLockResult>> LockWorkstationAsync(
+        int waitSeconds,
+        CancellationToken cancellationToken)
+    {
+        if (!options.System.AllowInteractiveLogon)
+        {
+            return OperationResult<WorkstationLockResult>.Fail(
+                "interactive_logon_disabled",
+                "Interactive logon is disabled. Set Vestigo:System:AllowInteractiveLogon to true.");
+        }
+
+        if (waitSeconds is < 0 or > 15)
+        {
+            return OperationResult<WorkstationLockResult>.Fail(
+                "invalid_request",
+                "waitSeconds must be between 0 and 15.");
+        }
+
+        ConsoleLockRead lockState = sessions.ReadConsoleLock();
+        if (!lockState.Success)
+        {
+            return OperationResult<WorkstationLockResult>.Fail(lockState.ErrorCode!, lockState.Error!);
+        }
+
+        bool alreadyLocked = lockState.State == "locked";
+        if (!alreadyLocked)
+        {
+            if (lockState.State == "logonScreen" || lockState.SessionId is null)
+            {
+                return OperationResult<WorkstationLockResult>.Fail(
+                    "no_console_session",
+                    "There is no signed-in console session to lock.");
+            }
+
+            if (lockState.State != "unlocked")
+            {
+                return OperationResult<WorkstationLockResult>.Fail(
+                    "lock_state_unknown",
+                    "The console lock state could not be determined.");
+            }
+
+            if (lockPlatform is null)
+            {
+                return OperationResult<WorkstationLockResult>.Fail(
+                    "lock_failed",
+                    "Workstation lock is unavailable.");
+            }
+
+            OperationResult<bool> locked = await lockPlatform.LockAsync(cancellationToken).ConfigureAwait(false);
+            if (!locked.Success)
+            {
+                return locked.FailAs<WorkstationLockResult>();
+            }
+        }
+
+        TimeProvider clock = time ?? TimeProvider.System;
+        DateTimeOffset deadline = clock.GetUtcNow() + TimeSpan.FromSeconds(waitSeconds);
+        ConsoleLockRead observed = alreadyLocked ? lockState : sessions.ReadConsoleLock();
+        while (waitSeconds > 0 && !LockReady(observed))
+        {
+            if (clock.GetUtcNow() >= deadline)
+            {
+                break;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
+            observed = sessions.ReadConsoleLock();
+        }
+
+        List<string> notes = [];
+        if (!observed.Success)
+        {
+            notes.Add("The console lock state could not be determined.");
+        }
+        else if (observed.State != "locked")
+        {
+            notes.Add(alreadyLocked
+                ? "The console session is no longer locked."
+                : "Windows accepted LockWorkStation. The console has not reported locked yet.");
+        }
+        else if (dispatcher.ProviderRegistered && !dispatcher.LogonUiConnected)
+        {
+            notes.Add("The console is locked. LogonUI has not connected yet.");
+        }
+        else
+        {
+            notes.Add(alreadyLocked
+                ? "The console session is already locked."
+                : "The console session is locked.");
+        }
+
+        return LockResult(alreadyLocked, observed, notes);
+    }
+
+    public OperationResult<LogonConsentLink> RequestUnlock(string? userName, string? domain)
+    {
+        if (!options.System.AllowInteractiveLogon)
+        {
+            return OperationResult<LogonConsentLink>.Fail(
+                "interactive_logon_disabled",
+                "Interactive logon is disabled. Set Vestigo:System:AllowInteractiveLogon to true.");
+        }
+
+        if (!dispatcher.ProviderRegistered)
+        {
+            return OperationResult<LogonConsentLink>.Fail(
+                "provider_not_registered",
+                "The Vestigo Credential Provider is not registered. Enable the MSI Interactive logon feature.");
+        }
+
+        ConsoleLockRead lockState = sessions.ReadConsoleLock();
+        if (!lockState.Success)
+        {
+            return OperationResult<LogonConsentLink>.Fail(lockState.ErrorCode!, lockState.Error!);
+        }
+
+        if (lockState.State == "unlocked")
+        {
+            return OperationResult<LogonConsentLink>.Fail(
+                "already_unlocked",
+                "The console session is already unlocked.");
+        }
+
+        if (lockState.State == "logonScreen")
+        {
+            return OperationResult<LogonConsentLink>.Fail(
+                "not_locked",
+                "The console is at the logon screen, not locked. Use request_interactive_logon.");
+        }
+
+        if (lockState.State != "locked")
+        {
+            return OperationResult<LogonConsentLink>.Fail(
+                "lock_state_unknown",
+                "The console lock state could not be determined.");
+        }
+
+        if (!dispatcher.LogonUiConnected)
+        {
+            return OperationResult<LogonConsentLink>.Fail(
+                "logonui_not_connected",
+                "LogonUI is not connected. Interactive logon works from the Windows logon or lock screen.");
+        }
+
+        string? resolvedUser = userName;
+        string? resolvedDomain = domain;
+        if (string.IsNullOrWhiteSpace(resolvedUser))
+        {
+            if (!string.IsNullOrWhiteSpace(resolvedDomain))
+            {
+                return OperationResult<LogonConsentLink>.Fail(
+                    "invalid_request",
+                    "domain requires userName.");
+            }
+
+            if (string.IsNullOrWhiteSpace(lockState.UserName))
+            {
+                return OperationResult<LogonConsentLink>.Fail(
+                    "console_user_unknown",
+                    "The locked console user is unknown. Pass userName.");
+            }
+
+            resolvedUser = lockState.UserName;
+        }
+
+        if (!LogonAccount.TryNormalize(resolvedUser, resolvedDomain, out string user, out string? parsedDomain, out string nameError))
+        {
+            return OperationResult<LogonConsentLink>.Fail("invalid_request", nameError);
+        }
+
+        OperationResult<LogonConsentLink> issued = store.Issue(
+            LogonConsentKind.UnlockWorkstation,
+            user,
+            parsedDomain,
+            logonCount: null,
+            forceAutoLogon: false,
+            PublicBaseUrl());
+        logger.LogInformation(
+            "request_unlock_workstation user {User} domain {Domain} lock {Lock} success {Success} code {Code}",
+            user,
+            string.IsNullOrEmpty(parsedDomain) ? "(local)" : parsedDomain,
+            lockState.State,
+            issued.Success,
+            issued.ErrorCode);
+        return issued;
+    }
+
+    private bool LockReady(ConsoleLockRead observed) =>
+        observed.Success &&
+        observed.State == "locked" &&
+        (!dispatcher.ProviderRegistered || dispatcher.LogonUiConnected);
+
+    private OperationResult<WorkstationLockResult> LockResult(
+        bool alreadyLocked,
+        ConsoleLockRead lockState,
+        IReadOnlyList<string> notes) =>
+        OperationResult<WorkstationLockResult>.Ok(new WorkstationLockResult(
+            lockState.Success && lockState.State == "locked",
+            alreadyLocked,
+            lockState.Success ? lockState.State : "unknown",
+            dispatcher.LogonUiConnected,
+            lockState.SessionId,
+            lockState.UserName,
+            notes));
+
     public async Task<OperationResult<LogonRequestView>> ApproveAsync(
         LogonConsentStore.PendingConsent pending,
         char[] password,
@@ -144,12 +351,42 @@ public sealed class InteractiveLogonService(
             return OperationResult<LogonRequestView>.Fail(verified.ErrorCode!, verified.Error!);
         }
 
+        if (pending.Kind == LogonConsentKind.UnlockWorkstation)
+        {
+            ConsoleLockRead lockState = sessions.ReadConsoleLock();
+            if (!lockState.Success || lockState.State != "locked")
+            {
+                string code = !lockState.Success
+                    ? lockState.ErrorCode!
+                    : lockState.State == "unlocked"
+                        ? "already_unlocked"
+                        : lockState.State == "logonScreen"
+                            ? "not_locked"
+                            : "lock_state_unknown";
+                string error = !lockState.Success
+                    ? lockState.Error!
+                    : lockState.State == "unlocked"
+                        ? "The console session is already unlocked."
+                        : lockState.State == "logonScreen"
+                            ? "The console is at the logon screen, not locked. Use request_interactive_logon."
+                            : "The console lock state could not be determined.";
+                store.Complete(pending.RequestId, LogonRequestStatus.Failed, code, error);
+                return OperationResult<LogonRequestView>.Fail(code, error);
+            }
+        }
+
         store.Complete(pending.RequestId, LogonRequestStatus.Submitted, null, null);
         OperationResult<string> dispatched;
         try
         {
             dispatched = await dispatcher
-                .DispatchAsync(pending.UserName, pending.Domain, password, expectedSid: null, cancellationToken)
+                .DispatchAsync(
+                    pending.UserName,
+                    pending.Domain,
+                    password,
+                    expectedSid: null,
+                    requireUnlock: pending.Kind == LogonConsentKind.UnlockWorkstation,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception)

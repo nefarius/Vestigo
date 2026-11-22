@@ -3,7 +3,8 @@ namespace Vestigo.SystemInfo;
 public enum LogonConsentKind
 {
     AutoLogonEnable,
-    InteractiveLogon
+    InteractiveLogon,
+    UnlockWorkstation
 }
 
 public enum LogonRequestStatus
@@ -28,7 +29,26 @@ public sealed record LogonConsentLink(
     string Instruction)
 {
     public const string PresentToUser =
-        "Present this URL to the user so they can approve the request and enter the Windows password in their browser. Do not fetch the URL yourself. Do not ask the user to paste the password into chat. The password never appears in MCP results or logs.";
+        "Display this full URL as a clickable link in your reply so a human can open it in their own visible desktop browser, or launch that OS browser yourself. Do not fetch, preview, or open the URL in any headless, embedded, IDE, or automated browser (including curl, WebFetch, Playwright, and Cursor or VS Code Simple Browser). Do not ask the user to paste the Windows password into chat. After they submit the page, call get_logon_request with this requestId (waitSeconds 0 through 30). The password never appears in MCP results or logs.";
+}
+
+/// <summary>Result of locking the active console session.</summary>
+public sealed record WorkstationLockResult(
+    bool Locked,
+    bool AlreadyLocked,
+    string ConsoleLockState,
+    bool LogonUiConnected,
+    uint? ConsoleSessionId,
+    string? ConsoleUserName,
+    IReadOnlyList<string> Notes);
+
+/// <summary>JSON payload from <c>--session-helper lock-workstation</c>.</summary>
+public sealed record WorkstationLockHelperResult(bool Locked);
+
+/// <summary>Locks the active console session. Tests supply a fake.</summary>
+public interface IWorkstationLockPlatform
+{
+    Task<OperationResult<bool>> LockAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>Status of a consent request. Credentials are never included.</summary>
