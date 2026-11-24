@@ -56,6 +56,26 @@ namespace Vestigo.Installer.Actions.Logic
         public bool BindsAny => ListenMode == ListenSettings.ListenAny;
     }
 
+    /// <summary>Maps a protected-settings authentication radio choice onto write-time resolve flags.</summary>
+    public sealed class ProtectedUiAuthChoice
+    {
+        public ProtectedUiAuthChoice(string authMode, bool tokenIsSuggestion, bool requireTokenValidation)
+        {
+            AuthMode = authMode;
+            TokenIsSuggestion = tokenIsSuggestion;
+            RequireTokenValidation = requireTokenValidation;
+        }
+
+        /// <summary><see cref="ListenSettings.AuthNone" /> or <see cref="ListenSettings.AuthToken" />.</summary>
+        public string AuthMode { get; }
+
+        /// <summary>True when an auto-generated placeholder must not replace an existing token.</summary>
+        public bool TokenIsSuggestion { get; }
+
+        /// <summary>True when the token box must contain a valid token before Next.</summary>
+        public bool RequireTokenValidation { get; }
+    }
+
     /// <summary>
     ///     Pure installer logic: mode mapping, validation, token generation, and the appsettings.json merge. It is compiled
     ///     into the net48 custom action assembly and into the test project.
@@ -66,6 +86,9 @@ namespace Vestigo.Installer.Actions.Logic
         public const string ListenAny = "any";
         public const string AuthNone = "none";
         public const string AuthToken = "token";
+        public const string UiAuthKeep = "keep";
+        public const string UiAuthReplace = "replace";
+        public const string UiAuthNone = "none";
         public const int DefaultPort = 5098;
         public const int MinimumTokenLength = 16;
         public const string LoopbackAddress = "127.0.0.1";
@@ -116,22 +139,22 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             if (!(root is JsonObject rootObject) ||
-                !rootObject.TryGetPropertyValue(SectionName, out JsonNode? section) ||
+                !rootObject.TryGetIgnoreCase(SectionName, out JsonNode? section) ||
                 !(section is JsonObject vestigo))
             {
                 return null;
             }
 
-            string? address = vestigo.TryGetPropertyValue("ListenAddress", out JsonNode? a) ? a.StringValue() : null;
+            string? address = vestigo.TryGetIgnoreCase("ListenAddress", out JsonNode? a) ? a.StringValue() : null;
             int? port = null;
-            if (vestigo.TryGetPropertyValue("ListenPort", out JsonNode? p) && p?.GetValueKind() == JsonValueKind.Number &&
+            if (vestigo.TryGetIgnoreCase("ListenPort", out JsonNode? p) && p?.GetValueKind() == JsonValueKind.Number &&
                 int.TryParse(p.ToJsonString(), NumberStyles.None, CultureInfo.InvariantCulture, out int parsedPort))
             {
                 port = parsedPort;
             }
 
             List<string> tokens = new List<string>();
-            if (vestigo.TryGetPropertyValue("ApiTokens", out JsonNode? t) && t is JsonArray list)
+            if (vestigo.TryGetIgnoreCase("ApiTokens", out JsonNode? t) && t is JsonArray list)
             {
                 foreach (JsonNode? item in list)
                 {
@@ -203,6 +226,52 @@ namespace Vestigo.Installer.Actions.Logic
             return new ResolvedSettings(listen, auth, port, resolvedToken, existing?.Address);
         }
 
+        /// <summary>
+        ///     Initial authentication radio for an unelevated wizard that cannot read the protected settings file.
+        ///     An explicit, non-suggested token means replace; otherwise <see cref="AuthNone" /> (including the
+        ///     upgrade default) means no token, and a fresh install defaults to keep.
+        /// </summary>
+        public static string ResolveProtectedUiAuthMode(
+            string? authMode,
+            string? token,
+            bool tokenIsSuggestion,
+            bool isUpgrade)
+        {
+            string requested = (token ?? string.Empty).Trim();
+            if (requested.Length > 0 && !tokenIsSuggestion)
+            {
+                return UiAuthReplace;
+            }
+
+            string auth = Normalize(
+                authMode,
+                "VESTIGO_AUTH_MODE",
+                isUpgrade ? AuthNone : AuthToken,
+                AuthNone,
+                AuthToken);
+            return auth == AuthNone ? UiAuthNone : UiAuthKeep;
+        }
+
+        /// <summary>
+        ///     Maps <see cref="UiAuthKeep" />, <see cref="UiAuthReplace" />, or <see cref="UiAuthNone" /> onto
+        ///     <c>VESTIGO_AUTH_MODE</c> and the write-time suggestion/validation flags.
+        /// </summary>
+        public static ProtectedUiAuthChoice MapProtectedUiAuth(string? uiMode)
+        {
+            string mode = Normalize(uiMode, "VESTIGO_AUTH_UI_MODE", UiAuthKeep, UiAuthKeep, UiAuthReplace, UiAuthNone);
+            if (mode == UiAuthKeep)
+            {
+                return new ProtectedUiAuthChoice(AuthToken, true, false);
+            }
+
+            if (mode == UiAuthReplace)
+            {
+                return new ProtectedUiAuthChoice(AuthToken, false, true);
+            }
+
+            return new ProtectedUiAuthChoice(AuthNone, false, false);
+        }
+
         public static int ParsePort(string text)
         {
             if (!int.TryParse(text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int port) || !IsValidPort(port))
@@ -261,32 +330,32 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             JsonObject vestigo;
-            if (root.TryGetPropertyValue(SectionName, out JsonNode? section) && section is JsonObject existingSection)
+            if (root.TryGetIgnoreCase(SectionName, out JsonNode? section) && section is JsonObject existingSection)
             {
                 vestigo = existingSection;
             }
             else
             {
                 vestigo = new JsonObject();
-                root[SectionName] = vestigo;
+                root.SetIgnoreCase(SectionName, vestigo);
             }
 
             string address = ChooseAddress(settings);
-            vestigo["ListenAddress"] = address;
-            vestigo["ListenPort"] = settings.Port;
+            vestigo.SetIgnoreCase("ListenAddress", address);
+            vestigo.SetIgnoreCase("ListenPort", settings.Port);
 
             if (settings.AuthMode == AuthToken)
             {
-                bool keep = vestigo.TryGetPropertyValue("ApiTokens", out JsonNode? current) && current is JsonArray list &&
+                bool keep = vestigo.TryGetIgnoreCase("ApiTokens", out JsonNode? current) && current is JsonArray list &&
                             list.Any(item => item.StringValue() is string text && string.Equals(text, settings.Token, StringComparison.Ordinal));
                 if (!keep)
                 {
-                    vestigo["ApiTokens"] = new JsonArray(settings.Token);
+                    vestigo.SetIgnoreCase("ApiTokens", new JsonArray(settings.Token));
                 }
             }
             else
             {
-                vestigo["ApiTokens"] = new JsonArray();
+                vestigo.SetIgnoreCase("ApiTokens", new JsonArray());
             }
 
             if (modules != null)
@@ -313,7 +382,7 @@ namespace Vestigo.Installer.Actions.Logic
             return existingParsed && IsLoopbackAddress(settings.ExistingAddress) ? settings.ExistingAddress! : LoopbackAddress;
         }
 
-        private static string Normalize(string? value, string propertyName, string fallback, string first, string second)
+        private static string Normalize(string? value, string propertyName, string fallback, params string[] allowed)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -321,17 +390,20 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             string trimmed = value!.Trim();
-            if (string.Equals(trimmed, first, StringComparison.OrdinalIgnoreCase))
+            foreach (string candidate in allowed)
             {
-                return first;
+                if (string.Equals(trimmed, candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
             }
 
-            if (string.Equals(trimmed, second, StringComparison.OrdinalIgnoreCase))
+            if (allowed.Length == 2)
             {
-                return second;
+                throw new ArgumentException(propertyName + " must be '" + allowed[0] + "' or '" + allowed[1] + "'.");
             }
 
-            throw new ArgumentException(propertyName + " must be '" + first + "' or '" + second + "'.");
+            throw new ArgumentException(propertyName + " must be one of: " + string.Join(", ", allowed) + ".");
         }
     }
 }

@@ -62,7 +62,9 @@ static class ListenPage
             SecureProperty("VESTIGO_AUTH_MODE", null),
             SecureProperty("VESTIGO_PORT", null),
             SecureProperty("VESTIGO_ROOTS_MODE", null),
-            SecureProperty("VESTIGO_ROOTS_ACCESS", null));
+            SecureProperty("VESTIGO_ROOTS_ACCESS", null),
+            SecureProperty("VESTIGO_SETTINGS_PROTECTED", null),
+            SecureProperty("VESTIGO_AUTH_UI_MODE", null));
         foreach (string name in ModuleSelection.All.Select(m => m.PropertyName))
         {
             package.Add(SecureProperty(name, null));
@@ -228,6 +230,16 @@ static class ListenPage
         const string noToken = "VESTIGO_AUTH_MODE=\"" + ListenSettings.AuthNone + "\"";
         const string listenAny = "VESTIGO_LISTEN_MODE=\"" + ListenSettings.ListenAny + "\"";
         const string listenLocalhost = "VESTIGO_LISTEN_MODE=\"" + ListenSettings.ListenLocalhost + "\"";
+        const string settingsProtected = "VESTIGO_SETTINGS_PROTECTED=\"1\"";
+        const string notProtected = "NOT (" + settingsProtected + ")";
+        const string uiKeep = "VESTIGO_AUTH_UI_MODE=\"" + ListenSettings.UiAuthKeep + "\"";
+        const string uiReplace = "VESTIGO_AUTH_UI_MODE=\"" + ListenSettings.UiAuthReplace + "\"";
+        const string uiNone = "VESTIGO_AUTH_UI_MODE=\"" + ListenSettings.UiAuthNone + "\"";
+        const string showToken = "(" + notProtected + " AND NOT (" + noToken + ")) OR (" + settingsProtected + " AND " + uiReplace + ")";
+        const string showTokenNote = notProtected + " AND NOT (" + noToken + ")";
+        const string showKeepNote = settingsProtected + " AND " + uiKeep;
+        const string showReplaceNote = settingsProtected + " AND " + uiReplace;
+        const string showingNone = "(" + notProtected + " AND " + noToken + ") OR (" + settingsProtected + " AND " + uiNone + ")";
 
         XElement accessDialog = WizardDialog(
             AccessDialogId,
@@ -267,45 +279,74 @@ static class ListenPage
             AuthDialogId,
             "Authentication",
             "Choose whether the server requires an API token.",
-            AuthRadioGroup(),
-            WithHide(Control("TokenLabel", "Text", 20, 110, 40, 12, "Token:", ("Transparent", "yes"), ("NoPrefix", "yes")), noToken),
-            WithHide(Control("TokenEdit", "Edit", 62, 107, 288, 15, null, ("Property", "VESTIGO_API_TOKEN"), ("Text", "{200}")), noToken),
-            WithHide(
+            WithHide(AuthRadioGroup(), settingsProtected),
+            WithShow(ProtectedAuthRadioGroup(), settingsProtected),
+            WithShow(
+                Control("TokenLabel", "Text", 20, 122, 40, 12, "Token:", ("Transparent", "yes"), ("NoPrefix", "yes")),
+                showToken),
+            WithShow(
+                Control("TokenEdit", "Edit", 62, 119, 288, 15, null, ("Property", "VESTIGO_API_TOKEN"), ("Text", "{200}")),
+                showToken),
+            WithShow(
                 Control(
                     "TokenNote",
                     "Text",
                     20,
-                    130,
+                    145,
                     330,
                     70,
                     "A suggested token is filled in; you can replace it. Stored in clear text under %ProgramData%, readable only by SYSTEM and Administrators.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                noToken),
+                showTokenNote),
+            WithShow(
+                Control(
+                    "ProtectedKeepNote",
+                    "Text",
+                    20,
+                    122,
+                    330,
+                    70,
+                    "Machine settings are protected until elevation. The existing API token is kept; a new one is generated only if none exists.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                showKeepNote),
+            WithShow(
+                Control(
+                    "ReplaceTokenNote",
+                    "Text",
+                    20,
+                    145,
+                    330,
+                    70,
+                    "This token replaces any existing API token. Stored in clear text under %ProgramData%, readable only by SYSTEM and Administrators.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                showReplaceNote),
             WithShow(
                 Control(
                     "OpenWarning",
                     "Text",
                     20,
-                    110,
+                    122,
                     330,
                     70,
                     "No token: anyone who can reach this PC on the network can use the server and every module you enable next.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                noToken + " AND " + listenAny),
+                showingNone + " AND " + listenAny),
             WithShow(
                 Control(
                     "LocalOpenNote",
                     "Text",
                     20,
-                    110,
+                    122,
                     330,
                     70,
                     "No token: any program on this PC can use every module you enable next.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                noToken + " AND " + listenLocalhost));
+                showingNone + " AND " + listenLocalhost));
         WireNavigation(authDialog, AccessDialogId, RootsDialogId);
 
         const string customRoots = "VESTIGO_ROOTS_MODE=\"" + RootSettings.ModeCustom + "\"";
@@ -498,6 +539,19 @@ static class ListenPage
             Radio(ListenSettings.AuthToken, 0, "Require an API token (recommended)"),
             Radio(ListenSettings.AuthNone, 17, "No API token"));
         XElement control = Control("AuthChoice", "RadioButtonGroup", 20, 58, 330, 40, null, ("Property", "VESTIGO_AUTH_MODE"));
+        control.Add(group);
+        return control;
+    }
+
+    static XElement ProtectedAuthRadioGroup()
+    {
+        XElement group = new(
+            Wix + "RadioButtonGroup",
+            new XAttribute("Property", "VESTIGO_AUTH_UI_MODE"),
+            Radio(ListenSettings.UiAuthKeep, 0, "Keep existing API token (recommended)"),
+            Radio(ListenSettings.UiAuthReplace, 17, "Set a new API token"),
+            Radio(ListenSettings.UiAuthNone, 34, "No API token"));
+        XElement control = Control("ProtectedAuthChoice", "RadioButtonGroup", 20, 58, 330, 56, null, ("Property", "VESTIGO_AUTH_UI_MODE"));
         control.Add(group);
         return control;
     }

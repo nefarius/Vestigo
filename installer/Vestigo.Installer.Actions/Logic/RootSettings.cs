@@ -146,7 +146,7 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             if (!(root is JsonObject rootObject) ||
-                !rootObject.TryGetPropertyValue(ListenSettings.SectionName, out JsonNode? section) ||
+                !rootObject.TryGetIgnoreCase(ListenSettings.SectionName, out JsonNode? section) ||
                 !(section is JsonObject vestigo))
             {
                 return null;
