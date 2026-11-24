@@ -536,8 +536,10 @@ namespace Vestigo.Installer.Actions
         }
 
         /// <summary>
-        ///     Creates (or re-secures on upgrade) the ProgramData state tree (settings, logs, spool, symcache, traces)
-        ///     with a protected SYSTEM + Administrators DACL and fails the install when a component is a reparse point.
+        ///     Creates (or re-secures on upgrade) the ProgramData state tree (settings, logs, spool, symcache, traces,
+        ///     and spool\helper) with a protected SYSTEM + Administrators DACL and fails the install when a component is
+        ///     a reparse point. A stale spool\helper with an untrusted owner or ACL is replaced only when it holds nothing
+        ///     but Vestigo's per-run scratch files; otherwise the install fails naming the path and reason.
         ///     The company folder's ACL is always reset; an untrusted owner is logged and replaced. Other Nefarius
         ///     products' subfolders are left alone.
         /// </summary>
@@ -563,6 +565,13 @@ namespace Vestigo.Installer.Actions
                     throw new InvalidOperationException("'" + existing + "' is a reparse point; refusing to use it for Vestigo state.");
                 }
             }
+
+            // Before any ACL below is rewritten: SetAccessControl on a parent propagates to unprotected children, which
+            // would hand a stale spool\helper (untrusted owner, inherited ACL) trust it has not earned. Refusals carry
+            // the exact path and reason and fail the install before the service starts.
+            string spool = Path.Combine(product, "spool");
+            WindowsHelperDirectoryStore helperStore = new WindowsHelperDirectoryStore(session.Log);
+            HelperDirectoryState helperState = HelperDirectoryProvisioning.Prepare(spool, helperStore);
 
             SecurityIdentifier administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
             SecurityIdentifier system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
@@ -595,6 +604,8 @@ namespace Vestigo.Installer.Actions
                     info.SetAccessControl(security);
                 }
             }
+
+            HelperDirectoryProvisioning.Complete(spool, helperStore, helperState);
 
             session.Log("Secured Vestigo state directories under " + product + ".");
         }

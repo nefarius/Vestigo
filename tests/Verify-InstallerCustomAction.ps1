@@ -104,6 +104,36 @@ try {
         if ([Vestigo.Installer.Actions.Logic.ModuleSelection]::ReadExisting($invalid).Count -ne 0) { throw 'Invalid Unicode was accepted by module settings.' }
     }
 
+    # The packaged spool\helper provisioning must classify scratch names and refuse links and foreign content.
+    $provisioning = [Vestigo.Installer.Actions.Logic.HelperDirectoryProvisioning]
+    if (-not $provisioning::IsDisposableScratchName('0123456789abcdef0123456789abcdef.json')) { throw 'Helper scratch name was rejected.' }
+    if ($provisioning::IsDisposableScratchName('report.txt')) { throw 'A foreign helper file was treated as scratch.' }
+    $helperRoot = Join-Path $extracted ('helper-smoke-' + [Guid]::NewGuid().ToString('N'))
+    $helperSpool = Join-Path $helperRoot 'spool'
+    $helperDir = Join-Path $helperSpool 'helper'
+    [void][IO.Directory]::CreateDirectory($helperDir)
+    try {
+        [IO.File]::WriteAllText((Join-Path $helperDir 'keep.txt'), 'x')
+        $helperLog = New-Object 'System.Collections.Generic.List[string]'
+        $store = New-Object Vestigo.Installer.Actions.Logic.WindowsHelperDirectoryStore ([Action[string]]{ param($m) $helperLog.Add($m) })
+        $refused = $false
+        try { [void]$provisioning::Prepare($helperSpool, $store) }
+        catch {
+            $cause = $_.Exception
+            while ($null -ne $cause.InnerException -and $cause -isnot [InvalidOperationException]) { $cause = $cause.InnerException }
+            if ($cause -isnot [InvalidOperationException] -or -not $cause.Message.Contains($helperDir) -or -not $cause.Message.Contains('keep.txt')) { throw }
+            $refused = $true
+        }
+        if (-not $refused) { throw 'A helper directory with foreign content was not refused by the packaged assembly.' }
+        if (-not (Test-Path -LiteralPath (Join-Path $helperDir 'keep.txt'))) { throw 'Refusal deleted helper content.' }
+    }
+    finally {
+        $helperCleanup = [IO.Path]::GetFullPath($helperRoot)
+        if ($helperCleanup.StartsWith([IO.Path]::GetFullPath($extracted), [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $helperCleanup -Recurse -Force
+        }
+    }
+
     Write-Host "Verified net48 custom-action CAB: $($files.Count) entries; extracted settings read/merge/write passed on CLR $([Environment]::Version)."
 }
 finally {

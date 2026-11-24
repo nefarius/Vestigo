@@ -11,7 +11,7 @@ The MSI installs an x64, per-machine, framework-dependent service. It requires t
 - Recovery: restart after the first and second unexpected exit (5 second delay), no action after the third; the failure count resets only after one full day passes without another failure
 - Stop and remove: uninstall
 
-Binaries go to `%ProgramFiles%\Nefarius Software Solutions\Vestigo`. Settings and spools go to `%ProgramData%\Nefarius Software Solutions\Vestigo`. The MSI creates that directory and its `logs`, `spool`, `symcache` and `traces` subdirectories with a protected ACL (inheritance disabled) that allows only SYSTEM and Administrators, and fails the install if any of them is a link or junction. Upgrades re-apply the ACL.
+Binaries go to `%ProgramFiles%\Nefarius Software Solutions\Vestigo`. Settings and spools go to `%ProgramData%\Nefarius Software Solutions\Vestigo`. The MSI creates that directory and its `logs`, `spool`, `symcache` and `traces` subdirectories with a protected ACL (inheritance disabled) that allows only SYSTEM and Administrators, and fails the install if any of them is a link or junction. Upgrades and repairs re-apply the ACL. The same step creates `spool\helper` with the protected ACL and an Administrators owner. A leftover `spool\helper` that is not trusted (wrong owner or unprotected ACL) is removed and recreated only when it holds just Vestigo's scratch files; if it is a link or holds anything else, the install fails and the MSI log names the path and reason. For a link, remove the reviewed link itself (not its target's contents). For an ordinary directory, review and remove its contents. Then run repair. This runs before the service starts on fresh install, major upgrade, repair and modify.
 
 The service account needs:
 
