@@ -136,8 +136,6 @@ static class Program
                 });
             }
 
-            Feature interactiveLogon = moduleFeatures[ModuleSelection.SystemInteractiveLogon];
-
             Files files = new(feature, Path.Combine(options.ServerPublishDir, "*.*"), IncludeInPublishedFile)
             {
                 OnProcess = file =>
@@ -182,10 +180,13 @@ static class Program
                         new WixSharp.File(feature, debugViewLicensePath),
                         new WixSharp.File(feature, options.RipgrepExe),
                         new WixSharp.File(feature, ripgrepLicensePath)),
+                    // Stage the Credential Provider DLL with the Server feature (inert until registered by
+                    // VestigoDeployCredentialProvider when &SystemInteractiveLogon=3) so every module feature
+                    // stays registry-only and Modify never requires the original MSI CAB.
                     new Dir(
-                        interactiveLogon,
+                        feature,
                         "credential-provider",
-                        new WixSharp.File(interactiveLogon, options.CredentialProviderDll))),
+                        new WixSharp.File(feature, options.CredentialProviderDll))),
                 new RegKey(
                     updaterFeature,
                     RegistryHive.LocalMachine,

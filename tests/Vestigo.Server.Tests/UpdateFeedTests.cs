@@ -162,6 +162,9 @@ public class UpdateFeedTests
         Assert.Contains("feature.Add(updaterFeature)", installer, StringComparison.Ordinal);
         Assert.Contains("new WixSharp.File(updaterFeature, options.UpdaterExe)", installer, StringComparison.Ordinal);
         Assert.Contains("new WixSharp.File(updaterFeature, updaterConfigurationPath)", installer, StringComparison.Ordinal);
+        Assert.Contains("new WixSharp.File(feature, options.CredentialProviderDll)", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("new WixSharp.File(interactiveLogon,", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("moduleFeatures[ModuleSelection.SystemInteractiveLogon]", installer, StringComparison.Ordinal);
         Assert.Contains("new RegKey(\n                    updaterFeature,", installer, StringComparison.Ordinal);
         Assert.Contains("UpdaterRegistry.Read", installer, StringComparison.Ordinal);
         Assert.Contains("version.ToString()", installer, StringComparison.Ordinal);

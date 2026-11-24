@@ -451,6 +451,28 @@ public class AutoLogonTests
     }
 
     [Fact]
+    public void GetStatus_DistinguishesMissingStagingFromUnregisteredProvider()
+    {
+        InteractiveLogonService missing = Interactive(
+            new MutableConsole("unlocked", 1, "lab"),
+            new MutableDispatcher { ProviderInstalled = false, ProviderRegistered = false });
+        OperationResult<InteractiveLogonStatus> missingStatus = missing.GetStatus();
+        Assert.True(missingStatus.Success);
+        Assert.False(missingStatus.Value!.ProviderInstalled);
+        Assert.False(missingStatus.Value.ProviderRegistered);
+        Assert.Contains(missingStatus.Value.Notes, note => note.Contains("not staged", StringComparison.Ordinal));
+
+        InteractiveLogonService staged = Interactive(
+            new MutableConsole("unlocked", 1, "lab"),
+            new MutableDispatcher { ProviderInstalled = true, ProviderRegistered = false });
+        OperationResult<InteractiveLogonStatus> stagedStatus = staged.GetStatus();
+        Assert.True(stagedStatus.Success);
+        Assert.True(stagedStatus.Value!.ProviderInstalled);
+        Assert.False(stagedStatus.Value.ProviderRegistered);
+        Assert.Contains(stagedStatus.Value.Notes, note => note.Contains("Enable the MSI Interactive logon feature", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void RequestUnlock_RequiresRegisteredProvider()
     {
         InteractiveLogonService service = Interactive(
