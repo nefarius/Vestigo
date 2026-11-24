@@ -214,18 +214,40 @@ namespace Vestigo.Installer.Actions.Logic
                 }
             }
 
+            // The directory is writable by an untrusted principal here, so re-check the chain right before each
+            // delete: a link swapped in after the listing must not redirect File.Delete elsewhere.
             foreach (HelperDirectoryEntry entry in entries)
             {
+                RequireUnredirected(store, spoolDirectory, helper, entry.Path);
                 store.DeleteFile(entry.Path);
             }
 
+            RequireUnredirected(store, spoolDirectory, helper, null);
             store.DeleteEmptyDirectory(helper);
             store.Log("Removed stale helper directory '" + helper + "' because " + reason + "; deleted " +
                       entries.Count.ToString(CultureInfo.InvariantCulture) + " scratch file(s). It is recreated with a protected ACL.");
             return HelperDirectoryState.NeedsProvision;
         }
 
-        /// <summary>Runs after <c>spool</c> is secured. Creates the directory and verifies the result.</summary>
+        /// <summary>
+        ///     Runs after <c>spool</c> is secured. A helper judged secure earlier is checked again against the live
+        ///     directory, because a principal that could write the old <c>spool</c> may have replaced it meanwhile.
+        ///     An unchanged trusted helper is left in place.
+        /// </summary>
+        public static void Complete(string spoolDirectory, IHelperDirectoryStore store, HelperDirectoryState state)
+        {
+            if (state == HelperDirectoryState.AlreadySecure)
+            {
+                state = Prepare(spoolDirectory, store);
+            }
+
+            if (state == HelperDirectoryState.NeedsProvision)
+            {
+                Provision(spoolDirectory, store);
+            }
+        }
+
+        /// <summary>Creates the directory and verifies the result.</summary>
         public static void Provision(string spoolDirectory, IHelperDirectoryStore store)
         {
             if (store == null)
@@ -252,6 +274,30 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             store.Log("Provisioned '" + helper + "' with a protected SYSTEM and Administrators ACL.");
+        }
+
+        private static void RequireUnredirected(IHelperDirectoryStore store, string spoolDirectory, string helper, string? entry)
+        {
+            string? moved = null;
+            if (store.IsReparsePoint(spoolDirectory))
+            {
+                moved = spoolDirectory;
+            }
+            else if (!store.DirectoryExists(helper) || store.IsReparsePoint(helper))
+            {
+                moved = helper;
+            }
+            else if (entry != null && (store.DirectoryExists(entry) || store.IsReparsePoint(entry)))
+            {
+                moved = entry;
+            }
+
+            if (moved != null)
+            {
+                throw new InvalidOperationException(
+                    "'" + moved + "' changed while '" + helper + "' was being cleaned up (it is now a link, directory or missing); " +
+                    "nothing further was deleted. Review it and repair the installation.");
+            }
         }
 
         private static void RejectLinkOrFile(IHelperDirectoryStore store, string helper)

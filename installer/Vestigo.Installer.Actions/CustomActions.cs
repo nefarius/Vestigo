@@ -605,10 +605,7 @@ namespace Vestigo.Installer.Actions
                 }
             }
 
-            if (helperState == HelperDirectoryState.NeedsProvision)
-            {
-                HelperDirectoryProvisioning.Provision(spool, helperStore);
-            }
+            HelperDirectoryProvisioning.Complete(spool, helperStore, helperState);
 
             session.Log("Secured Vestigo state directories under " + product + ".");
         }

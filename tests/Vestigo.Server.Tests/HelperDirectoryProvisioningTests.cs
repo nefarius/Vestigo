@@ -147,6 +147,64 @@ public class HelperDirectoryProvisioningTests
         Assert.Empty(appeared.Created);
     }
 
+    [Fact]
+    public void Complete_ChecksTheLiveHelperAfterSpoolIsSecured()
+    {
+        FakeStore store = new();
+        store.AddDirectory(Helper, Trusted);
+        Assert.Equal(HelperDirectoryState.AlreadySecure, HelperDirectoryProvisioning.Prepare(Spool, store));
+
+        // Replaced by an untrusted principal while the parent ACLs were being rewritten.
+        store.AddDirectory(Helper, Stale());
+        HelperDirectoryProvisioning.Complete(Spool, store, HelperDirectoryState.AlreadySecure);
+
+        Assert.Contains(Helper, store.Created);
+        Assert.Null(store.Security[Helper].Untrusted());
+    }
+
+    [Fact]
+    public void Complete_LeavesAnUnchangedTrustedHelperInPlace()
+    {
+        FakeStore store = new();
+        store.AddDirectory(Helper, Trusted);
+
+        HelperDirectoryProvisioning.Complete(Spool, store, HelperDirectoryState.AlreadySecure);
+
+        Assert.Empty(store.Created);
+        Assert.Empty(store.Deleted);
+    }
+
+    [Fact]
+    public void Cleanup_StopsWhenTheHelperBecomesALinkAfterTheListing()
+    {
+        FakeStore store = new();
+        store.AddDirectory(Helper, Stale());
+        store.AddFile(Path.Combine(Helper, Guid.NewGuid().ToString("N") + ".json"));
+        store.AddFile(Path.Combine(Helper, Guid.NewGuid().ToString("N") + ".events"));
+        store.AfterDelete = () => store.Links.Add(Helper);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => HelperDirectoryProvisioning.Prepare(Spool, store));
+
+        Assert.Contains("changed while", ex.Message, StringComparison.Ordinal);
+        Assert.Single(store.Deleted);
+    }
+
+    [Fact]
+    public void Cleanup_StopsWhenAnEntryBecomesALinkAfterTheListing()
+    {
+        FakeStore store = new();
+        store.AddDirectory(Helper, Stale());
+        string entry = Path.Combine(Helper, Guid.NewGuid().ToString("N") + ".json");
+        store.AddFile(entry);
+        store.Links.Add(entry);
+
+        // The listing saw an ordinary file; the live check sees a link.
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => HelperDirectoryProvisioning.Prepare(Spool, store));
+
+        Assert.Empty(store.Deleted);
+        Assert.Contains(entry, ex.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("0123456789abcdef0123456789ABCDEF.json", true)]
     [InlineData("0123456789abcdef0123456789abcdef.events", true)]
@@ -171,7 +229,7 @@ public class HelperDirectoryProvisioningTests
         Assert.Contains("const string NotRemoving = \"NOT (REMOVE~=\\\"ALL\\\")\"", listen, StringComparison.Ordinal);
         int prepare = actions.IndexOf("HelperDirectoryProvisioning.Prepare(", StringComparison.Ordinal);
         int firstAcl = actions.IndexOf("CompanyFolderSecurity(system, administrators)", StringComparison.Ordinal);
-        int provision = actions.IndexOf("HelperDirectoryProvisioning.Provision(", StringComparison.Ordinal);
+        int provision = actions.IndexOf("HelperDirectoryProvisioning.Complete(", StringComparison.Ordinal);
         int lastAcl = actions.IndexOf("info.SetAccessControl(security)", StringComparison.Ordinal);
         Assert.True(prepare > 0 && prepare < firstAcl, "Prepare must run before the first ACL change.");
         Assert.True(provision > lastAcl, "Provision must run after the managed directories are secured.");
@@ -346,6 +404,8 @@ public class HelperDirectoryProvisioningTests
 
         public List<string> Logs { get; } = [];
 
+        public Action? AfterDelete { get; set; }
+
         public HelperDirectorySecurityState CreatedSecurity { get; set; } = new(Admins, true, [], true, true);
 
         private readonly List<HelperDirectoryEntry> _entries = [];
@@ -370,6 +430,7 @@ public class HelperDirectoryProvisioningTests
         {
             Deleted.Add(path);
             _entries.RemoveAll(entry => entry.Path == path);
+            AfterDelete?.Invoke();
         }
 
         public void DeleteEmptyDirectory(string path)
