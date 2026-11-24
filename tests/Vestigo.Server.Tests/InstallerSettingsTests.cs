@@ -117,6 +117,34 @@ public class InstallerSettingsTests
         Assert.Equal(suggestion, edited.Token);
     }
 
+    [Fact]
+    public void SuggestedKeepToken_ReplacesInvalidReplaceInputSoKeepCanResolveWithoutExistingSettings()
+    {
+        string placeholder = ListenSettings.SuggestedKeepToken("short");
+        Assert.NotEqual("short", placeholder);
+        Assert.Null(ListenSettings.ValidateToken(placeholder));
+        Assert.Equal(LongToken, ListenSettings.SuggestedKeepToken(LongToken));
+
+        ResolvedSettings unread = ListenSettings.Resolve(
+            "any",
+            "token",
+            "5098",
+            placeholder,
+            existing: null,
+            tokenIsSuggestion: true);
+        Assert.Equal(placeholder, unread.Token);
+
+        ExistingSettings existing = new("0.0.0.0", 5098, [LongToken]);
+        ResolvedSettings kept = ListenSettings.Resolve(
+            "any",
+            "token",
+            "5098",
+            placeholder,
+            existing,
+            tokenIsSuggestion: true);
+        Assert.Equal(LongToken, kept.Token);
+    }
+
     [Theory]
     [InlineData(null, null, false, false, ListenSettings.UiAuthKeep)]
     [InlineData(null, null, false, true, ListenSettings.UiAuthNone)]

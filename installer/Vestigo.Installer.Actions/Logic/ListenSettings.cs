@@ -328,6 +328,17 @@ namespace Vestigo.Installer.Actions.Logic
         }
 
         /// <summary>
+        ///     Keep-mode placeholder that can pass <see cref="ValidateToken" /> when existing tokens are unreadable.
+        ///     Invalid leftover replace input is discarded; callers must keep <c>tokenIsSuggestion</c> so elevated
+        ///     resolve still prefers the existing token.
+        /// </summary>
+        public static string SuggestedKeepToken(string? token)
+        {
+            string requested = (token ?? string.Empty).Trim();
+            return requested.Length > 0 && ValidateToken(requested) is null ? requested : GenerateToken();
+        }
+
+        /// <summary>
         ///     Writes <c>Vestigo:ListenAddress</c>, <c>ListenPort</c>, and <c>ApiTokens</c> into the settings JSON and keeps
         ///     everything else. Existing tokens are kept untouched when the chosen token is already among them,
         ///     unless <see cref="ResolvedSettings.ReplaceApiTokens" /> is set.

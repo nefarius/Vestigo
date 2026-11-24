@@ -604,6 +604,7 @@ namespace Vestigo.Installer.Actions
 
             if (choice.TokenIsSuggestion)
             {
+                requestedToken = ListenSettings.SuggestedKeepToken(requestedToken);
                 session[SuggestedProperty] = requestedToken;
             }
             else
@@ -623,12 +624,7 @@ namespace Vestigo.Installer.Actions
             session[AuthModeProperty] = authMode;
             if (choice.TokenIsSuggestion)
             {
-                if (string.IsNullOrWhiteSpace(token))
-                {
-                    token = ListenSettings.GenerateToken();
-                }
-
-                token = token.Trim();
+                token = ListenSettings.SuggestedKeepToken(token);
                 session[SuggestedProperty] = token;
                 suggestion = true;
                 return;
