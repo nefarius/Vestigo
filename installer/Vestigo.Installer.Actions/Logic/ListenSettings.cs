@@ -89,6 +89,22 @@ namespace Vestigo.Installer.Actions.Logic
         public bool RequireTokenValidation { get; }
     }
 
+    /// <summary>Maps a protected-settings listen radio choice onto the listen-mode override forwarded to the elevated write.</summary>
+    public sealed class ProtectedUiListenChoice
+    {
+        public ProtectedUiListenChoice(string listenMode, bool isExplicit)
+        {
+            ListenMode = listenMode;
+            IsExplicit = isExplicit;
+        }
+
+        /// <summary><see cref="ListenSettings.ListenAny" />, <see cref="ListenSettings.ListenLocalhost" />, or empty when the saved address is kept.</summary>
+        public string ListenMode { get; }
+
+        /// <summary>True when the operator chose an address mode and the saved address must not win.</summary>
+        public bool IsExplicit { get; }
+    }
+
     /// <summary>
     ///     Pure installer logic: mode mapping, validation, token generation, and the appsettings.json merge. It is compiled
     ///     into the net48 custom action assembly and into the test project.
@@ -102,6 +118,9 @@ namespace Vestigo.Installer.Actions.Logic
         public const string UiAuthKeep = "keep";
         public const string UiAuthReplace = "replace";
         public const string UiAuthNone = "none";
+        public const string UiListenKeep = "keep";
+        public const string UiListenAny = "any";
+        public const string UiListenLocalhost = "localhost";
         public const int DefaultPort = 5098;
         public const int MinimumTokenLength = 16;
         public const string LoopbackAddress = "127.0.0.1";
@@ -291,6 +310,41 @@ namespace Vestigo.Installer.Actions.Logic
             }
 
             return new ProtectedUiAuthChoice(AuthNone, false, false);
+        }
+
+        /// <summary>
+        ///     Initial listen radio for an unelevated wizard that cannot read the protected settings file.
+        ///     An explicit <see cref="ListenAny" /> or <see cref="ListenLocalhost" /> is kept; otherwise the saved address is kept.
+        /// </summary>
+        public static string ResolveProtectedUiListenMode(string? listenMode, bool listenModeIsExplicit)
+        {
+            if (!listenModeIsExplicit || string.IsNullOrWhiteSpace(listenMode))
+            {
+                return UiListenKeep;
+            }
+
+            string mode = Normalize(listenMode, "VESTIGO_LISTEN_MODE", UiListenKeep, ListenLocalhost, ListenAny);
+            return mode == ListenLocalhost ? UiListenLocalhost : UiListenAny;
+        }
+
+        /// <summary>
+        ///     Maps <see cref="UiListenKeep" />, <see cref="UiListenAny" />, or <see cref="UiListenLocalhost" /> onto the
+        ///     listen mode forwarded to the elevated write. Keep forwards no mode so the saved address wins.
+        /// </summary>
+        public static ProtectedUiListenChoice MapProtectedUiListen(string? uiMode)
+        {
+            string mode = Normalize(uiMode, "VESTIGO_LISTEN_UI_MODE", UiListenKeep, UiListenKeep, UiListenAny, UiListenLocalhost);
+            if (mode == UiListenKeep)
+            {
+                return new ProtectedUiListenChoice(string.Empty, false);
+            }
+
+            if (mode == UiListenAny)
+            {
+                return new ProtectedUiListenChoice(ListenAny, true);
+            }
+
+            return new ProtectedUiListenChoice(ListenLocalhost, true);
         }
 
         public static int ParsePort(string text)

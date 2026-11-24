@@ -72,12 +72,11 @@ Windows publish output is framework-dependent, ReadyToRun, and `win-x64`:
 .\build.ps1 PublishLocal
 ```
 
-On Windows, with WiX 5.0.2, `WixToolset.UI.wixext/5.0.2`, `WixToolset.Firewall.wixext/5.0.2`, `WixToolset.Netfx.wixext/5.0.2`, and `WixToolset.Util.wixext/5.0.2`:
+On Windows, with WiX 5.0.2, `WixToolset.UI.wixext/5.0.2`, `WixToolset.Netfx.wixext/5.0.2`, and `WixToolset.Util.wixext/5.0.2`:
 
 ```powershell
 dotnet tool install --global wix --version 5.0.2
 wix extension add -g WixToolset.UI.wixext/5.0.2
-wix extension add -g WixToolset.Firewall.wixext/5.0.2
 wix extension add -g WixToolset.Netfx.wixext/5.0.2
 wix extension add -g WixToolset.Util.wixext/5.0.2
 .\build.ps1 BuildInstaller
