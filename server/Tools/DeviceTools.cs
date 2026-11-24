@@ -426,7 +426,7 @@ public sealed class DeviceTools(INefconRunner nefcon, IDeviceControl devices, Ro
             if (!string.IsNullOrWhiteSpace(nameContains))
             {
                 query = query.Where(p => p.PublishedName.Contains(nameContains, StringComparison.OrdinalIgnoreCase)
-                    || p.OriginalInfName.Contains(nameContains, StringComparison.OrdinalIgnoreCase));
+                    || p.OriginalInfName?.Contains(nameContains, StringComparison.OrdinalIgnoreCase) == true);
             }
 
             if (!string.IsNullOrWhiteSpace(provider))

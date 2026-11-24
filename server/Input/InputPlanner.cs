@@ -62,10 +62,9 @@ public static class InputPlanner
             }
 
             InputStep timed = step.Value! with { HoldMilliseconds = hold, DelayAfterMilliseconds = delay };
-            step = OperationResult<InputStep>.Ok(timed);
             totalWait += timed.Milliseconds + (long)hold * timed.Count + delay;
-            totalChars += step.Value.Text?.Length ?? 0;
-            steps.Add(step.Value);
+            totalChars += timed.Text?.Length ?? 0;
+            steps.Add(timed);
         }
 
         if (totalWait > limits.MaxWaitMilliseconds)

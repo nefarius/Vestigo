@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -176,17 +177,17 @@ public sealed class LogonConsentStore(TimeProvider time, VestigoOptions options)
         return Peek(requestId);
     }
 
-    public bool TryOpen(string? id, string? ticket, out PendingConsent? pending, out string? errorCode, out string? error) =>
+    public bool TryOpen(string? id, string? ticket, [NotNullWhen(true)] out PendingConsent? pending, out string? errorCode, out string? error) =>
         TryOpen(id, ticket, claim: false, out pending, out errorCode, out error);
 
-    public bool TryBeginDecision(string? id, string? ticket, out PendingConsent? pending, out string? errorCode, out string? error) =>
+    public bool TryBeginDecision(string? id, string? ticket, [NotNullWhen(true)] out PendingConsent? pending, out string? errorCode, out string? error) =>
         TryOpen(id, ticket, claim: true, out pending, out errorCode, out error);
 
     private bool TryOpen(
         string? id,
         string? ticket,
         bool claim,
-        out PendingConsent? pending,
+        [NotNullWhen(true)] out PendingConsent? pending,
         out string? errorCode,
         out string? error)
     {

@@ -329,15 +329,18 @@ internal sealed class WindowsDesktopStation : IDisposable
 
     private bool TryGetOwned(DesktopCommand command, out CloseDesktopSafeHandle desktop, out DesktopCommandResult? failure)
     {
-        desktop = null!;
         failure = null;
-        if (!DesktopSessionPolicy.IsOwnedName(command.DesktopName) || !_owned.TryGetValue(command.DesktopName!, out desktop))
+        if (DesktopSessionPolicy.IsOwnedName(command.DesktopName)
+            && _owned.TryGetValue(command.DesktopName, out CloseDesktopSafeHandle? owned)
+            && owned is not null)
         {
-            failure = DesktopCommandResult.Fail(command.RequestId, "desktop_session_not_found", "This host does not hold that test desktop.");
-            return false;
+            desktop = owned;
+            return true;
         }
 
-        return true;
+        desktop = null!;
+        failure = DesktopCommandResult.Fail(command.RequestId, "desktop_session_not_found", "This host does not hold that test desktop.");
+        return false;
     }
 
     private bool EnsureOriginal(string inputName, out string? error, out int? native)
