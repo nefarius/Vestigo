@@ -287,6 +287,7 @@ namespace Vestigo.Installer.Actions
                 {
                     using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
                     {
+                        SaveFirewallRollback(store, session);
                         FirewallRuleSync.Sync(resolved, store, message => session.Log(message));
                     }
                 }
@@ -316,12 +317,65 @@ namespace Vestigo.Installer.Actions
             {
                 using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
                 {
+                    SaveFirewallRollback(store, session);
                     FirewallRuleSync.Remove(store, message => session.Log(message));
                 }
             }
             catch (Exception ex)
             {
                 session.Log("Could not remove the Windows Firewall rule: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            return ActionResult.Success;
+        }
+
+        /// <summary>
+        ///     Rollback, elevated. Restores the firewall rules recorded immediately before the install or uninstall change.
+        ///     A missing snapshot means this transaction did not change the rule.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult VestigoRollbackFirewallRule(Session session)
+        {
+            try
+            {
+                string path = FirewallRollbackPath();
+                if (!File.Exists(path))
+                {
+                    session.Log("No firewall rollback snapshot.");
+                    return ActionResult.Success;
+                }
+
+                string text = File.ReadAllText(path, Encoding.UTF8);
+                using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
+                {
+                    FirewallRuleSync.Restore(FirewallRuleSync.Deserialize(text), store, message => session.Log(message));
+                }
+
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not restore the Windows Firewall rule: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            return ActionResult.Success;
+        }
+
+        /// <summary>Commit, elevated. Drops the firewall rollback snapshot after the transaction succeeds.</summary>
+        [CustomAction]
+        public static ActionResult VestigoCommitFirewallRule(Session session)
+        {
+            try
+            {
+                string path = FirewallRollbackPath();
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not delete the firewall rollback snapshot: " + ex.GetType().Name + ": " + ex.Message);
             }
 
             return ActionResult.Success;
@@ -454,6 +508,40 @@ namespace Vestigo.Installer.Actions
             }
 
             return states;
+        }
+
+        private static string FirewallRollbackPath()
+        {
+            return Path.Combine(Path.GetTempPath(), "Vestigo-firewall-rule-rollback.txt");
+        }
+
+        /// <summary>
+        ///     Records the current Vestigo firewall rules before changing them. A failed write deletes a stale snapshot so a
+        ///     later rollback cannot restore the wrong rule.
+        /// </summary>
+        private static void SaveFirewallRollback(IFirewallRuleStore store, Session session)
+        {
+            string path = FirewallRollbackPath();
+            try
+            {
+                string text = FirewallRuleSync.Serialize(store.FindByName(FirewallRuleSync.RuleName));
+                File.WriteAllText(path, text, new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not record the firewall rule for rollback: " + ex.GetType().Name + ": " + ex.Message);
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        File.Delete(path);
+                    }
+                }
+                catch (Exception deleteEx)
+                {
+                    session.Log("Could not delete a stale firewall rollback snapshot: " + deleteEx.GetType().Name + ": " + deleteEx.Message);
+                }
+            }
         }
 
         /// <summary>True when FindRelatedProducts flagged an older version (set before AppSearch in both sequences).</summary>
@@ -1013,22 +1101,54 @@ namespace Vestigo.Installer.Actions
 
             private object TryItem(string name)
             {
-                try
+                object rule;
+                if (!TryItemCall(name, BindingFlags.GetProperty, out rule))
                 {
-                    return Invoke(_rules, "Item", new object[] { name }, BindingFlags.GetProperty);
-                }
-                catch (Exception ex) when (IsComFailure(ex))
-                {
+                    TryItemCall(name, BindingFlags.InvokeMethod, out rule);
                 }
 
+                return rule;
+            }
+
+            /// <summary>
+            ///     Returns true when the call produced an answer, including a missing rule. Returns false when this binding
+            ///     failed and the other binding should be tried. A missing-rule HRESULT is absence; other COM errors propagate
+            ///     from the method binding.
+            /// </summary>
+            private bool TryItemCall(string name, BindingFlags flags, out object rule)
+            {
+                rule = null;
                 try
                 {
-                    return Invoke(_rules, "Item", new object[] { name }, BindingFlags.InvokeMethod);
+                    rule = Invoke(_rules, "Item", new object[] { name }, flags);
+                    return true;
                 }
                 catch (Exception ex) when (IsComFailure(ex))
                 {
-                    return null;
+                    if (FirewallRuleSync.IsRuleMissing(ComError(ex)))
+                    {
+                        return true;
+                    }
+
+                    if (flags == BindingFlags.InvokeMethod)
+                    {
+                        throw;
+                    }
+
+                    return false;
                 }
+            }
+
+            private static int ComError(Exception ex)
+            {
+                COMException com = ex as COMException;
+                if (com == null)
+                {
+                    TargetInvocationException invocation = ex as TargetInvocationException;
+                    com = invocation == null ? null : invocation.InnerException as COMException;
+                }
+
+                return com == null ? 0 : com.ErrorCode;
             }
 
             private static object GetProperty(object target, string name)

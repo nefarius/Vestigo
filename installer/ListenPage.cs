@@ -22,6 +22,7 @@ static class ListenPage
     const string RootsAccessDialogId = "VestigoRootsAccessDlg";
     const string ErrorDialogId = "VestigoInputErrorDlg";
     const string NotRemoving = "NOT (REMOVE~=\"ALL\")";
+    const string NotUpgrading = "NOT UPGRADINGPRODUCTCODE";
     const string RemovingProduct = "NOT UPGRADINGPRODUCTCODE AND REMOVE~=\"ALL\"";
 
     static readonly XNamespace Wix = WixNamespace;
@@ -50,6 +51,8 @@ static class ListenPage
                 new XAttribute("Impersonate", "no"),
                 new XAttribute("Return", "check")),
             DeferredElevatedAction("VestigoRemoveFirewallRule"),
+            ElevatedScriptAction("VestigoRollbackFirewallRule", "rollback"),
+            ElevatedScriptAction("VestigoCommitFirewallRule", "commit"),
             ImmediateAction("VestigoPrepareCredentialProvider"),
             DeferredElevatedAction("VestigoDeployCredentialProvider"),
             DeferredElevatedAction("VestigoRemoveCredentialProvider"));
@@ -99,6 +102,8 @@ static class ListenPage
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving),
             Sequence("VestigoPrepareWriteSettings", "Before", "VestigoWriteSettings", NotRemoving),
             Sequence("VestigoWriteSettings", "Before", "StartServices", NotRemoving),
+            Sequence("VestigoRollbackFirewallRule", "Before", "VestigoRemoveFirewallRule", NotUpgrading),
+            Sequence("VestigoCommitFirewallRule", "Before", "VestigoRemoveFirewallRule", NotUpgrading),
             Sequence("VestigoRemoveFirewallRule", "Before", "RemoveFiles", RemovingProduct),
             Sequence("VestigoPrepareCredentialProvider", "After", "InstallInitialize", installingInteractive + " OR (" + removingInteractive + ")"),
             Sequence("VestigoRemoveCredentialProvider", "Before", "RemoveFiles", removingInteractive),
@@ -127,6 +132,16 @@ static class ListenPage
             new XAttribute("BinaryRef", BinaryId),
             new XAttribute("DllEntry", name),
             new XAttribute("Execute", "deferred"),
+            new XAttribute("Impersonate", "no"),
+            new XAttribute("Return", "check"));
+
+    static XElement ElevatedScriptAction(string name, string execute) =>
+        new(
+            Wix + "CustomAction",
+            new XAttribute("Id", name),
+            new XAttribute("BinaryRef", BinaryId),
+            new XAttribute("DllEntry", name),
+            new XAttribute("Execute", execute),
             new XAttribute("Impersonate", "no"),
             new XAttribute("Return", "check"));
 

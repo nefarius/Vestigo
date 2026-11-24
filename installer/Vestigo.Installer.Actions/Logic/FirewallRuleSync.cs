@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 
 namespace Vestigo.Installer.Actions.Logic
 {
@@ -68,6 +69,9 @@ namespace Vestigo.Installer.Actions.Logic
 
         public bool Fail { get; set; }
 
+        /// <summary>Number of following <see cref="Add" /> calls that throw. Find and remove still work.</summary>
+        public int FailAdds { get; set; }
+
         public string FailMessage { get; set; } = "firewall unavailable";
 
         public IReadOnlyList<FirewallRuleRecord> Rules
@@ -115,8 +119,13 @@ namespace Vestigo.Installer.Actions.Logic
 
         public void Add(FirewallRuleRecord rule)
         {
-            if (Fail)
+            if (Fail || FailAdds > 0)
             {
+                if (FailAdds > 0)
+                {
+                    FailAdds--;
+                }
+
                 throw new InvalidOperationException(FailMessage);
             }
 
@@ -153,31 +162,148 @@ namespace Vestigo.Installer.Actions.Logic
                 true);
         }
 
+        /// <summary>True for the HRESULTs Windows uses when a named firewall rule does not exist.</summary>
+        public static bool IsRuleMissing(int hresult)
+        {
+            int code = hresult & 0xFFFF;
+            return code == 2 || code == 1168;
+        }
+
         /// <summary>
-        ///     Removes every rule named <see cref="RuleName" />, then adds one inbound TCP rule when the server binds beyond loopback.
+        ///     Leaves one matching inbound rule when the server binds beyond loopback, or removes the rule for localhost.
+        ///     A failed replacement restores the rules that were present before the attempt.
         /// </summary>
         public static void Sync(ResolvedSettings resolved, IFirewallRuleStore store, Action<string>? log)
         {
             try
             {
-                int removed = RemoveAll(store, log);
-                if (resolved.BindsAny)
+                IReadOnlyList<FirewallRuleRecord> previous = Copy(store.FindByName(RuleName));
+                if (!resolved.BindsAny)
                 {
-                    store.Add(CreateRule(resolved.Port));
+                    int removed = RemoveAll(store, log);
+                    Write(log, "No inbound firewall rule for localhost mode after removing " +
+                               removed.ToString(CultureInfo.InvariantCulture) + ".");
+                    return;
+                }
+
+                FirewallRuleRecord desired = CreateRule(resolved.Port);
+                if (previous.Count == 1 && SameRule(previous[0], desired))
+                {
+                    Write(log, "Kept inbound firewall rule '" + RuleName + "' for TCP port " +
+                               resolved.Port.ToString(CultureInfo.InvariantCulture) + ".");
+                    return;
+                }
+
+                try
+                {
+                    int removed = RemoveAll(store, log);
+                    store.Add(desired);
                     Write(log, "Added inbound firewall rule '" + RuleName + "' for TCP port " +
                                resolved.Port.ToString(CultureInfo.InvariantCulture) +
                                " after removing " + removed.ToString(CultureInfo.InvariantCulture) + ".");
                 }
-                else
+                catch (Exception ex)
                 {
-                    Write(log, "No inbound firewall rule for localhost mode after removing " +
-                               removed.ToString(CultureInfo.InvariantCulture) + ".");
+                    Write(log, "Could not replace the Windows Firewall rule '" + RuleName + "': " +
+                               ex.GetType().Name + ": " + ex.Message + ". Restoring the previous rule.");
+                    Restore(previous, store, log);
                 }
             }
             catch (Exception ex)
             {
                 Write(log, "Could not update the Windows Firewall rule '" + RuleName + "': " + ex.GetType().Name + ": " + ex.Message);
             }
+        }
+
+        /// <summary>Replaces every rule named <see cref="RuleName" /> with <paramref name="previous" />.</summary>
+        public static void Restore(IReadOnlyList<FirewallRuleRecord> previous, IFirewallRuleStore store, Action<string>? log)
+        {
+            try
+            {
+                RemoveAll(store, log);
+                int restored = 0;
+                if (previous != null)
+                {
+                    foreach (FirewallRuleRecord rule in previous)
+                    {
+                        store.Add(rule);
+                        restored++;
+                    }
+                }
+
+                Write(log, "Restored " + restored.ToString(CultureInfo.InvariantCulture) +
+                           " firewall rule(s) named '" + RuleName + "'.");
+            }
+            catch (Exception ex)
+            {
+                Write(log, "Could not restore the Windows Firewall rule '" + RuleName + "': " + ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+
+        public static string Serialize(IReadOnlyList<FirewallRuleRecord> rules)
+        {
+            StringBuilder text = new StringBuilder();
+            if (rules == null)
+            {
+                return string.Empty;
+            }
+
+            foreach (FirewallRuleRecord rule in rules)
+            {
+                if (text.Length > 0)
+                {
+                    text.Append('\n');
+                }
+
+                text.Append(Escape(rule.Name)).Append('\t');
+                text.Append(Escape(rule.Description)).Append('\t');
+                text.Append(rule.Protocol.ToString(CultureInfo.InvariantCulture)).Append('\t');
+                text.Append(Escape(rule.LocalPorts)).Append('\t');
+                text.Append(Escape(rule.RemoteAddresses)).Append('\t');
+                text.Append(rule.Direction.ToString(CultureInfo.InvariantCulture)).Append('\t');
+                text.Append(rule.Action.ToString(CultureInfo.InvariantCulture)).Append('\t');
+                text.Append(rule.Profiles.ToString(CultureInfo.InvariantCulture)).Append('\t');
+                text.Append(rule.Enabled ? "1" : "0");
+            }
+
+            return text.ToString();
+        }
+
+        public static IReadOnlyList<FirewallRuleRecord> Deserialize(string text)
+        {
+            List<FirewallRuleRecord> rules = new List<FirewallRuleRecord>();
+            if (string.IsNullOrEmpty(text))
+            {
+                return rules;
+            }
+
+            string[] lines = text.Split('\n');
+            foreach (string line in lines)
+            {
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+
+                string[] fields = line.Split('\t');
+                if (fields.Length != 9)
+                {
+                    throw new FormatException("Firewall rollback snapshot is invalid.");
+                }
+
+                rules.Add(new FirewallRuleRecord(
+                    Unescape(fields[0]),
+                    Unescape(fields[1]),
+                    int.Parse(fields[2], CultureInfo.InvariantCulture),
+                    Unescape(fields[3]),
+                    Unescape(fields[4]),
+                    int.Parse(fields[5], CultureInfo.InvariantCulture),
+                    int.Parse(fields[6], CultureInfo.InvariantCulture),
+                    int.Parse(fields[7], CultureInfo.InvariantCulture),
+                    fields[8] == "1"));
+            }
+
+            return rules;
         }
 
         /// <summary>Removes every rule named <see cref="RuleName" />. Used on uninstall.</summary>
@@ -225,6 +351,74 @@ namespace Vestigo.Installer.Actions.Logic
             {
                 log(message);
             }
+        }
+
+        private static IReadOnlyList<FirewallRuleRecord> Copy(IReadOnlyList<FirewallRuleRecord> rules)
+        {
+            List<FirewallRuleRecord> copy = new List<FirewallRuleRecord>();
+            if (rules == null)
+            {
+                return copy;
+            }
+
+            foreach (FirewallRuleRecord rule in rules)
+            {
+                copy.Add(rule);
+            }
+
+            return copy;
+        }
+
+        private static bool SameRule(FirewallRuleRecord left, FirewallRuleRecord right)
+        {
+            return string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+                   string.Equals(left.Description, right.Description, StringComparison.Ordinal) &&
+                   left.Protocol == right.Protocol &&
+                   string.Equals(left.LocalPorts, right.LocalPorts, StringComparison.Ordinal) &&
+                   string.Equals(left.RemoteAddresses, right.RemoteAddresses, StringComparison.Ordinal) &&
+                   left.Direction == right.Direction &&
+                   left.Action == right.Action &&
+                   left.Profiles == right.Profiles &&
+                   left.Enabled == right.Enabled;
+        }
+
+        private static string Escape(string value)
+        {
+            return (value ?? string.Empty).Replace("\\", "\\\\").Replace("\t", "\\t").Replace("\r", "\\r").Replace("\n", "\\n");
+        }
+
+        private static string Unescape(string value)
+        {
+            StringBuilder text = new StringBuilder(value.Length);
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (value[i] == '\\' && i + 1 < value.Length)
+                {
+                    char next = value[++i];
+                    if (next == 't')
+                    {
+                        text.Append('\t');
+                    }
+                    else if (next == 'r')
+                    {
+                        text.Append('\r');
+                    }
+                    else if (next == 'n')
+                    {
+                        text.Append('\n');
+                    }
+                    else
+                    {
+                        text.Append(next);
+                    }
+                }
+                else
+                {
+                    text.Append(value[i]);
+                }
+            }
+
+            return text.ToString();
         }
     }
 }

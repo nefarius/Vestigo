@@ -222,8 +222,9 @@ namespace Vestigo.Installer.Actions.Logic
             session.Set(ErrorProperty, string.Empty);
             try
             {
-                bool protectedUi = settingsProtected || session.Get(ProtectedProperty) == "1";
-                ExistingSettings? existing = protectedUi ? null : ListenSettings.ReadExisting(settingsJson);
+                // Load chooses the access page. A later unreadable file must not switch that page's controls.
+                bool protectedUi = session.Get(ProtectedProperty) == "1";
+                ExistingSettings? existing = protectedUi || settingsProtected ? null : ListenSettings.ReadExisting(settingsJson);
                 string token = session.Get(TokenProperty);
                 bool suggestion = !IsBlank(token) &&
                                   string.Equals(token, session.Get(SuggestedProperty), StringComparison.Ordinal);
@@ -267,8 +268,19 @@ namespace Vestigo.Installer.Actions.Logic
                 }
                 else
                 {
-                    session.Set(ListenModeProperty, resolved.ListenMode);
-                    session.Set(PortProperty, resolved.Port.ToString(CultureInfo.InvariantCulture));
+                    string listenMode = resolved.ListenMode;
+                    string port = resolved.Port.ToString(CultureInfo.InvariantCulture);
+                    session.Set(ListenModeProperty, listenMode);
+                    session.Set(PortProperty, port);
+                    if (!listenExplicit)
+                    {
+                        session.Set(ListenModePrefillProperty, listenMode);
+                    }
+
+                    if (!portExplicit)
+                    {
+                        session.Set(PortPrefillProperty, port);
+                    }
                 }
             }
             catch (ArgumentException ex)

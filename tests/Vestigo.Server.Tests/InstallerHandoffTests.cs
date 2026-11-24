@@ -326,6 +326,101 @@ public class InstallerHandoffTests
     }
 
     [Fact]
+    public void FirewallSync_KeepsThePreviousRuleWhenReplacementFails()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        MemoryFirewallRuleStore store = new();
+        store.Add(FirewallRuleSync.CreateRule(5098));
+        store.FailAdds = 1;
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        AssertRule(store, 5098);
+        Assert.Contains(log, line => line.Contains("Restoring the previous rule", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.Contains("Restored 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FirewallSync_LeavesAnExactRuleInPlace()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        MemoryFirewallRuleStore store = new();
+        store.Add(FirewallRuleSync.CreateRule(6000));
+        store.FailAdds = 1;
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        AssertRule(store, 6000);
+        Assert.Contains(log, line => line.Contains("Kept inbound firewall rule", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FirewallRollback_RoundTripsThePreviousRules()
+    {
+        FirewallRuleRecord first = FirewallRuleSync.CreateRule(6000);
+        FirewallRuleRecord second = FirewallRuleSync.CreateRule(5098);
+        string snapshot = FirewallRuleSync.Serialize(new[] { first, second });
+        IReadOnlyList<FirewallRuleRecord> restored = FirewallRuleSync.Deserialize(snapshot);
+        Assert.Equal(2, restored.Count);
+        Assert.Equal("6000", restored[0].LocalPorts);
+        Assert.Equal("5098", restored[1].LocalPorts);
+
+        MemoryFirewallRuleStore store = new();
+        store.Add(FirewallRuleSync.CreateRule(1));
+        FirewallRuleSync.Restore(restored, store, _ => { });
+        Assert.Equal(2, store.Rules.Count);
+        Assert.Equal("6000", store.Rules[0].LocalPorts);
+        Assert.Equal("5098", store.Rules[1].LocalPorts);
+        Assert.True(FirewallRuleSync.IsRuleMissing(unchecked((int)0x80070002)));
+        Assert.True(FirewallRuleSync.IsRuleMissing(unchecked((int)0x80070490)));
+        Assert.False(FirewallRuleSync.IsRuleMissing(unchecked((int)0x800706D9)));
+    }
+
+    [Fact]
+    public void Apply_KeepsEditableLocalhostWhenTheNextReadIsProtected()
+    {
+        DictionaryInstallerProperties properties = new();
+        string json = Settings("192.168.1.5", 6000);
+        SettingsHandoff.Load(properties, json, false, true, false, null);
+        properties.Set(SettingsHandoff.ListenModeProperty, ListenSettings.ListenLocalhost);
+        SettingsHandoff.Apply(properties, null, true, true, false);
+
+        Assert.True(string.IsNullOrEmpty(properties.Get(SettingsHandoff.ErrorProperty)));
+        Assert.Equal("1", properties.Get(SettingsHandoff.ListenModeExplicitProperty));
+        Assert.Equal(ListenSettings.ListenLocalhost, properties.Get(SettingsHandoff.ListenModeProperty));
+        Assert.Equal("0", properties.Get(SettingsHandoff.PortExplicitProperty));
+        Dictionary<string, string> data = SettingsHandoff.Prepare(properties, true, false, string.Empty);
+        ResolvedSettings resolved = SettingsHandoff.ResolveWrite(data, ListenSettings.ReadExisting(json));
+        ExistingSettings saved = ListenSettings.ReadExisting(ListenSettings.Merge(json, resolved))!;
+        Assert.Equal("127.0.0.1", saved.Address);
+        Assert.Equal(6000, saved.Port);
+    }
+
+    [Fact]
+    public void Apply_RefreshesPrefillWhenAnUntouchedPortChangesOnDisk()
+    {
+        DictionaryInstallerProperties properties = new();
+        SettingsHandoff.Load(properties, Settings("192.168.1.5", 6000), false, true, false, null);
+        SettingsHandoff.Apply(properties, Settings("192.168.1.5", 7000), false, true, false);
+        Assert.Equal("0", properties.Get(SettingsHandoff.PortExplicitProperty));
+        Assert.Equal("7000", properties.Get(SettingsHandoff.PortProperty));
+        Assert.Equal("7000", properties.Get(SettingsHandoff.PortPrefillProperty));
+
+        SettingsHandoff.Apply(properties, Settings("192.168.1.5", 8000), false, true, false);
+        Assert.Equal("0", properties.Get(SettingsHandoff.PortExplicitProperty));
+        Assert.Equal("8000", properties.Get(SettingsHandoff.PortProperty));
+        Dictionary<string, string> data = SettingsHandoff.Prepare(properties, true, false, string.Empty);
+        Assert.Equal(string.Empty, data[SettingsHandoff.DataPort]);
+        string json = Settings("192.168.1.5", 8000);
+        ResolvedSettings resolved = SettingsHandoff.ResolveWrite(data, ListenSettings.ReadExisting(json));
+        ExistingSettings saved = ListenSettings.ReadExisting(ListenSettings.Merge(json, resolved))!;
+        Assert.Equal("192.168.1.5", saved.Address);
+        Assert.Equal(8000, saved.Port);
+    }
+
+    [Fact]
     public void Describe_OmitsTheApiToken()
     {
         DictionaryInstallerProperties properties = new();
@@ -365,6 +460,11 @@ public class InstallerHandoffTests
         Assert.Contains("Keep existing listen address (recommended)", listen, StringComparison.Ordinal);
         Assert.Contains("const string RemovingProduct = \"NOT UPGRADINGPRODUCTCODE AND REMOVE~=\\\"ALL\\\"\"", listen, StringComparison.Ordinal);
         Assert.Contains("Sequence(\"VestigoRemoveFirewallRule\", \"Before\", \"RemoveFiles\", RemovingProduct)", listen, StringComparison.Ordinal);
+        Assert.Contains("const string NotUpgrading = \"NOT UPGRADINGPRODUCTCODE\"", listen, StringComparison.Ordinal);
+        Assert.Contains("Sequence(\"VestigoRollbackFirewallRule\", \"Before\", \"VestigoRemoveFirewallRule\", NotUpgrading)", listen, StringComparison.Ordinal);
+        Assert.Contains("Sequence(\"VestigoCommitFirewallRule\", \"Before\", \"VestigoRemoveFirewallRule\", NotUpgrading)", listen, StringComparison.Ordinal);
+        Assert.Contains("VestigoRollbackFirewallRule", actions, StringComparison.Ordinal);
+        Assert.Contains("VestigoCommitFirewallRule", actions, StringComparison.Ordinal);
         Assert.DoesNotContain("WixExtension.Fire", listen, StringComparison.Ordinal);
         Assert.DoesNotContain("FirewallException", listen, StringComparison.Ordinal);
         Assert.Contains("FirewallRuleSync.Sync", actions, StringComparison.Ordinal);
