@@ -1013,7 +1013,12 @@ namespace Vestigo.Installer.Actions
                     SetProperty(comRule, "Direction", rule.Direction);
                     SetProperty(comRule, "Action", rule.Action);
                     SetProperty(comRule, "Profiles", rule.Profiles);
-                    SetProperty(comRule, "InterfaceTypes", "All");
+                    SetProperty(comRule, "InterfaceTypes", rule.InterfaceTypes);
+                    SetProperty(comRule, "LocalAddresses", rule.LocalAddresses);
+                    SetProperty(comRule, "ApplicationName", rule.ApplicationName);
+                    SetProperty(comRule, "ServiceName", rule.ServiceName);
+                    SetProperty(comRule, "RemotePorts", rule.RemotePorts);
+                    SetProperty(comRule, "EdgeTraversal", rule.EdgeTraversal);
                     SetProperty(comRule, "Enabled", rule.Enabled);
                     Invoke(_rules, "Add", new object[] { comRule }, BindingFlags.InvokeMethod);
                 }
@@ -1040,7 +1045,13 @@ namespace Vestigo.Installer.Actions
                     GetInt(rule, "Direction"),
                     GetInt(rule, "Action"),
                     GetInt(rule, "Profiles"),
-                    GetBool(rule, "Enabled"));
+                    GetBool(rule, "Enabled"),
+                    GetString(rule, "InterfaceTypes"),
+                    GetString(rule, "LocalAddresses"),
+                    GetString(rule, "ApplicationName"),
+                    GetString(rule, "ServiceName"),
+                    GetString(rule, "RemotePorts"),
+                    GetBool(rule, "EdgeTraversal"));
             }
 
             private bool TryCollectByName(string name, List<FirewallRuleRecord> found)

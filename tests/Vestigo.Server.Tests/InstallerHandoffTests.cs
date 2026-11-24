@@ -357,6 +357,74 @@ public class InstallerHandoffTests
     }
 
     [Fact]
+    public void FirewallSync_ReplacesARuleLimitedToWireless()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        FirewallRuleRecord kept = FirewallRuleSync.CreateRule(6000);
+        FirewallRuleRecord wireless = new(
+            kept.Name,
+            kept.Description,
+            kept.Protocol,
+            kept.LocalPorts,
+            kept.RemoteAddresses,
+            kept.Direction,
+            kept.Action,
+            kept.Profiles,
+            kept.Enabled,
+            "Wireless",
+            kept.LocalAddresses,
+            kept.ApplicationName,
+            kept.ServiceName,
+            kept.RemotePorts,
+            kept.EdgeTraversal);
+        MemoryFirewallRuleStore store = new();
+        store.Add(wireless);
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        AssertRule(store, 6000);
+        Assert.DoesNotContain(log, line => line.Contains("Kept inbound firewall rule", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FirewallRollback_RestoresInterfaceAndProgramRestrictions()
+    {
+        FirewallRuleRecord restricted = new(
+            FirewallRuleSync.RuleName,
+            FirewallRuleSync.RuleDescription,
+            FirewallRuleSync.ProtocolTcp,
+            "6000",
+            "10.0.0.0/8",
+            FirewallRuleSync.DirectionInbound,
+            FirewallRuleSync.ActionAllow,
+            FirewallRuleSync.ProfilesAll,
+            true,
+            "Wireless",
+            "192.168.1.5",
+            "C:\\Program Files\\Vestigo\\Vestigo.Server.exe",
+            "Vestigo",
+            "1024-65535",
+            true);
+        IReadOnlyList<FirewallRuleRecord> restored = FirewallRuleSync.Deserialize(FirewallRuleSync.Serialize(new[] { restricted }));
+        FirewallRuleRecord rule = Assert.Single(restored);
+        Assert.Equal("Wireless", rule.InterfaceTypes);
+        Assert.Equal("192.168.1.5", rule.LocalAddresses);
+        Assert.Equal("C:\\Program Files\\Vestigo\\Vestigo.Server.exe", rule.ApplicationName);
+        Assert.Equal("Vestigo", rule.ServiceName);
+        Assert.Equal("1024-65535", rule.RemotePorts);
+        Assert.True(rule.EdgeTraversal);
+
+        MemoryFirewallRuleStore store = new();
+        store.Add(FirewallRuleSync.CreateRule(1));
+        FirewallRuleSync.Restore(restored, store, _ => { });
+        FirewallRuleRecord saved = Assert.Single(store.Rules);
+        Assert.Equal("Wireless", saved.InterfaceTypes);
+        Assert.Equal("192.168.1.5", saved.LocalAddresses);
+        Assert.Equal(restricted.ApplicationName, saved.ApplicationName);
+    }
+
+    [Fact]
     public void FirewallRollback_RoundTripsThePreviousRules()
     {
         FirewallRuleRecord first = FirewallRuleSync.CreateRule(6000);
@@ -548,6 +616,12 @@ public class InstallerHandoffTests
         Assert.Equal(FirewallRuleSync.ActionAllow, rule.Action);
         Assert.Equal(FirewallRuleSync.ProfilesAll, rule.Profiles);
         Assert.True(rule.Enabled);
+        Assert.Equal(FirewallRuleSync.InterfaceTypesAll, rule.InterfaceTypes);
+        Assert.Equal(FirewallRuleSync.LocalAddressesAny, rule.LocalAddresses);
+        Assert.Equal(string.Empty, rule.ApplicationName);
+        Assert.Equal(string.Empty, rule.ServiceName);
+        Assert.Equal(string.Empty, rule.RemotePorts);
+        Assert.False(rule.EdgeTraversal);
     }
 
     private static void AssertNoRule(MemoryFirewallRuleStore store) => Assert.Empty(store.Rules);

@@ -18,7 +18,13 @@ namespace Vestigo.Installer.Actions.Logic
             int direction,
             int action,
             int profiles,
-            bool enabled)
+            bool enabled,
+            string interfaceTypes,
+            string localAddresses,
+            string applicationName,
+            string serviceName,
+            string remotePorts,
+            bool edgeTraversal)
         {
             Name = name;
             Description = description;
@@ -29,6 +35,12 @@ namespace Vestigo.Installer.Actions.Logic
             Action = action;
             Profiles = profiles;
             Enabled = enabled;
+            InterfaceTypes = interfaceTypes ?? string.Empty;
+            LocalAddresses = localAddresses ?? string.Empty;
+            ApplicationName = applicationName ?? string.Empty;
+            ServiceName = serviceName ?? string.Empty;
+            RemotePorts = remotePorts ?? string.Empty;
+            EdgeTraversal = edgeTraversal;
         }
 
         public string Name { get; }
@@ -48,6 +60,19 @@ namespace Vestigo.Installer.Actions.Logic
         public int Profiles { get; }
 
         public bool Enabled { get; }
+
+        /// <summary>Interface types such as <c>All</c> or <c>Wireless</c>. A restored rule keeps the captured value.</summary>
+        public string InterfaceTypes { get; }
+
+        public string LocalAddresses { get; }
+
+        public string ApplicationName { get; }
+
+        public string ServiceName { get; }
+
+        public string RemotePorts { get; }
+
+        public bool EdgeTraversal { get; }
     }
 
     /// <summary>
@@ -146,6 +171,8 @@ namespace Vestigo.Installer.Actions.Logic
         public const int ActionAllow = 1;
         public const int ProfilesAll = 0x7FFFFFFF;
         public const string RemoteAny = "*";
+        public const string InterfaceTypesAll = "All";
+        public const string LocalAddressesAny = "*";
         public const int MaxRemovals = 32;
 
         public static FirewallRuleRecord CreateRule(int port)
@@ -159,7 +186,13 @@ namespace Vestigo.Installer.Actions.Logic
                 DirectionInbound,
                 ActionAllow,
                 ProfilesAll,
-                true);
+                true,
+                InterfaceTypesAll,
+                LocalAddressesAny,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                false);
         }
 
         /// <summary>True for the HRESULTs Windows uses when a named firewall rule does not exist.</summary>
@@ -263,7 +296,13 @@ namespace Vestigo.Installer.Actions.Logic
                 text.Append(rule.Direction.ToString(CultureInfo.InvariantCulture)).Append('\t');
                 text.Append(rule.Action.ToString(CultureInfo.InvariantCulture)).Append('\t');
                 text.Append(rule.Profiles.ToString(CultureInfo.InvariantCulture)).Append('\t');
-                text.Append(rule.Enabled ? "1" : "0");
+                text.Append(rule.Enabled ? "1" : "0").Append('\t');
+                text.Append(Escape(rule.InterfaceTypes)).Append('\t');
+                text.Append(Escape(rule.LocalAddresses)).Append('\t');
+                text.Append(Escape(rule.ApplicationName)).Append('\t');
+                text.Append(Escape(rule.ServiceName)).Append('\t');
+                text.Append(Escape(rule.RemotePorts)).Append('\t');
+                text.Append(rule.EdgeTraversal ? "1" : "0");
             }
 
             return text.ToString();
@@ -286,7 +325,7 @@ namespace Vestigo.Installer.Actions.Logic
                 }
 
                 string[] fields = line.Split('\t');
-                if (fields.Length != 9)
+                if (fields.Length != 15)
                 {
                     throw new FormatException("Firewall rollback snapshot is invalid.");
                 }
@@ -300,7 +339,13 @@ namespace Vestigo.Installer.Actions.Logic
                     int.Parse(fields[5], CultureInfo.InvariantCulture),
                     int.Parse(fields[6], CultureInfo.InvariantCulture),
                     int.Parse(fields[7], CultureInfo.InvariantCulture),
-                    fields[8] == "1"));
+                    fields[8] == "1",
+                    Unescape(fields[9]),
+                    Unescape(fields[10]),
+                    Unescape(fields[11]),
+                    Unescape(fields[12]),
+                    Unescape(fields[13]),
+                    fields[14] == "1"));
             }
 
             return rules;
@@ -379,7 +424,13 @@ namespace Vestigo.Installer.Actions.Logic
                    left.Direction == right.Direction &&
                    left.Action == right.Action &&
                    left.Profiles == right.Profiles &&
-                   left.Enabled == right.Enabled;
+                   left.Enabled == right.Enabled &&
+                   string.Equals(left.InterfaceTypes, right.InterfaceTypes, StringComparison.Ordinal) &&
+                   string.Equals(left.LocalAddresses, right.LocalAddresses, StringComparison.Ordinal) &&
+                   string.Equals(left.ApplicationName, right.ApplicationName, StringComparison.Ordinal) &&
+                   string.Equals(left.ServiceName, right.ServiceName, StringComparison.Ordinal) &&
+                   string.Equals(left.RemotePorts, right.RemotePorts, StringComparison.Ordinal) &&
+                   left.EdgeTraversal == right.EdgeTraversal;
         }
 
         private static string Escape(string value)
