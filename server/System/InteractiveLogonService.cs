@@ -27,11 +27,11 @@ public sealed class InteractiveLogonService(
 
         if (!dispatcher.ProviderInstalled)
         {
-            notes.Add("The MSI Interactive logon feature is not installed.");
+            notes.Add("The Credential Provider DLL is not staged in the installation directory.");
         }
         else if (!dispatcher.ProviderRegistered)
         {
-            notes.Add("The Credential Provider DLL is present but not registered for LogonUI.");
+            notes.Add("The Credential Provider DLL is staged but not registered for LogonUI. Enable the MSI Interactive logon feature.");
         }
 
         if (options.System.AllowInteractiveLogon && dispatcher.ProviderRegistered && !dispatcher.LogonUiConnected)
