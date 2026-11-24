@@ -123,6 +123,8 @@ public class InstallerSettingsTests
     [InlineData(ListenSettings.AuthNone, null, false, false, ListenSettings.UiAuthNone)]
     [InlineData(ListenSettings.AuthToken, null, false, true, ListenSettings.UiAuthKeep)]
     [InlineData(null, LongToken, false, false, ListenSettings.UiAuthReplace)]
+    [InlineData(null, LongToken, false, true, ListenSettings.UiAuthReplace)]
+    [InlineData(ListenSettings.AuthNone, LongToken, false, false, ListenSettings.UiAuthNone)]
     [InlineData(null, LongToken, true, false, ListenSettings.UiAuthKeep)]
     public void ResolveProtectedUiAuthMode_ChoosesKeepReplaceOrNone(
         string? authMode,
@@ -285,6 +287,18 @@ public class InstallerSettingsTests
         ExistingSettings read = ListenSettings.ReadExisting(merged)!;
         Assert.Equal("192.168.1.5", read.Address);
         Assert.Equal(["other-token-value", LongToken], read.Tokens);
+    }
+
+    [Fact]
+    public void Merge_ReplaceApiTokensRewritesListEvenWhenTokenAlreadyPresent()
+    {
+        const string existing = """{ "Vestigo": { "ListenAddress": "0.0.0.0", "ListenPort": 5098, "ApiTokens": ["other-token-value", "0123456789abcdefghij"] } }""";
+        ExistingSettings parsed = ListenSettings.ReadExisting(existing)!;
+        ResolvedSettings keep = ListenSettings.Resolve("any", "token", "5098", LongToken, parsed);
+        ResolvedSettings replace = ListenSettings.Resolve("any", "token", "5098", LongToken, parsed, replaceApiTokens: true);
+
+        Assert.Equal(["other-token-value", LongToken], ListenSettings.ReadExisting(ListenSettings.Merge(existing, keep))!.Tokens);
+        Assert.Equal([LongToken], ListenSettings.ReadExisting(ListenSettings.Merge(existing, replace))!.Tokens);
     }
 
     [Fact]

@@ -30,13 +30,20 @@ namespace Vestigo.Installer.Actions.Logic
     /// <summary>Validated installer choices, ready to be written to appsettings.json.</summary>
     public sealed class ResolvedSettings
     {
-        public ResolvedSettings(string listenMode, string authMode, int port, string token, string? existingAddress)
+        public ResolvedSettings(
+            string listenMode,
+            string authMode,
+            int port,
+            string token,
+            string? existingAddress,
+            bool replaceApiTokens = false)
         {
             ListenMode = listenMode;
             AuthMode = authMode;
             Port = port;
             Token = token;
             ExistingAddress = existingAddress;
+            ReplaceApiTokens = replaceApiTokens;
         }
 
         /// <summary><see cref="ListenSettings.ListenLocalhost" /> or <see cref="ListenSettings.ListenAny" />.</summary>
@@ -52,6 +59,12 @@ namespace Vestigo.Installer.Actions.Logic
 
         /// <summary>Address already in the file; kept when it still matches <see cref="ListenMode" />.</summary>
         public string? ExistingAddress { get; }
+
+        /// <summary>
+        ///     True when <c>ApiTokens</c> must become a singleton of <see cref="Token" />, even if that value is
+        ///     already in the existing list.
+        /// </summary>
+        public bool ReplaceApiTokens { get; }
 
         public bool BindsAny => ListenMode == ListenSettings.ListenAny;
     }
@@ -181,7 +194,8 @@ namespace Vestigo.Installer.Actions.Logic
             string? token,
             ExistingSettings? existing,
             bool tokenIsSuggestion = false,
-            bool isUpgrade = false)
+            bool isUpgrade = false,
+            bool replaceApiTokens = false)
         {
             string? mappedListen = null;
             string? mappedAuth = null;
@@ -223,7 +237,7 @@ namespace Vestigo.Installer.Actions.Logic
                 resolvedToken = requested;
             }
 
-            return new ResolvedSettings(listen, auth, port, resolvedToken, existing?.Address);
+            return new ResolvedSettings(listen, auth, port, resolvedToken, existing?.Address, replaceApiTokens);
         }
 
         /// <summary>
@@ -237,6 +251,13 @@ namespace Vestigo.Installer.Actions.Logic
             bool tokenIsSuggestion,
             bool isUpgrade)
         {
+            string? explicitAuth = authMode?.Trim();
+            if (!string.IsNullOrEmpty(explicitAuth) &&
+                string.Equals(explicitAuth, AuthNone, StringComparison.OrdinalIgnoreCase))
+            {
+                return UiAuthNone;
+            }
+
             string requested = (token ?? string.Empty).Trim();
             if (requested.Length > 0 && !tokenIsSuggestion)
             {
@@ -308,7 +329,8 @@ namespace Vestigo.Installer.Actions.Logic
 
         /// <summary>
         ///     Writes <c>Vestigo:ListenAddress</c>, <c>ListenPort</c>, and <c>ApiTokens</c> into the settings JSON and keeps
-        ///     everything else. Existing tokens are kept untouched when the chosen token is already among them.
+        ///     everything else. Existing tokens are kept untouched when the chosen token is already among them,
+        ///     unless <see cref="ResolvedSettings.ReplaceApiTokens" /> is set.
         ///     Optional <paramref name="modules" /> and <paramref name="roots" /> write those installer-owned keys too.
         /// </summary>
         /// <param name="existingJson">Current file contents, or null/blank for a new file. Throws <see cref="FormatException" /> when unparseable.</param>
@@ -346,7 +368,8 @@ namespace Vestigo.Installer.Actions.Logic
 
             if (settings.AuthMode == AuthToken)
             {
-                bool keep = vestigo.TryGetIgnoreCase("ApiTokens", out JsonNode? current) && current is JsonArray list &&
+                bool keep = !settings.ReplaceApiTokens &&
+                            vestigo.TryGetIgnoreCase("ApiTokens", out JsonNode? current) && current is JsonArray list &&
                             list.Any(item => item.StringValue() is string text && string.Equals(text, settings.Token, StringComparison.Ordinal));
                 if (!keep)
                 {

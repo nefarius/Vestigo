@@ -23,7 +23,8 @@ namespace Vestigo.Installer.Actions
     ///     VESTIGO_INPUT_ERROR (dialog validation text),
     ///     VESTIGO_TOKEN_SUGGESTED (auto-generated token the user may not have edited),
     ///     VESTIGO_SETTINGS_PROTECTED (settings file exists but is unreadable before elevation),
-    ///     VESTIGO_AUTH_UI_MODE (keep / replace / none when settings are protected).
+    ///     VESTIGO_AUTH_UI_MODE (keep / replace / none when settings are protected),
+    ///     VESTIGO_VALIDATE_TOKEN (1 when Next must reject an empty replace-token field).
     /// </summary>
     public static class CustomActions
     {
@@ -39,6 +40,7 @@ namespace Vestigo.Installer.Actions
         private const string SuggestedProperty = "VESTIGO_TOKEN_SUGGESTED";
         private const string ProtectedProperty = "VESTIGO_SETTINGS_PROTECTED";
         private const string AuthUiModeProperty = "VESTIGO_AUTH_UI_MODE";
+        private const string ValidateTokenProperty = "VESTIGO_VALIDATE_TOKEN";
         private const string WriteDataProperty = "VestigoWriteSettings";
         private const string DeployCredentialProviderProperty = "VestigoDeployCredentialProvider";
         private const string RemoveCredentialProviderProperty = "VestigoRemoveCredentialProvider";
@@ -280,6 +282,10 @@ namespace Vestigo.Installer.Actions
                                       string.Equals(session[TokenProperty], session[SuggestedProperty], StringComparison.Ordinal);
                     data["TokenIsSuggestion"] = suggestion ? "1" : "0";
                 }
+                data["ReplaceApiTokens"] = session[ProtectedProperty] == "1" &&
+                                           string.Equals(session[AuthUiModeProperty], ListenSettings.UiAuthReplace, StringComparison.OrdinalIgnoreCase)
+                    ? "1"
+                    : "0";
                 data["RootsMode"] = session[RootsModeProperty];
                 data["RootsAccess"] = session[RootsAccessProperty];
                 data["RootsAccessExplicit"] = AccessIsExplicit(session) ? "1" : "0";
@@ -318,7 +324,8 @@ namespace Vestigo.Installer.Actions
                     data["Port"],
                     data["Token"],
                     existing,
-                    data["TokenIsSuggestion"] == "1");
+                    data["TokenIsSuggestion"] == "1",
+                    replaceApiTokens: data["ReplaceApiTokens"] == "1");
                 IDictionary<string, bool> modules = ModuleSelection.Parse(data["Modules"]);
                 ResolvedRootSettings roots = RootSettings.Resolve(
                     data["RootsMode"],
@@ -634,9 +641,16 @@ namespace Vestigo.Installer.Actions
                 return;
             }
 
+            bool enforceToken = session[ValidateTokenProperty] == "1";
             if (string.IsNullOrWhiteSpace(token))
             {
-                throw new ArgumentException("Enter an API token or choose to keep the existing one.");
+                if (enforceToken)
+                {
+                    throw new ArgumentException("Enter an API token or choose to keep the existing one.");
+                }
+
+                token = ListenSettings.GenerateToken();
+                return;
             }
 
             token = token.Trim();

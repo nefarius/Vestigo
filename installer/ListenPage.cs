@@ -64,7 +64,8 @@ static class ListenPage
             SecureProperty("VESTIGO_ROOTS_MODE", null),
             SecureProperty("VESTIGO_ROOTS_ACCESS", null),
             SecureProperty("VESTIGO_SETTINGS_PROTECTED", null),
-            SecureProperty("VESTIGO_AUTH_UI_MODE", null));
+            SecureProperty("VESTIGO_AUTH_UI_MODE", null),
+            SecureProperty("VESTIGO_VALIDATE_TOKEN", null));
         foreach (string name in ModuleSelection.All.Select(m => m.PropertyName))
         {
             package.Add(SecureProperty(name, null));
@@ -239,7 +240,7 @@ static class ListenPage
         const string showTokenNote = notProtected + " AND NOT (" + noToken + ")";
         const string showKeepNote = settingsProtected + " AND " + uiKeep;
         const string showReplaceNote = settingsProtected + " AND " + uiReplace;
-        const string showingNone = "(" + notProtected + " AND " + noToken + ") OR (" + settingsProtected + " AND " + uiNone + ")";
+        const string showingNone = "((" + notProtected + " AND " + noToken + ") OR (" + settingsProtected + " AND " + uiNone + "))";
 
         XElement accessDialog = WizardDialog(
             AccessDialogId,
@@ -273,7 +274,7 @@ static class ListenPage
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
                 listenLocalhost));
-        WireNavigation(accessDialog, "LicenseAgreementDlg", AuthDialogId);
+        WireNavigation(accessDialog, "LicenseAgreementDlg", AuthDialogId, validateToken: false);
 
         XElement authDialog = WizardDialog(
             AuthDialogId,
@@ -492,12 +493,13 @@ static class ListenPage
         return dialog;
     }
 
-    static void WireNavigation(XElement dialog, string backDialog, string nextDialog)
+    static void WireNavigation(XElement dialog, string backDialog, string nextDialog, bool validateToken = true)
     {
         dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Next").Add(
-            Publish("DoAction", "VestigoApplyUiChoice", 1, null),
-            Publish("SpawnDialog", ErrorDialogId, 2, "VESTIGO_INPUT_ERROR <> \"\""),
-            Publish("NewDialog", nextDialog, 3, "VESTIGO_INPUT_ERROR = \"\""));
+            PublishProperty("VESTIGO_VALIDATE_TOKEN", validateToken ? "1" : "0", 1),
+            Publish("DoAction", "VestigoApplyUiChoice", 2, null),
+            Publish("SpawnDialog", ErrorDialogId, 3, "VESTIGO_INPUT_ERROR <> \"\""),
+            Publish("NewDialog", nextDialog, 4, "VESTIGO_INPUT_ERROR = \"\""));
         dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Back").Add(
             Publish("NewDialog", backDialog, 1, null));
         dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Cancel").Add(
@@ -509,10 +511,11 @@ static class ListenPage
         const string noError = "VESTIGO_INPUT_ERROR = \"\"";
         const string custom = "VESTIGO_ROOTS_MODE=\"" + RootSettings.ModeCustom + "\"";
         dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Next").Add(
-            Publish("DoAction", "VestigoApplyUiChoice", 1, null),
-            Publish("SpawnDialog", ErrorDialogId, 2, "VESTIGO_INPUT_ERROR <> \"\""),
-            Publish("NewDialog", RootsAccessDialogId, 3, noError + " AND NOT (" + custom + ")"),
-            Publish("NewDialog", "CustomizeDlg", 4, noError + " AND " + custom));
+            PublishProperty("VESTIGO_VALIDATE_TOKEN", "1", 1),
+            Publish("DoAction", "VestigoApplyUiChoice", 2, null),
+            Publish("SpawnDialog", ErrorDialogId, 3, "VESTIGO_INPUT_ERROR <> \"\""),
+            Publish("NewDialog", RootsAccessDialogId, 4, noError + " AND NOT (" + custom + ")"),
+            Publish("NewDialog", "CustomizeDlg", 5, noError + " AND " + custom));
         dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Back").Add(
             Publish("NewDialog", AuthDialogId, 1, null));
         dialog.Elements(Wix + "Control").First(c => (string?)c.Attribute("Id") == "Cancel").Add(
@@ -669,6 +672,13 @@ static class ListenPage
 
         return publish;
     }
+
+    static XElement PublishProperty(string name, string value, int order) =>
+        new(
+            Wix + "Publish",
+            new XAttribute("Property", name),
+            new XAttribute("Value", value),
+            new XAttribute("Order", order));
 
     static XElement PublishOn(string dialog, string control, string eventName, string value, int order, string condition) =>
         new(
