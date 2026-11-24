@@ -119,6 +119,25 @@ public class RootSettingsTests
     }
 
     [Fact]
+    public void Resolve_UpgradeKeepsNoneAccessOnLowercaseLiveVolumeSection()
+    {
+        const string json = """{ "vestigo": { "volumeroots": "AllVolumesLive", "volumerootaccess": "None" } }""";
+        ExistingRootSettings existing = RootSettings.ReadExisting(json)!;
+        ResolvedRootSettings resolved = RootSettings.Resolve(null, null, existing, isUpgrade: true);
+        string merged = ListenSettings.Merge(
+            json,
+            ListenSettings.Resolve("localhost", "none", "5098", null, null, isUpgrade: true),
+            roots: resolved);
+
+        Assert.Equal(RootSettings.ModeLive, resolved.Mode);
+        Assert.Equal(RootSettings.ServerAllVolumesLive, resolved.VolumeRootsValue);
+        Assert.Equal(RootSettings.ServerNone, resolved.VolumeRootAccessValue);
+        ExistingRootSettings read = RootSettings.ReadExisting(merged)!;
+        Assert.Equal("AllVolumesLive", read.VolumeRoots);
+        Assert.Equal("None", read.VolumeRootAccess);
+    }
+
+    [Fact]
     public void Resolve_UsesExistingModeAndAccess()
     {
         ExistingRootSettings existing = new("SystemDrive", "Read", hasCustomRoots: true);

@@ -176,8 +176,10 @@ namespace Vestigo.Installer.Actions.Logic
         ///     Combines explicit MSI property values with the existing file and defaults. Blank inputs fall back to the
         ///     existing value, then to <see cref="ModeFixed" /> and <see cref="AccessReadWriteExecute" />. On an upgrade
         ///     where the file has no <c>VolumeRoots</c> key but does have custom <c>Roots</c>, the default mode is
-        ///     <see cref="ModeCustom" />. Existing access text is kept only when the access input was not an explicit
-        ///     installer selection. Throws <see cref="ArgumentException" /> for invalid values.
+        ///     <see cref="ModeCustom" />. Existing access text is kept when the access input was not an explicit
+        ///     installer selection, including <see cref="ServerNone" /> on an already-selected volume mode. None is
+        ///     replaced with the resolved flags only when switching from custom or missing volume roots onto a volume
+        ///     mode. Throws <see cref="ArgumentException" /> for invalid values.
         /// </summary>
         public static ResolvedRootSettings Resolve(
             string? mode,
@@ -222,10 +224,15 @@ namespace Vestigo.Installer.Actions.Logic
             string? persistedAccess = null;
             if (!accessIsExplicit)
             {
-                persistedAccess = resolvedMode != ModeCustom &&
-                                  string.Equals(existingAccess, ServerNone, StringComparison.OrdinalIgnoreCase)
-                    ? null
-                    : existingAccess;
+                string? existingMode = MapServerMode(existing?.VolumeRoots);
+                bool existingModeIsVolume = existingMode == ModeSystem ||
+                    existingMode == ModeFixed ||
+                    existingMode == ModeAll ||
+                    existingMode == ModeLive;
+                bool dropNoneForNewVolumeMode = !existingModeIsVolume &&
+                    resolvedMode != ModeCustom &&
+                    string.Equals(existingAccess, ServerNone, StringComparison.OrdinalIgnoreCase);
+                persistedAccess = dropNoneForNewVolumeMode ? null : existingAccess;
             }
 
             return new ResolvedRootSettings(resolvedMode, resolvedAccess, persistedAccess);

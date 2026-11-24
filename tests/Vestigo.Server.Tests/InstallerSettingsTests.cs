@@ -147,7 +147,7 @@ public class InstallerSettingsTests
 
     [Theory]
     [InlineData(null, null, false, false, ListenSettings.UiAuthKeep)]
-    [InlineData(null, null, false, true, ListenSettings.UiAuthNone)]
+    [InlineData(null, null, false, true, ListenSettings.UiAuthKeep)]
     [InlineData(ListenSettings.AuthNone, null, false, false, ListenSettings.UiAuthNone)]
     [InlineData(ListenSettings.AuthToken, null, false, true, ListenSettings.UiAuthKeep)]
     [InlineData(null, LongToken, false, false, ListenSettings.UiAuthReplace)]

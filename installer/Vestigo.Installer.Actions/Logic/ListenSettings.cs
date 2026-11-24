@@ -242,8 +242,8 @@ namespace Vestigo.Installer.Actions.Logic
 
         /// <summary>
         ///     Initial authentication radio for an unelevated wizard that cannot read the protected settings file.
-        ///     An explicit, non-suggested token means replace; otherwise <see cref="AuthNone" /> (including the
-        ///     upgrade default) means no token, and a fresh install defaults to keep.
+        ///     An explicit, non-suggested token means replace; an explicit <see cref="AuthNone" /> means no token;
+        ///     otherwise keep, including on upgrade so existing tokens are not cleared by clicking Next.
         /// </summary>
         public static string ResolveProtectedUiAuthMode(
             string? authMode,
@@ -267,7 +267,7 @@ namespace Vestigo.Installer.Actions.Logic
             string auth = Normalize(
                 authMode,
                 "VESTIGO_AUTH_MODE",
-                isUpgrade ? AuthNone : AuthToken,
+                AuthToken,
                 AuthNone,
                 AuthToken);
             return auth == AuthNone ? UiAuthNone : UiAuthKeep;
