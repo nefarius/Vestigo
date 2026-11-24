@@ -21,7 +21,10 @@ namespace Vestigo.Installer.Actions
     ///     Properties: VESTIGO_LISTEN_MODE, VESTIGO_AUTH_MODE, VESTIGO_PORT, VESTIGO_API_TOKEN (public, hidden token),
     ///     VESTIGO_ROOTS_MODE, VESTIGO_ROOTS_ACCESS,
     ///     VESTIGO_INPUT_ERROR (dialog validation text),
-    ///     VESTIGO_TOKEN_SUGGESTED (auto-generated token the user may not have edited).
+    ///     VESTIGO_TOKEN_SUGGESTED (auto-generated token the user may not have edited),
+    ///     VESTIGO_SETTINGS_PROTECTED (settings file exists but is unreadable before elevation),
+    ///     VESTIGO_AUTH_UI_MODE (keep / replace / none when settings are protected),
+    ///     VESTIGO_VALIDATE_TOKEN (1 when Next must reject an empty replace-token field).
     /// </summary>
     public static class CustomActions
     {
@@ -35,6 +38,9 @@ namespace Vestigo.Installer.Actions
         private const string RootsAccessExplicitProperty = "VESTIGO_ROOTS_ACCESS_EXPLICIT";
         private const string ErrorProperty = "VESTIGO_INPUT_ERROR";
         private const string SuggestedProperty = "VESTIGO_TOKEN_SUGGESTED";
+        private const string ProtectedProperty = "VESTIGO_SETTINGS_PROTECTED";
+        private const string AuthUiModeProperty = "VESTIGO_AUTH_UI_MODE";
+        private const string ValidateTokenProperty = "VESTIGO_VALIDATE_TOKEN";
         private const string WriteDataProperty = "VestigoWriteSettings";
         private const string DeployCredentialProviderProperty = "VestigoDeployCredentialProvider";
         private const string RemoveCredentialProviderProperty = "VestigoRemoveCredentialProvider";
@@ -111,19 +117,34 @@ namespace Vestigo.Installer.Actions
         {
             try
             {
-                ExistingSettings existing = ListenSettings.ReadExisting(TryReadSettingsFile());
+                SettingsFileRead file = ReadSettingsFile();
+                if (file.State == SettingsFileState.Protected)
+                {
+                    session[ProtectedProperty] = "1";
+                }
+
+                ExistingSettings existing = ListenSettings.ReadExisting(file.Json);
                 string requestedToken = session[TokenProperty];
                 bool hadToken = !string.IsNullOrWhiteSpace(requestedToken) || (existing != null && existing.Tokens.Count > 0);
                 bool suggestion = !string.IsNullOrWhiteSpace(session[SuggestedProperty]);
+                bool tokenIsSuggestion = suggestion &&
+                                         string.Equals(requestedToken, session[SuggestedProperty], StringComparison.Ordinal);
+                bool isUpgrade = IsUpgrade(session);
+                string authMode = session[AuthModeProperty];
+
+                if (file.State == SettingsFileState.Protected)
+                {
+                    ApplyProtectedAuthLoad(session, ref requestedToken, ref authMode, ref tokenIsSuggestion, isUpgrade);
+                }
 
                 ResolvedSettings resolved = ListenSettings.Resolve(
                     session[ListenModeProperty],
-                    session[AuthModeProperty],
+                    authMode,
                     session[PortProperty],
                     requestedToken,
                     existing,
-                    suggestion && string.Equals(requestedToken, session[SuggestedProperty], StringComparison.Ordinal),
-                    IsUpgrade(session));
+                    tokenIsSuggestion,
+                    isUpgrade);
 
                 Publish(session, resolved);
                 bool accessExplicit = AccessIsExplicit(session);
@@ -132,13 +153,13 @@ namespace Vestigo.Installer.Actions
                     RootSettings.Resolve(
                         session[RootsModeProperty],
                         session[RootsAccessProperty],
-                        RootSettings.ReadExisting(TryReadSettingsFile()),
-                        IsUpgrade(session),
+                        RootSettings.ReadExisting(file.Json),
+                        isUpgrade,
                         accessExplicit),
                     accessExplicit);
 
                 // Carry existing module choices into the feature tree (Level conditions read these properties).
-                foreach (KeyValuePair<string, bool> state in ModuleSelection.ReadExisting(TryReadSettingsFile()))
+                foreach (KeyValuePair<string, bool> state in ModuleSelection.ReadExisting(file.Json))
                 {
                     ModuleDefinition module = ModuleSelection.Find(state.Key);
                     if (module != null && string.IsNullOrWhiteSpace(session[module.PropertyName]))
@@ -147,13 +168,16 @@ namespace Vestigo.Installer.Actions
                     }
                 }
 
-                if (!hadToken && resolved.AuthMode == ListenSettings.AuthToken)
+                if (file.State != SettingsFileState.Protected &&
+                    !hadToken &&
+                    resolved.AuthMode == ListenSettings.AuthToken)
                 {
                     session[SuggestedProperty] = resolved.Token;
                 }
 
                 session.Log("Vestigo settings: listen=" + resolved.ListenMode + ", auth=" + resolved.AuthMode + ", port=" + resolved.Port +
-                            ", roots=" + session[RootsModeProperty] + ", access=" + session[RootsAccessProperty]);
+                            ", roots=" + session[RootsModeProperty] + ", access=" + session[RootsAccessProperty] +
+                            ", protected=" + (file.State == SettingsFileState.Protected ? "1" : "0"));
                 return ActionResult.Success;
             }
             catch (ArgumentException ex)
@@ -179,15 +203,21 @@ namespace Vestigo.Installer.Actions
             session[ErrorProperty] = string.Empty;
             try
             {
-                ExistingSettings existing = ListenSettings.ReadExisting(TryReadSettingsFile());
+                SettingsFileRead file = ReadSettingsFile();
+                ExistingSettings existing = ListenSettings.ReadExisting(file.Json);
                 string token = session[TokenProperty];
                 bool suggestion = !string.IsNullOrWhiteSpace(token) &&
                                   string.Equals(token, session[SuggestedProperty], StringComparison.Ordinal);
-                if (!string.IsNullOrWhiteSpace(token))
+                string authMode = session[AuthModeProperty];
+                if (session[ProtectedProperty] == "1")
+                {
+                    ApplyProtectedAuthChoice(session, ref token, ref authMode, ref suggestion);
+                }
+                else if (!string.IsNullOrWhiteSpace(token))
                 {
                     token = token.Trim();
                     string tokenError = ListenSettings.ValidateToken(token);
-                    if (session[AuthModeProperty] == ListenSettings.AuthToken && tokenError != null)
+                    if (authMode == ListenSettings.AuthToken && tokenError != null)
                     {
                         throw new ArgumentException(tokenError);
                     }
@@ -201,7 +231,7 @@ namespace Vestigo.Installer.Actions
 
                 ResolvedSettings resolved = ListenSettings.Resolve(
                     session[ListenModeProperty],
-                    session[AuthModeProperty],
+                    authMode,
                     portText,
                     token,
                     existing,
@@ -214,7 +244,7 @@ namespace Vestigo.Installer.Actions
                     RootSettings.Resolve(
                         session[RootsModeProperty],
                         session[RootsAccessProperty],
-                        RootSettings.ReadExisting(TryReadSettingsFile()),
+                        RootSettings.ReadExisting(file.Json),
                         IsUpgrade(session),
                         accessExplicit),
                     accessExplicit);
@@ -240,10 +270,22 @@ namespace Vestigo.Installer.Actions
                 data["ListenMode"] = session[ListenModeProperty];
                 data["AuthMode"] = session[AuthModeProperty];
                 data["Port"] = session[PortProperty];
-                data["Token"] = session[TokenProperty];
-                bool suggestion = !string.IsNullOrWhiteSpace(session[SuggestedProperty]) &&
-                                  string.Equals(session[TokenProperty], session[SuggestedProperty], StringComparison.Ordinal);
-                data["TokenIsSuggestion"] = suggestion ? "1" : "0";
+                if (session[AuthModeProperty] == ListenSettings.AuthNone)
+                {
+                    data["Token"] = string.Empty;
+                    data["TokenIsSuggestion"] = "0";
+                }
+                else
+                {
+                    data["Token"] = session[TokenProperty];
+                    bool suggestion = !string.IsNullOrWhiteSpace(session[SuggestedProperty]) &&
+                                      string.Equals(session[TokenProperty], session[SuggestedProperty], StringComparison.Ordinal);
+                    data["TokenIsSuggestion"] = suggestion ? "1" : "0";
+                }
+                data["ReplaceApiTokens"] = session[ProtectedProperty] == "1" &&
+                                           string.Equals(session[AuthUiModeProperty], ListenSettings.UiAuthReplace, StringComparison.OrdinalIgnoreCase)
+                    ? "1"
+                    : "0";
                 data["RootsMode"] = session[RootsModeProperty];
                 data["RootsAccess"] = session[RootsAccessProperty];
                 data["RootsAccessExplicit"] = AccessIsExplicit(session) ? "1" : "0";
@@ -282,7 +324,8 @@ namespace Vestigo.Installer.Actions
                     data["Port"],
                     data["Token"],
                     existing,
-                    data["TokenIsSuggestion"] == "1");
+                    data["TokenIsSuggestion"] == "1",
+                    replaceApiTokens: data["ReplaceApiTokens"] == "1");
                 IDictionary<string, bool> modules = ModuleSelection.Parse(data["Modules"]);
                 ResolvedRootSettings roots = RootSettings.Resolve(
                     data["RootsMode"],
@@ -500,18 +543,141 @@ namespace Vestigo.Installer.Actions
                 "appsettings.json");
         }
 
-        /// <summary>Returns the file text, or null when it is missing or not readable by this (possibly non-elevated) process.</summary>
-        private static string TryReadSettingsFile()
+        /// <summary>
+        ///     Distinguishes a missing settings file from one that exists but cannot be read before elevation.
+        ///     <see cref="File.Exists" /> is not used: it returns false on <c>ERROR_ACCESS_DENIED</c>.
+        /// </summary>
+        private static SettingsFileRead ReadSettingsFile()
         {
+            string path = SettingsFilePath();
             try
             {
-                string path = SettingsFilePath();
-                return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
+                return new SettingsFileRead(SettingsFileState.Found, File.ReadAllText(path, Encoding.UTF8));
             }
-            catch (Exception ex) when (ex is UnauthorizedAccessException || ex is IOException)
+            catch (UnauthorizedAccessException)
             {
-                return null;
+                return SettingsFileRead.Protected;
             }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                return SettingsFileRead.Missing;
+            }
+            catch (IOException)
+            {
+                try
+                {
+                    string directory = Path.GetDirectoryName(path);
+                    return !string.IsNullOrEmpty(directory) && Directory.Exists(directory)
+                        ? SettingsFileRead.Protected
+                        : SettingsFileRead.Missing;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return SettingsFileRead.Protected;
+                }
+            }
+        }
+
+        private static void ApplyProtectedAuthLoad(
+            Session session,
+            ref string requestedToken,
+            ref string authMode,
+            ref bool tokenIsSuggestion,
+            bool isUpgrade)
+        {
+            if (string.IsNullOrWhiteSpace(session[AuthUiModeProperty]))
+            {
+                session[AuthUiModeProperty] = ListenSettings.ResolveProtectedUiAuthMode(
+                    authMode,
+                    requestedToken,
+                    tokenIsSuggestion,
+                    isUpgrade);
+            }
+
+            ProtectedUiAuthChoice choice = ListenSettings.MapProtectedUiAuth(session[AuthUiModeProperty]);
+            authMode = choice.AuthMode;
+            tokenIsSuggestion = choice.TokenIsSuggestion;
+            if (string.IsNullOrWhiteSpace(requestedToken))
+            {
+                requestedToken = ListenSettings.GenerateToken();
+            }
+
+            if (choice.TokenIsSuggestion)
+            {
+                requestedToken = ListenSettings.SuggestedKeepToken(requestedToken);
+                session[SuggestedProperty] = requestedToken;
+            }
+            else
+            {
+                session[SuggestedProperty] = string.Empty;
+            }
+        }
+
+        private static void ApplyProtectedAuthChoice(
+            Session session,
+            ref string token,
+            ref string authMode,
+            ref bool suggestion)
+        {
+            ProtectedUiAuthChoice choice = ListenSettings.MapProtectedUiAuth(session[AuthUiModeProperty]);
+            authMode = choice.AuthMode;
+            session[AuthModeProperty] = authMode;
+            if (choice.TokenIsSuggestion)
+            {
+                token = ListenSettings.SuggestedKeepToken(token);
+                session[SuggestedProperty] = token;
+                suggestion = true;
+                return;
+            }
+
+            session[SuggestedProperty] = string.Empty;
+            suggestion = false;
+            if (!choice.RequireTokenValidation)
+            {
+                return;
+            }
+
+            bool enforceToken = session[ValidateTokenProperty] == "1";
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                if (enforceToken)
+                {
+                    throw new ArgumentException("Enter an API token or choose to keep the existing one.");
+                }
+
+                token = ListenSettings.GenerateToken();
+                return;
+            }
+
+            token = token.Trim();
+            string tokenError = ListenSettings.ValidateToken(token);
+            if (tokenError != null)
+            {
+                throw new ArgumentException(tokenError);
+            }
+        }
+
+        private enum SettingsFileState
+        {
+            Missing,
+            Protected,
+            Found
+        }
+
+        private sealed class SettingsFileRead
+        {
+            public static readonly SettingsFileRead Missing = new SettingsFileRead(SettingsFileState.Missing, null);
+            public static readonly SettingsFileRead Protected = new SettingsFileRead(SettingsFileState.Protected, null);
+
+            public SettingsFileRead(SettingsFileState state, string json)
+            {
+                State = state;
+                Json = json;
+            }
+
+            public SettingsFileState State { get; }
+
+            public string Json { get; }
         }
 
         /// <summary>Creates the file with the restricted ACL already applied, so the token is never readable by others.</summary>

@@ -117,6 +117,128 @@ public class InstallerSettingsTests
         Assert.Equal(suggestion, edited.Token);
     }
 
+    [Fact]
+    public void SuggestedKeepToken_ReplacesInvalidReplaceInputSoKeepCanResolveWithoutExistingSettings()
+    {
+        string placeholder = ListenSettings.SuggestedKeepToken("short");
+        Assert.NotEqual("short", placeholder);
+        Assert.Null(ListenSettings.ValidateToken(placeholder));
+        Assert.Equal(LongToken, ListenSettings.SuggestedKeepToken(LongToken));
+
+        ResolvedSettings unread = ListenSettings.Resolve(
+            "any",
+            "token",
+            "5098",
+            placeholder,
+            existing: null,
+            tokenIsSuggestion: true);
+        Assert.Equal(placeholder, unread.Token);
+
+        ExistingSettings existing = new("0.0.0.0", 5098, [LongToken]);
+        ResolvedSettings kept = ListenSettings.Resolve(
+            "any",
+            "token",
+            "5098",
+            placeholder,
+            existing,
+            tokenIsSuggestion: true);
+        Assert.Equal(LongToken, kept.Token);
+    }
+
+    [Theory]
+    [InlineData(null, null, false, false, ListenSettings.UiAuthKeep)]
+    [InlineData(null, null, false, true, ListenSettings.UiAuthKeep)]
+    [InlineData(ListenSettings.AuthNone, null, false, false, ListenSettings.UiAuthNone)]
+    [InlineData(ListenSettings.AuthToken, null, false, true, ListenSettings.UiAuthKeep)]
+    [InlineData(null, LongToken, false, false, ListenSettings.UiAuthReplace)]
+    [InlineData(null, LongToken, false, true, ListenSettings.UiAuthReplace)]
+    [InlineData(ListenSettings.AuthNone, LongToken, false, false, ListenSettings.UiAuthNone)]
+    [InlineData(null, LongToken, true, false, ListenSettings.UiAuthKeep)]
+    public void ResolveProtectedUiAuthMode_ChoosesKeepReplaceOrNone(
+        string? authMode,
+        string? token,
+        bool tokenIsSuggestion,
+        bool isUpgrade,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            ListenSettings.ResolveProtectedUiAuthMode(authMode, token, tokenIsSuggestion, isUpgrade));
+    }
+
+    [Fact]
+    public void MapProtectedUiAuth_MapsKeepReplaceAndNone()
+    {
+        ProtectedUiAuthChoice keep = ListenSettings.MapProtectedUiAuth(ListenSettings.UiAuthKeep);
+        Assert.Equal(ListenSettings.AuthToken, keep.AuthMode);
+        Assert.True(keep.TokenIsSuggestion);
+        Assert.False(keep.RequireTokenValidation);
+
+        ProtectedUiAuthChoice replace = ListenSettings.MapProtectedUiAuth("REPLACE");
+        Assert.Equal(ListenSettings.AuthToken, replace.AuthMode);
+        Assert.False(replace.TokenIsSuggestion);
+        Assert.True(replace.RequireTokenValidation);
+
+        ProtectedUiAuthChoice none = ListenSettings.MapProtectedUiAuth(ListenSettings.UiAuthNone);
+        Assert.Equal(ListenSettings.AuthNone, none.AuthMode);
+        Assert.False(none.TokenIsSuggestion);
+        Assert.False(none.RequireTokenValidation);
+
+        ProtectedUiAuthChoice blank = ListenSettings.MapProtectedUiAuth(null);
+        Assert.Equal(ListenSettings.AuthToken, blank.AuthMode);
+        Assert.True(blank.TokenIsSuggestion);
+        Assert.Throws<ArgumentException>(() => ListenSettings.MapProtectedUiAuth("rotate"));
+    }
+
+    [Fact]
+    public void ProtectedUiAuth_KeepPreservesExistingTokenReplaceOverwritesAndNoneClears()
+    {
+        ExistingSettings existing = new("0.0.0.0", 5098, [LongToken]);
+        string generated = ListenSettings.GenerateToken();
+
+        ProtectedUiAuthChoice keep = ListenSettings.MapProtectedUiAuth(ListenSettings.UiAuthKeep);
+        ResolvedSettings kept = ListenSettings.Resolve("any", keep.AuthMode, "5098", generated, existing, keep.TokenIsSuggestion);
+        Assert.Equal(LongToken, kept.Token);
+
+        ProtectedUiAuthChoice replace = ListenSettings.MapProtectedUiAuth(ListenSettings.UiAuthReplace);
+        ResolvedSettings replaced = ListenSettings.Resolve(
+            "any",
+            replace.AuthMode,
+            "5098",
+            generated,
+            existing,
+            replace.TokenIsSuggestion);
+        Assert.Equal(generated, replaced.Token);
+
+        ProtectedUiAuthChoice keepAgain = ListenSettings.MapProtectedUiAuth(ListenSettings.UiAuthKeep);
+        ResolvedSettings keptAgain = ListenSettings.Resolve(
+            "any",
+            keepAgain.AuthMode,
+            "5098",
+            generated,
+            existing,
+            keepAgain.TokenIsSuggestion);
+        Assert.Equal(LongToken, keptAgain.Token);
+
+        ProtectedUiAuthChoice none = ListenSettings.MapProtectedUiAuth(ListenSettings.UiAuthNone);
+        ResolvedSettings cleared = ListenSettings.Resolve("any", none.AuthMode, "5098", generated, existing, none.TokenIsSuggestion);
+        Assert.Equal("", cleared.Token);
+        Assert.Equal(ListenSettings.AuthNone, cleared.AuthMode);
+    }
+
+    [Fact]
+    public void ProtectedUiAuth_KeepGeneratesWhenExistingHasNoToken()
+    {
+        ExistingSettings existing = new("0.0.0.0", 5098, []);
+        string generated = ListenSettings.GenerateToken();
+        ProtectedUiAuthChoice keep = ListenSettings.MapProtectedUiAuth(ListenSettings.UiAuthKeep);
+
+        ResolvedSettings resolved = ListenSettings.Resolve("any", keep.AuthMode, "5098", generated, existing, keep.TokenIsSuggestion);
+
+        Assert.Equal(ListenSettings.AuthToken, resolved.AuthMode);
+        Assert.Equal(generated, resolved.Token);
+    }
+
     [Theory]
     [InlineData("sideways", "token", "5098", LongToken)]
     [InlineData("any", "maybe", "5098", LongToken)]
@@ -193,6 +315,62 @@ public class InstallerSettingsTests
         ExistingSettings read = ListenSettings.ReadExisting(merged)!;
         Assert.Equal("192.168.1.5", read.Address);
         Assert.Equal(["other-token-value", LongToken], read.Tokens);
+    }
+
+    [Fact]
+    public void Merge_ReplaceApiTokensRewritesListEvenWhenTokenAlreadyPresent()
+    {
+        const string existing = """{ "Vestigo": { "ListenAddress": "0.0.0.0", "ListenPort": 5098, "ApiTokens": ["other-token-value", "0123456789abcdefghij"] } }""";
+        ExistingSettings parsed = ListenSettings.ReadExisting(existing)!;
+        ResolvedSettings keep = ListenSettings.Resolve("any", "token", "5098", LongToken, parsed);
+        ResolvedSettings replace = ListenSettings.Resolve("any", "token", "5098", LongToken, parsed, replaceApiTokens: true);
+
+        Assert.Equal(["other-token-value", LongToken], ListenSettings.ReadExisting(ListenSettings.Merge(existing, keep))!.Tokens);
+        Assert.Equal([LongToken], ListenSettings.ReadExisting(ListenSettings.Merge(existing, replace))!.Tokens);
+    }
+
+    [Fact]
+    public void ReadExisting_MatchesVestigoSectionCaseInsensitively()
+    {
+        const string json = """
+            { "vestigo": {
+                "listenaddress": "0.0.0.0",
+                "listenport": 6000,
+                "apitokens": ["0123456789abcdefghij"],
+                "volumeroots": "FixedVolumes",
+                "modules": { "Devices": { "Enabled": true } }
+            } }
+            """;
+
+        ExistingSettings existing = Assert.IsType<ExistingSettings>(ListenSettings.ReadExisting(json));
+        Assert.Equal("0.0.0.0", existing.Address);
+        Assert.Equal(6000, existing.Port);
+        Assert.Equal([LongToken], existing.Tokens);
+        Assert.Equal("FixedVolumes", RootSettings.ReadExisting(json)!.VolumeRoots);
+        Assert.True(ModuleSelection.ReadExisting(json)["Devices"]);
+    }
+
+    [Fact]
+    public void Merge_MatchesListenKeysCaseInsensitively_WithoutDuplicates()
+    {
+        const string existing = """{ "vestigo": { "listenaddress": "127.0.0.1", "listenport": 5098, "apitokens": ["0123456789abcdefghij"] } }""";
+        ExistingSettings parsed = ListenSettings.ReadExisting(existing)!;
+        ResolvedSettings settings = ListenSettings.Resolve("any", "token", "6000", "replacement-token-xx", parsed);
+
+        string merged = ListenSettings.Merge(existing, settings);
+
+        Assert.Contains("\"vestigo\"", merged);
+        Assert.Contains("\"listenaddress\": \"0.0.0.0\"", merged);
+        Assert.Contains("\"listenport\": 6000", merged);
+        Assert.Contains("\"apitokens\"", merged);
+        Assert.DoesNotContain("\"Vestigo\"", merged);
+        Assert.DoesNotContain("\"ListenAddress\"", merged);
+        Assert.DoesNotContain("\"ListenPort\"", merged);
+        Assert.DoesNotContain("\"ApiTokens\"", merged);
+        ExistingSettings read = ListenSettings.ReadExisting(merged)!;
+        Assert.Equal("0.0.0.0", read.Address);
+        Assert.Equal(6000, read.Port);
+        Assert.Equal(["replacement-token-xx"], read.Tokens);
     }
 
     [Fact]
