@@ -69,7 +69,7 @@ A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiT
 
 ## The server is not reachable from another machine
 
-`ListenAddress` must be `0.0.0.0` or `::` (or the machine address), and the inbound firewall rule `Vestigo MCP Server` must exist for the port. The MSI adds it for the "any address" modes. Restart the service after editing `appsettings.json`. A startup `SECURITY WARNING` in the log means no `ApiTokens` are set while the server is reachable from the network.
+`ListenAddress` must be `0.0.0.0` or `::` (or the machine address), and the inbound firewall rule `Vestigo MCP Server` must exist for the port. The MSI adds or restores that rule for a non-loopback address, using the saved port, including on upgrade and repair. Restart the service after editing `appsettings.json`. A startup `SECURITY WARNING` in the log means no `ApiTokens` are set while the server is reachable from the network.
 
 ## Paths are rejected
 

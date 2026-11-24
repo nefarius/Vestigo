@@ -89,6 +89,27 @@ try {
     if ([Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting($merged).Port -ne 6001) { throw 'Merged settings could not be read.' }
     if ($null -ne [Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting('{"Vestigo":{"ListenPort":01}}')) { throw 'Malformed JSON was accepted.' }
 
+    $handoffLog = New-Object 'System.Collections.Generic.List[string]'
+    $writeLog = [Action[string]]{ param($m) $handoffLog.Add($m) }
+    $props = New-Object Vestigo.Installer.Actions.Logic.DictionaryInstallerProperties
+    [Vestigo.Installer.Actions.Logic.SettingsHandoff]::Load($props, $null, $true, $true, $false, $writeLog)
+    if ($props.Get('VESTIGO_LISTEN_MODE') -ne '' -or $props.Get('VESTIGO_PORT') -ne '') { throw 'Protected upgrade published fallback listen settings.' }
+    $prepared = [Vestigo.Installer.Actions.Logic.SettingsHandoff]::Prepare($props, $true, $false, '')
+    $keptJson = '{"Vestigo":{"ListenAddress":"192.168.1.5","ListenPort":6000,"ApiTokens":["existing-test-token"]}}'
+    $keptExisting = [Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting($keptJson)
+    $keptResolved = [Vestigo.Installer.Actions.Logic.SettingsHandoff]::ResolveWrite($prepared, $keptExisting)
+    $keptMerged = [Vestigo.Installer.Actions.Logic.ListenSettings]::Merge($keptJson, $keptResolved)
+    $keptRead = [Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting($keptMerged)
+    if ($keptRead.Address -ne '192.168.1.5' -or $keptRead.Port -ne 6000) { throw 'Protected upgrade did not keep the saved listen address and port.' }
+    $firewall = New-Object Vestigo.Installer.Actions.Logic.MemoryFirewallRuleStore
+    [void]$firewall.Add([Vestigo.Installer.Actions.Logic.FirewallRuleSync]::CreateRule(5098))
+    [void]$firewall.Add([Vestigo.Installer.Actions.Logic.FirewallRuleSync]::CreateRule(1))
+    [Vestigo.Installer.Actions.Logic.FirewallRuleSync]::Sync($keptResolved, $firewall, $writeLog)
+    if ($firewall.Rules.Count -ne 1 -or $firewall.Rules[0].LocalPorts -ne '6000') { throw 'Firewall sync did not leave one rule on the saved port.' }
+    foreach ($line in $handoffLog) {
+        if ($line.Contains('existing-test-token')) { throw 'Installer log contains an API token.' }
+    }
+
     foreach ($invalid in @('{"\uDC00":1}', '{"\uD800":1}', '{"x":"\uDC00"}', '{"x":"\uD800"}', '{"x":["\uD800"]}')) {
         $rejected = $false
         try { [void][Vestigo.Installer.Actions.Logic.SettingsJson]::Parse($invalid) }

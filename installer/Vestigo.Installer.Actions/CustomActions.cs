@@ -1,8 +1,10 @@
 #nullable disable
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -28,19 +30,11 @@ namespace Vestigo.Installer.Actions
     /// </summary>
     public static class CustomActions
     {
-        private const string ListenModeProperty = "VESTIGO_LISTEN_MODE";
-        private const string AuthModeProperty = "VESTIGO_AUTH_MODE";
-        private const string PortProperty = "VESTIGO_PORT";
-        private const string TokenProperty = "VESTIGO_API_TOKEN";
         private const string RootsModeProperty = "VESTIGO_ROOTS_MODE";
         private const string RootsAccessProperty = "VESTIGO_ROOTS_ACCESS";
         private const string RootsAccessPrefillProperty = "VESTIGO_ROOTS_ACCESS_PREFILL";
         private const string RootsAccessExplicitProperty = "VESTIGO_ROOTS_ACCESS_EXPLICIT";
         private const string ErrorProperty = "VESTIGO_INPUT_ERROR";
-        private const string SuggestedProperty = "VESTIGO_TOKEN_SUGGESTED";
-        private const string ProtectedProperty = "VESTIGO_SETTINGS_PROTECTED";
-        private const string AuthUiModeProperty = "VESTIGO_AUTH_UI_MODE";
-        private const string ValidateTokenProperty = "VESTIGO_VALIDATE_TOKEN";
         private const string WriteDataProperty = "VestigoWriteSettings";
         private const string DeployCredentialProviderProperty = "VestigoDeployCredentialProvider";
         private const string RemoveCredentialProviderProperty = "VestigoRemoveCredentialProvider";
@@ -118,35 +112,16 @@ namespace Vestigo.Installer.Actions
             try
             {
                 SettingsFileRead file = ReadSettingsFile();
-                if (file.State == SettingsFileState.Protected)
-                {
-                    session[ProtectedProperty] = "1";
-                }
-
-                ExistingSettings existing = ListenSettings.ReadExisting(file.Json);
-                string requestedToken = session[TokenProperty];
-                bool hadToken = !string.IsNullOrWhiteSpace(requestedToken) || (existing != null && existing.Tokens.Count > 0);
-                bool suggestion = !string.IsNullOrWhiteSpace(session[SuggestedProperty]);
-                bool tokenIsSuggestion = suggestion &&
-                                         string.Equals(requestedToken, session[SuggestedProperty], StringComparison.Ordinal);
                 bool isUpgrade = IsUpgrade(session);
-                string authMode = session[AuthModeProperty];
+                SessionProperties properties = new SessionProperties(session);
+                SettingsHandoff.Load(
+                    properties,
+                    file.State == SettingsFileState.Protected ? null : file.Json,
+                    file.State == SettingsFileState.Protected,
+                    isUpgrade,
+                    IsInstalled(session),
+                    null);
 
-                if (file.State == SettingsFileState.Protected)
-                {
-                    ApplyProtectedAuthLoad(session, ref requestedToken, ref authMode, ref tokenIsSuggestion, isUpgrade);
-                }
-
-                ResolvedSettings resolved = ListenSettings.Resolve(
-                    session[ListenModeProperty],
-                    authMode,
-                    session[PortProperty],
-                    requestedToken,
-                    existing,
-                    tokenIsSuggestion,
-                    isUpgrade);
-
-                Publish(session, resolved);
                 bool accessExplicit = AccessIsExplicit(session);
                 PublishRoots(
                     session,
@@ -168,16 +143,7 @@ namespace Vestigo.Installer.Actions
                     }
                 }
 
-                if (file.State != SettingsFileState.Protected &&
-                    !hadToken &&
-                    resolved.AuthMode == ListenSettings.AuthToken)
-                {
-                    session[SuggestedProperty] = resolved.Token;
-                }
-
-                session.Log("Vestigo settings: listen=" + resolved.ListenMode + ", auth=" + resolved.AuthMode + ", port=" + resolved.Port +
-                            ", roots=" + session[RootsModeProperty] + ", access=" + session[RootsAccessProperty] +
-                            ", protected=" + (file.State == SettingsFileState.Protected ? "1" : "0"));
+                session.Log(SettingsHandoff.Describe(properties));
                 return ActionResult.Success;
             }
             catch (ArgumentException ex)
@@ -204,40 +170,19 @@ namespace Vestigo.Installer.Actions
             try
             {
                 SettingsFileRead file = ReadSettingsFile();
-                ExistingSettings existing = ListenSettings.ReadExisting(file.Json);
-                string token = session[TokenProperty];
-                bool suggestion = !string.IsNullOrWhiteSpace(token) &&
-                                  string.Equals(token, session[SuggestedProperty], StringComparison.Ordinal);
-                string authMode = session[AuthModeProperty];
-                if (session[ProtectedProperty] == "1")
+                bool isUpgrade = IsUpgrade(session);
+                SessionProperties properties = new SessionProperties(session);
+                SettingsHandoff.Apply(
+                    properties,
+                    file.State == SettingsFileState.Protected ? null : file.Json,
+                    file.State == SettingsFileState.Protected,
+                    isUpgrade,
+                    IsInstalled(session));
+                if (!string.IsNullOrEmpty(session[ErrorProperty]))
                 {
-                    ApplyProtectedAuthChoice(session, ref token, ref authMode, ref suggestion);
-                }
-                else if (!string.IsNullOrWhiteSpace(token))
-                {
-                    token = token.Trim();
-                    string tokenError = ListenSettings.ValidateToken(token);
-                    if (authMode == ListenSettings.AuthToken && tokenError != null)
-                    {
-                        throw new ArgumentException(tokenError);
-                    }
+                    return ActionResult.Success;
                 }
 
-                string portText = session[PortProperty];
-                if (string.IsNullOrWhiteSpace(portText))
-                {
-                    portText = ListenSettings.DefaultPort.ToString();
-                }
-
-                ResolvedSettings resolved = ListenSettings.Resolve(
-                    session[ListenModeProperty],
-                    authMode,
-                    portText,
-                    token,
-                    existing,
-                    suggestion,
-                    IsUpgrade(session));
-                Publish(session, resolved);
                 bool accessExplicit = AccessIsExplicit(session);
                 PublishRoots(
                     session,
@@ -245,9 +190,10 @@ namespace Vestigo.Installer.Actions
                         session[RootsModeProperty],
                         session[RootsAccessProperty],
                         RootSettings.ReadExisting(file.Json),
-                        IsUpgrade(session),
+                        isUpgrade,
                         accessExplicit),
                     accessExplicit);
+                session.Log(SettingsHandoff.Describe(properties));
             }
             catch (ArgumentException ex)
             {
@@ -266,30 +212,17 @@ namespace Vestigo.Installer.Actions
         {
             try
             {
+                Dictionary<string, string> values = SettingsHandoff.Prepare(
+                    new SessionProperties(session),
+                    IsUpgrade(session),
+                    IsInstalled(session),
+                    ModuleSelection.Serialize(ReadFeatureStates(session)));
                 CustomActionData data = new CustomActionData();
-                data["ListenMode"] = session[ListenModeProperty];
-                data["AuthMode"] = session[AuthModeProperty];
-                data["Port"] = session[PortProperty];
-                if (session[AuthModeProperty] == ListenSettings.AuthNone)
+                foreach (KeyValuePair<string, string> pair in values)
                 {
-                    data["Token"] = string.Empty;
-                    data["TokenIsSuggestion"] = "0";
+                    data[pair.Key] = pair.Value ?? string.Empty;
                 }
-                else
-                {
-                    data["Token"] = session[TokenProperty];
-                    bool suggestion = !string.IsNullOrWhiteSpace(session[SuggestedProperty]) &&
-                                      string.Equals(session[TokenProperty], session[SuggestedProperty], StringComparison.Ordinal);
-                    data["TokenIsSuggestion"] = suggestion ? "1" : "0";
-                }
-                data["ReplaceApiTokens"] = session[ProtectedProperty] == "1" &&
-                                           string.Equals(session[AuthUiModeProperty], ListenSettings.UiAuthReplace, StringComparison.OrdinalIgnoreCase)
-                    ? "1"
-                    : "0";
-                data["RootsMode"] = session[RootsModeProperty];
-                data["RootsAccess"] = session[RootsAccessProperty];
-                data["RootsAccessExplicit"] = AccessIsExplicit(session) ? "1" : "0";
-                data["Modules"] = ModuleSelection.Serialize(ReadFeatureStates(session));
+
                 session[WriteDataProperty] = data.ToString();
                 return ActionResult.Success;
             }
@@ -318,14 +251,7 @@ namespace Vestigo.Installer.Actions
                 string path = SettingsFilePath();
                 string current = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
                 ExistingSettings existing = ListenSettings.ReadExisting(current);
-                ResolvedSettings resolved = ListenSettings.Resolve(
-                    data["ListenMode"],
-                    data["AuthMode"],
-                    data["Port"],
-                    data["Token"],
-                    existing,
-                    data["TokenIsSuggestion"] == "1",
-                    replaceApiTokens: data["ReplaceApiTokens"] == "1");
+                ResolvedSettings resolved = SettingsHandoff.ResolveWrite(ReadActionData(data), existing);
                 IDictionary<string, bool> modules = ModuleSelection.Parse(data["Modules"]);
                 ResolvedRootSettings roots = RootSettings.Resolve(
                     data["RootsMode"],
@@ -357,6 +283,19 @@ namespace Vestigo.Installer.Actions
                 SecureFile(path);
                 session.Log("Wrote Vestigo settings to " + path + " (listen=" + resolved.ListenMode + ", auth=" + resolved.AuthMode +
                             ", port=" + resolved.Port + ", roots=" + roots.Mode + ", access=" + roots.Access + ").");
+                try
+                {
+                    using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
+                    {
+                        SaveFirewallRollback(store, session);
+                        FirewallRuleSync.Sync(resolved, store, message => session.Log(message));
+                    }
+                }
+                catch (Exception firewallEx)
+                {
+                    session.Log("Could not update the Windows Firewall rule: " + firewallEx.GetType().Name + ": " + firewallEx.Message);
+                }
+
                 return ActionResult.Success;
             }
             catch (Exception ex)
@@ -364,6 +303,82 @@ namespace Vestigo.Installer.Actions
                 session.Log("Could not write Vestigo settings: " + ex.GetType().Name + ": " + ex.Message);
                 return ActionResult.Failure;
             }
+        }
+
+        /// <summary>
+        ///     Deferred, elevated, before RemoveFiles on a real uninstall. Major upgrade skips this and lets the new product's
+        ///     settings write recreate the rule from the preserved listen address and port. Failure is logged and does not
+        ///     block uninstall.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult VestigoRemoveFirewallRule(Session session)
+        {
+            try
+            {
+                using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
+                {
+                    SaveFirewallRollback(store, session);
+                    FirewallRuleSync.Remove(store, message => session.Log(message));
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not remove the Windows Firewall rule: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            return ActionResult.Success;
+        }
+
+        /// <summary>
+        ///     Rollback, elevated. Restores the firewall rules recorded immediately before the install or uninstall change.
+        ///     A missing snapshot means this transaction did not change the rule.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult VestigoRollbackFirewallRule(Session session)
+        {
+            try
+            {
+                string path = FirewallRollbackPath();
+                if (!File.Exists(path))
+                {
+                    session.Log("No firewall rollback snapshot.");
+                    return ActionResult.Success;
+                }
+
+                string text = File.ReadAllText(path, Encoding.UTF8);
+                using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
+                {
+                    FirewallRuleSync.Restore(FirewallRuleSync.Deserialize(text), store, message => session.Log(message));
+                }
+
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not restore the Windows Firewall rule: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            return ActionResult.Success;
+        }
+
+        /// <summary>Commit, elevated. Drops the firewall rollback snapshot after the transaction succeeds.</summary>
+        [CustomAction]
+        public static ActionResult VestigoCommitFirewallRule(Session session)
+        {
+            try
+            {
+                string path = FirewallRollbackPath();
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not delete the firewall rollback snapshot: " + ex.GetType().Name + ": " + ex.Message);
+            }
+
+            return ActionResult.Success;
         }
 
         /// <summary>
@@ -495,18 +510,61 @@ namespace Vestigo.Installer.Actions
             return states;
         }
 
+        private static string FirewallRollbackPath()
+        {
+            return Path.Combine(Path.GetTempPath(), "Vestigo-firewall-rule-rollback.txt");
+        }
+
+        /// <summary>
+        ///     Records the current Vestigo firewall rules before changing them. A failed write deletes a stale snapshot so a
+        ///     later rollback cannot restore the wrong rule.
+        /// </summary>
+        private static void SaveFirewallRollback(IFirewallRuleStore store, Session session)
+        {
+            string path = FirewallRollbackPath();
+            try
+            {
+                string text = FirewallRuleSync.Serialize(store.FindByName(FirewallRuleSync.RuleName));
+                File.WriteAllText(path, text, new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                session.Log("Could not record the firewall rule for rollback: " + ex.GetType().Name + ": " + ex.Message);
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        File.Delete(path);
+                    }
+                }
+                catch (Exception deleteEx)
+                {
+                    session.Log("Could not delete a stale firewall rollback snapshot: " + deleteEx.GetType().Name + ": " + deleteEx.Message);
+                }
+            }
+        }
+
         /// <summary>True when FindRelatedProducts flagged an older version (set before AppSearch in both sequences).</summary>
         private static bool IsUpgrade(Session session)
         {
             return !string.IsNullOrWhiteSpace(session["WIX_UPGRADE_DETECTED"]);
         }
 
-        private static void Publish(Session session, ResolvedSettings resolved)
+        /// <summary>Set to the product code when this product is already installed (repair and modify).</summary>
+        private static bool IsInstalled(Session session)
         {
-            session[ListenModeProperty] = resolved.ListenMode;
-            session[AuthModeProperty] = resolved.AuthMode;
-            session[PortProperty] = resolved.Port.ToString();
-            session[TokenProperty] = resolved.Token;
+            return !string.IsNullOrWhiteSpace(session["Installed"]);
+        }
+
+        private static Dictionary<string, string> ReadActionData(CustomActionData data)
+        {
+            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string key in SettingsHandoff.WriteDataKeys)
+            {
+                map[key] = data[key];
+            }
+
+            return map;
         }
 
         private static void PublishRoots(Session session, ResolvedRootSettings roots, bool accessExplicit)
@@ -523,15 +581,7 @@ namespace Vestigo.Installer.Actions
 
         private static bool AccessIsExplicit(Session session)
         {
-            if (session[RootsAccessExplicitProperty] == "1")
-            {
-                return true;
-            }
-
-            string current = session[RootsAccessProperty];
-            string prefill = session[RootsAccessPrefillProperty];
-            return !string.IsNullOrWhiteSpace(prefill) &&
-                   !string.Equals(current, prefill, StringComparison.OrdinalIgnoreCase);
+            return SettingsHandoff.AccessIsExplicit(new SessionProperties(session));
         }
 
         private static string SettingsFilePath()
@@ -575,85 +625,6 @@ namespace Vestigo.Installer.Actions
                 {
                     return SettingsFileRead.Protected;
                 }
-            }
-        }
-
-        private static void ApplyProtectedAuthLoad(
-            Session session,
-            ref string requestedToken,
-            ref string authMode,
-            ref bool tokenIsSuggestion,
-            bool isUpgrade)
-        {
-            if (string.IsNullOrWhiteSpace(session[AuthUiModeProperty]))
-            {
-                session[AuthUiModeProperty] = ListenSettings.ResolveProtectedUiAuthMode(
-                    authMode,
-                    requestedToken,
-                    tokenIsSuggestion,
-                    isUpgrade);
-            }
-
-            ProtectedUiAuthChoice choice = ListenSettings.MapProtectedUiAuth(session[AuthUiModeProperty]);
-            authMode = choice.AuthMode;
-            tokenIsSuggestion = choice.TokenIsSuggestion;
-            if (string.IsNullOrWhiteSpace(requestedToken))
-            {
-                requestedToken = ListenSettings.GenerateToken();
-            }
-
-            if (choice.TokenIsSuggestion)
-            {
-                requestedToken = ListenSettings.SuggestedKeepToken(requestedToken);
-                session[SuggestedProperty] = requestedToken;
-            }
-            else
-            {
-                session[SuggestedProperty] = string.Empty;
-            }
-        }
-
-        private static void ApplyProtectedAuthChoice(
-            Session session,
-            ref string token,
-            ref string authMode,
-            ref bool suggestion)
-        {
-            ProtectedUiAuthChoice choice = ListenSettings.MapProtectedUiAuth(session[AuthUiModeProperty]);
-            authMode = choice.AuthMode;
-            session[AuthModeProperty] = authMode;
-            if (choice.TokenIsSuggestion)
-            {
-                token = ListenSettings.SuggestedKeepToken(token);
-                session[SuggestedProperty] = token;
-                suggestion = true;
-                return;
-            }
-
-            session[SuggestedProperty] = string.Empty;
-            suggestion = false;
-            if (!choice.RequireTokenValidation)
-            {
-                return;
-            }
-
-            bool enforceToken = session[ValidateTokenProperty] == "1";
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                if (enforceToken)
-                {
-                    throw new ArgumentException("Enter an API token or choose to keep the existing one.");
-                }
-
-                token = ListenSettings.GenerateToken();
-                return;
-            }
-
-            token = token.Trim();
-            string tokenError = ListenSettings.ValidateToken(token);
-            if (tokenError != null)
-            {
-                throw new ArgumentException(tokenError);
             }
         }
 
@@ -946,6 +917,308 @@ namespace Vestigo.Installer.Actions
                 catch (ArgumentException)
                 {
                 }
+            }
+        }
+
+        private sealed class SessionProperties : IInstallerProperties
+        {
+            private readonly Session _session;
+
+            public SessionProperties(Session session)
+            {
+                _session = session;
+            }
+
+            public string Get(string name)
+            {
+                return _session[name] ?? string.Empty;
+            }
+
+            public void Set(string name, string value)
+            {
+                _session[name] = value ?? string.Empty;
+            }
+        }
+
+        /// <summary>
+        ///     Late-bound HNetCfg.FwPolicy2 store so the custom-action package does not take a firewall assembly dependency.
+        /// </summary>
+        private sealed class WindowsFirewallRuleStore : IFirewallRuleStore, IDisposable
+        {
+            private object _policy;
+            private object _rules;
+
+            public WindowsFirewallRuleStore()
+            {
+                Type policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2");
+                if (policyType == null)
+                {
+                    throw new InvalidOperationException("HNetCfg.FwPolicy2 is not available.");
+                }
+
+                _policy = Activator.CreateInstance(policyType);
+                _rules = GetProperty(_policy, "Rules");
+                if (_rules == null)
+                {
+                    throw new InvalidOperationException("The Windows Firewall policy did not return its rules collection.");
+                }
+            }
+
+            public IReadOnlyList<FirewallRuleRecord> FindByName(string name)
+            {
+                List<FirewallRuleRecord> found = new List<FirewallRuleRecord>();
+                if (TryCollectByName(name, found))
+                {
+                    return found;
+                }
+
+                object rule = null;
+                try
+                {
+                    rule = TryItem(name);
+                    if (rule == null)
+                    {
+                        return new FirewallRuleRecord[0];
+                    }
+
+                    return new[] { ReadRule(rule) };
+                }
+                finally
+                {
+                    Release(ref rule);
+                }
+            }
+
+            public void Remove(string name)
+            {
+                Invoke(_rules, "Remove", new object[] { name }, BindingFlags.InvokeMethod);
+            }
+
+            public void Add(FirewallRuleRecord rule)
+            {
+                Type ruleType = Type.GetTypeFromProgID("HNetCfg.FWRule");
+                if (ruleType == null)
+                {
+                    throw new InvalidOperationException("HNetCfg.FWRule is not available.");
+                }
+
+                object comRule = Activator.CreateInstance(ruleType);
+                try
+                {
+                    SetProperty(comRule, "Name", rule.Name);
+                    SetProperty(comRule, "Description", rule.Description);
+                    SetProperty(comRule, "Protocol", rule.Protocol);
+                    SetProperty(comRule, "LocalPorts", rule.LocalPorts);
+                    SetProperty(comRule, "RemoteAddresses", rule.RemoteAddresses);
+                    SetProperty(comRule, "Direction", rule.Direction);
+                    SetProperty(comRule, "Action", rule.Action);
+                    SetProperty(comRule, "Profiles", rule.Profiles);
+                    SetProperty(comRule, "InterfaceTypes", rule.InterfaceTypes);
+                    SetProperty(comRule, "LocalAddresses", rule.LocalAddresses);
+                    SetProperty(comRule, "ApplicationName", rule.ApplicationName);
+                    SetProperty(comRule, "ServiceName", rule.ServiceName);
+                    SetProperty(comRule, "RemotePorts", rule.RemotePorts);
+                    SetProperty(comRule, "EdgeTraversal", rule.EdgeTraversal);
+                    SetProperty(comRule, "Enabled", rule.Enabled);
+                    Invoke(_rules, "Add", new object[] { comRule }, BindingFlags.InvokeMethod);
+                }
+                finally
+                {
+                    Release(ref comRule);
+                }
+            }
+
+            public void Dispose()
+            {
+                Release(ref _rules);
+                Release(ref _policy);
+            }
+
+            private static FirewallRuleRecord ReadRule(object rule)
+            {
+                return new FirewallRuleRecord(
+                    GetString(rule, "Name"),
+                    GetString(rule, "Description"),
+                    GetInt(rule, "Protocol"),
+                    GetString(rule, "LocalPorts"),
+                    GetString(rule, "RemoteAddresses"),
+                    GetInt(rule, "Direction"),
+                    GetInt(rule, "Action"),
+                    GetInt(rule, "Profiles"),
+                    GetBool(rule, "Enabled"),
+                    GetString(rule, "InterfaceTypes"),
+                    GetString(rule, "LocalAddresses"),
+                    GetString(rule, "ApplicationName"),
+                    GetString(rule, "ServiceName"),
+                    GetString(rule, "RemotePorts"),
+                    GetBool(rule, "EdgeTraversal"));
+            }
+
+            private bool TryCollectByName(string name, List<FirewallRuleRecord> found)
+            {
+                IEnumerable enumerable = _rules as IEnumerable;
+                if (enumerable == null)
+                {
+                    return false;
+                }
+
+                IEnumerator enumerator = null;
+                try
+                {
+                    enumerator = enumerable.GetEnumerator();
+                    if (enumerator == null)
+                    {
+                        return false;
+                    }
+
+                    while (enumerator.MoveNext())
+                    {
+                        object rule = enumerator.Current;
+                        try
+                        {
+                            if (rule != null && string.Equals(GetString(rule, "Name"), name, StringComparison.Ordinal))
+                            {
+                                found.Add(ReadRule(rule));
+                            }
+                        }
+                        finally
+                        {
+                            Release(ref rule);
+                        }
+                    }
+
+                    return true;
+                }
+                catch (Exception)
+                {
+                    found.Clear();
+                    return false;
+                }
+                finally
+                {
+                    try
+                    {
+                        IDisposable disposable = enumerator as IDisposable;
+                        if (disposable != null)
+                        {
+                            disposable.Dispose();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            private object TryItem(string name)
+            {
+                object rule;
+                if (!TryItemCall(name, BindingFlags.GetProperty, out rule))
+                {
+                    TryItemCall(name, BindingFlags.InvokeMethod, out rule);
+                }
+
+                return rule;
+            }
+
+            /// <summary>
+            ///     Returns true when the call produced an answer, including a missing rule. Returns false when this binding
+            ///     failed and the other binding should be tried. A missing-rule HRESULT is absence; other COM errors propagate
+            ///     from the method binding.
+            /// </summary>
+            private bool TryItemCall(string name, BindingFlags flags, out object rule)
+            {
+                rule = null;
+                try
+                {
+                    rule = Invoke(_rules, "Item", new object[] { name }, flags);
+                    return true;
+                }
+                catch (Exception ex) when (IsComFailure(ex))
+                {
+                    if (FirewallRuleSync.IsRuleMissing(ComError(ex)))
+                    {
+                        return true;
+                    }
+
+                    if (flags == BindingFlags.InvokeMethod)
+                    {
+                        throw;
+                    }
+
+                    return false;
+                }
+            }
+
+            private static int ComError(Exception ex)
+            {
+                COMException com = ex as COMException;
+                if (com == null)
+                {
+                    TargetInvocationException invocation = ex as TargetInvocationException;
+                    com = invocation == null ? null : invocation.InnerException as COMException;
+                }
+
+                return com == null ? 0 : com.ErrorCode;
+            }
+
+            private static object GetProperty(object target, string name)
+            {
+                return Invoke(target, name, null, BindingFlags.GetProperty);
+            }
+
+            private static void SetProperty(object target, string name, object value)
+            {
+                Invoke(target, name, new object[] { value }, BindingFlags.SetProperty);
+            }
+
+            private static object Invoke(object target, string name, object[] args, BindingFlags flags)
+            {
+                return target.GetType().InvokeMember(
+                    name,
+                    flags | BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    target,
+                    args);
+            }
+
+            private static string GetString(object target, string name)
+            {
+                object value = GetProperty(target, name);
+                return value == null ? string.Empty : value.ToString();
+            }
+
+            private static int GetInt(object target, string name)
+            {
+                object value = GetProperty(target, name);
+                return value == null ? 0 : Convert.ToInt32(value);
+            }
+
+            private static bool GetBool(object target, string name)
+            {
+                object value = GetProperty(target, name);
+                return value is bool flag && flag;
+            }
+
+            private static bool IsComFailure(Exception ex)
+            {
+                if (ex is COMException)
+                {
+                    return true;
+                }
+
+                TargetInvocationException invocation = ex as TargetInvocationException;
+                return invocation != null && invocation.InnerException is COMException;
+            }
+
+            private static void Release(ref object com)
+            {
+                if (com != null && Marshal.IsComObject(com))
+                {
+                    Marshal.FinalReleaseComObject(com);
+                }
+
+                com = null;
             }
         }
     }

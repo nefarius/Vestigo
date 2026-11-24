@@ -7,29 +7,28 @@ using WixSharp;
 namespace Vestigo.Installer;
 
 /// <summary>
-///     Adds the access, authentication, and file-system roots pages, their managed custom actions, the secure
-///     properties, and the conditional firewall rule to the MSI. The pages are native WiX dialogs; only the token
-///     generator, existing-settings reader, and the elevated settings merge run as managed (net48 DTF) custom actions.
+///     Adds the access, authentication, and file-system roots pages, their managed custom actions, and the secure
+///     properties to the MSI. The inbound firewall rule is reconciled after elevation from the saved listen address
+///     and port. The pages are native WiX dialogs; only the token generator, existing-settings reader, firewall
+///     update, and the elevated settings merge run as managed (net48 DTF) custom actions.
 /// </summary>
 static class ListenPage
 {
     const string WixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
     internal const string BinaryId = "VestigoActionsBin";
-    const string FirewallComponentId = "VestigoFirewallRule";
     const string AccessDialogId = "VestigoAccessDlg";
     const string AuthDialogId = "VestigoAuthDlg";
     const string RootsDialogId = "VestigoRootsDlg";
     const string RootsAccessDialogId = "VestigoRootsAccessDlg";
     const string ErrorDialogId = "VestigoInputErrorDlg";
     const string NotRemoving = "NOT (REMOVE~=\"ALL\")";
+    const string NotUpgrading = "NOT UPGRADINGPRODUCTCODE";
+    const string RemovingProduct = "NOT UPGRADINGPRODUCTCODE AND REMOVE~=\"ALL\"";
 
     static readonly XNamespace Wix = WixNamespace;
-    static readonly XNamespace Fire = WixExtension.FireNamespace;
 
     public static void Apply(Project project, string actionsPackagePath)
     {
-        WixExtension.Fire.PreferredVersion = "5.0.2";
-        project.Include(WixExtension.Fire);
         project.WixSourceGenerated += document => Generate(document, actionsPackagePath);
     }
 
@@ -51,6 +50,9 @@ static class ListenPage
                 new XAttribute("Execute", "deferred"),
                 new XAttribute("Impersonate", "no"),
                 new XAttribute("Return", "check")),
+            DeferredElevatedAction("VestigoRemoveFirewallRule"),
+            ElevatedScriptAction("VestigoRollbackFirewallRule", "rollback"),
+            ElevatedScriptAction("VestigoCommitFirewallRule", "commit"),
             ImmediateAction("VestigoPrepareCredentialProvider"),
             DeferredElevatedAction("VestigoDeployCredentialProvider"),
             DeferredElevatedAction("VestigoRemoveCredentialProvider"));
@@ -65,7 +67,13 @@ static class ListenPage
             SecureProperty("VESTIGO_ROOTS_ACCESS", null),
             SecureProperty("VESTIGO_SETTINGS_PROTECTED", null),
             SecureProperty("VESTIGO_AUTH_UI_MODE", null),
-            SecureProperty("VESTIGO_VALIDATE_TOKEN", null));
+            SecureProperty("VESTIGO_VALIDATE_TOKEN", null),
+            SecureProperty("VESTIGO_LISTEN_UI_MODE", null),
+            SecureProperty("VESTIGO_LISTEN_MODE_EXPLICIT", null),
+            SecureProperty("VESTIGO_PORT_EXPLICIT", null),
+            SecureProperty("VESTIGO_LISTEN_MODE_PREFILL", null),
+            SecureProperty("VESTIGO_PORT_PREFILL", null),
+            SecureProperty("VESTIGO_LOAD_INITIALIZED", null));
         foreach (string name in ModuleSelection.All.Select(m => m.PropertyName))
         {
             package.Add(SecureProperty(name, null));
@@ -94,6 +102,9 @@ static class ListenPage
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving),
             Sequence("VestigoPrepareWriteSettings", "Before", "VestigoWriteSettings", NotRemoving),
             Sequence("VestigoWriteSettings", "Before", "StartServices", NotRemoving),
+            Sequence("VestigoRollbackFirewallRule", "Before", "VestigoRemoveFirewallRule", NotUpgrading),
+            Sequence("VestigoCommitFirewallRule", "Before", "VestigoRemoveFirewallRule", NotUpgrading),
+            Sequence("VestigoRemoveFirewallRule", "Before", "RemoveFiles", RemovingProduct),
             Sequence("VestigoPrepareCredentialProvider", "After", "InstallInitialize", installingInteractive + " OR (" + removingInteractive + ")"),
             Sequence("VestigoRemoveCredentialProvider", "Before", "RemoveFiles", removingInteractive),
             Sequence("VestigoDeployCredentialProvider", "After", "InstallFiles", installingInteractive)));
@@ -101,7 +112,6 @@ static class ListenPage
             Wix + "InstallUISequence",
             Sequence("VestigoLoadSettings", "After", "AppSearch", NotRemoving)));
 
-        AddFirewallComponent(package);
         ConfigureFeatures(package);
         package.Add(BuildUi());
     }
@@ -125,51 +135,22 @@ static class ListenPage
             new XAttribute("Impersonate", "no"),
             new XAttribute("Return", "check"));
 
+    static XElement ElevatedScriptAction(string name, string execute) =>
+        new(
+            Wix + "CustomAction",
+            new XAttribute("Id", name),
+            new XAttribute("BinaryRef", BinaryId),
+            new XAttribute("DllEntry", name),
+            new XAttribute("Execute", execute),
+            new XAttribute("Impersonate", "no"),
+            new XAttribute("Return", "check"));
+
     static XElement Sequence(string action, string placement, string anchor, string condition) =>
         new(
             Wix + "Custom",
             new XAttribute("Action", action),
             new XAttribute(placement, anchor),
             new XAttribute("Condition", condition));
-
-    static void AddFirewallComponent(XElement package)
-    {
-        XElement feature = package.Elements(Wix + "Feature")
-                .FirstOrDefault(f => (string?)f.Attribute("Id") == ModuleSelection.ServerFeature)
-            ?? throw new InvalidOperationException("The generated WiX source has no Feature element.");
-
-        // Registry-only component so Windows Installer has a key path. The rule exists only for the "any" modes
-        // and is removed with the component on uninstall, upgrade to localhost, or repair.
-        XElement component = new(
-            Wix + "Component",
-            new XAttribute("Id", FirewallComponentId),
-            new XAttribute("Directory", "TARGETDIR"),
-            new XAttribute("Guid", "5d0f8b3a-2e64-4c19-9a7b-31c8e6f2d405"),
-            new XAttribute("Condition", "VESTIGO_LISTEN_MODE=\"any\""),
-            new XElement(
-                Wix + "RegistryValue",
-                new XAttribute("Root", "HKLM"),
-                new XAttribute("Key", @"SOFTWARE\Nefarius Software Solutions\Vestigo"),
-                new XAttribute("Name", "FirewallPort"),
-                new XAttribute("Type", "string"),
-                new XAttribute("Value", "[VESTIGO_PORT]"),
-                new XAttribute("KeyPath", "yes")),
-            new XElement(
-                Fire + "FirewallException",
-                new XAttribute("Id", "VestigoFirewallException"),
-                new XAttribute("Name", "Vestigo MCP Server"),
-                new XAttribute("Description", "Inbound TCP port for the Vestigo MCP server."),
-                new XAttribute("Port", "[VESTIGO_PORT]"),
-                new XAttribute("Protocol", "tcp"),
-                new XAttribute("Scope", "any"),
-                new XAttribute("Profile", "all"),
-                new XAttribute("IgnoreFailure", "yes")));
-
-        package.Parent!.Add(new XElement(
-            Wix + "Fragment",
-            new XElement(Wix + "ComponentGroup", new XAttribute("Id", "VestigoFirewallGroup"), component)));
-        feature.Add(new XElement(Wix + "ComponentGroupRef", new XAttribute("Id", "VestigoFirewallGroup")));
-    }
 
     /// <summary>
     ///     Titles, descriptions, install levels, and the existing-settings conditions of the optional updater and
@@ -241,14 +222,30 @@ static class ListenPage
         const string showKeepNote = settingsProtected + " AND " + uiKeep;
         const string showReplaceNote = settingsProtected + " AND " + uiReplace;
         const string showingNone = "((" + notProtected + " AND " + noToken + ") OR (" + settingsProtected + " AND " + uiNone + "))";
+        const string uiListenKeep = "VESTIGO_LISTEN_UI_MODE=\"" + ListenSettings.UiListenKeep + "\"";
+        const string uiListenAny = "VESTIGO_LISTEN_UI_MODE=\"" + ListenSettings.UiListenAny + "\"";
+        const string uiListenLocalhost = "VESTIGO_LISTEN_UI_MODE=\"" + ListenSettings.UiListenLocalhost + "\"";
+        const string protectedKeepListen = settingsProtected + " AND " + uiListenKeep;
+        const string openBeyondLoopback = "(" + showingNone + " AND " + listenAny + ") OR (" + showingNone + " AND " + protectedKeepListen + ")";
 
         XElement accessDialog = WizardDialog(
             AccessDialogId,
             "Server access",
             "Choose where the Vestigo MCP server listens.",
-            ListenRadioGroup(),
-            Control("PortLabel", "Text", 20, 110, 40, 12, "Port:", ("Transparent", "yes"), ("NoPrefix", "yes")),
-            Control("PortEdit", "Edit", 62, 107, 50, 15, null, ("Property", "VESTIGO_PORT"), ("Text", "{5}")),
+            WithShow(ListenRadioGroup(), notProtected),
+            WithShow(ProtectedListenRadioGroup(), settingsProtected),
+            WithShow(
+                Control("PortLabel", "Text", 20, 110, 40, 12, "Port:", ("Transparent", "yes"), ("NoPrefix", "yes")),
+                notProtected),
+            WithShow(
+                Control("PortEdit", "Edit", 62, 107, 50, 15, null, ("Property", "VESTIGO_PORT"), ("Text", "{5}")),
+                notProtected),
+            WithShow(
+                Control("ProtectedPortLabel", "Text", 20, 122, 40, 12, "Port:", ("Transparent", "yes"), ("NoPrefix", "yes")),
+                settingsProtected),
+            WithShow(
+                Control("ProtectedPortEdit", "Edit", 62, 119, 50, 15, null, ("Property", "VESTIGO_PORT"), ("Text", "{5}")),
+                settingsProtected),
             WithShow(
                 Control(
                     "AnyNote",
@@ -260,8 +257,7 @@ static class ListenPage
                     "Any network address adds an inbound Windows Firewall rule for this port. The rule is removed on uninstall.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                listenAny,
-                startHidden: false),
+                notProtected + " AND " + listenAny),
             WithShow(
                 Control(
                     "LocalNote",
@@ -273,7 +269,43 @@ static class ListenPage
                     "The server will only accept connections from this PC. No firewall rule is added.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                listenLocalhost));
+                notProtected + " AND " + listenLocalhost),
+            WithShow(
+                Control(
+                    "ProtectedKeepNote",
+                    "Text",
+                    20,
+                    145,
+                    330,
+                    70,
+                    "Machine settings are protected until elevation. The existing listen address is kept. Leave the port blank to keep the existing port.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                settingsProtected + " AND " + uiListenKeep),
+            WithShow(
+                Control(
+                    "ProtectedAnyNote",
+                    "Text",
+                    20,
+                    145,
+                    330,
+                    70,
+                    "Any network address adds an inbound Windows Firewall rule for the port above. Leave the port blank to keep the existing port.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                settingsProtected + " AND " + uiListenAny),
+            WithShow(
+                Control(
+                    "ProtectedLocalNote",
+                    "Text",
+                    20,
+                    145,
+                    330,
+                    70,
+                    "The server will only accept connections from this PC. No firewall rule is added. Leave the port blank to keep the existing port.",
+                    ("Transparent", "yes"),
+                    ("NoPrefix", "yes")),
+                settingsProtected + " AND " + uiListenLocalhost));
         WireNavigation(accessDialog, "LicenseAgreementDlg", AuthDialogId, validateToken: false);
 
         XElement authDialog = WizardDialog(
@@ -335,7 +367,7 @@ static class ListenPage
                     "No token: anyone who can reach this PC on the network can use the server and every module you enable next.",
                     ("Transparent", "yes"),
                     ("NoPrefix", "yes")),
-                showingNone + " AND " + listenAny),
+                openBeyondLoopback),
             WithShow(
                 Control(
                     "LocalOpenNote",
@@ -530,6 +562,19 @@ static class ListenPage
             Radio(ListenSettings.ListenAny, 0, "Any network address (recommended)"),
             Radio(ListenSettings.ListenLocalhost, 17, "Localhost only"));
         XElement control = Control("ListenChoice", "RadioButtonGroup", 20, 58, 330, 40, null, ("Property", "VESTIGO_LISTEN_MODE"));
+        control.Add(group);
+        return control;
+    }
+
+    static XElement ProtectedListenRadioGroup()
+    {
+        XElement group = new(
+            Wix + "RadioButtonGroup",
+            new XAttribute("Property", "VESTIGO_LISTEN_UI_MODE"),
+            Radio(ListenSettings.UiListenKeep, 0, "Keep existing listen address (recommended)"),
+            Radio(ListenSettings.UiListenAny, 17, "Any network address"),
+            Radio(ListenSettings.UiListenLocalhost, 34, "Localhost only"));
+        XElement control = Control("ProtectedListenChoice", "RadioButtonGroup", 20, 58, 330, 56, null, ("Property", "VESTIGO_LISTEN_UI_MODE"));
         control.Add(group);
         return control;
     }

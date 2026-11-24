@@ -190,6 +190,33 @@ public class InstallerSettingsTests
         Assert.Throws<ArgumentException>(() => ListenSettings.MapProtectedUiAuth("rotate"));
     }
 
+    [Theory]
+    [InlineData(null, false, ListenSettings.UiListenKeep)]
+    [InlineData("any", false, ListenSettings.UiListenKeep)]
+    [InlineData("any", true, ListenSettings.UiListenAny)]
+    [InlineData("LOCALHOST", true, ListenSettings.UiListenLocalhost)]
+    public void ResolveProtectedUiListenMode_KeepsUnlessTheAddressWasExplicit(string? listenMode, bool explicitMode, string expected)
+    {
+        Assert.Equal(expected, ListenSettings.ResolveProtectedUiListenMode(listenMode, explicitMode));
+    }
+
+    [Fact]
+    public void MapProtectedUiListen_MapsKeepAnyAndLocalhost()
+    {
+        ProtectedUiListenChoice keep = ListenSettings.MapProtectedUiListen(null);
+        Assert.Equal(string.Empty, keep.ListenMode);
+        Assert.False(keep.IsExplicit);
+
+        ProtectedUiListenChoice any = ListenSettings.MapProtectedUiListen("ANY");
+        Assert.Equal(ListenSettings.ListenAny, any.ListenMode);
+        Assert.True(any.IsExplicit);
+
+        ProtectedUiListenChoice local = ListenSettings.MapProtectedUiListen(ListenSettings.UiListenLocalhost);
+        Assert.Equal(ListenSettings.ListenLocalhost, local.ListenMode);
+        Assert.True(local.IsExplicit);
+        Assert.Throws<ArgumentException>(() => ListenSettings.MapProtectedUiListen("lan"));
+    }
+
     [Fact]
     public void ProtectedUiAuth_KeepPreservesExistingTokenReplaceOverwritesAndNoneClears()
     {
