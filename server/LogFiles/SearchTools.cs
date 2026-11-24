@@ -9,7 +9,7 @@ namespace Vestigo.LogFiles;
 
 /// <summary>MCP tool that filters large text files on the machine with the bundled ripgrep.</summary>
 [McpServerToolType]
-public sealed class SearchTools(VestigoOptions options, RootPolicy roots, RipgrepSearcher searcher)
+public sealed class SearchTools(RootPolicy roots, RipgrepSearcher searcher)
 {
     [McpServerTool(Name = "search_text")]
     [Description("Searches a text file, or every file under a directory, inside a root with Read access using the bundled ripgrep, and returns only the matching lines (plus optional context). Use it to filter large or numerous log and trace files on the machine instead of downloading or tailing them. The pattern is a Rust regular expression unless fixedStrings is true. Hidden files are searched, .gitignore rules are not applied, symbolic links and junctions are not followed, and binary files are skipped. UTF-8 and UTF-16 files with a byte order mark are decoded. Results are bounded by Vestigo:Logs (lines returned, context lines, line length, run time); truncated or timedOut is true when a bound stopped the search early, so narrow the pattern, path or globs and retry.")]

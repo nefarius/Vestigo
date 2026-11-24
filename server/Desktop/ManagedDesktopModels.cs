@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Vestigo.Desktop;
 
 /// <summary>Names and decisions for managed test desktops. Callers never choose a desktop name.</summary>
@@ -21,7 +23,7 @@ public static class DesktopSessionPolicy
     public static bool IsSecure(string? name) =>
         string.Equals(name, SecureDesktop, StringComparison.OrdinalIgnoreCase);
 
-    public static bool IsOwnedName(string? name)
+    public static bool IsOwnedName([NotNullWhen(true)] string? name)
     {
         if (name is null || !name.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
         {

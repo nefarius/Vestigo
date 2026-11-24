@@ -406,7 +406,6 @@ public class RipgrepIntegrationTests : IDisposable
         options.Logs.RipgrepSha256 = null;
         configure?.Invoke(options.Logs);
         return new SearchTools(
-            options,
             new RootPolicy(options),
             new RipgrepSearcher(options, new RipgrepProcess(options), NullLogger<RipgrepSearcher>.Instance));
     }
@@ -496,7 +495,6 @@ public class SearchToolsTests : IDisposable
         options.Logs.RipgrepSha256 = null;
         File.WriteAllText(options.Logs.RipgrepPath, "fake");
         return new SearchTools(
-            options,
             new RootPolicy(options),
             new RipgrepSearcher(options, process, NullLogger<RipgrepSearcher>.Instance));
     }

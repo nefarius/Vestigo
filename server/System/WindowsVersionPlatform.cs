@@ -16,7 +16,7 @@ public sealed class WindowsVersionPlatform : ISystemPlatform
 
     public string Edition => OsVersionInfo.Edition;
 
-    public string DisplayVersion => OsVersionInfo.DisplayVersion;
+    public string DisplayVersion => OsVersionInfo.DisplayVersion ?? string.Empty;
 
     public string VersionString => OsVersionInfo.VersionString;
 
