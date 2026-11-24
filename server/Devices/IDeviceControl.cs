@@ -85,7 +85,7 @@ public sealed record ClassFilterSet(IReadOnlyList<string> Upper, IReadOnlyList<s
 /// <summary>A driver package staged in the driver store.</summary>
 public sealed record DriverStoreEntry(
     string PublishedName,
-    string OriginalInfName,
+    string? OriginalInfName,
     string? Provider,
     string? ClassName,
     Guid ClassGuid,

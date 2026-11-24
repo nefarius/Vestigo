@@ -27,7 +27,7 @@ internal static class DxgiCaptureProbe
     {
         int session = Process.GetCurrentProcess().SessionId;
         string? desktop = DesktopName();
-        if (!OperatingSystem.IsWindowsVersionAtLeast(8, 1))
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17134))
         {
             return new CaptureProbeResult(session, desktop, "dxgi", target, new CaptureAdvertised(false, false), null);
         }
@@ -42,7 +42,7 @@ internal static class DxgiCaptureProbe
         }
     }
 
-    [SupportedOSPlatform("windows8.1")]
+    [SupportedOSPlatform("windows10.0.17134.0")]
     private static unsafe CaptureProbeResult Probe(
         string target,
         TimeSpan duration,
@@ -92,7 +92,7 @@ internal static class DxgiCaptureProbe
         }
     }
 
-    [SupportedOSPlatform("windows8.1")]
+    [SupportedOSPlatform("windows10.0.17134.0")]
     private static unsafe bool TryOpenOutput(
         IDXGIFactory6* factory,
         string target,
@@ -131,7 +131,7 @@ internal static class DxgiCaptureProbe
         }
     }
 
-    [SupportedOSPlatform("windows8.1")]
+    [SupportedOSPlatform("windows10.0.17134.0")]
     private static unsafe bool TryMatchOutput(IDXGIAdapter4* adapter, string target, bool primary, out IDXGIOutput1* matched)
     {
         matched = null;
@@ -202,7 +202,7 @@ internal static class DxgiCaptureProbe
         }
     }
 
-    [SupportedOSPlatform("windows8.1")]
+    [SupportedOSPlatform("windows10.0.17134.0")]
     private sealed unsafe class DuplicationSource : ICaptureFrameSource
     {
         private IDXGIOutputDuplication* _duplication;

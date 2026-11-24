@@ -55,8 +55,8 @@ public sealed class WindowsProcessModuleSource : IProcessModuleSource
             using SafeFileHandle snapshot = new(rawSnapshot, ownsHandle: true);
             unsafe
             {
-            MODULEENTRY32 entry = new() { dwSize = (uint)sizeof(MODULEENTRY32) };
-            if (!PInvoke.Module32First(snapshot, ref entry))
+            MODULEENTRY32W entry = new() { dwSize = (uint)sizeof(MODULEENTRY32W) };
+            if (!PInvoke.Module32FirstW(snapshot, ref entry))
             {
                 int error = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
                 if (error is 18 or 299)
@@ -142,9 +142,9 @@ public sealed class WindowsProcessModuleSource : IProcessModuleSource
         }
     }
 
-    private static unsafe bool Next(SafeFileHandle snapshot, ref MODULEENTRY32 entry, ref bool partial, ref int skipped)
+    private static unsafe bool Next(SafeFileHandle snapshot, ref MODULEENTRY32W entry, ref bool partial, ref int skipped)
     {
-        if (PInvoke.Module32Next(snapshot, ref entry))
+        if (PInvoke.Module32NextW(snapshot, ref entry))
         {
             return true;
         }
@@ -160,11 +160,11 @@ public sealed class WindowsProcessModuleSource : IProcessModuleSource
         return false;
     }
 
-    private static unsafe bool TryRecord(MODULEENTRY32 entry, bool addresses, out LoadedModuleRecord? record)
+    private static unsafe bool TryRecord(MODULEENTRY32W entry, bool addresses, out LoadedModuleRecord? record)
     {
         record = null;
-        string name = entry.szModule.ToString().TrimEnd('\0').Trim();
-        string path = entry.szExePath.ToString().TrimEnd('\0').Trim();
+        string name = entry.szModule.ToString().Trim();
+        string path = entry.szExePath.ToString().Trim();
         if (name.Length == 0 && path.Length == 0)
         {
             return false;

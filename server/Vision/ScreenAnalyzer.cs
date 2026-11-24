@@ -290,17 +290,19 @@ public static class ScreenAnalyzer
 
     private static void DrawGrid(Mat canvas)
     {
-        int step = canvas.Width >= 1600 ? 200 : 100;
+        int width = canvas.Width;
+        int height = canvas.Height;
+        int step = width >= 1600 ? 200 : 100;
         Scalar line = new(0, 0, 255);
-        for (int x = step; x < canvas.Width; x += step)
+        for (int x = step; x < width; x += step)
         {
-            Cv2.Line(canvas, new Point(x, 0), new Point(x, canvas.Height), line, 1);
+            Cv2.Line(canvas, new Point(x, 0), new Point(x, height), line, 1);
             Cv2.PutText(canvas, x.ToString(System.Globalization.CultureInfo.InvariantCulture), new Point(x + 2, 12), HersheyFonts.HersheySimplex, 0.4, line, 1, LineTypes.AntiAlias);
         }
 
-        for (int y = step; y < canvas.Height; y += step)
+        for (int y = step; y < height; y += step)
         {
-            Cv2.Line(canvas, new Point(0, y), new Point(canvas.Width, y), line, 1);
+            Cv2.Line(canvas, new Point(0, y), new Point(width, y), line, 1);
             Cv2.PutText(canvas, y.ToString(System.Globalization.CultureInfo.InvariantCulture), new Point(2, y - 3), HersheyFonts.HersheySimplex, 0.4, line, 1, LineTypes.AntiAlias);
         }
     }
