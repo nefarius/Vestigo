@@ -469,11 +469,9 @@ public static class InputInjector
                 SendPhysicalStroke,
                 ReleasePhysicalModifiers,
                 platform.IsKeyDown,
-                () => layout.Unchanged()
+                () => batch.RequireFocus && FocusGranted(batch.FocusWindow, platform.Foreground()) != true
                     ? null
-                    : OperationResult<bool>.Fail(
-                        "layout_changed",
-                        "The keyboard layout changed before this character was sent."));
+                    : layout.Blocked());
             if (sent.Success)
             {
                 return ActionOutcome.Done();
@@ -487,18 +485,17 @@ public static class InputInjector
             return ActionOutcome.Fail(sent.ErrorCode!, sent.Error!);
         }
 
-        private IKeyboardLayout WindowsLayout()
-        {
-            string? handle = FocusGranted(batch.FocusWindow, platform.Foreground()) == true
-                ? batch.FocusWindow
-                : platform.Foreground();
-            HWND hwnd = default;
-            if (!string.IsNullOrWhiteSpace(handle) && WindowInspection.TryParseHandle(handle, out HWND parsed))
-            {
-                hwnd = parsed;
-            }
+        private IKeyboardLayout WindowsLayout() => new WindowsKeyboardLayout(ReceivingWindow(), ReceivingWindow);
 
-            return new WindowsKeyboardLayout(hwnd);
+        private HWND ReceivingWindow()
+        {
+            string? foreground = platform.Foreground();
+            string? handle = FocusGranted(batch.FocusWindow, foreground) == true
+                ? batch.FocusWindow
+                : foreground;
+            return !string.IsNullOrWhiteSpace(handle) && WindowInspection.TryParseHandle(handle, out HWND parsed)
+                ? parsed
+                : default;
         }
 
         private OperationResult<int> SendPhysicalStroke(PhysicalKeyStroke stroke)

@@ -1448,6 +1448,45 @@ public class InputTests
     }
 
     [Fact]
+    public void PlanStillMatches_ReportsLayoutChangeBeforeCapsLock()
+    {
+        Assert.Null(WindowsKeyboardLayout.PlanStillMatches(layoutMatches: true, capsLockMatches: true));
+        Assert.Equal("layout_changed", WindowsKeyboardLayout.PlanStillMatches(false, false)!.ErrorCode);
+        Assert.Equal("caps_lock_changed", WindowsKeyboardLayout.PlanStillMatches(true, false)!.ErrorCode);
+    }
+
+    [Fact]
+    public void KeysMode_StopsBeforeTheNextCharacterWhenThePlanNoLongerMatches()
+    {
+        AssertKeysStop("layout_changed", "The keyboard layout changed before this character was sent.");
+        AssertKeysStop("caps_lock_changed", "Caps Lock changed before this character was sent.");
+
+        static void AssertKeysStop(string code, string message)
+        {
+            int checks = 0;
+            MapLayout layout = new(
+                new Dictionary<char, PhysicalKeyStroke>
+                {
+                    ['a'] = new(0x41, 0x1E, false, false, false, false),
+                    ['b'] = new(0x42, 0x30, false, false, false, false)
+                },
+                blocked: () => checks++ == 0 ? null : OperationResult<bool>.Fail(code, message));
+            ScriptedInputPlatform platform = new();
+            InputBatch batch = new(
+                [new InputStep("type", null, null, null, null, null, 1, 0, 0, "ab", null, 0, InputMode: "keys")],
+                null);
+
+            OperationResult<InputResult> result = InputInjector.Execute(batch, platform, layout);
+
+            Assert.False(result.Success);
+            Assert.Equal(code, result.ErrorCode);
+            Assert.Equal(2, platform.Submitted.Count);
+            Assert.Equal((ushort)0x41, ((PreparedKey)platform.Submitted[0]).Vk);
+            Assert.Equal((ushort)0x41, ((PreparedKey)platform.Submitted[1]).Vk);
+        }
+    }
+
+    [Fact]
     public void PhysicalKeySender_StopsBeforeTheNextStrokeWhenTheLayoutChanges()
     {
         int calls = 0;
@@ -1516,7 +1555,10 @@ public class InputTests
         Assert.True(layout.IsDeadKey('^'));
     }
 
-    private sealed class MapLayout(IReadOnlyDictionary<char, PhysicalKeyStroke> map, IReadOnlySet<char>? dead = null) : IKeyboardLayout
+    private sealed class MapLayout(
+        IReadOnlyDictionary<char, PhysicalKeyStroke> map,
+        IReadOnlySet<char>? dead = null,
+        Func<OperationResult<bool>?>? blocked = null) : IKeyboardLayout
     {
         public PhysicalKeyStroke? TryMap(char value)
         {
@@ -1530,7 +1572,7 @@ public class InputTests
             return dead?.Contains(value) == true;
         }
 
-        public bool Unchanged() => true;
+        public OperationResult<bool>? Blocked() => blocked?.Invoke();
 
         private static void RejectReserved(char value)
         {

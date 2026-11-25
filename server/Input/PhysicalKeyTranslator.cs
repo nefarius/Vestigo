@@ -20,8 +20,8 @@ internal interface IKeyboardLayout
 
     bool IsDeadKey(char value);
 
-    /// <summary>False when the layout changed after this instance was created.</summary>
-    bool Unchanged();
+    /// <summary>Null when the next stroke can still use this plan.</summary>
+    OperationResult<bool>? Blocked();
 }
 
 /// <summary>
@@ -91,11 +91,11 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
 {
     private readonly HKL _layout;
     private readonly bool _capsLock;
-    private readonly HWND _window;
+    private readonly Func<HWND> _receivingWindow;
 
-    public WindowsKeyboardLayout(HWND window)
+    public WindowsKeyboardLayout(HWND window, Func<HWND>? receivingWindow = null)
     {
-        _window = window;
+        _receivingWindow = receivingWindow ?? (() => window);
         uint threadId = 0;
         if (!window.IsNull)
         {
@@ -103,12 +103,35 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
         }
 
         _layout = PInvoke.GetKeyboardLayout(threadId);
-        _capsLock = (PInvoke.GetKeyState((int)VIRTUAL_KEY.VK_CAPITAL) & 1) != 0;
+        _capsLock = ReadCapsLock();
     }
 
     public bool CapsLock => _capsLock;
 
-    public bool Unchanged() => SameLayout(_window);
+    public OperationResult<bool>? Blocked() =>
+        PlanStillMatches(SameLayout(_receivingWindow()), ReadCapsLock() == _capsLock);
+
+    /// <summary>Layout mismatch wins, because the planned virtual keys belong to that layout.</summary>
+    internal static OperationResult<bool>? PlanStillMatches(bool layoutMatches, bool capsLockMatches)
+    {
+        if (!layoutMatches)
+        {
+            return OperationResult<bool>.Fail(
+                "layout_changed",
+                "The keyboard layout changed before this character was sent.");
+        }
+
+        if (!capsLockMatches)
+        {
+            return OperationResult<bool>.Fail(
+                "caps_lock_changed",
+                "Caps Lock changed before this character was sent.");
+        }
+
+        return null;
+    }
+
+    private static bool ReadCapsLock() => (PInvoke.GetKeyState((int)VIRTUAL_KEY.VK_CAPITAL) & 1) != 0;
 
     /// <summary>Low word of the layout handle. German (Germany) is <c>0x0407</c>.</summary>
     public int LanguageId => unchecked((int)((nint)_layout & 0xFFFF));
