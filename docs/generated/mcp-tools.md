@@ -694,7 +694,7 @@ Reads the foreground window and the cursor position on the input desktop. deskto
 
 ## `inspect_screen`
 
-Looks at the console user's screen and describes it for an agent. Returns an annotated image with numbered boxes plus a JSON element list (id, source uia|ocr|cv, role, name or text, box in image pixels) that works without seeing the image. Elements come from UI Automation, Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId (same target and maxEdge) and lists the regions that changed. imageMode 'annotated' (default), 'raw' or 'none' controls the image. grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). truncated, candidates and omitted report when collected elements were left out. Takes the same targets as take_screenshot. Requires Vestigo:Desktop:AllowScreenshots. desktopSessionId does not activate the desktop. A desktop, display, or region inspection needs that session to be the input desktop. A window inspection is best-effort while inactive. Interactive session only.
+Looks at the console user's screen and describes it for an agent. Returns an annotated image with numbered boxes plus a JSON element list (id, source uia|ocr|cv, role, name or text, box in image pixels) that works without seeing the image. Elements come from UI Automation, Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId of the same target and maxEdge. The same window-relative crop is accepted after the window moves; a different crop, a mix of cropped and full window, or a different preview scale is capture_mismatch. imageMode 'annotated' (default), 'raw' or 'none' controls the image. grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). truncated, candidates and omitted report when collected elements were left out. Takes the same targets as take_screenshot. On target window, optional cropX, cropY, cropWidth and cropHeight (all four) are unscaled physical pixels relative to the window. A partial overlap is clipped and returned as effectiveCrop, with windowBounds for the window frame. A crop that misses the window is empty_region. Omitting the crop keeps the full window. Requires Vestigo:Desktop:AllowScreenshots. desktopSessionId does not activate the desktop. A desktop, display, or region inspection needs that session to be the input desktop. A window inspection is best-effort while inactive. Interactive session only.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -708,13 +708,17 @@ Looks at the console user's screen and describes it for an agent. Returns an ann
 | `y` | `int?` | no | `null` | Region top, virtual-screen physical pixels. |
 | `width` | `int?` | no | `null` | Region width in physical pixels. |
 | `height` | `int?` | no | `null` | Region height in physical pixels. |
+| `cropX` | `int?` | no | `null` | Window-relative crop left in unscaled physical pixels. Pass cropY, cropWidth and cropHeight too. Window target only. |
+| `cropY` | `int?` | no | `null` | Window-relative crop top in unscaled physical pixels. |
+| `cropWidth` | `int?` | no | `null` | Window-relative crop width in physical pixels. Must be greater than zero. |
+| `cropHeight` | `int?` | no | `null` | Window-relative crop height in physical pixels. Must be greater than zero. |
 | `imageMode` | `string` | no | `annotated` | 'annotated' (default), 'raw' or 'none'. |
 | `maxEdge` | `int` | no | `1280` | Longest edge of the returned image in pixels, 320 to 3840. Default 1280. |
 | `grid` | `bool` | no | `false` | Draw a coordinate grid instead of numbered boxes. |
 | `uia` | `bool` | no | `true` | Read UI Automation elements (names and roles; edit values are never read). Default true. |
 | `ocr` | `bool` | no | `true` | Recognize text with Windows OCR. Default true. |
 | `includeCursor` | `bool` | no | `false` | Draw the mouse cursor on the capture. |
-| `diffAgainst` | `string` | no | `null` | captureId of an earlier inspection to diff against. |
+| `diffAgainst` | `string` | no | `null` | captureId of an earlier inspection to diff against. Same target, maxEdge, and window crop. |
 | `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
 | `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Desktop, display, and region views need that session to be the input desktop. |
 

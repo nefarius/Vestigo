@@ -35,10 +35,14 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         + "(id, source uia|ocr|cv, role, name or text, box in image pixels) that works without seeing the image. Elements come from UI Automation, "
         + "Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an "
         + "elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId "
-        + "(same target and maxEdge) and lists the regions that changed. imageMode 'annotated' (default), 'raw' or 'none' controls the image. "
+        + "of the same target and maxEdge. The same window-relative crop is accepted after the window moves; a different crop, a mix of cropped and full window, "
+        + "or a different preview scale is capture_mismatch. imageMode 'annotated' (default), 'raw' or 'none' controls the image. "
         + "grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, "
         + "with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). "
         + "truncated, candidates and omitted report when collected elements were left out. Takes the same targets as take_screenshot. "
+        + "On target window, optional cropX, cropY, cropWidth and cropHeight (all four) are unscaled physical pixels relative to the window. "
+        + "A partial overlap is clipped and returned as effectiveCrop, with windowBounds for the window frame. A crop that misses the window is empty_region. "
+        + "Omitting the crop keeps the full window. "
         + "Requires Vestigo:Desktop:AllowScreenshots. desktopSessionId does not activate the desktop. "
         + "A desktop, display, or region inspection needs that session to be the input desktop. A window inspection is best-effort while inactive. "
         + "Interactive session only.")]
@@ -53,19 +57,23 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         [Description("Region top, virtual-screen physical pixels.")] int? y = null,
         [Description("Region width in physical pixels.")] int? width = null,
         [Description("Region height in physical pixels.")] int? height = null,
+        [Description("Window-relative crop left in unscaled physical pixels. Pass cropY, cropWidth and cropHeight too. Window target only.")] int? cropX = null,
+        [Description("Window-relative crop top in unscaled physical pixels.")] int? cropY = null,
+        [Description("Window-relative crop width in physical pixels. Must be greater than zero.")] int? cropWidth = null,
+        [Description("Window-relative crop height in physical pixels. Must be greater than zero.")] int? cropHeight = null,
         [Description("'annotated' (default), 'raw' or 'none'.")] string imageMode = ImageAnnotated,
         [Description("Longest edge of the returned image in pixels, 320 to 3840. Default 1280.")] int maxEdge = ScreenAnalyzer.DefaultMaxEdge,
         [Description("Draw a coordinate grid instead of numbered boxes.")] bool grid = false,
         [Description("Read UI Automation elements (names and roles; edit values are never read). Default true.")] bool uia = true,
         [Description("Recognize text with Windows OCR. Default true.")] bool ocr = true,
         [Description("Draw the mouse cursor on the capture.")] bool includeCursor = false,
-        [Description("captureId of an earlier inspection to diff against.")] string? diffAgainst = null,
+        [Description("captureId of an earlier inspection to diff against. Same target, maxEdge, and window crop.")] string? diffAgainst = null,
         [Description("Use the elevated token when capturing as the console user.")] bool elevated = false,
         [Description("Managed desktop session id. Desktop, display, and region views need that session to be the input desktop.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
     {
         OperationResult<(ScreenCaptureRequest Request, string Mode)> prepared =
-            Prepare(target, display, windowHandle, pid, processName, titleRegex, x, y, width, height, imageMode, maxEdge, includeCursor);
+            Prepare(target, display, windowHandle, pid, processName, titleRegex, x, y, width, height, imageMode, maxEdge, includeCursor, cropX, cropY, cropWidth, cropHeight);
         if (!prepared.Success)
         {
             return DesktopTools.ErrorResult(prepared.ErrorCode!, prepared.Error!);
@@ -258,7 +266,11 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         int? height,
         string imageMode,
         int maxEdge,
-        bool includeCursor)
+        bool includeCursor,
+        int? cropX = null,
+        int? cropY = null,
+        int? cropWidth = null,
+        int? cropHeight = null)
     {
         if (!options.Desktop.AllowScreenshots)
         {
@@ -300,6 +312,27 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             region = new DesktopRect(x.Value, y.Value, width.Value, height.Value);
         }
 
+        DesktopRect? windowCrop = null;
+        if (cropX is not null || cropY is not null || cropWidth is not null || cropHeight is not null)
+        {
+            if (cropX is null || cropY is null || cropWidth is null || cropHeight is null)
+            {
+                return Invalid("cropX, cropY, cropWidth and cropHeight must be supplied together.");
+            }
+
+            if (cropWidth <= 0 || cropHeight <= 0)
+            {
+                return Invalid("cropWidth and cropHeight must be greater than zero.");
+            }
+
+            if (parsedTarget != ScreenCaptureTarget.Window)
+            {
+                return Invalid("cropX, cropY, cropWidth and cropHeight are only valid when target is 'window'.");
+            }
+
+            windowCrop = new DesktopRect(cropX.Value, cropY.Value, cropWidth.Value, cropHeight.Value);
+        }
+
         ScreenCaptureRequest request = new(
             parsedTarget,
             string.IsNullOrWhiteSpace(display) ? null : display.Trim(),
@@ -311,7 +344,8 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             includeCursor,
             0,
             true,
-            options.Desktop.MaxScreenshotBytes);
+            options.Desktop.MaxScreenshotBytes,
+            windowCrop);
         return OperationResult<(ScreenCaptureRequest, string)>.Ok((request, mode));
     }
 
@@ -427,6 +461,16 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             ["omitted"] = SourceCountsNode(outcome.Omitted),
             ["validForSeconds"] = (int)CaptureCache.DefaultTtl.TotalSeconds
         };
+        if (record.WindowBounds is { } windowBounds)
+        {
+            node["windowBounds"] = JsonSerializer.SerializeToNode(windowBounds, VisionJson.Options);
+        }
+
+        if (record.EffectiveCrop is { } effectiveCrop)
+        {
+            node["effectiveCrop"] = JsonSerializer.SerializeToNode(effectiveCrop, VisionJson.Options);
+        }
+
         if (includeElements)
         {
             node["elementCount"] = record.Elements.Count;

@@ -99,7 +99,9 @@ public static class ScreenCapture
                 previewBase64,
                 fullBase64,
                 Process.GetCurrentProcess().SessionId,
-                fidelity));
+                fidelity,
+                target.WindowBounds,
+                target.EffectiveCrop));
         }
         catch (Exception ex) when (ex is COMException or InvalidOperationException or ExternalException)
         {
@@ -161,9 +163,53 @@ public static class ScreenCapture
         return new DesktopSize(width, height);
     }
 
+    /// <summary>
+    ///     Clips a window-relative crop to the window frame. The crop is unscaled physical pixels from the window origin.
+    ///     Screen bounds are the intersection in virtual-screen pixels. Effective crop is that intersection translated back
+    ///     to window-relative coordinates.
+    /// </summary>
+    internal static OperationResult<WindowCropClip> ClipWindowCrop(DesktopRect windowBounds, DesktopRect crop)
+    {
+        if (crop.Width <= 0 || crop.Height <= 0)
+        {
+            return OperationResult<WindowCropClip>.Fail(
+                "invalid_request",
+                "cropWidth and cropHeight must be greater than zero.");
+        }
+
+        DesktopRect candidate = new(windowBounds.X + crop.X, windowBounds.Y + crop.Y, crop.Width, crop.Height);
+        DesktopRect? intersection = candidate.Intersection(windowBounds);
+        if (intersection is null)
+        {
+            return OperationResult<WindowCropClip>.Fail(
+                "empty_region",
+                "The crop rectangle does not intersect the window.");
+        }
+
+        DesktopRect screen = intersection;
+        DesktopRect effective = new(screen.X - windowBounds.X, screen.Y - windowBounds.Y, screen.Width, screen.Height);
+        return OperationResult<WindowCropClip>.Ok(new WindowCropClip(screen, effective));
+    }
 
     private static OperationResult<ResolvedCapture> Resolve(ScreenCaptureRequest request, IReadOnlyList<DisplayInfo> displays)
     {
+        if (request.WindowCrop is { } crop)
+        {
+            if (request.Target != ScreenCaptureTarget.Window)
+            {
+                return OperationResult<ResolvedCapture>.Fail(
+                    "invalid_request",
+                    "cropX, cropY, cropWidth and cropHeight are only valid when target is 'window'.");
+            }
+
+            if (crop.Width <= 0 || crop.Height <= 0)
+            {
+                return OperationResult<ResolvedCapture>.Fail(
+                    "invalid_request",
+                    "cropWidth and cropHeight must be greater than zero.");
+            }
+        }
+
         DesktopRect? virtualScreen = VirtualScreen(displays);
         if (virtualScreen is null)
         {
@@ -222,7 +268,7 @@ public static class ScreenCapture
                 return OperationResult<ResolvedCapture>.Fail("window_minimized", "The window is minimized.");
             }
 
-            return DescribeWindow(hwnd, displays);
+            return DescribeWindow(hwnd, displays, windowCrop: request.WindowCrop);
         }
 
         if (request.Pids.Count == 0 && request.ProcessNames.Count == 0 && string.IsNullOrWhiteSpace(request.TitlePattern))
@@ -266,10 +312,14 @@ public static class ScreenCapture
             return OperationResult<ResolvedCapture>.Fail("window_not_found", "The matched window no longer exists.");
         }
 
-        return DescribeWindow(found, displays, match.Title);
+        return DescribeWindow(found, displays, match.Title, request.WindowCrop);
     }
 
-    private static OperationResult<ResolvedCapture> DescribeWindow(HWND hwnd, IReadOnlyList<DisplayInfo> displays, string? title = null)
+    private static OperationResult<ResolvedCapture> DescribeWindow(
+        HWND hwnd,
+        IReadOnlyList<DisplayInfo> displays,
+        string? title = null,
+        DesktopRect? windowCrop = null)
     {
         if (!Win32PInvoke.GetWindowRect(hwnd, out RECT raw))
         {
@@ -277,10 +327,26 @@ public static class ScreenCapture
         }
 
         DesktopRect windowRect = new(raw.left, raw.top, raw.right - raw.left, raw.bottom - raw.top);
-        DesktopRect bounds = ExtendedFrameBounds(hwnd) ?? windowRect;
-        if (bounds.Width <= 0 || bounds.Height <= 0)
+        DesktopRect windowBounds = ExtendedFrameBounds(hwnd) ?? windowRect;
+        if (windowBounds.Width <= 0 || windowBounds.Height <= 0)
         {
             return OperationResult<ResolvedCapture>.Fail("empty_region", "The window has an empty frame.");
+        }
+
+        DesktopRect bounds = windowBounds;
+        DesktopRect? reportedWindowBounds = null;
+        DesktopRect? effectiveCrop = null;
+        if (windowCrop is { } crop)
+        {
+            OperationResult<WindowCropClip> clipped = ClipWindowCrop(windowBounds, crop);
+            if (!clipped.Success)
+            {
+                return OperationResult<ResolvedCapture>.Fail(clipped.ErrorCode!, clipped.Error!);
+            }
+
+            bounds = clipped.Value!.ScreenBounds;
+            effectiveCrop = clipped.Value.EffectiveCrop;
+            reportedWindowBounds = windowBounds;
         }
 
         title ??= WindowInspection.Title(hwnd);
@@ -293,7 +359,9 @@ public static class ScreenCapture
             WindowInspection.FormatHandle(hwnd),
             title,
             hwnd,
-            windowRect);
+            windowRect,
+            reportedWindowBounds,
+            effectiveCrop);
     }
 
     private static OperationResult<ResolvedCapture> OkResolved(
@@ -304,8 +372,20 @@ public static class ScreenCapture
         string? handle,
         string? title,
         HWND hwnd = default,
-        DesktopRect? windowRect = null) =>
-        OperationResult<ResolvedCapture>.Ok(new ResolvedCapture(target, bounds, displayNames, dpi, handle, title, hwnd, windowRect));
+        DesktopRect? windowRect = null,
+        DesktopRect? windowBounds = null,
+        DesktopRect? effectiveCrop = null) =>
+        OperationResult<ResolvedCapture>.Ok(new ResolvedCapture(
+            target,
+            bounds,
+            displayNames,
+            dpi,
+            handle,
+            title,
+            hwnd,
+            windowRect,
+            windowBounds,
+            effectiveCrop));
 
     private static OperationResult<byte[]> CopyPixels(ResolvedCapture target, bool includeCursor)
     {
@@ -769,8 +849,13 @@ public static class ScreenCapture
         string? WindowHandle,
         string? WindowTitle,
         HWND Window,
-        DesktopRect? WindowRect);
+        DesktopRect? WindowRect,
+        DesktopRect? WindowBounds,
+        DesktopRect? EffectiveCrop);
 }
+
+/// <summary>A window crop after clipping: where to capture, and the window-relative rectangle to report.</summary>
+internal sealed record WindowCropClip(DesktopRect ScreenBounds, DesktopRect EffectiveCrop);
 
 internal static class DesktopRectExtensions
 {
