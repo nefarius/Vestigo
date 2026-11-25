@@ -101,11 +101,38 @@ try {
     $keptMerged = [Vestigo.Installer.Actions.Logic.ListenSettings]::Merge($keptJson, $keptResolved)
     $keptRead = [Vestigo.Installer.Actions.Logic.ListenSettings]::ReadExisting($keptMerged)
     if ($keptRead.Address -ne '192.168.1.5' -or $keptRead.Port -ne 6000) { throw 'Protected upgrade did not keep the saved listen address and port.' }
+    $ruleSync = [Vestigo.Installer.Actions.Logic.FirewallRuleSync]
+    $ruleName = $ruleSync::RuleName
     $firewall = New-Object Vestigo.Installer.Actions.Logic.MemoryFirewallRuleStore
-    [void]$firewall.Add([Vestigo.Installer.Actions.Logic.FirewallRuleSync]::CreateRule(5098))
-    [void]$firewall.Add([Vestigo.Installer.Actions.Logic.FirewallRuleSync]::CreateRule(1))
-    [Vestigo.Installer.Actions.Logic.FirewallRuleSync]::Sync($keptResolved, $firewall, $writeLog)
+    [void]$firewall.Add($ruleSync::CreateRule(5098, $ruleName))
+    [void]$firewall.Add($ruleSync::CreateRule(1, $ruleName))
+    $ruleSync::Sync($keptResolved, $firewall, $writeLog, $ruleName)
     if ($firewall.Rules.Count -ne 1 -or $firewall.Rules[0].LocalPorts -ne '6000') { throw 'Firewall sync did not leave one rule on the saved port.' }
+    # The packaged net48 store must populate and read back real HNetCfg.FWRule objects. An in-memory store never
+    # hit the COM rules (empty RemotePorts is rejected with E_INVALIDARG), which let a broken firewall rule ship.
+    $storeType = [Vestigo.Installer.Actions.Logic.WindowsFirewallRuleStore]
+    $comRuleType = [Type]::GetTypeFromProgID('HNetCfg.FWRule')
+    if ($null -eq $comRuleType) { throw 'HNetCfg.FWRule is not registered.' }
+    $comCases = @(
+        @{ Label = 'unrestricted'; Record = $ruleSync::CreateRule(5098, 'Vestigo-smoke-fw') },
+        @{ Label = 'protocol any'; Record = (New-Object Vestigo.Installer.Actions.Logic.FirewallRuleRecord(
+            'Vestigo-smoke-fw', 'smoke', 256, '*', '*', 1, 1, 0x7FFFFFFF, $false, 'All', '*', '', '', '*', $false)) }
+    )
+    foreach ($case in $comCases) {
+        $comRule = [Activator]::CreateInstance($comRuleType)
+        try {
+            $storeType::PopulateComRule($comRule, $case.Record)
+            $readBack = $storeType::ReadComRule($comRule)
+            if ($readBack.Protocol -ne $case.Record.Protocol -or $readBack.Enabled -ne $case.Record.Enabled) {
+                throw "Real firewall rule round trip changed the $($case.Label) rule."
+            }
+            if ($case.Label -eq 'unrestricted' -and -not $ruleSync::SameRule($readBack, $case.Record)) {
+                throw 'The unrestricted rule read back from Windows Firewall does not match the requested one.'
+            }
+        }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($comRule) }
+    }
+
     foreach ($line in $handoffLog) {
         if ($line.Contains('existing-test-token')) { throw 'Installer log contains an API token.' }
     }

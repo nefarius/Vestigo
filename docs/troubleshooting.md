@@ -69,7 +69,7 @@ A startup `SECURITY WARNING` is not a failure. A non-loopback bind without `ApiT
 
 ## The server is not reachable from another machine
 
-`ListenAddress` must be `0.0.0.0` or `::` (or the machine address), and the inbound firewall rule `Vestigo MCP Server` must exist for the port. The MSI adds or restores that rule for a non-loopback address, using the saved port, including on upgrade and repair. Restart the service after editing `appsettings.json`. A startup `SECURITY WARNING` in the log means no `ApiTokens` are set while the server is reachable from the network.
+`ListenAddress` must be `0.0.0.0` or `::` (or the machine address), and the inbound firewall rule `Vestigo MCP Server` must exist for the port. The MSI adds or restores that rule for a non-loopback address, using the saved port, including on upgrade and repair. Install, upgrade and repair each detect a missing, disabled, duplicated or differently scoped rule, replace it, and read it back; the MSI log then says `Inbound firewall rule 'Vestigo MCP Server' is missing; creating it.` followed by `Added inbound firewall rule`. A line starting `Could not replace the Windows Firewall rule` names the failing property and the COM HRESULT, and the previous rule is restored. v2.19.3 and v2.20.0 could not create the rule at all (empty `RemotePorts` was rejected with `0x80070057`), so repair or upgrade to a later MSI; as a stopgap run `New-NetFirewallRule -DisplayName 'Vestigo MCP Server' -Direction Inbound -Protocol TCP -LocalPort <port> -Action Allow` in an elevated PowerShell. Restart the service after editing `appsettings.json`. A startup `SECURITY WARNING` in the log means no `ApiTokens` are set while the server is reachable from the network.
 
 ## Paths are rejected
 

@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Vestigo.Installer.Actions.Logic
@@ -167,18 +169,26 @@ namespace Vestigo.Installer.Actions.Logic
         public const string RuleName = "Vestigo MCP Server";
         public const string RuleDescription = "Inbound TCP port for the Vestigo MCP server.";
         public const int ProtocolTcp = 6;
+        public const int ProtocolUdp = 17;
         public const int DirectionInbound = 1;
         public const int ActionAllow = 1;
         public const int ProfilesAll = 0x7FFFFFFF;
         public const string RemoteAny = "*";
+        public const string RemotePortsAny = "*";
         public const string InterfaceTypesAll = "All";
         public const string LocalAddressesAny = "*";
         public const int MaxRemovals = 32;
 
-        public static FirewallRuleRecord CreateRule(int port)
+        /// <summary>Windows Firewall accepts local and remote ports only for TCP and UDP rules.</summary>
+        public static bool ProtocolSupportsPorts(int protocol)
+        {
+            return protocol == ProtocolTcp || protocol == ProtocolUdp;
+        }
+
+        public static FirewallRuleRecord CreateRule(int port, string ruleName = RuleName)
         {
             return new FirewallRuleRecord(
-                RuleName,
+                ruleName,
                 RuleDescription,
                 ProtocolTcp,
                 port.ToString(CultureInfo.InvariantCulture),
@@ -191,8 +201,35 @@ namespace Vestigo.Installer.Actions.Logic
                 LocalAddressesAny,
                 string.Empty,
                 string.Empty,
-                string.Empty,
+                RemotePortsAny,
                 false);
+        }
+
+        /// <summary>
+        ///     Unwraps reflection wrappers and appends the COM HRESULT, so the MSI log names the real failure instead of
+        ///     "Exception has been thrown by the target of an invocation".
+        /// </summary>
+        public static string FormatError(Exception ex)
+        {
+            Exception cause = ex;
+            while (cause is TargetInvocationException && cause.InnerException != null)
+            {
+                cause = cause.InnerException;
+            }
+
+            string text = cause.GetType().Name + ": " + cause.Message;
+            COMException? com = cause as COMException;
+            if (com == null)
+            {
+                com = cause.InnerException as COMException;
+            }
+
+            if (com != null)
+            {
+                text += " (HRESULT 0x" + com.ErrorCode.ToString("X8", CultureInfo.InvariantCulture) + ")";
+            }
+
+            return text;
         }
 
         /// <summary>True for the HRESULTs Windows uses when a named firewall rule does not exist.</summary>
@@ -206,54 +243,87 @@ namespace Vestigo.Installer.Actions.Logic
         ///     Leaves one matching inbound rule when the server binds beyond loopback, or removes the rule for localhost.
         ///     A failed replacement restores the rules that were present before the attempt.
         /// </summary>
-        public static void Sync(ResolvedSettings resolved, IFirewallRuleStore store, Action<string>? log)
+        public static void Sync(ResolvedSettings resolved, IFirewallRuleStore store, Action<string>? log, string ruleName = RuleName)
         {
             try
             {
-                IReadOnlyList<FirewallRuleRecord> previous = Copy(store.FindByName(RuleName));
+                IReadOnlyList<FirewallRuleRecord> previous = Copy(store.FindByName(ruleName));
                 if (!resolved.BindsAny)
                 {
-                    int removed = RemoveAll(store, log);
+                    int removed = RemoveAll(store, log, ruleName);
                     Write(log, "No inbound firewall rule for localhost mode after removing " +
                                removed.ToString(CultureInfo.InvariantCulture) + ".");
                     return;
                 }
 
-                FirewallRuleRecord desired = CreateRule(resolved.Port);
+                FirewallRuleRecord desired = CreateRule(resolved.Port, ruleName);
                 if (previous.Count == 1 && SameRule(previous[0], desired))
                 {
-                    Write(log, "Kept inbound firewall rule '" + RuleName + "' for TCP port " +
+                    Write(log, "Kept inbound firewall rule '" + ruleName + "' for TCP port " +
                                resolved.Port.ToString(CultureInfo.InvariantCulture) + ".");
                     return;
                 }
 
+                Write(log, previous.Count == 0
+                    ? "Inbound firewall rule '" + ruleName + "' is missing; creating it."
+                    : "Inbound firewall rule '" + ruleName + "' does not match (" +
+                      previous.Count.ToString(CultureInfo.InvariantCulture) + " found); replacing it.");
                 try
                 {
-                    int removed = RemoveAll(store, log);
+                    int removed = RemoveAll(store, log, ruleName);
                     store.Add(desired);
-                    Write(log, "Added inbound firewall rule '" + RuleName + "' for TCP port " +
+                    VerifyAdded(store, desired, ruleName, log);
+                    Write(log, "Added inbound firewall rule '" + ruleName + "' for TCP port " +
                                resolved.Port.ToString(CultureInfo.InvariantCulture) +
                                " after removing " + removed.ToString(CultureInfo.InvariantCulture) + ".");
                 }
                 catch (Exception ex)
                 {
-                    Write(log, "Could not replace the Windows Firewall rule '" + RuleName + "': " +
-                               ex.GetType().Name + ": " + ex.Message + ". Restoring the previous rule.");
-                    Restore(previous, store, log);
+                    Write(log, "Could not replace the Windows Firewall rule '" + ruleName + "': " +
+                               FormatError(ex) + ". Restoring the previous rule.");
+                    Restore(previous, store, log, ruleName);
                 }
             }
             catch (Exception ex)
             {
-                Write(log, "Could not update the Windows Firewall rule '" + RuleName + "': " + ex.GetType().Name + ": " + ex.Message);
+                Write(log, "Could not update the Windows Firewall rule '" + ruleName + "': " + FormatError(ex));
             }
         }
 
-        /// <summary>Replaces every rule named <see cref="RuleName" /> with <paramref name="previous" />.</summary>
-        public static void Restore(IReadOnlyList<FirewallRuleRecord> previous, IFirewallRuleStore store, Action<string>? log)
+        /// <summary>
+        ///     Reads the rule back after <c>Add</c>. Throws unless exactly one enabled inbound allow rule for the TCP port
+        ///     exists, so a silently dropped or mangled rule is never reported as added.
+        /// </summary>
+        private static void VerifyAdded(IFirewallRuleStore store, FirewallRuleRecord desired, string ruleName, Action<string>? log)
+        {
+            IReadOnlyList<FirewallRuleRecord> after = store.FindByName(ruleName);
+            if (after == null || after.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "Expected one rule named '" + ruleName + "' after adding it, found " +
+                    (after == null ? 0 : after.Count).ToString(CultureInfo.InvariantCulture) + ".");
+            }
+
+            FirewallRuleRecord actual = after[0];
+            if (!actual.Enabled || actual.Direction != desired.Direction || actual.Action != desired.Action ||
+                actual.Protocol != desired.Protocol ||
+                !string.Equals(actual.LocalPorts, desired.LocalPorts, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The rule read back after adding '" + ruleName + "' is not the requested inbound allow rule.");
+            }
+
+            if (!SameRule(actual, desired))
+            {
+                Write(log, "The stored rule '" + ruleName + "' differs from the requested one in scope details; keeping it.");
+            }
+        }
+
+        /// <summary>Replaces every rule named <paramref name="ruleName" /> with <paramref name="previous" />.</summary>
+        public static void Restore(IReadOnlyList<FirewallRuleRecord> previous, IFirewallRuleStore store, Action<string>? log, string ruleName = RuleName)
         {
             try
             {
-                RemoveAll(store, log);
+                RemoveAll(store, log, ruleName);
                 int restored = 0;
                 if (previous != null)
                 {
@@ -265,11 +335,11 @@ namespace Vestigo.Installer.Actions.Logic
                 }
 
                 Write(log, "Restored " + restored.ToString(CultureInfo.InvariantCulture) +
-                           " firewall rule(s) named '" + RuleName + "'.");
+                           " firewall rule(s) named '" + ruleName + "'.");
             }
             catch (Exception ex)
             {
-                Write(log, "Could not restore the Windows Firewall rule '" + RuleName + "': " + ex.GetType().Name + ": " + ex.Message);
+                Write(log, "Could not restore the Windows Firewall rule '" + ruleName + "': " + FormatError(ex));
             }
         }
 
@@ -351,40 +421,40 @@ namespace Vestigo.Installer.Actions.Logic
             return rules;
         }
 
-        /// <summary>Removes every rule named <see cref="RuleName" />. Used on uninstall.</summary>
-        public static void Remove(IFirewallRuleStore store, Action<string>? log)
+        /// <summary>Removes every rule named <paramref name="ruleName" />. Used on uninstall.</summary>
+        public static void Remove(IFirewallRuleStore store, Action<string>? log, string ruleName = RuleName)
         {
             try
             {
-                int removed = RemoveAll(store, log);
-                Write(log, "Removed " + removed.ToString(CultureInfo.InvariantCulture) + " firewall rule(s) named '" + RuleName + "'.");
+                int removed = RemoveAll(store, log, ruleName);
+                Write(log, "Removed " + removed.ToString(CultureInfo.InvariantCulture) + " firewall rule(s) named '" + ruleName + "'.");
             }
             catch (Exception ex)
             {
-                Write(log, "Could not remove the Windows Firewall rule '" + RuleName + "': " + ex.GetType().Name + ": " + ex.Message);
+                Write(log, "Could not remove the Windows Firewall rule '" + ruleName + "': " + FormatError(ex));
             }
         }
 
-        private static int RemoveAll(IFirewallRuleStore store, Action<string>? log)
+        private static int RemoveAll(IFirewallRuleStore store, Action<string>? log, string ruleName)
         {
             int removed = 0;
             for (int i = 0; i < MaxRemovals; i++)
             {
-                IReadOnlyList<FirewallRuleRecord> found = store.FindByName(RuleName);
+                IReadOnlyList<FirewallRuleRecord> found = store.FindByName(ruleName);
                 if (found == null || found.Count == 0)
                 {
                     break;
                 }
 
-                store.Remove(RuleName);
+                store.Remove(ruleName);
                 removed++;
             }
 
-            IReadOnlyList<FirewallRuleRecord> leftover = store.FindByName(RuleName);
+            IReadOnlyList<FirewallRuleRecord> leftover = store.FindByName(ruleName);
             if (removed == MaxRemovals && leftover != null && leftover.Count > 0)
             {
                 Write(log, "Stopped after removing " + MaxRemovals.ToString(CultureInfo.InvariantCulture) +
-                           " firewall rules named '" + RuleName + "'.");
+                           " firewall rules named '" + ruleName + "'.");
             }
 
             return removed;
@@ -414,23 +484,44 @@ namespace Vestigo.Installer.Actions.Logic
             return copy;
         }
 
-        private static bool SameRule(FirewallRuleRecord left, FirewallRuleRecord right)
+        /// <summary>
+        ///     True when <paramref name="left" /> is equivalent to <paramref name="right" />. Windows reports unset scope
+        ///     fields as <c>*</c> or an empty string interchangeably, and all three profiles as 7 or 0x7FFFFFFF; those do not
+        ///     count as drift. A service restriction (<c>*</c> means services only) and every other limit do.
+        /// </summary>
+        public static bool SameRule(FirewallRuleRecord left, FirewallRuleRecord right)
         {
             return string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
                    string.Equals(left.Description, right.Description, StringComparison.Ordinal) &&
                    left.Protocol == right.Protocol &&
                    string.Equals(left.LocalPorts, right.LocalPorts, StringComparison.Ordinal) &&
-                   string.Equals(left.RemoteAddresses, right.RemoteAddresses, StringComparison.Ordinal) &&
+                   SameWildcard(left.RemoteAddresses, right.RemoteAddresses, RemoteAny) &&
                    left.Direction == right.Direction &&
                    left.Action == right.Action &&
-                   left.Profiles == right.Profiles &&
+                   NormalizeProfiles(left.Profiles) == NormalizeProfiles(right.Profiles) &&
                    left.Enabled == right.Enabled &&
-                   string.Equals(left.InterfaceTypes, right.InterfaceTypes, StringComparison.Ordinal) &&
-                   string.Equals(left.LocalAddresses, right.LocalAddresses, StringComparison.Ordinal) &&
-                   string.Equals(left.ApplicationName, right.ApplicationName, StringComparison.Ordinal) &&
-                   string.Equals(left.ServiceName, right.ServiceName, StringComparison.Ordinal) &&
-                   string.Equals(left.RemotePorts, right.RemotePorts, StringComparison.Ordinal) &&
+                   SameWildcard(left.InterfaceTypes, right.InterfaceTypes, InterfaceTypesAll) &&
+                   SameWildcard(left.LocalAddresses, right.LocalAddresses, LocalAddressesAny) &&
+                   string.Equals(left.ApplicationName ?? string.Empty, right.ApplicationName ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(left.ServiceName ?? string.Empty, right.ServiceName ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                   SameWildcard(left.RemotePorts, right.RemotePorts, RemotePortsAny) &&
                    left.EdgeTraversal == right.EdgeTraversal;
+        }
+
+        private static bool SameWildcard(string? left, string? right, string any)
+        {
+            return string.Equals(NormalizeWildcard(left, any), NormalizeWildcard(right, any), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeWildcard(string? value, string any)
+        {
+            string trimmed = (value ?? string.Empty).Trim();
+            return trimmed.Length == 0 ? any : trimmed;
+        }
+
+        private static int NormalizeProfiles(int profiles)
+        {
+            return (profiles & 7) == 7 ? ProfilesAll : profiles;
         }
 
         private static string Escape(string value)
