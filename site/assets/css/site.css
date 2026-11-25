@@ -173,6 +173,7 @@ body {
   text-transform: uppercase;
 }
 
+.pill { background: #e6e2d4; color: var(--muted); }
 .pill.on { background: #d7eee0; color: var(--on); }
 .pill.optin { background: #ece3f7; color: var(--optin); }
 .pill.gated { background: #f6dede; color: var(--gated); }
@@ -183,6 +184,21 @@ code {
   background: #ebe6d8;
   padding: 0.08em 0.32em;
   border-radius: 4px;
+}
+
+pre {
+  margin: 0 0 1rem;
+  padding: 0.8rem 1rem;
+  background: #ebe6d8;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.88em;
 }
 
 a {
