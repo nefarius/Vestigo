@@ -287,13 +287,15 @@ namespace Vestigo.Installer.Actions
                 {
                     using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
                     {
-                        SaveFirewallRollback(store, session);
-                        FirewallRuleSync.Sync(resolved, store, message => session.Log(message));
+                        if (SaveFirewallRollback(store, session))
+                        {
+                            FirewallRuleSync.Sync(resolved, store, message => session.Log(message));
+                        }
                     }
                 }
                 catch (Exception firewallEx)
                 {
-                    session.Log("Could not update the Windows Firewall rule: " + firewallEx.GetType().Name + ": " + firewallEx.Message);
+                    session.Log("Could not update the Windows Firewall rule: " + FirewallRuleSync.FormatError(firewallEx));
                 }
 
                 return ActionResult.Success;
@@ -317,13 +319,15 @@ namespace Vestigo.Installer.Actions
             {
                 using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
                 {
-                    SaveFirewallRollback(store, session);
-                    FirewallRuleSync.Remove(store, message => session.Log(message));
+                    if (SaveFirewallRollback(store, session))
+                    {
+                        FirewallRuleSync.Remove(store, message => session.Log(message));
+                    }
                 }
             }
             catch (Exception ex)
             {
-                session.Log("Could not remove the Windows Firewall rule: " + ex.GetType().Name + ": " + ex.Message);
+                session.Log("Could not remove the Windows Firewall rule: " + FirewallRuleSync.FormatError(ex));
             }
 
             return ActionResult.Success;
@@ -355,7 +359,7 @@ namespace Vestigo.Installer.Actions
             }
             catch (Exception ex)
             {
-                session.Log("Could not restore the Windows Firewall rule: " + ex.GetType().Name + ": " + ex.Message);
+                session.Log("Could not restore the Windows Firewall rule: " + FirewallRuleSync.FormatError(ex));
             }
 
             return ActionResult.Success;
@@ -517,30 +521,47 @@ namespace Vestigo.Installer.Actions
 
         /// <summary>
         ///     Records the current Vestigo firewall rules before changing them. A failed write deletes a stale snapshot so a
-        ///     later rollback cannot restore the wrong rule.
+        ///     later rollback cannot restore the wrong rule. Returns false, without changing anything, when the existing rules
+        ///     could not be fully enumerated: a partial snapshot would make a rollback drop the rules it missed.
         /// </summary>
-        private static void SaveFirewallRollback(IFirewallRuleStore store, Session session)
+        private static bool SaveFirewallRollback(IFirewallRuleStore store, Session session)
         {
             string path = FirewallRollbackPath();
             try
             {
-                string text = FirewallRuleSync.Serialize(store.FindByName(FirewallRuleSync.RuleName));
-                File.WriteAllText(path, text, new UTF8Encoding(false));
+                IReadOnlyList<FirewallRuleRecord> rules = FirewallRuleSync.FindWithRetry(store, FirewallRuleSync.RuleName, out bool complete);
+                if (!complete)
+                {
+                    DeleteStaleSnapshot(path, session);
+                    session.Log("The Vestigo firewall rules could not be fully enumerated, so no rollback snapshot was recorded and the " +
+                                "rule is left unchanged; repair the installation to retry.");
+                    return false;
+                }
+
+                File.WriteAllText(path, FirewallRuleSync.Serialize(rules), new UTF8Encoding(false));
+                return true;
             }
             catch (Exception ex)
             {
                 session.Log("Could not record the firewall rule for rollback: " + ex.GetType().Name + ": " + ex.Message);
-                try
+                DeleteStaleSnapshot(path, session);
+            }
+
+            return true;
+        }
+
+        private static void DeleteStaleSnapshot(string path, Session session)
+        {
+            try
+            {
+                if (File.Exists(path))
                 {
-                    if (File.Exists(path))
-                    {
-                        File.Delete(path);
-                    }
+                    File.Delete(path);
                 }
-                catch (Exception deleteEx)
-                {
-                    session.Log("Could not delete a stale firewall rollback snapshot: " + deleteEx.GetType().Name + ": " + deleteEx.Message);
-                }
+            }
+            catch (Exception deleteEx)
+            {
+                session.Log("Could not delete a stale firewall rollback snapshot: " + deleteEx.GetType().Name + ": " + deleteEx.Message);
             }
         }
 
@@ -937,288 +958,6 @@ namespace Vestigo.Installer.Actions
             public void Set(string name, string value)
             {
                 _session[name] = value ?? string.Empty;
-            }
-        }
-
-        /// <summary>
-        ///     Late-bound HNetCfg.FwPolicy2 store so the custom-action package does not take a firewall assembly dependency.
-        /// </summary>
-        private sealed class WindowsFirewallRuleStore : IFirewallRuleStore, IDisposable
-        {
-            private object _policy;
-            private object _rules;
-
-            public WindowsFirewallRuleStore()
-            {
-                Type policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2");
-                if (policyType == null)
-                {
-                    throw new InvalidOperationException("HNetCfg.FwPolicy2 is not available.");
-                }
-
-                _policy = Activator.CreateInstance(policyType);
-                _rules = GetProperty(_policy, "Rules");
-                if (_rules == null)
-                {
-                    throw new InvalidOperationException("The Windows Firewall policy did not return its rules collection.");
-                }
-            }
-
-            public IReadOnlyList<FirewallRuleRecord> FindByName(string name)
-            {
-                List<FirewallRuleRecord> found = new List<FirewallRuleRecord>();
-                if (TryCollectByName(name, found))
-                {
-                    return found;
-                }
-
-                object rule = null;
-                try
-                {
-                    rule = TryItem(name);
-                    if (rule == null)
-                    {
-                        return new FirewallRuleRecord[0];
-                    }
-
-                    return new[] { ReadRule(rule) };
-                }
-                finally
-                {
-                    Release(ref rule);
-                }
-            }
-
-            public void Remove(string name)
-            {
-                Invoke(_rules, "Remove", new object[] { name }, BindingFlags.InvokeMethod);
-            }
-
-            public void Add(FirewallRuleRecord rule)
-            {
-                Type ruleType = Type.GetTypeFromProgID("HNetCfg.FWRule");
-                if (ruleType == null)
-                {
-                    throw new InvalidOperationException("HNetCfg.FWRule is not available.");
-                }
-
-                object comRule = Activator.CreateInstance(ruleType);
-                try
-                {
-                    SetProperty(comRule, "Name", rule.Name);
-                    SetProperty(comRule, "Description", rule.Description);
-                    SetProperty(comRule, "Protocol", rule.Protocol);
-                    SetProperty(comRule, "LocalPorts", rule.LocalPorts);
-                    SetProperty(comRule, "RemoteAddresses", rule.RemoteAddresses);
-                    SetProperty(comRule, "Direction", rule.Direction);
-                    SetProperty(comRule, "Action", rule.Action);
-                    SetProperty(comRule, "Profiles", rule.Profiles);
-                    SetProperty(comRule, "InterfaceTypes", rule.InterfaceTypes);
-                    SetProperty(comRule, "LocalAddresses", rule.LocalAddresses);
-                    SetProperty(comRule, "ApplicationName", rule.ApplicationName);
-                    SetProperty(comRule, "ServiceName", rule.ServiceName);
-                    SetProperty(comRule, "RemotePorts", rule.RemotePorts);
-                    SetProperty(comRule, "EdgeTraversal", rule.EdgeTraversal);
-                    SetProperty(comRule, "Enabled", rule.Enabled);
-                    Invoke(_rules, "Add", new object[] { comRule }, BindingFlags.InvokeMethod);
-                }
-                finally
-                {
-                    Release(ref comRule);
-                }
-            }
-
-            public void Dispose()
-            {
-                Release(ref _rules);
-                Release(ref _policy);
-            }
-
-            private static FirewallRuleRecord ReadRule(object rule)
-            {
-                return new FirewallRuleRecord(
-                    GetString(rule, "Name"),
-                    GetString(rule, "Description"),
-                    GetInt(rule, "Protocol"),
-                    GetString(rule, "LocalPorts"),
-                    GetString(rule, "RemoteAddresses"),
-                    GetInt(rule, "Direction"),
-                    GetInt(rule, "Action"),
-                    GetInt(rule, "Profiles"),
-                    GetBool(rule, "Enabled"),
-                    GetString(rule, "InterfaceTypes"),
-                    GetString(rule, "LocalAddresses"),
-                    GetString(rule, "ApplicationName"),
-                    GetString(rule, "ServiceName"),
-                    GetString(rule, "RemotePorts"),
-                    GetBool(rule, "EdgeTraversal"));
-            }
-
-            private bool TryCollectByName(string name, List<FirewallRuleRecord> found)
-            {
-                IEnumerable enumerable = _rules as IEnumerable;
-                if (enumerable == null)
-                {
-                    return false;
-                }
-
-                IEnumerator enumerator = null;
-                try
-                {
-                    enumerator = enumerable.GetEnumerator();
-                    if (enumerator == null)
-                    {
-                        return false;
-                    }
-
-                    while (enumerator.MoveNext())
-                    {
-                        object rule = enumerator.Current;
-                        try
-                        {
-                            if (rule != null && string.Equals(GetString(rule, "Name"), name, StringComparison.Ordinal))
-                            {
-                                found.Add(ReadRule(rule));
-                            }
-                        }
-                        finally
-                        {
-                            Release(ref rule);
-                        }
-                    }
-
-                    return true;
-                }
-                catch (Exception)
-                {
-                    found.Clear();
-                    return false;
-                }
-                finally
-                {
-                    try
-                    {
-                        IDisposable disposable = enumerator as IDisposable;
-                        if (disposable != null)
-                        {
-                            disposable.Dispose();
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
-
-            private object TryItem(string name)
-            {
-                object rule;
-                if (!TryItemCall(name, BindingFlags.GetProperty, out rule))
-                {
-                    TryItemCall(name, BindingFlags.InvokeMethod, out rule);
-                }
-
-                return rule;
-            }
-
-            /// <summary>
-            ///     Returns true when the call produced an answer, including a missing rule. Returns false when this binding
-            ///     failed and the other binding should be tried. A missing-rule HRESULT is absence; other COM errors propagate
-            ///     from the method binding.
-            /// </summary>
-            private bool TryItemCall(string name, BindingFlags flags, out object rule)
-            {
-                rule = null;
-                try
-                {
-                    rule = Invoke(_rules, "Item", new object[] { name }, flags);
-                    return true;
-                }
-                catch (Exception ex) when (IsComFailure(ex))
-                {
-                    if (FirewallRuleSync.IsRuleMissing(ComError(ex)))
-                    {
-                        return true;
-                    }
-
-                    if (flags == BindingFlags.InvokeMethod)
-                    {
-                        throw;
-                    }
-
-                    return false;
-                }
-            }
-
-            private static int ComError(Exception ex)
-            {
-                COMException com = ex as COMException;
-                if (com == null)
-                {
-                    TargetInvocationException invocation = ex as TargetInvocationException;
-                    com = invocation == null ? null : invocation.InnerException as COMException;
-                }
-
-                return com == null ? 0 : com.ErrorCode;
-            }
-
-            private static object GetProperty(object target, string name)
-            {
-                return Invoke(target, name, null, BindingFlags.GetProperty);
-            }
-
-            private static void SetProperty(object target, string name, object value)
-            {
-                Invoke(target, name, new object[] { value }, BindingFlags.SetProperty);
-            }
-
-            private static object Invoke(object target, string name, object[] args, BindingFlags flags)
-            {
-                return target.GetType().InvokeMember(
-                    name,
-                    flags | BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    target,
-                    args);
-            }
-
-            private static string GetString(object target, string name)
-            {
-                object value = GetProperty(target, name);
-                return value == null ? string.Empty : value.ToString();
-            }
-
-            private static int GetInt(object target, string name)
-            {
-                object value = GetProperty(target, name);
-                return value == null ? 0 : Convert.ToInt32(value);
-            }
-
-            private static bool GetBool(object target, string name)
-            {
-                object value = GetProperty(target, name);
-                return value is bool flag && flag;
-            }
-
-            private static bool IsComFailure(Exception ex)
-            {
-                if (ex is COMException)
-                {
-                    return true;
-                }
-
-                TargetInvocationException invocation = ex as TargetInvocationException;
-                return invocation != null && invocation.InnerException is COMException;
-            }
-
-            private static void Release(ref object com)
-            {
-                if (com != null && Marshal.IsComObject(com))
-                {
-                    Marshal.FinalReleaseComObject(com);
-                }
-
-                com = null;
             }
         }
     }

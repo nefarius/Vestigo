@@ -622,7 +622,7 @@ public class InstallerHandoffTests
         Assert.Equal(FirewallRuleSync.LocalAddressesAny, rule.LocalAddresses);
         Assert.Equal(string.Empty, rule.ApplicationName);
         Assert.Equal(string.Empty, rule.ServiceName);
-        Assert.Equal(string.Empty, rule.RemotePorts);
+        Assert.Equal(FirewallRuleSync.RemotePortsAny, rule.RemotePorts);
         Assert.False(rule.EdgeTraversal);
     }
 
