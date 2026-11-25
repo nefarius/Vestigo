@@ -46,8 +46,8 @@ public static class InputInjector
             return null;
         }
 
-        return WindowInspection.TryParseHandle(requested, out HWND wanted)
-               && WindowInspection.TryParseHandle(actual, out HWND seen)
+        return WindowHandleFormat.TryParseHandle(requested, out HWND wanted)
+               && WindowHandleFormat.TryParseHandle(actual, out HWND seen)
                && (nint)wanted == (nint)seen;
     }
 
@@ -95,7 +95,7 @@ public static class InputInjector
         private OperationResult<InputResult> Replay()
         {
             string? focus = string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim();
-            if (batch.RequireFocus && (focus is null || !WindowInspection.TryParseHandle(focus, out _)))
+            if (batch.RequireFocus && (focus is null || !WindowHandleFormat.TryParseHandle(focus, out _)))
             {
                 return OperationResult<InputResult>.Fail(
                     "invalid_request",
@@ -499,7 +499,7 @@ public static class InputInjector
             string? handle = FocusGranted(batch.FocusWindow, foreground) == true
                 ? batch.FocusWindow
                 : foreground;
-            return !string.IsNullOrWhiteSpace(handle) && WindowInspection.TryParseHandle(handle, out HWND parsed)
+            return !string.IsNullOrWhiteSpace(handle) && WindowHandleFormat.TryParseHandle(handle, out HWND parsed)
                 ? parsed
                 : default;
         }

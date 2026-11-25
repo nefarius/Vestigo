@@ -22,6 +22,8 @@ static class Program
     internal const string EnvDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
     internal const string EnvRipgrep = "VESTIGO_INSTALLER_RIPGREP";
     internal const string EnvCredentialProvider = "VESTIGO_INSTALLER_CREDPROVIDER";
+    internal const string EnvInputHelper = "VESTIGO_INSTALLER_INPUTHELPER";
+    const string InputHelperExecutableName = "Vestigo.InputHelper.exe";
     const string CredentialProviderFileName = "Vestigo.CredentialProvider.dll";
     const string NefconExecutableName = "nefconc.exe";
     const string NefconLicenseName = "nefcon-LICENSE.txt";
@@ -98,6 +100,11 @@ static class Program
                 throw new ArgumentException($"The Credential Provider DLL must be named {CredentialProviderFileName}.");
             }
 
+            if (!string.Equals(Path.GetFileName(options.InputHelperExe), InputHelperExecutableName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"The input helper executable must be named {InputHelperExecutableName}.");
+            }
+
             if (!string.Equals(Path.GetFileName(options.UpdaterExe), UpdaterExecutableName, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException(
@@ -136,6 +143,7 @@ static class Program
                 });
             }
 
+            WixSharp.File inputHelper = new(feature, options.InputHelperExe);
             Files files = new(feature, Path.Combine(options.ServerPublishDir, "*.*"), IncludeInPublishedFile)
             {
                 OnProcess = file =>
@@ -169,6 +177,7 @@ static class Program
                 new Dir(
                     @"%ProgramFiles64Folder%\Nefarius Software Solutions\Vestigo",
                     files,
+                    inputHelper,
                     new WixSharp.File(updaterFeature, options.UpdaterExe),
                     new WixSharp.File(updaterFeature, updaterConfigurationPath),
                     new WixSharp.File(feature, noticesPath),
@@ -352,6 +361,8 @@ static class Program
 
         public required string CredentialProviderDll { get; init; }
 
+        public required string InputHelperExe { get; init; }
+
         public static Options Parse(string[] args)
         {
             string cwd = Directory.GetCurrentDirectory();
@@ -362,7 +373,8 @@ static class Program
             string debugView = "";
             string ripgrep = "";
             string credprovider = "";
-            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon, ref debugView, ref ripgrep, ref credprovider);
+            string inputHelper = "";
+            ApplyEnvironmentOverrides(ref server, ref output, ref updater, ref nefcon, ref debugView, ref ripgrep, ref credprovider, ref inputHelper);
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -395,6 +407,10 @@ static class Program
                 {
                     credprovider = RequirePath(args, ref i, "credprovider");
                 }
+                else if (argument is "--inputhelper")
+                {
+                    inputHelper = RequirePath(args, ref i, "inputhelper");
+                }
                 else if (argument is "--help" or "-h")
                 {
                     Console.WriteLine("""
@@ -407,8 +423,9 @@ static class Program
                           --debugview     <file>  Staged DebugViewConsole.exe (installed under tools\)
                           --ripgrep       <file>  Staged rg.exe (installed under tools\)
                           --credprovider  <file>  Staged Vestigo.CredentialProvider.dll (installed under credential-provider\)
+                          --inputhelper   <file>  Staged Vestigo.InputHelper.exe (installed next to Vestigo.exe)
 
-                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON, VESTIGO_INSTALLER_DEBUGVIEW, VESTIGO_INSTALLER_RIPGREP, VESTIGO_INSTALLER_CREDPROVIDER
+                        Environment: VESTIGO_INSTALLER_SERVER, VESTIGO_INSTALLER_OUT, VESTIGO_INSTALLER_UPDATER, VESTIGO_INSTALLER_NEFCON, VESTIGO_INSTALLER_DEBUGVIEW, VESTIGO_INSTALLER_RIPGREP, VESTIGO_INSTALLER_CREDPROVIDER, VESTIGO_INSTALLER_INPUTHELPER
                         """);
                     Environment.Exit(0);
                 }
@@ -426,7 +443,8 @@ static class Program
                 NefconExe = nefcon,
                 DebugViewExe = debugView,
                 RipgrepExe = ripgrep,
-                CredentialProviderDll = credprovider
+                CredentialProviderDll = credprovider,
+                InputHelperExe = inputHelper
             };
         }
 
@@ -479,6 +497,16 @@ static class Program
                 throw new FileNotFoundException($"Credential Provider DLL not found: {CredentialProviderDll}");
             }
 
+            if (!string.Equals(Path.GetFileName(InputHelperExe), InputHelperExecutableName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"The input helper executable must be named {InputHelperExecutableName}.");
+            }
+
+            if (!System.IO.File.Exists(InputHelperExe))
+            {
+                throw new FileNotFoundException($"Input helper executable not found: {InputHelperExe}");
+            }
+
             Directory.CreateDirectory(OutputDir);
         }
 
@@ -489,7 +517,8 @@ static class Program
             ref string nefcon,
             ref string debugView,
             ref string ripgrep,
-            ref string credprovider)
+            ref string credprovider,
+            ref string inputHelper)
         {
             string? ripgrepOverride = Environment.GetEnvironmentVariable(EnvRipgrep);
             if (!string.IsNullOrWhiteSpace(ripgrepOverride))
@@ -531,6 +560,12 @@ static class Program
             if (!string.IsNullOrWhiteSpace(credproviderOverride))
             {
                 credprovider = Path.GetFullPath(credproviderOverride);
+            }
+
+            string? inputHelperOverride = Environment.GetEnvironmentVariable(EnvInputHelper);
+            if (!string.IsNullOrWhiteSpace(inputHelperOverride))
+            {
+                inputHelper = Path.GetFullPath(inputHelperOverride);
             }
         }
 

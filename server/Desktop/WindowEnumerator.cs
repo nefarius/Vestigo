@@ -9,7 +9,6 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Dwm;
 using Windows.Win32.Graphics.Gdi;
-using Windows.Win32.UI.HiDpi;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Vestigo.Desktop;
@@ -277,23 +276,7 @@ public static class WindowEnumerator
         return string.IsNullOrEmpty(device) ? null : device;
     }
 
-    internal static nint SetDpiAware()
-    {
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 14393))
-        {
-            return 0;
-        }
+    internal static nint SetDpiAware() => ThreadDpiAwareness.SetDpiAware();
 
-        return (nint)PInvoke.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    }
-
-    internal static void RestoreDpi(nint previous)
-    {
-        if (previous == 0 || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 14393))
-        {
-            return;
-        }
-
-        PInvoke.SetThreadDpiAwarenessContext((DPI_AWARENESS_CONTEXT)previous);
-    }
+    internal static void RestoreDpi(nint previous) => ThreadDpiAwareness.RestoreDpi(previous);
 }

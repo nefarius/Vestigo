@@ -38,6 +38,8 @@ class Build : FalloutBuild
     static AbsolutePath CredentialProviderProject => RootDirectory / "credential-provider" / "Vestigo.CredentialProvider.vcxproj";
     static AbsolutePath CredentialProviderStageDir => PublishRoot / "credential-provider";
     static AbsolutePath StagedCredentialProviderDll => CredentialProviderStageDir / "Vestigo.CredentialProvider.dll";
+    static AbsolutePath PublishInputHelperDir => PublishRoot / "input-helper";
+    static AbsolutePath StagedInputHelperExe => PublishInputHelperDir / "Vestigo.InputHelper.exe";
     static AbsolutePath InstallerProjectFile => RootDirectory / "installer" / "Vestigo.Installer.csproj";
     static AbsolutePath StagedUpdaterExe => UpdaterStageDir / UpdateFeed.UpdaterExecutable;
 
@@ -124,6 +126,11 @@ class Build : FalloutBuild
         .Executes(StageRipgrep);
 
     [UsedImplicitly]
+    public Target PublishInputHelper => _ => _
+        .Description("Publish the win-x64 Native AOT send_input helper and stage it for the MSI")
+        .Executes(PublishInputHelperExecutable);
+
+    [UsedImplicitly]
     public Target BuildCredentialProvider => _ => _
         .Description("Build the x64 Vestigo Credential Provider COM DLL and stage it for the MSI")
         .Executes(BuildAndStageCredentialProvider);
@@ -131,7 +138,7 @@ class Build : FalloutBuild
     [UsedImplicitly]
     public Target BuildInstaller => _ => _
         .Description("Publish Vestigo and build the x64 MSI. Requires Windows and WiX 5.0.2.")
-        .DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep, BuildCredentialProvider)
+        .DependsOn(PublishLocal, PublishInputHelper, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep, BuildCredentialProvider)
         .Executes(() =>
         {
             if (!OperatingSystem.IsWindows())
@@ -147,6 +154,7 @@ class Build : FalloutBuild
             const string envDebugView = "VESTIGO_INSTALLER_DEBUGVIEW";
             const string envRipgrep = "VESTIGO_INSTALLER_RIPGREP";
             const string envCredProvider = "VESTIGO_INSTALLER_CREDPROVIDER";
+            const string envInputHelper = "VESTIGO_INSTALLER_INPUTHELPER";
             try
             {
                 Environment.SetEnvironmentVariable(envServer, PublishServerDir);
@@ -156,6 +164,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envDebugView, StagedDebugViewExe);
                 Environment.SetEnvironmentVariable(envRipgrep, StagedRipgrepExe);
                 Environment.SetEnvironmentVariable(envCredProvider, StagedCredentialProviderDll);
+                Environment.SetEnvironmentVariable(envInputHelper, StagedInputHelperExe);
                 DotNetTasks.DotNetRun(settings => settings
                     .SetProjectFile(InstallerProjectFile)
                     .SetConfiguration(Configuration.Release));
@@ -169,6 +178,7 @@ class Build : FalloutBuild
                 Environment.SetEnvironmentVariable(envDebugView, null);
                 Environment.SetEnvironmentVariable(envRipgrep, null);
                 Environment.SetEnvironmentVariable(envCredProvider, null);
+                Environment.SetEnvironmentVariable(envInputHelper, null);
             }
         });
 
@@ -504,6 +514,31 @@ class Build : FalloutBuild
         }
 
         return msbuild;
+    }
+
+    void PublishInputHelperExecutable()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new InvalidOperationException(
+                "PublishInputHelper requires Windows and the MSVC x64 toolset to publish Native AOT.");
+        }
+
+        Project project = Solution.GetAllProjects("Vestigo.InputHelper").Single();
+        DotNetTasks.DotNetPublish(settings => settings
+            .SetProject(project)
+            .SetConfiguration(Configuration.Release)
+            .SetRuntime(PublishRuntime)
+            .SetOutput(PublishInputHelperDir)
+            .AddProperty("PublishAot", "true")
+            .AddProperty("StripSymbols", "true")
+            .AddProperty("DebugType", "none")
+            .AddProperty("SelfContained", "true"));
+        if (!File.Exists(StagedInputHelperExe))
+        {
+            throw new InvalidOperationException(
+                $"Native AOT publish did not produce {StagedInputHelperExe}.");
+        }
     }
 
     void PublishProject(Project project, AbsolutePath publishDirectory)
