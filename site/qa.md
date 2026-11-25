@@ -57,8 +57,22 @@ The lock screen and UAC secure desktop fail with `desktop_unavailable`. A consol
 2. `inspect_screen` returns an annotated image, a numbered element list and a `captureId`.
 3. `send_input` with that `captureId` and an `elementId` (or `x`, `y` from the image) clicks that point. A `type` action ignores `elementId` and sends text to the focused field, so click the field first. Pass `focusWindow` from `list_windows` when the batch should start with that window. `requireFocus: true` refuses the batch unless that window is foreground immediately before each submission, including after a wait. `injection.status` `rejected` means nothing was submitted. `partial` means the batch stopped after some events and released keys or buttons it still held. `focusActual` is the window from that check. Calls on one input desktop do not overlap. `submitted` means `SendInput` accepted the events. Windows can still change focus before the call returns, and a click hits the window under the pointer. `injection.timing` gives UTC plus `QueryPerformanceCounter` ticks, as decimal strings, for the first and last accepted submission on that host. It does not include the later `observe` wait. Set `observe: true` to add the next view to the same call when that capture succeeds and the batch was not rejected. When the actions ran and the capture failed, the result has `performed` and `observeError` and no new view. Read those fields before calling again, because another call repeats the actions.
 4. `find_on_screen` locates text or an image template when the element list is not enough.
+5. For a window target, `inspect_screen` accepts `cropX`, `cropY`, `cropWidth` and `cropHeight` together, in physical pixels relative to the window. The result adds `effectiveCrop` and `windowBounds`, and a crop outside the window fails with `empty_region`. `diffAgainst` accepts the same crop of the same window after it moves; anything else is `capture_mismatch`.
+6. A `type` action can set `inputMode` to `keys` to send virtual keys from the receiving window's keyboard layout. It fails with `unsupported_character`, `modifier_held`, `layout_changed` or `caps_lock_changed` and cannot type dead keys or IME text. Those mid-action failures are tool errors with no `injection` result, and earlier actions in the call may already have been sent.
 
 Input cannot reach a UAC prompt on the secure desktop, the lock screen, or Ctrl+Alt+Del. A prompt on the interactive desktop, used when secure-desktop prompting is off, is reachable. Elevated windows need `elevated: true`.
+
+## Close an application
+
+1. Enable Processes and Jobs, then call `close_app`. It posts `WM_CLOSE` and never kills.
+2. Read each process outcome: `exited`, `stillRunning`, or `unknown`. `unknown` means the check failed and is not success. `verificationError` and `pidReused` mean the pid may now belong to a different process.
+3. Use `kill_process` only when the case needs a forced stop.
+
+## Restart or sign in
+
+1. `reboot_machine` needs `System:AllowReboot`. Use `dryRun` first, `delaySeconds` for a countdown that `cancel_reboot` can abort, and `force` only when losing unsaved work is acceptable. An immediate restart drops your MCP session.
+2. After a restart, `get_interactive_logon_status` shows whether the console is at the logon screen or locked. With `System:AllowInteractiveLogon` and the Credential Provider registered, `request_interactive_logon` (or `request_unlock_workstation` for a locked console) returns a consent URL. Give that URL to a person to open in a desktop browser, then poll `get_logon_request`. On `logonui_not_connected`, wake the lock screen and retry. `lock_workstation` locks the console and needs only the gate.
+3. `request_autologon_enable` works the same way and needs `System:AllowAutoLogonChanges`. `get_autologon_state` reports it and `disable_autologon` removes it.
 
 ## Query event logs
 

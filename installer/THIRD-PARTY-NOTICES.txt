@@ -4218,7 +4218,7 @@ SOFTWARE.
 
 MudBlazor
 
-The local configuration page includes MudBlazor 9.13.0 and its static web assets
+The local configuration page includes MudBlazor 9.14.0 and its static web assets
 (https://github.com/MudBlazor/MudBlazor), licensed as follows:
 
 MIT License

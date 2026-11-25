@@ -23,8 +23,8 @@ The project site at `https://nefarius.github.io/Vestigo/` is built from `site/` 
 
 A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
 
-1. Checks that `Vestigo.exe` and `Vestigo.dll` are unsigned.
-2. Signs both with SignRelay.
+1. Checks that `Vestigo.exe`, `Vestigo.dll`, and `Vestigo.CredentialProvider.dll` are unsigned.
+2. Signs all three with SignRelay.
 3. Builds `publish-x64\installer\Vestigo-v<product-version>.msi` from those signed binaries.
 4. Signs and verifies the MSI.
 5. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key. The summary names the product version and links to the GitHub Release for the tag.

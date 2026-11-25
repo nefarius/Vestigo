@@ -5,7 +5,7 @@ description: Vestigo is a Windows MCP server for driver and application developm
 
 # A Windows lab that an agent can operate
 
-Vestigo is a Windows MCP server for driver and application development. It runs as a Windows service and hosts a stateless Streamable HTTP endpoint at `/mcp`. A remote agent uses that endpoint to convert WPP traces, capture ETW live, move files, inspect the machine and Windows servicing state, read and drive the desktop UI, restart the machine, enable AutoLogon, or sign in from the logon or lock screen when those are opted in, and change the things a driver or QA lab actually needs changed.
+Vestigo is a Windows MCP server for driver and application development. It runs as a Windows service and hosts a stateless Streamable HTTP endpoint at `/mcp`. A remote agent uses that endpoint to convert WPP traces, capture ETW live, move files, inspect the machine and Windows servicing state, read and drive the desktop UI, restart the machine, enable AutoLogon, lock the workstation, or sign in from the logon or lock screen when those are opted in, and change the things a driver or QA lab actually needs changed.
 
 This booklet is for developers and QA personnel who will point an MCP client at a lab PC. The source repository is public. [Features](features.md) is the catalogue. [Developers](developers.md) and [QA](qa.md) are the two common workflows. [Security](security.md) is the short model you should read before binding anything beyond loopback.
 
@@ -18,11 +18,11 @@ It is Windows only. Opening `/` shows connection instructions, `/health` is an a
 
 ## How an agent talks to it
 
-The client speaks MCP over Streamable HTTP at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is set, every `/mcp` call needs `Authorization: Bearer <token>`. File-transfer tools return short-lived, single-use `/files` URLs, so a client does not need the API token to fetch a saved screenshot or a converted trace. `take_screenshot` with `share: true` returns a 10-minute, single-use preview URL for a person to open when the chat does not render the MCP image.
+The client speaks MCP over Streamable HTTP at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is set, every `/mcp` call needs `Authorization: Bearer <token>`. File-transfer tools return short-lived, single-use `/files` URLs, so a client does not need the API token to fetch a saved screenshot or a converted trace. `take_screenshot` with `share: true` returns a 10-minute, single-use preview URL for a person to open when the chat does not render the MCP image. The logon consent tools return a one-time `/system/logon/consent/{id}` URL that a person opens in a desktop browser to type a Windows password, so it never passes through the agent.
 
-A fresh MSI install binds every interface and writes a generated bearer token. `dotnet run` from the repository uses loopback and no tokens until you add some.
+A fresh MSI install binds every interface and writes a generated bearer token. An MSI upgrade or repair keeps the saved API tokens, listen address and port, and reconciles the inbound firewall rule `Vestigo MCP Server`, even when the wizard runs unelevated and cannot read the settings file. `dotnet run` from the repository uses loopback and no tokens until you add some.
 
-## Windows Update and servicing
+## Machine state and diagnostics
 
 The opt-in Registry module reads allow-listed registry values. `HKCU` is the console user, the 32-bit and 64-bit views are explicit, and there is no write tool. See [the features](features.md).
 
