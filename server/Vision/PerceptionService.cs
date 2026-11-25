@@ -43,6 +43,12 @@ public sealed class PerceptionService(
 
     public CaptureCache Cache { get; } = cache;
 
+    /// <summary>Test seam for <see cref="ScreenAnalyzer.Analyze" />. Null uses OpenCV.</summary>
+    internal Func<byte[], DesktopRect, IReadOnlyList<ScreenElement>, IReadOnlyList<ScreenElement>, int, bool, bool, Func<ScreenElement, bool>?, AnalysisResult>? Analyzer { get; set; }
+
+    /// <summary>Test seam for <see cref="ScreenAnalyzer.Diff" />. Null uses OpenCV.</summary>
+    internal Func<byte[], byte[], DiffResult>? Differ { get; set; }
+
     /// <summary>Captures the screen, merges UI Automation and OCR, and caches the numbered elements.</summary>
     /// <param name="extraElements">
     ///     Optional extra elements (for example template matches) computed from the analyzed image. They are added
@@ -101,7 +107,7 @@ public sealed class PerceptionService(
         try
         {
             analysis = await Task.Run(
-                () => ScreenAnalyzer.Analyze(
+                () => (Analyzer ?? ScreenAnalyzer.Analyze)(
                     fullPng,
                     value.Capture.Bounds,
                     value.Elements.Where(item => item.Source == ElementSource.Uia).ToList(),
@@ -119,7 +125,7 @@ public sealed class PerceptionService(
                     return OperationResult<PerceptionOutcome>.Fail("capture_mismatch", mismatch);
                 }
 
-                diff = await Task.Run(() => ScreenAnalyzer.Diff(previous.WorkingPng, analysis.WorkingPng), cancellationToken).ConfigureAwait(false);
+                diff = await Task.Run(() => (Differ ?? ScreenAnalyzer.Diff)(previous.WorkingPng, analysis.WorkingPng), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (ex is ArgumentException or OpenCvSharp.OpenCVException or DllNotFoundException or BadImageFormatException)

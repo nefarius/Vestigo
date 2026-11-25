@@ -312,26 +312,14 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             region = new DesktopRect(x.Value, y.Value, width.Value, height.Value);
         }
 
-        DesktopRect? windowCrop = null;
-        if (cropX is not null || cropY is not null || cropWidth is not null || cropHeight is not null)
+        OperationResult<DesktopRect?> crop = ValidateWindowCrop(
+            cropX, cropY, cropWidth, cropHeight, parsedTarget == ScreenCaptureTarget.Window, "cropX", "cropY", "cropWidth", "cropHeight", "target is 'window'");
+        if (!crop.Success)
         {
-            if (cropX is null || cropY is null || cropWidth is null || cropHeight is null)
-            {
-                return Invalid("cropX, cropY, cropWidth and cropHeight must be supplied together.");
-            }
-
-            if (cropWidth <= 0 || cropHeight <= 0)
-            {
-                return Invalid("cropWidth and cropHeight must be greater than zero.");
-            }
-
-            if (parsedTarget != ScreenCaptureTarget.Window)
-            {
-                return Invalid("cropX, cropY, cropWidth and cropHeight are only valid when target is 'window'.");
-            }
-
-            windowCrop = new DesktopRect(cropX.Value, cropY.Value, cropWidth.Value, cropHeight.Value);
+            return Invalid(crop.Error!);
         }
+
+        DesktopRect? windowCrop = crop.Value;
 
         ScreenCaptureRequest request = new(
             parsedTarget,
@@ -347,6 +335,45 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
             options.Desktop.MaxScreenshotBytes,
             windowCrop);
         return OperationResult<(ScreenCaptureRequest, string)>.Ok((request, mode));
+    }
+
+    /// <summary>
+    ///     Validates window-relative crop arguments shared by <c>inspect_screen</c> and <c>send_input</c>.
+    ///     Null when no crop field was supplied. Clipping to the window happens later in the capture helper.
+    /// </summary>
+    internal static OperationResult<DesktopRect?> ValidateWindowCrop(
+        int? x,
+        int? y,
+        int? width,
+        int? height,
+        bool windowTarget,
+        string xName,
+        string yName,
+        string widthName,
+        string heightName,
+        string targetCondition)
+    {
+        if (x is null && y is null && width is null && height is null)
+        {
+            return OperationResult<DesktopRect?>.Ok(null);
+        }
+
+        if (x is null || y is null || width is null || height is null)
+        {
+            return OperationResult<DesktopRect?>.Fail("invalid_request", $"{xName}, {yName}, {widthName} and {heightName} must be supplied together.");
+        }
+
+        if (width <= 0 || height <= 0)
+        {
+            return OperationResult<DesktopRect?>.Fail("invalid_request", $"{widthName} and {heightName} must be greater than zero.");
+        }
+
+        if (!windowTarget)
+        {
+            return OperationResult<DesktopRect?>.Fail("invalid_request", $"{xName}, {yName}, {widthName} and {heightName} are only valid when {targetCondition}.");
+        }
+
+        return OperationResult<DesktopRect?>.Ok(new DesktopRect(x.Value, y.Value, width.Value, height.Value));
     }
 
     private OperationResult<byte[]> LoadTemplate(string? path, string? captureId, int? x, int? y, int? width, int? height)
