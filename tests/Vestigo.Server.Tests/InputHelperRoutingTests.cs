@@ -238,12 +238,22 @@ public sealed class InputHelperRoutingTests : IDisposable
             new PerceptionService(launcher, helper, new CaptureCache(), options),
             options);
 
-        CallToolResult result = await tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }]);
+        CallToolResult result = await tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }], observe: false);
         Assert.True(result.IsError is not true);
         Assert.Equal(dedicated, launcher.Executable);
         Assert.Equal(1, launcher.Calls);
         Assert.Contains(SessionHelper.SendInputCommand, launcher.Arguments);
-        Assert.DoesNotContain(SessionHelper.ListWindowsCommand, launcher.Arguments);
+        Assert.DoesNotContain(SessionHelper.InspectSessionCommand, launcher.Arguments);
+        Assert.DoesNotContain(SessionHelper.InspectScreenCommand, launcher.Arguments);
+
+        tools.ReuseHelperVariableOverride = () => "0";
+        CallToolResult rollback = await tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }], observe: false);
+        Assert.True(rollback.IsError is not true);
+        Assert.Equal(dedicated, launcher.Executable);
+        Assert.Equal(2, launcher.Calls);
+        Assert.Contains(SessionHelper.SendInputCommand, launcher.Arguments);
+        Assert.DoesNotContain(SessionHelper.InspectSessionCommand, launcher.Arguments);
+        Assert.DoesNotContain(SessionHelper.InspectScreenCommand, launcher.Arguments);
     }
 
     private static InputBatch SampleBatch() =>
