@@ -29,6 +29,10 @@ public sealed class InputTools(
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private const long HelperMaxOutputBytes = 64 * 1024;
 
+    public const string ObserveFull = "full";
+
+    public const string ObservePixels = "pixels";
+
     [McpServerTool(Name = "send_input", Destructive = true, OpenWorld = false)]
     [Description(
         "Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), "
@@ -47,6 +51,8 @@ public sealed class InputTools(
         + "click and key accept holdMilliseconds. Any action accepts delayAfterMilliseconds. "
         + "observe:true waits observeDelayMs, then compares a fresh inspect_screen result with one taken before the input, except when injection.status is rejected. "
         + "response.status observed means the screen, window, or elements changed. A submitted injection is not an observed application response. observe needs Vestigo:Desktop:AllowScreenshots. "
+        + "observeMode 'full' (default) compares pixels, window bounds and title, and UI Automation and OCR elements. 'pixels' skips UI Automation and OCR in both inspections and compares pixels only: observed when they changed, no-response when they did not, inconclusive when the comparison failed. "
+        + "observeCropX, observeCropY, observeCropWidth and observeCropHeight (all four, unscaled physical pixels relative to the window, observeWindowHandle required) crop both inspections the same way as inspect_screen, clip a partial overlap, and the returned captureId and image coordinates match the effective crop. The crop never changes where input goes. "
         + "desktopSessionId sends input to that managed desktop only when it is already the input desktop and does not activate it. "
         + "Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot "
         + "reach elevated windows unless elevated=true. Requires Vestigo:Input:AllowInput. Interactive session only.")]
@@ -60,6 +66,11 @@ public sealed class InputTools(
         [Description("Observe only: window handle to inspect instead of the whole desktop.")] string? observeWindowHandle = null,
         [Description("Observe only: 'annotated' (default), 'raw' or 'none'.")] string imageMode = PerceptionTools.ImageAnnotated,
         [Description("Observe only: longest edge of the returned image, 320 to 3840.")] int maxEdge = ScreenAnalyzer.DefaultMaxEdge,
+        [Description("Observe only: 'full' (default) keeps OCR, UI Automation and window comparison. 'pixels' compares pixels only and skips OCR and UI Automation.")] string observeMode = ObserveFull,
+        [Description("Observe only: window-relative crop left in unscaled physical pixels. Pass the other three crop fields and observeWindowHandle too. Does not affect input.")] int? observeCropX = null,
+        [Description("Observe only: window-relative crop top in unscaled physical pixels.")] int? observeCropY = null,
+        [Description("Observe only: window-relative crop width in physical pixels. Must be greater than zero.")] int? observeCropWidth = null,
+        [Description("Observe only: window-relative crop height in physical pixels. Must be greater than zero.")] int? observeCropHeight = null,
         [Description("Use the elevated token, needed to reach elevated windows.")] bool elevated = false,
         [Description("Managed desktop session id. The session must already be the input desktop.")] string? desktopSessionId = null,
         CancellationToken cancellationToken = default)
@@ -70,6 +81,8 @@ public sealed class InputTools(
         }
 
         string mode = (imageMode ?? PerceptionTools.ImageAnnotated).Trim().ToLowerInvariant();
+        string observation = (observeMode ?? ObserveFull).Trim().ToLowerInvariant();
+        DesktopRect? windowCrop = null;
         if (observe)
         {
             if (!options.Desktop.AllowScreenshots)
@@ -86,6 +99,30 @@ public sealed class InputTools(
             {
                 return DesktopTools.ErrorResult("invalid_request", "observeDelayMs must be 0 to 5000 and maxEdge 320 to 3840.");
             }
+
+            if (observation is not (ObserveFull or ObservePixels))
+            {
+                return DesktopTools.ErrorResult("invalid_request", "observeMode must be 'full' or 'pixels'.");
+            }
+
+            bool hasHandle = !string.IsNullOrWhiteSpace(observeWindowHandle);
+            OperationResult<DesktopRect?> crop = PerceptionTools.ValidateWindowCrop(
+                observeCropX,
+                observeCropY,
+                observeCropWidth,
+                observeCropHeight,
+                hasHandle,
+                "observeCropX",
+                "observeCropY",
+                "observeCropWidth",
+                "observeCropHeight",
+                "observeWindowHandle is set");
+            if (!crop.Success)
+            {
+                return DesktopTools.ErrorResult(crop.ErrorCode!, crop.Error!);
+            }
+
+            windowCrop = crop.Value;
         }
 
         OperationResult<InputBatch> plan = InputPlanner.Plan(actions, captureId, focusWindow, perception.Cache, options.Input, requireFocus);
@@ -118,9 +155,11 @@ public sealed class InputTools(
         TimeSpan timeout = TimeSpan.FromSeconds(30) + TimeSpan.FromMilliseconds(stepMilliseconds);
         string? desktopPath = targeted.Value?.DesktopPath;
         OperationResult<PerceptionOutcome>? before = null;
+        bool pixelOnly = observation == ObservePixels;
         if (observe)
         {
-            before = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, cancellationToken).ConfigureAwait(false);
+            // The before image is only compared, never returned, so it is never annotated.
+            before = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, pixelOnly, windowCrop, annotate: false, cancellationToken).ConfigureAwait(false);
         }
 
         OperationResult<InputResult> sent = await _submissions.RunAsync(
@@ -135,13 +174,14 @@ public sealed class InputTools(
 
         // Typed text is never logged, only the kinds and counts.
         logger?.LogInformation(
-            "Input actions={Count} kinds={Kinds} typedCharacters={Typed} observe={Observe} status={Status} submittedEvents={Submitted}",
+            "Input actions={Count} kinds={Kinds} typedCharacters={Typed} observe={Observe} status={Status} submittedEvents={Submitted} observeMode={ObserveMode}",
             plan.Value!.Steps.Count,
             string.Join(',', plan.Value.Steps.Select(step => step.Kind).Distinct()),
             plan.Value.Steps.Sum(step => step.Text?.Length ?? 0),
             observe,
             sent.Value!.Status,
-            sent.Value.SubmittedEvents);
+            sent.Value.SubmittedEvents,
+            observe ? observation : "none");
 
         InputResult evidence = sent.Value!;
         bool rejected = string.Equals(evidence.Status, InputInjectionStatus.Rejected, StringComparison.Ordinal);
@@ -208,10 +248,11 @@ public sealed class InputTools(
         }
 
         string? baselineId = before is { Success: true } ? before.Value!.Record.Id : null;
-        OperationResult<PerceptionOutcome> observed = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, baselineId, cancellationToken).ConfigureAwait(false);
-        if (!observed.Success && observed.ErrorCode == "capture_mismatch" && before is { Success: true })
+        OperationResult<PerceptionOutcome> observed = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, baselineId, pixelOnly, windowCrop, mode == PerceptionTools.ImageAnnotated, cancellationToken).ConfigureAwait(false);
+        // Pixel mode compares only the same pixels, so a mismatched capture is inconclusive instead of retried.
+        if (!pixelOnly && !observed.Success && observed.ErrorCode == "capture_mismatch" && before is { Success: true })
         {
-            OperationResult<PerceptionOutcome> retry = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, cancellationToken).ConfigureAwait(false);
+            OperationResult<PerceptionOutcome> retry = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, false, windowCrop, mode == PerceptionTools.ImageAnnotated, cancellationToken).ConfigureAwait(false);
             if (retry.Success && retry.Value is not null && BoundsChanged(before.Value!, retry.Value))
             {
                 observed = retry;
@@ -231,11 +272,13 @@ public sealed class InputTools(
             }
         }
 
-        string responseStatus = ClassifyResponse(before, observed);
+        string responseStatus = pixelOnly ? ClassifyPixels(before, observed) : ClassifyResponse(before, observed);
         summary["response"] = new JsonObject
         {
             ["status"] = responseStatus,
-            ["compared"] = string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
+            ["compared"] = pixelOnly
+                ? windowCrop is not null ? "window-crop-pixels" : string.IsNullOrWhiteSpace(observeWindowHandle) ? "pixels" : "window-pixels"
+                : string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
         };
         if (!observed.Success)
         {
@@ -259,6 +302,9 @@ public sealed class InputTools(
         bool elevated,
         string? desktop,
         string? diffAgainst,
+        bool pixelOnly,
+        DesktopRect? windowCrop,
+        bool annotate,
         CancellationToken cancellationToken)
     {
         bool window = !string.IsNullOrWhiteSpace(observeWindowHandle);
@@ -268,12 +314,23 @@ public sealed class InputTools(
             WindowHandle = window ? observeWindowHandle!.Trim() : null,
             MaxEdge = 0,
             IncludeFullImage = true,
-            MaxBytes = options.Desktop.MaxScreenshotBytes
+            MaxBytes = options.Desktop.MaxScreenshotBytes,
+            WindowCrop = window ? windowCrop : null
         };
         return perception.InspectAsync(
-            new PerceptionRequest(capture, true, true, maxEdge, false, mode == PerceptionTools.ImageAnnotated, diffAgainst, elevated, Desktop: desktop),
+            new PerceptionRequest(capture, !pixelOnly, !pixelOnly, maxEdge, false, annotate, diffAgainst, elevated, Desktop: desktop),
             null,
             cancellationToken);
+    }
+
+    private static string ClassifyPixels(OperationResult<PerceptionOutcome>? before, OperationResult<PerceptionOutcome> after)
+    {
+        if (before is not { Success: true } || !after.Success || after.Value?.Diff is not { } diff)
+        {
+            return "inconclusive";
+        }
+
+        return diff.ChangedPercent > 0 || diff.Regions.Count > 0 ? "observed" : "no-response";
     }
 
     private static string ClassifyResponse(OperationResult<PerceptionOutcome>? before, OperationResult<PerceptionOutcome> after)

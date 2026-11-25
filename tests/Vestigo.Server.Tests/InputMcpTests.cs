@@ -88,6 +88,68 @@ public class InputMcpTests : IDisposable
         Assert.True(partialInjection.GetProperty("timing").GetProperty("includesCleanupReleases").GetBoolean());
     }
 
+    [Fact]
+    public async Task SendInput_ListsObserveModeAndCropAndRefusesBadCrops()
+    {
+        await using WebApplicationFactory<Program> factory = Create();
+        using HttpClient client = factory.CreateClient();
+
+        JsonElement listed = await Rpc(client, "tools/list", new { });
+        JsonElement properties = listed.GetProperty("result").GetProperty("tools").EnumerateArray()
+            .Single(candidate => candidate.GetProperty("name").GetString() == "send_input")
+            .GetProperty("inputSchema").GetProperty("properties");
+        Assert.Equal("full", properties.GetProperty("observeMode").GetProperty("default").GetString());
+        foreach (string name in new[] { "observeCropX", "observeCropY", "observeCropWidth", "observeCropHeight" })
+        {
+            Assert.True(properties.TryGetProperty(name, out _), name);
+        }
+
+        _launcher.NextSendJson = JsonSerializer.Serialize(Submitted(), SessionHelper.Json);
+        _launcher.LastSend = null;
+        JsonElement partial = await Call(client, new
+        {
+            actions = new[] { new { type = "key", keys = "a" } },
+            observe = true,
+            observeMode = "pixels",
+            observeWindowHandle = "0xA1",
+            observeCropX = 1
+        });
+        Assert.True(partial.GetProperty("isError").GetBoolean());
+        Assert.Null(_launcher.LastSend);
+
+        JsonElement noHandle = await Call(client, new
+        {
+            actions = new[] { new { type = "key", keys = "a" } },
+            observe = true,
+            observeMode = "pixels",
+            observeCropX = 1,
+            observeCropY = 1,
+            observeCropWidth = 5,
+            observeCropHeight = 5
+        });
+        Assert.True(noHandle.GetProperty("isError").GetBoolean());
+        Assert.Null(_launcher.LastSend);
+
+        // The scripted launcher cannot capture, so the observation is inconclusive and the injection survives.
+        JsonElement pixels = await Call(client, new
+        {
+            actions = new[] { new { type = "key", keys = "a" } },
+            observe = true,
+            observeMode = "pixels",
+            observeDelayMs = 0,
+            observeWindowHandle = "0xA1",
+            observeCropX = 1,
+            observeCropY = 1,
+            observeCropWidth = 5,
+            observeCropHeight = 5
+        });
+        string text = pixels.GetProperty("content")[0].GetProperty("text").GetString()!;
+        using JsonDocument summary = JsonDocument.Parse(text);
+        Assert.Equal(InputInjectionStatus.Submitted, summary.RootElement.GetProperty("injection").GetProperty("status").GetString());
+        Assert.Equal("inconclusive", summary.RootElement.GetProperty("response").GetProperty("status").GetString());
+        Assert.True(summary.RootElement.TryGetProperty("observeError", out _));
+    }
+
     private WebApplicationFactory<Program> Create()
     {
         using TcpListener listener = new(IPAddress.Loopback, 0);
@@ -233,7 +295,7 @@ public class InputMcpTests : IDisposable
     {
         public string? NextSendJson { get; set; }
 
-        public string? LastSend { get; private set; }
+        public string? LastSend { get; set; }
 
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
 
