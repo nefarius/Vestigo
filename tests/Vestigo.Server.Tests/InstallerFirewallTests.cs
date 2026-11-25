@@ -135,6 +135,21 @@ public class InstallerFirewallTests
     }
 
     [Fact]
+    public void Sync_DoesNotVerifyAnAddWhenTheLookupCouldNotEnumerateEveryRule()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        IncompleteLookupStore store = new();
+        store.Rules.Add(FirewallRuleSync.CreateRule(5098));
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        Assert.DoesNotContain(log, line => line.StartsWith("Added inbound firewall rule", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.Contains("Could not enumerate", StringComparison.Ordinal));
+        Assert.Equal("5098", Assert.Single(store.Rules).LocalPorts);
+    }
+
+    [Fact]
     public void Sync_DoesNotAddOrReplayWhenCleanupHitsTheRemovalCap()
     {
         ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
@@ -425,6 +440,32 @@ public class InstallerFirewallTests
 
             Rules.Add(rule);
         }
+    }
+
+    private sealed class IncompleteLookupStore : IFirewallRuleStore, IFirewallLookupDiagnostics
+    {
+        public List<FirewallRuleRecord> Rules { get; } = [];
+
+        public bool LastLookupWasComplete { get; private set; } = true;
+
+        public IReadOnlyList<FirewallRuleRecord> FindByName(string name)
+        {
+            // Every lookup after the first add behaves like the Item(name) fallback: one rule, enumeration incomplete.
+            LastLookupWasComplete = Rules.Count == 0 || Rules.Any(rule => rule.LocalPorts == "5098");
+            List<FirewallRuleRecord> all = Rules.Where(rule => rule.Name == name).ToList();
+            return LastLookupWasComplete ? all : all.Take(1).ToList();
+        }
+
+        public void Remove(string name)
+        {
+            int index = Rules.FindIndex(rule => rule.Name == name);
+            if (index >= 0)
+            {
+                Rules.RemoveAt(index);
+            }
+        }
+
+        public void Add(FirewallRuleRecord rule) => Rules.Add(rule);
     }
 
     private sealed class NarrowingStore : IFirewallRuleStore

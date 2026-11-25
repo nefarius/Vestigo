@@ -15,10 +15,12 @@ namespace Vestigo.Installer.Actions.Logic
 #if NET
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 #endif
-    public sealed class WindowsFirewallRuleStore : IFirewallRuleStore, IDisposable
+    public sealed class WindowsFirewallRuleStore : IFirewallRuleStore, IFirewallLookupDiagnostics, IDisposable
     {
         private object? _policy;
         private object? _rules;
+
+        public bool LastLookupWasComplete { get; private set; }
 
         public WindowsFirewallRuleStore()
         {
@@ -39,7 +41,8 @@ namespace Vestigo.Installer.Actions.Logic
         public IReadOnlyList<FirewallRuleRecord> FindByName(string name)
         {
             List<FirewallRuleRecord> found = new List<FirewallRuleRecord>();
-            if (TryCollectByName(name, found))
+            LastLookupWasComplete = TryCollectByName(name, found);
+            if (LastLookupWasComplete)
             {
                 return found;
             }

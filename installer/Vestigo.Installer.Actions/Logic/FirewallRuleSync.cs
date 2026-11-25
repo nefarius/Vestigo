@@ -78,6 +78,15 @@ namespace Vestigo.Installer.Actions.Logic
     }
 
     /// <summary>
+    ///     Optional store capability: reports whether the last <see cref="IFirewallRuleStore.FindByName" /> enumerated every
+    ///     rule. A lookup that fell back to a single by-name item cannot prove that no duplicate exists.
+    /// </summary>
+    public interface IFirewallLookupDiagnostics
+    {
+        bool LastLookupWasComplete { get; }
+    }
+
+    /// <summary>
     ///     Firewall store used by <see cref="FirewallRuleSync" />. Methods throw when the firewall service rejects the change.
     /// </summary>
     public interface IFirewallRuleStore
@@ -305,6 +314,18 @@ namespace Vestigo.Installer.Actions.Logic
         private static void VerifyAdded(IFirewallRuleStore store, FirewallRuleRecord desired, string ruleName)
         {
             IReadOnlyList<FirewallRuleRecord> after = store.FindByName(ruleName);
+            IFirewallLookupDiagnostics? diagnostics = store as IFirewallLookupDiagnostics;
+            for (int attempt = 1; diagnostics != null && !diagnostics.LastLookupWasComplete && attempt < 3; attempt++)
+            {
+                after = store.FindByName(ruleName);
+            }
+
+            if (diagnostics != null && !diagnostics.LastLookupWasComplete)
+            {
+                throw new InvalidOperationException(
+                    "Could not enumerate the rules named '" + ruleName + "' to confirm that exactly one exists after adding it.");
+            }
+
             if (after == null || after.Count != 1)
             {
                 throw new InvalidOperationException(
