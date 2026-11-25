@@ -72,7 +72,7 @@ public static partial class SessionHelper
     {
         if (!TryParseInspect(args, out ScreenCaptureRequest request, out bool uia, out bool ocr, out string? error))
         {
-            return Reject(error!);
+            return RejectInspect(error!);
         }
 
         try
@@ -80,7 +80,7 @@ public static partial class SessionHelper
             OperationResult<ScreenCaptureResult> captured = ScreenCapture.Capture(request with { IncludeFullImage = true });
             if (!captured.Success)
             {
-                return Reject(captured.Error!, captured.ErrorCode!, captured.Reason);
+                return RejectInspect(captured.Error!, captured.ErrorCode!, captured.Reason);
             }
 
             ScreenCaptureResult capture = captured.Value!;
@@ -108,7 +108,9 @@ public static partial class SessionHelper
                     all.AddRange(lines);
                 }
 
-                Console.Out.WriteLine(JsonSerializer.Serialize(new InspectCaptureResult(capture, all, ocrStatus, uiaStatus), Json));
+                Console.Out.WriteLine(JsonSerializer.Serialize(
+                    new InspectCaptureResult(capture, all, ocrStatus, uiaStatus),
+                    InspectHelperJsonContext.Default.InspectCaptureResult));
                 return 0;
             }
             finally
@@ -118,11 +120,23 @@ public static partial class SessionHelper
         }
         catch (System.Text.RegularExpressions.RegexParseException ex)
         {
-            return Reject("Invalid title pattern: " + ex.Message);
+            return RejectInspect("Invalid title pattern: " + ex.Message);
         }
         catch (System.Text.RegularExpressions.RegexMatchTimeoutException ex)
         {
-            return Reject("Title pattern timed out: " + ex.Message);
+            return RejectInspect("Title pattern timed out: " + ex.Message);
         }
+    }
+
+    /// <summary>
+    ///     Writes the <c>inspect-screen</c> error envelope with the source-generated contract and returns exit code 2.
+    ///     The JSON shape matches <see cref="Reject" />: <c>error</c>, <c>errorCode</c>, and <c>reason</c> only when set.
+    /// </summary>
+    private static int RejectInspect(string error, string code = "invalid_request", string? reason = null)
+    {
+        Console.Out.WriteLine(JsonSerializer.Serialize(
+            new InspectHelperError(error, code, reason),
+            InspectHelperJsonContext.Default.InspectHelperError));
+        return 2;
     }
 }
