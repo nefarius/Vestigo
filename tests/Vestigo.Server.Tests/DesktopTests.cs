@@ -948,6 +948,7 @@ public class DesktopTests
         private readonly nint _instance;
         private nint _hwnd;
         private bool _created;
+        private bool _shutdown;
 
         public HiddenWindowHost(string className, int x = 0, int y = 0, int width = 200, int height = 100)
         {
@@ -996,6 +997,7 @@ public class DesktopTests
             bool created;
             lock (_gate)
             {
+                _shutdown = true;
                 hwnd = _hwnd;
                 created = _created;
             }
@@ -1026,10 +1028,12 @@ public class DesktopTests
                 hwnd = CreateWindowEx(0, _className, "Vestigo Desktop Test", 0, x, y, width, height, 0, 0, _instance, 0);
             }
 
+            bool shutdown;
             lock (_gate)
             {
                 _hwnd = hwnd;
                 _created = hwnd != 0;
+                shutdown = _shutdown;
             }
 
             _ready.Set();
@@ -1041,6 +1045,11 @@ public class DesktopTests
                 }
 
                 return;
+            }
+
+            if (shutdown)
+            {
+                PostMessage(hwnd, WmClose, 0, 0);
             }
 
             NativeMessage message = default;
