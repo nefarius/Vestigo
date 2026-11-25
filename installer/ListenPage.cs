@@ -73,6 +73,8 @@ static class ListenPage
             SecureProperty("VESTIGO_PORT_EXPLICIT", null),
             SecureProperty("VESTIGO_LISTEN_MODE_PREFILL", null),
             SecureProperty("VESTIGO_PORT_PREFILL", null),
+            SecureProperty("VESTIGO_ROOTS_ACCESS_EXPLICIT", null),
+            SecureProperty("VESTIGO_ROOTS_ACCESS_PREFILL", null),
             SecureProperty("VESTIGO_LOAD_INITIALIZED", null));
         foreach (string name in ModuleSelection.All.Select(m => m.PropertyName))
         {

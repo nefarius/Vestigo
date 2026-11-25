@@ -519,6 +519,8 @@ public class InstallerHandoffTests
             "VESTIGO_PORT_EXPLICIT",
             "VESTIGO_LISTEN_MODE_PREFILL",
             "VESTIGO_PORT_PREFILL",
+            "VESTIGO_ROOTS_ACCESS_EXPLICIT",
+            "VESTIGO_ROOTS_ACCESS_PREFILL",
             "VESTIGO_LOAD_INITIALIZED"
         })
         {
