@@ -150,7 +150,7 @@ public class InstallerFirewallTests
     }
 
     [Fact]
-    public void Sync_DoesNotKeepARuleWhenTheLookupCannotProveItIsTheOnlyOne()
+    public void Sync_LeavesTheFirewallUnchangedWhenTheLookupStaysPartial()
     {
         ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
         AlwaysPartialStore store = new();
@@ -161,7 +161,45 @@ public class InstallerFirewallTests
         FirewallRuleSync.Sync(lan, store, log.Add);
 
         Assert.DoesNotContain(log, line => line.StartsWith("Kept inbound firewall rule", StringComparison.Ordinal));
-        Assert.Contains(log, line => line.Contains("does not match", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.Contains("Could not enumerate every rule", StringComparison.Ordinal));
+        Assert.Equal(["6000", "7000"], store.Rules.Select(rule => rule.LocalPorts).ToArray());
+
+        ResolvedSettings localhost = ListenSettings.Resolve("localhost", "none", "6000", null, null);
+        log.Clear();
+        FirewallRuleSync.Sync(localhost, store, log.Add);
+        Assert.Equal(2, store.Rules.Count);
+        Assert.DoesNotContain(log, line => line.StartsWith("No inbound firewall rule", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Sync_ReportsIncompleteCleanupInLocalhostMode()
+    {
+        ResolvedSettings localhost = ListenSettings.Resolve("localhost", "none", "6000", null, null);
+        FakeStore store = new();
+        for (int i = 0; i < FirewallRuleSync.MaxRemovals + 2; i++)
+        {
+            store.Rules.Add(FirewallRuleSync.CreateRule(5098));
+        }
+
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(localhost, store, log.Add);
+
+        Assert.Equal(2, store.Rules.Count);
+        Assert.DoesNotContain(log, line => line.StartsWith("No inbound firewall rule", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.Contains("remain after removing", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Restore_DoesNotReportSuccessWhenTheStoreDroppedTheReplayedRule()
+    {
+        FakeStore store = new() { DropNextAdd = true };
+        List<string> log = [];
+
+        FirewallRuleSync.Restore([FirewallRuleSync.CreateRule(5098)], store, log.Add);
+
+        Assert.DoesNotContain(log, line => line.StartsWith("Restored", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.StartsWith("Could not restore", StringComparison.Ordinal));
     }
 
     [Fact]

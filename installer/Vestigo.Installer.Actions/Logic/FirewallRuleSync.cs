@@ -257,16 +257,26 @@ namespace Vestigo.Installer.Actions.Logic
             try
             {
                 IReadOnlyList<FirewallRuleRecord> previous = Copy(FindWithRetry(store, ruleName, out bool lookupComplete));
+                if (!lookupComplete)
+                {
+                    Write(log, "Could not enumerate every rule named '" + ruleName + "'; leaving the firewall unchanged " +
+                               "because a complete snapshot is required to recover. Repair the installation again to retry.");
+                    return;
+                }
+
                 if (!resolved.BindsAny)
                 {
-                    int removed = RemoveAll(store, log, ruleName, out _);
-                    Write(log, "No inbound firewall rule for localhost mode after removing " +
-                               removed.ToString(CultureInfo.InvariantCulture) + ".");
+                    int removed = RemoveAll(store, log, ruleName, out bool cleaned);
+                    Write(log, cleaned
+                        ? "No inbound firewall rule for localhost mode after removing " +
+                          removed.ToString(CultureInfo.InvariantCulture) + "."
+                        : "Some inbound firewall rules named '" + ruleName + "' remain after removing " +
+                          removed.ToString(CultureInfo.InvariantCulture) + "; repair the installation again to continue the cleanup.");
                     return;
                 }
 
                 FirewallRuleRecord desired = CreateRule(resolved.Port, ruleName);
-                if (lookupComplete && previous.Count == 1 && SameRule(previous[0], desired))
+                if (previous.Count == 1 && SameRule(previous[0], desired))
                 {
                     Write(log, "Kept inbound firewall rule '" + ruleName + "' for TCP port " +
                                resolved.Port.ToString(CultureInfo.InvariantCulture) + ".");
@@ -311,7 +321,7 @@ namespace Vestigo.Installer.Actions.Logic
         ///     Looks the rules up, retrying a lookup that could not enumerate every rule. <paramref name="complete" /> is
         ///     false when a store that reports lookup diagnostics still returned a partial result.
         /// </summary>
-        private static IReadOnlyList<FirewallRuleRecord> FindWithRetry(IFirewallRuleStore store, string ruleName, out bool complete)
+        public static IReadOnlyList<FirewallRuleRecord> FindWithRetry(IFirewallRuleStore store, string ruleName, out bool complete)
         {
             IReadOnlyList<FirewallRuleRecord> found = store.FindByName(ruleName);
             IFirewallLookupDiagnostics? diagnostics = store as IFirewallLookupDiagnostics;
@@ -382,6 +392,14 @@ namespace Vestigo.Installer.Actions.Logic
                     }
                 }
 
+                IReadOnlyList<FirewallRuleRecord> after = FindWithRetry(store, ruleName, out bool readable);
+                string? difference = readable ? DescribeDifference(previous, after) : "the rules could not be enumerated to confirm the restore";
+                if (difference != null)
+                {
+                    Write(log, "Could not restore the Windows Firewall rule '" + ruleName + "': " + difference + ".");
+                    return;
+                }
+
                 Write(log, "Restored " + restored.ToString(CultureInfo.InvariantCulture) +
                            " firewall rule(s) named '" + ruleName + "'.");
             }
@@ -389,6 +407,32 @@ namespace Vestigo.Installer.Actions.Logic
             {
                 Write(log, "Could not restore the Windows Firewall rule '" + ruleName + "': " + FormatError(ex));
             }
+        }
+
+        /// <summary>Returns null when <paramref name="actual" /> holds exactly the rules of <paramref name="expected" />.</summary>
+        private static string? DescribeDifference(IReadOnlyList<FirewallRuleRecord>? expected, IReadOnlyList<FirewallRuleRecord>? actual)
+        {
+            int expectedCount = expected == null ? 0 : expected.Count;
+            int actualCount = actual == null ? 0 : actual.Count;
+            if (expectedCount != actualCount)
+            {
+                return "expected " + expectedCount.ToString(CultureInfo.InvariantCulture) + " rule(s) after the restore but found " +
+                       actualCount.ToString(CultureInfo.InvariantCulture);
+            }
+
+            List<FirewallRuleRecord> remaining = new List<FirewallRuleRecord>(actual ?? new FirewallRuleRecord[0]);
+            foreach (FirewallRuleRecord rule in expected ?? new FirewallRuleRecord[0])
+            {
+                int match = remaining.FindIndex(candidate => SameRule(candidate, rule));
+                if (match < 0)
+                {
+                    return "the restored rule for local port '" + rule.LocalPorts + "' was not found or differs from the snapshot";
+                }
+
+                remaining.RemoveAt(match);
+            }
+
+            return null;
         }
 
         public static string Serialize(IReadOnlyList<FirewallRuleRecord> rules)

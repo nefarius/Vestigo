@@ -287,8 +287,10 @@ namespace Vestigo.Installer.Actions
                 {
                     using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
                     {
-                        SaveFirewallRollback(store, session);
-                        FirewallRuleSync.Sync(resolved, store, message => session.Log(message));
+                        if (SaveFirewallRollback(store, session))
+                        {
+                            FirewallRuleSync.Sync(resolved, store, message => session.Log(message));
+                        }
                     }
                 }
                 catch (Exception firewallEx)
@@ -317,8 +319,10 @@ namespace Vestigo.Installer.Actions
             {
                 using (WindowsFirewallRuleStore store = new WindowsFirewallRuleStore())
                 {
-                    SaveFirewallRollback(store, session);
-                    FirewallRuleSync.Remove(store, message => session.Log(message));
+                    if (SaveFirewallRollback(store, session))
+                    {
+                        FirewallRuleSync.Remove(store, message => session.Log(message));
+                    }
                 }
             }
             catch (Exception ex)
@@ -517,30 +521,47 @@ namespace Vestigo.Installer.Actions
 
         /// <summary>
         ///     Records the current Vestigo firewall rules before changing them. A failed write deletes a stale snapshot so a
-        ///     later rollback cannot restore the wrong rule.
+        ///     later rollback cannot restore the wrong rule. Returns false, without changing anything, when the existing rules
+        ///     could not be fully enumerated: a partial snapshot would make a rollback drop the rules it missed.
         /// </summary>
-        private static void SaveFirewallRollback(IFirewallRuleStore store, Session session)
+        private static bool SaveFirewallRollback(IFirewallRuleStore store, Session session)
         {
             string path = FirewallRollbackPath();
             try
             {
-                string text = FirewallRuleSync.Serialize(store.FindByName(FirewallRuleSync.RuleName));
-                File.WriteAllText(path, text, new UTF8Encoding(false));
+                IReadOnlyList<FirewallRuleRecord> rules = FirewallRuleSync.FindWithRetry(store, FirewallRuleSync.RuleName, out bool complete);
+                if (!complete)
+                {
+                    DeleteStaleSnapshot(path, session);
+                    session.Log("The Vestigo firewall rules could not be fully enumerated, so no rollback snapshot was recorded and the " +
+                                "rule is left unchanged; repair the installation to retry.");
+                    return false;
+                }
+
+                File.WriteAllText(path, FirewallRuleSync.Serialize(rules), new UTF8Encoding(false));
+                return true;
             }
             catch (Exception ex)
             {
                 session.Log("Could not record the firewall rule for rollback: " + ex.GetType().Name + ": " + ex.Message);
-                try
+                DeleteStaleSnapshot(path, session);
+            }
+
+            return true;
+        }
+
+        private static void DeleteStaleSnapshot(string path, Session session)
+        {
+            try
+            {
+                if (File.Exists(path))
                 {
-                    if (File.Exists(path))
-                    {
-                        File.Delete(path);
-                    }
+                    File.Delete(path);
                 }
-                catch (Exception deleteEx)
-                {
-                    session.Log("Could not delete a stale firewall rollback snapshot: " + deleteEx.GetType().Name + ": " + deleteEx.Message);
-                }
+            }
+            catch (Exception deleteEx)
+            {
+                session.Log("Could not delete a stale firewall rollback snapshot: " + deleteEx.GetType().Name + ": " + deleteEx.Message);
             }
         }
 
