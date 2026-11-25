@@ -103,13 +103,16 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
         }
 
         _layout = PInvoke.GetKeyboardLayout(threadId);
-        _capsLock = ReadCapsLock();
+        _capsLock = CapsLockOf(_receivingWindow());
     }
 
     public bool CapsLock => _capsLock;
 
-    public OperationResult<bool>? Blocked() =>
-        PlanStillMatches(SameLayout(_receivingWindow()), ReadCapsLock() == _capsLock);
+    public OperationResult<bool>? Blocked()
+    {
+        HWND window = _receivingWindow();
+        return PlanStillMatches(SameLayout(window), CapsLockOf(window) == _capsLock);
+    }
 
     /// <summary>Layout mismatch wins, because the planned virtual keys belong to that layout.</summary>
     internal static OperationResult<bool>? PlanStillMatches(bool layoutMatches, bool capsLockMatches)
@@ -131,7 +134,27 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
         return null;
     }
 
-    private static bool ReadCapsLock() => (PInvoke.GetKeyState((int)VIRTUAL_KEY.VK_CAPITAL) & 1) != 0;
+    /// <summary>
+    ///     Caps Lock toggle state belongs to the thread that processes the window's input.
+    ///     <see cref="PInvoke.GetKeyState"/> on the helper thread does not see that queue.
+    /// </summary>
+    private static bool CapsLockOf(HWND window)
+    {
+        uint target = window.IsNull ? 0 : PInvoke.GetWindowThreadProcessId(window, out _);
+        uint self = PInvoke.GetCurrentThreadId();
+        bool attached = target != 0 && target != self && PInvoke.AttachThreadInput(self, target, true);
+        try
+        {
+            return (PInvoke.GetKeyState((int)VIRTUAL_KEY.VK_CAPITAL) & 1) != 0;
+        }
+        finally
+        {
+            if (attached)
+            {
+                _ = PInvoke.AttachThreadInput(self, target, false);
+            }
+        }
+    }
 
     /// <summary>Low word of the layout handle. German (Germany) is <c>0x0407</c>.</summary>
     public int LanguageId => unchecked((int)((nint)_layout & 0xFFFF));

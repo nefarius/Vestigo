@@ -189,6 +189,7 @@ ToUnicodeEx
 GetAsyncKeyState
 MAP_VIRTUAL_KEY_TYPE
 GetKeyState
+AttachThreadInput
 QueryPerformanceCounter
 QueryPerformanceFrequency
 
