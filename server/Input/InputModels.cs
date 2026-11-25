@@ -62,8 +62,11 @@ public sealed class InputActionSpec
     [Description("scroll only: wheel notches to scroll right (negative scrolls left).")]
     public int? DeltaX { get; set; }
 
-    [Description("type only: text typed as Unicode characters.")]
+    [Description("type only: text to type.")]
     public string? Text { get; set; }
+
+    [Description("type only. \"unicode\" (default) or \"keys\".")]
+    public string? InputMode { get; set; }
 
     [Description("key only: a key or chord such as enter, ctrl+c, ctrl+shift+esc, alt+f4 or win+r.")]
     public string? Keys { get; set; }
@@ -93,10 +96,11 @@ public sealed record InputStep(
     IReadOnlyList<KeyStroke>? Keys,
     int Milliseconds,
     int HoldMilliseconds = 0,
-    int DelayAfterMilliseconds = 0);
+    int DelayAfterMilliseconds = 0,
+    string? InputMode = null);
 
 /// <summary>The batch handed to the session helper.</summary>
-public sealed record InputBatch(IReadOnlyList<InputStep> Steps, string? FocusWindow);
+public sealed record InputBatch(IReadOnlyList<InputStep> Steps, string? FocusWindow, bool StrictFocus = false);
 
 /// <summary>Helper output of <c>send-input</c>.</summary>
 public sealed record InputResult(
@@ -108,4 +112,6 @@ public sealed record InputResult(
     string? FocusActual = null,
     bool? FocusGranted = null,
     int? CursorX = null,
-    int? CursorY = null);
+    int? CursorY = null,
+    DateTimeOffset? StartedAt = null,
+    DateTimeOffset? CompletedAt = null);

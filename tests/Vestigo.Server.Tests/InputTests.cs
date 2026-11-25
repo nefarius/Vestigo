@@ -168,10 +168,11 @@ public class InputTests
         InputBatch batch = new(
             [
                 new InputStep("click", 10, 20, null, null, "left", 2, 0, 0, null, null, 0),
-                new InputStep("type", null, null, null, null, null, 1, 0, 0, "héllo \"quoted\"\n", null, 0),
+                new InputStep("type", null, null, null, null, null, 1, 0, 0, "héllo \"quoted\"\n", null, 0, InputMode: "keys"),
                 new InputStep("key", null, null, null, null, null, 1, 0, 0, null, [new KeyStroke(0x11, false), new KeyStroke(0x2E, true)], 0)
             ],
-            "0xABC");
+            "0xABC",
+            true);
 
         string[] args = SessionHelper.BuildSendInputArguments(batch).ToArray();
 
@@ -179,8 +180,10 @@ public class InputTests
         Assert.True(SessionHelper.TryParseSendInput(args, out InputBatch parsed, out string? error));
         Assert.Null(error);
         Assert.Equal("0xABC", parsed.FocusWindow);
+        Assert.True(parsed.StrictFocus);
         Assert.Equal(3, parsed.Steps.Count);
         Assert.Equal("héllo \"quoted\"\n", parsed.Steps[1].Text);
+        Assert.Equal("keys", parsed.Steps[1].InputMode);
         Assert.True(parsed.Steps[2].Keys![1].Extended);
 
         Assert.False(SessionHelper.TryParseSendInput([SessionHelper.Flag, SessionHelper.SendInputCommand], out _, out _));
@@ -392,11 +395,242 @@ public class InputTests
     }
 
     [Fact]
+    public void Planner_AcceptsKeysModeAndStrictFocus()
+    {
+        CaptureCache cache = new();
+        InputOptions limits = new() { MaxTypedCharacters = 5 };
+
+        OperationResult<InputBatch> omitted = InputPlanner.Plan([Type("a")], null, null, cache, limits);
+        Assert.True(omitted.Success, omitted.Error);
+        Assert.Null(omitted.Value!.Steps[0].InputMode);
+        Assert.False(omitted.Value.StrictFocus);
+
+        OperationResult<InputBatch> keys = InputPlanner.Plan(
+            [new InputActionSpec { Type = "type", Text = "Ab", InputMode = " Keys " }],
+            null,
+            "0x10",
+            cache,
+            limits,
+            strictFocus: true);
+        Assert.True(keys.Success, keys.Error);
+        Assert.Equal("keys", keys.Value!.Steps[0].InputMode);
+        Assert.True(keys.Value.StrictFocus);
+        Assert.Equal("0x10", keys.Value.FocusWindow);
+
+        Assert.Equal("invalid_request", InputPlanner.Plan([new InputActionSpec { Type = "click", InputMode = "keys" }], null, null, cache, limits).ErrorCode);
+        Assert.Equal("invalid_request", InputPlanner.Plan([new InputActionSpec { Type = "type", Text = "a", InputMode = "scancode" }], null, null, cache, limits).ErrorCode);
+        Assert.Equal("invalid_request", InputPlanner.Plan([Type("a")], null, "  ", cache, limits, strictFocus: true).ErrorCode);
+        Assert.Equal(
+            "invalid_request",
+            InputPlanner.Plan([new InputActionSpec { Type = "type", Text = "abcdef", InputMode = "keys" }], null, null, cache, limits).ErrorCode);
+        Assert.True(InputPlanner.Plan([new InputActionSpec { Type = "type", Text = "abcde", InputMode = "keys" }], null, null, cache, limits).Success);
+    }
+
+    [Fact]
+    public void PhysicalKeyTranslator_PlansUsLikeText()
+    {
+        MapLayout layout = new(new Dictionary<char, PhysicalKeyStroke>
+        {
+            ['A'] = new(0x41, 0x1E, false, true, false, false),
+            ['b'] = new(0x42, 0x30, false, false, false, false),
+            [' '] = new(0x20, 0x39, false, false, false, false),
+            ['c'] = new(0x43, 0x2E, false, false, false, false),
+            ['1'] = new(0x31, 0x02, false, false, false, false),
+            [','] = new(0xBC, 0x33, false, false, false, false),
+            ['.'] = new(0xBE, 0x34, false, false, false, false),
+            ['/'] = new(0xBF, 0x35, false, false, false, false),
+            ['?'] = new(0xBF, 0x35, false, true, false, false)
+        });
+
+        Assert.True(PhysicalKeyTranslator.TryPlan("Ab c1,./?", layout, out PhysicalKeyPlan? plan, out PhysicalKeyFailure? failure));
+        Assert.Null(failure);
+        Assert.Equal(
+            [
+                new PhysicalKeyStroke(0x41, 0x1E, false, true, false, false),
+                new PhysicalKeyStroke(0x42, 0x30, false, false, false, false),
+                new PhysicalKeyStroke(0x20, 0x39, false, false, false, false),
+                new PhysicalKeyStroke(0x43, 0x2E, false, false, false, false),
+                new PhysicalKeyStroke(0x31, 0x02, false, false, false, false),
+                new PhysicalKeyStroke(0xBC, 0x33, false, false, false, false),
+                new PhysicalKeyStroke(0xBE, 0x34, false, false, false, false),
+                new PhysicalKeyStroke(0xBF, 0x35, false, false, false, false),
+                new PhysicalKeyStroke(0xBF, 0x35, false, true, false, false)
+            ],
+            plan!.Strokes);
+        Assert.Equal([true, false, false, false, false, false, false, false, true], plan.Strokes.Select(stroke => stroke.Shift).ToArray());
+    }
+
+    [Fact]
+    public void PhysicalKeyTranslator_PlansGermanLikeTextAndRejectsUnsupportedCharacters()
+    {
+        MapLayout layout = new(
+            new Dictionary<char, PhysicalKeyStroke>
+            {
+                ['z'] = new(0x5A, 0x2C, false, false, false, false),
+                ['@'] = new(0x51, 0x10, false, false, true, true),
+                ['a'] = new(0x41, 0x1E, false, false, false, false),
+                ['b'] = new(0x42, 0x30, false, false, false, false),
+                ['c'] = new(0x43, 0x2E, false, false, false, false)
+            },
+            dead: new HashSet<char> { '^' });
+
+        Assert.True(PhysicalKeyTranslator.TryPlan("z@", layout, out PhysicalKeyPlan? plan, out PhysicalKeyFailure? failure));
+        Assert.Null(failure);
+        Assert.Equal(new PhysicalKeyStroke(0x5A, 0x2C, false, false, false, false), plan!.Strokes[0]);
+        Assert.Equal(new PhysicalKeyStroke(0x51, 0x10, false, false, true, true), plan.Strokes[1]);
+        Assert.False(plan.Strokes[1].Shift);
+
+        Assert.False(PhysicalKeyTranslator.TryPlan("a^b", layout, out PhysicalKeyPlan? deadPlan, out PhysicalKeyFailure? dead));
+        Assert.Null(deadPlan);
+        Assert.Equal(1, dead!.Value.Position);
+
+        Assert.False(PhysicalKeyTranslator.TryPlan("abc€", layout, out PhysicalKeyPlan? missing, out PhysicalKeyFailure? unmapped));
+        Assert.Null(missing);
+        Assert.Equal(3, unmapped!.Value.Position);
+
+        Assert.False(PhysicalKeyTranslator.TryPlan("ab😀", layout, out PhysicalKeyPlan? nonBmp, out PhysicalKeyFailure? surrogate));
+        Assert.Null(nonBmp);
+        Assert.Equal(2, surrogate!.Value.Position);
+    }
+
+    [Fact]
+    public void PhysicalKeyTranslator_PlansEnterTabAndSkipsCarriageReturn()
+    {
+        MapLayout layout = new(new Dictionary<char, PhysicalKeyStroke>
+        {
+            ['a'] = new(0x41, 0x1E, false, false, false, false),
+            ['b'] = new(0x42, 0x30, false, false, false, false)
+        });
+
+        Assert.True(PhysicalKeyTranslator.TryPlan("a\r\nb\t", layout, out PhysicalKeyPlan? plan, out PhysicalKeyFailure? failure));
+        Assert.Null(failure);
+        Assert.Equal(
+            [
+                new PhysicalKeyStroke(0x41, 0x1E, false, false, false, false),
+                new PhysicalKeyStroke(0x0D, 0, false, false, false, false),
+                new PhysicalKeyStroke(0x42, 0x30, false, false, false, false),
+                new PhysicalKeyStroke(0x09, 0, false, false, false, false)
+            ],
+            plan!.Strokes);
+    }
+
+    [Fact]
+    public void PhysicalKeySender_ReleasesHeldModifiersWhenFocusIsLost()
+    {
+        PhysicalKeyStroke shifted = new(0x41, 0x1E, false, true, false, false);
+        int calls = 0;
+        int checks = 0;
+        List<ushort[]> released = [];
+        OperationResult<int> result = PhysicalKeySender.Send(
+            new PhysicalKeyPlan([shifted, new(0x42, 0x30, false, true, false, false), new(0x43, 0x2E, false, false, false, false)]),
+            () => ++checks == 1,
+            _ =>
+            {
+                calls++;
+                return OperationResult<int>.Ok(2);
+            },
+            keys => released.Add([.. keys]));
+
+        Assert.False(result.Success);
+        Assert.Equal("focus_lost", result.ErrorCode);
+        Assert.Equal(1, calls);
+        Assert.Equal([(ushort)0x10], Assert.Single(released));
+    }
+
+    [Fact]
+    public void PhysicalKeySender_ReleasesHeldModifiersWhenSendFails()
+    {
+        int calls = 0;
+        List<ushort[]> released = [];
+        OperationResult<int> result = PhysicalKeySender.Send(
+            new PhysicalKeyPlan(
+            [
+                new PhysicalKeyStroke(0x41, 0x1E, false, true, false, false),
+                new PhysicalKeyStroke(0x42, 0x30, false, true, true, false)
+            ]),
+            null,
+            _ =>
+            {
+                calls++;
+                return calls == 1
+                    ? OperationResult<int>.Ok(2)
+                    : OperationResult<int>.Fail("input_failed", "The second event was rejected.");
+            },
+            keys => released.Add([.. keys]));
+
+        Assert.False(result.Success);
+        Assert.Equal("input_failed", result.ErrorCode);
+        Assert.Equal(2, calls);
+        Assert.Equal([(ushort)0x10], Assert.Single(released));
+        Assert.DoesNotContain(released.SelectMany(keys => keys), vk => vk == 0x11);
+    }
+
+    [Fact]
+    public void PhysicalKeySender_DoesNotReleaseModifiersItDidNotPress()
+    {
+        List<ushort[]> released = [];
+        OperationResult<int> result = PhysicalKeySender.Send(
+            new PhysicalKeyPlan(
+            [
+                new PhysicalKeyStroke(0x41, 0x1E, false, false, true, false),
+                new PhysicalKeyStroke(0x42, 0x30, false, false, false, false)
+            ]),
+            null,
+            _ => OperationResult<int>.Ok(2),
+            keys => released.Add([.. keys]));
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal([(ushort)0x11], Assert.Single(released));
+        Assert.DoesNotContain(released.SelectMany(keys => keys), vk => vk is 0x10 or 0x12);
+    }
+
+    [Fact]
+    public void WindowsKeyboardLayout_MapsCurrentThreadLettersWhenFixtureEnabled()
+    {
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_KEY_FIXTURES") != "1")
+        {
+            Assert.Skip("Requires Windows and VESTIGO_KEY_FIXTURES=1. This run did not use a keyboard fixture.");
+        }
+
+        WindowsKeyboardLayout layout = new(default);
+        PhysicalKeyStroke? lower = layout.TryMap('a');
+        PhysicalKeyStroke? upper = layout.TryMap('A');
+        Assert.NotNull(lower);
+        Assert.NotNull(upper);
+        Assert.Equal(lower.Vk, upper.Vk);
+        Assert.NotEqual(lower.Shift, upper.Shift);
+        Assert.False(layout.IsDeadKey('a'));
+    }
+
+    [Fact]
     public void FocusGranted_IgnoresHexPadding()
     {
         Assert.True(InputInjector.FocusGranted("0x00001A2B", "0x1A2B"));
         Assert.False(InputInjector.FocusGranted("0x1A2B", "0x1A2C"));
         Assert.Null(InputInjector.FocusGranted("  ", "0x1A2B"));
+    }
+
+    private sealed class MapLayout(IReadOnlyDictionary<char, PhysicalKeyStroke> map, IReadOnlySet<char>? dead = null) : IKeyboardLayout
+    {
+        public PhysicalKeyStroke? TryMap(char value)
+        {
+            RejectReserved(value);
+            return map.TryGetValue(value, out PhysicalKeyStroke? stroke) ? stroke : null;
+        }
+
+        public bool IsDeadKey(char value)
+        {
+            RejectReserved(value);
+            return dead?.Contains(value) == true;
+        }
+
+        private static void RejectReserved(char value)
+        {
+            if (value is '\r' or '\n' or '\t' || char.IsSurrogate(value))
+            {
+                throw new InvalidOperationException($"The layout was consulted for U+{(int)value:X4}.");
+            }
+        }
     }
 
     private sealed class RecordingLaunch : IProcessLauncher

@@ -72,7 +72,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Opt-in</span> <span class="pill gated">Input gated</span></p>
     <h2>Mouse and keyboard input</h2>
-    <p>Inject mouse movement, clicks, scrolling, drags, typing and key chords as the console user. Pass the <code>captureId</code> from <code>inspect_screen</code> with an <code>elementId</code>, or <code>x</code> and <code>y</code> in that image. <code>observe: true</code> waits, then returns a fresh <code>inspect_screen</code> result in the same call. The Input module needs Desktop, and input stays off until <code>Input:AllowInput</code> is true.</p>
+    <p>Inject mouse movement, clicks, scrolling, drags, typing and key chords as the console user. A <code>type</code> action can opt into physical keys with <code>inputMode</code> <code>keys</code>; the default remains Unicode. Pass the <code>captureId</code> from <code>inspect_screen</code> with an <code>elementId</code>, or <code>x</code> and <code>y</code> in that image. <code>observe: true</code> waits, then returns a fresh <code>inspect_screen</code> result in the same call. The Input module needs Desktop, and input stays off until <code>Input:AllowInput</code> is true.</p>
     <p>Input cannot reach the secure desktop (UAC prompts, the lock screen, Ctrl+Alt+Del). Elevated windows need <code>elevated: true</code>. That is administrator-equivalent while an elevated window is open, and Windows can still drop the input silently.</p>
   </article>
   <article class="card">

@@ -21,6 +21,9 @@ public static class InputInjector
     [ThreadStatic]
     private static int Submitted;
 
+    [ThreadStatic]
+    private static List<ushort>? ActiveModifiers;
+
     private const int StepPauseMilliseconds = 30;
 
     private const int ClickPauseMilliseconds = 40;
@@ -63,42 +66,69 @@ public static class InputInjector
                 warning = focused.Value;
             }
 
-            Submitted = 0;
-            int performed = 0;
-            foreach (InputStep step in batch.Steps)
+            if (batch.StrictFocus && (warning is not null || FocusGranted(batch.FocusWindow, ReadForeground()) != true))
             {
-                OperationResult<bool> done = Perform(step);
-                if (!done.Success)
-                {
-                    return OperationResult<InputResult>.Fail(
-                        done.ErrorCode!,
-                        $"{done.Error} ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
-                }
-
-                performed++;
-                if (step.DelayAfterMilliseconds > 0)
-                {
-                    Thread.Sleep(step.DelayAfterMilliseconds);
-                }
-                else if (step.Kind != InputKinds.Wait)
-                {
-                    Thread.Sleep(StepPauseMilliseconds);
-                }
+                return OperationResult<InputResult>.Fail(
+                    "foreground_not_granted",
+                    "strictFocus requires the focus window to be in the foreground, and Windows did not grant it.");
             }
 
-            string? actualFocus = ReadForeground();
-            bool? granted = FocusGranted(batch.FocusWindow, actualFocus);
-            ReadCursor(out int? cursorX, out int? cursorY);
-            return OperationResult<InputResult>.Ok(new InputResult(
-                performed,
-                System.Diagnostics.Process.GetCurrentProcess().SessionId,
-                warning,
-                Submitted,
-                string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim(),
-                actualFocus,
-                granted,
-                cursorX,
-                cursorY));
+            Submitted = 0;
+            ActiveModifiers = [];
+            DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+            int performed = 0;
+            try
+            {
+                foreach (InputStep step in batch.Steps)
+                {
+                    if (batch.StrictFocus && FocusGranted(batch.FocusWindow, ReadForeground()) != true)
+                    {
+                        ReleaseActiveModifiers();
+                        return OperationResult<InputResult>.Fail(
+                            "focus_lost",
+                            $"The focus window is no longer in the foreground. ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
+                    }
+
+                    OperationResult<bool> done = Perform(step, batch);
+                    if (!done.Success)
+                    {
+                        return OperationResult<InputResult>.Fail(
+                            done.ErrorCode!,
+                            $"{done.Error} ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
+                    }
+
+                    performed++;
+                    if (step.DelayAfterMilliseconds > 0)
+                    {
+                        Thread.Sleep(step.DelayAfterMilliseconds);
+                    }
+                    else if (step.Kind != InputKinds.Wait)
+                    {
+                        Thread.Sleep(StepPauseMilliseconds);
+                    }
+                }
+
+                string? actualFocus = ReadForeground();
+                bool? granted = FocusGranted(batch.FocusWindow, actualFocus);
+                ReadCursor(out int? cursorX, out int? cursorY);
+                return OperationResult<InputResult>.Ok(new InputResult(
+                    performed,
+                    System.Diagnostics.Process.GetCurrentProcess().SessionId,
+                    warning,
+                    Submitted,
+                    string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim(),
+                    actualFocus,
+                    granted,
+                    cursorX,
+                    cursorY,
+                    startedAt,
+                    DateTimeOffset.UtcNow));
+            }
+            finally
+            {
+                ReleaseActiveModifiers();
+                ActiveModifiers = null;
+            }
         }
         finally
         {
@@ -137,7 +167,7 @@ public static class InputInjector
             : OperationResult<string?>.Ok("foreground_not_granted: Windows did not bring the window to the foreground; input goes to the current foreground window.");
     }
 
-    private static OperationResult<bool> Perform(InputStep step)
+    private static OperationResult<bool> Perform(InputStep step, InputBatch batch)
     {
         switch (step.Kind)
         {
@@ -164,7 +194,17 @@ public static class InputInjector
                 return Drag(step);
 
             case InputKinds.Type:
-                return Type(step.Text!);
+                if (IsKeysMode(step.InputMode))
+                {
+                    return TypeKeys(step.Text ?? string.Empty, batch);
+                }
+
+                if (IsUnicodeMode(step.InputMode))
+                {
+                    return Type(step.Text!);
+                }
+
+                return OperationResult<bool>.Fail("invalid_request", "inputMode must be unicode or keys.");
 
             case InputKinds.Key:
                 if (SendKeys(step.Keys!, release: false) is { Success: false } pressFailure)
@@ -321,6 +361,126 @@ public static class InputInjector
         }
 
         return Send(inputs);
+    }
+
+    private static bool IsUnicodeMode(string? inputMode) =>
+        string.IsNullOrWhiteSpace(inputMode) || inputMode.Trim().Equals("unicode", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsKeysMode(string? inputMode) =>
+        !string.IsNullOrWhiteSpace(inputMode) && inputMode.Trim().Equals("keys", StringComparison.OrdinalIgnoreCase);
+
+    private static OperationResult<bool> TypeKeys(string text, InputBatch batch)
+    {
+        WindowsKeyboardLayout layout = new(LayoutWindow(batch));
+        if (!PhysicalKeyTranslator.TryPlan(text, layout, out PhysicalKeyPlan? plan, out PhysicalKeyFailure? failure))
+        {
+            return OperationResult<bool>.Fail(
+                "unsupported_character",
+                $"Unsupported character at position {failure?.Position ?? 0}.");
+        }
+
+        List<ushort> down = ActiveModifiers ??= [];
+        Func<bool>? focusStillHeld = batch.StrictFocus
+            ? () => FocusGranted(batch.FocusWindow, ReadForeground()) == true
+            : null;
+        OperationResult<int> sent = PhysicalKeySender.Send(plan!, focusStillHeld, stroke => SendPhysicalStroke(stroke, down), ReleaseNamedModifiers);
+        return sent.Success ? Done() : OperationResult<bool>.Fail(sent.ErrorCode!, sent.Error!);
+    }
+
+    private static HWND LayoutWindow(InputBatch batch)
+    {
+        if (!string.IsNullOrWhiteSpace(batch.FocusWindow) && WindowInspection.TryParseHandle(batch.FocusWindow, out HWND hwnd))
+        {
+            return hwnd;
+        }
+
+        return PInvoke.GetForegroundWindow();
+    }
+
+    private static OperationResult<int> SendPhysicalStroke(PhysicalKeyStroke stroke, List<ushort> down)
+    {
+        ushort[] needed = PhysicalKeySender.Modifiers(stroke);
+        List<ushort> pressing = [];
+        List<INPUT> inputs = [];
+        foreach (ushort vk in needed)
+        {
+            if (!down.Contains(vk))
+            {
+                pressing.Add(vk);
+                inputs.Add(Key(vk, 0, up: false));
+            }
+        }
+
+        inputs.Add(Key(stroke.Vk, stroke.Scan, up: false, extended: stroke.Extended));
+        inputs.Add(Key(stroke.Vk, stroke.Scan, up: true, extended: stroke.Extended));
+        int before = Submitted;
+        OperationResult<bool> sent = Send(inputs);
+        if (!sent.Success)
+        {
+            ReleasePartialStroke(pressing, stroke, Submitted - before);
+            return OperationResult<int>.Fail(sent.ErrorCode!, sent.Error!);
+        }
+
+        down.AddRange(pressing);
+        return OperationResult<int>.Ok(inputs.Count);
+    }
+
+    private static void ReleasePartialStroke(List<ushort> pressing, PhysicalKeyStroke stroke, int delivered)
+    {
+        if (delivered <= 0)
+        {
+            return;
+        }
+
+        List<INPUT> ups = [];
+        int pressedModifiers = Math.Min(delivered, pressing.Count);
+        for (int index = pressedModifiers - 1; index >= 0; index--)
+        {
+            ups.Add(Key(pressing[index], 0, up: true));
+        }
+
+        if (delivered == pressing.Count + 1)
+        {
+            ups.Add(Key(stroke.Vk, stroke.Scan, up: true, extended: stroke.Extended));
+        }
+
+        if (ups.Count > 0)
+        {
+            _ = Send(ups);
+        }
+    }
+
+    private static void ReleaseNamedModifiers(IReadOnlyList<ushort> virtualKeys)
+    {
+        if (virtualKeys.Count == 0)
+        {
+            return;
+        }
+
+        List<INPUT> inputs = [];
+        foreach (ushort vk in virtualKeys)
+        {
+            inputs.Add(Key(vk, 0, up: true));
+            ActiveModifiers?.Remove(vk);
+        }
+
+        _ = Send(inputs);
+    }
+
+    private static void ReleaseActiveModifiers()
+    {
+        if (ActiveModifiers is not { Count: > 0 } held)
+        {
+            return;
+        }
+
+        ushort[] virtualKeys = new ushort[held.Count];
+        for (int index = 0; index < held.Count; index++)
+        {
+            virtualKeys[index] = held[held.Count - 1 - index];
+        }
+
+        ReleaseNamedModifiers(virtualKeys);
     }
 
     private static OperationResult<bool> SendKeys(IReadOnlyList<KeyStroke> keys, bool release)

@@ -27,11 +27,14 @@ public sealed class InputTools(
     [McpServerTool(Name = "send_input", Destructive = true, OpenWorld = false)]
     [Description(
         "Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), "
-        + "drag (x,y to toX,toY), type (text as Unicode characters), key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). "
+        + "drag (x,y to toX,toY), type (text as Unicode characters by default; inputMode \"keys\" types through the target window keyboard layout; an unsupported character returns its position and sends nothing for that action), "
+        + "key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). "
         + "A point is elementId from inspect_screen or find_on_screen, or x and y: in the pixels of the returned image when captureId is set, otherwise absolute virtual-screen physical pixels. "
-        + "focusWindow (hex handle from list_windows) is brought to the foreground first. click and key accept holdMilliseconds. Any action accepts delayAfterMilliseconds. "
+        + "focusWindow (hex handle from list_windows) is brought to the foreground first. strictFocus requires focusWindow and stops on focus loss while releasing only modifiers this call pressed. "
+        + "click and key accept holdMilliseconds. Any action accepts delayAfterMilliseconds. "
         + "observe:true waits observeDelayMs, then compares a fresh inspect_screen result with one taken before the input. "
-        + "injection.status submitted means SendInput accepted the events. response.status observed means the screen, window, or elements changed. "
+        + "injection.status submitted means SendInput accepted the events. startedAt and completedAt are UTC timestamps of the injection. "
+        + "response.status observed means the screen, window, or elements changed. "
         + "A submitted injection is not an observed application response. observe needs Vestigo:Desktop:AllowScreenshots. "
         + "desktopSessionId sends input to that managed desktop only when it is already the input desktop and does not activate it. "
         + "Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot "
@@ -47,6 +50,7 @@ public sealed class InputTools(
         [Description("Observe only: longest edge of the returned image, 320 to 3840.")] int maxEdge = ScreenAnalyzer.DefaultMaxEdge,
         [Description("Use the elevated token, needed to reach elevated windows.")] bool elevated = false,
         [Description("Managed desktop session id. The session must already be the input desktop.")] string? desktopSessionId = null,
+        [Description("Require focusWindow and stop the batch if that window is not in the foreground. Releases only modifiers this call pressed.")] bool strictFocus = false,
         CancellationToken cancellationToken = default)
     {
         if (!options.Input.AllowInput)
@@ -73,7 +77,7 @@ public sealed class InputTools(
             }
         }
 
-        OperationResult<InputBatch> plan = InputPlanner.Plan(actions, captureId, focusWindow, perception.Cache, options.Input);
+        OperationResult<InputBatch> plan = InputPlanner.Plan(actions, captureId, focusWindow, perception.Cache, options.Input, strictFocus);
         if (!plan.Success)
         {
             return DesktopTools.ErrorResult(plan.ErrorCode!, plan.Error!);
@@ -143,6 +147,16 @@ public sealed class InputTools(
         if (evidence.FocusWarning is not null)
         {
             summary["focusWarning"] = evidence.FocusWarning;
+        }
+
+        if (evidence.StartedAt is { } startedAt)
+        {
+            summary["startedAt"] = JsonValue.Create(startedAt);
+        }
+
+        if (evidence.CompletedAt is { } completedAt)
+        {
+            summary["completedAt"] = JsonValue.Create(completedAt);
         }
 
         List<ContentBlock> content = [new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) }];

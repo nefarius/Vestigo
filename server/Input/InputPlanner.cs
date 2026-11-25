@@ -12,7 +12,8 @@ public static class InputPlanner
         string? captureId,
         string? focusWindow,
         CaptureCache cache,
-        InputOptions limits)
+        InputOptions limits,
+        bool strictFocus = false)
     {
         if (actions is null || actions.Count == 0)
         {
@@ -22,6 +23,11 @@ public static class InputPlanner
         if (actions.Count > limits.MaxActions)
         {
             return Fail("invalid_request", $"At most {limits.MaxActions} actions are allowed per call.");
+        }
+
+        if (strictFocus && string.IsNullOrWhiteSpace(focusWindow))
+        {
+            return Fail("invalid_request", "strictFocus requires focusWindow.");
         }
 
         CaptureRecord? capture = null;
@@ -43,6 +49,12 @@ public static class InputPlanner
                 return Fail("invalid_request", $"{label}.type must be one of {string.Join(", ", InputKinds.All)}.");
             }
 
+            OperationResult<string?> mode = NormalizeInputMode(action, kind, label);
+            if (!mode.Success)
+            {
+                return Fail(mode.ErrorCode!, mode.Error!);
+            }
+
             OperationResult<InputStep> step = PlanOne(kind, action, label, capture);
             if (!step.Success)
             {
@@ -61,7 +73,7 @@ public static class InputPlanner
                 return Fail("invalid_request", $"{label}.holdMilliseconds applies to click and key.");
             }
 
-            InputStep timed = step.Value! with { HoldMilliseconds = hold, DelayAfterMilliseconds = delay };
+            InputStep timed = step.Value! with { HoldMilliseconds = hold, DelayAfterMilliseconds = delay, InputMode = mode.Value };
             totalWait += timed.Milliseconds + (long)hold * timed.Count + delay;
             totalChars += timed.Text?.Length ?? 0;
             steps.Add(timed);
@@ -77,7 +89,29 @@ public static class InputPlanner
             return Fail("invalid_request", $"At most {limits.MaxTypedCharacters} characters may be typed per call.");
         }
 
-        return OperationResult<InputBatch>.Ok(new InputBatch(steps, string.IsNullOrWhiteSpace(focusWindow) ? null : focusWindow.Trim()));
+        string? focus = string.IsNullOrWhiteSpace(focusWindow) ? null : focusWindow.Trim();
+        return OperationResult<InputBatch>.Ok(new InputBatch(steps, focus, strictFocus));
+    }
+
+    private static OperationResult<string?> NormalizeInputMode(InputActionSpec action, string kind, string label)
+    {
+        if (string.IsNullOrWhiteSpace(action.InputMode))
+        {
+            return OperationResult<string?>.Ok(null);
+        }
+
+        if (kind != InputKinds.Type)
+        {
+            return OperationResult<string?>.Fail("invalid_request", $"{label}.inputMode applies to type.");
+        }
+
+        string mode = action.InputMode.Trim().ToLowerInvariant();
+        if (mode is not ("unicode" or "keys"))
+        {
+            return OperationResult<string?>.Fail("invalid_request", $"{label}.inputMode must be unicode or keys.");
+        }
+
+        return OperationResult<string?>.Ok(mode);
     }
 
     private static OperationResult<InputStep> PlanOne(string kind, InputActionSpec action, string label, CaptureRecord? capture)

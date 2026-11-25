@@ -182,6 +182,11 @@ GetForegroundWindow
 GetCursorPos
 ShowWindow
 SHOW_WINDOW_CMD
+GetKeyboardLayout
+VkKeyScanEx
+MapVirtualKeyEx
+MAP_VIRTUAL_KEY_TYPE
+GetKeyState
 
 // Desktop module: UI Automation element walk (CsWin32 COM interop, no UI Automation wrapper package: a wrapper would add the WindowsDesktop runtime requirement)
 CUIAutomation
