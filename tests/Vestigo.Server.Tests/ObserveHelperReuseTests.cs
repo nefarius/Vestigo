@@ -335,18 +335,15 @@ public class ObserveHelperReuseTests : IDisposable
 {
     private readonly string _settings = Directory.CreateTempSubdirectory("vestigo-observe-reuse").FullName;
     private readonly string? _previousSettings = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
-    private readonly string? _previousReuse = Environment.GetEnvironmentVariable(InputTools.ReuseHelperVariable);
 
     public ObserveHelperReuseTests()
     {
         Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _settings);
-        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, null);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _previousSettings);
-        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, _previousReuse);
         try
         {
             Directory.Delete(_settings, recursive: true);
@@ -412,52 +409,54 @@ public class ObserveHelperReuseTests : IDisposable
         Assert.Equal(1, rig.Launcher.SendCount);
     }
 
-    [Fact]
-    public async Task CancellationDuringBefore_ClosesTheHelperBeforeInput()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CancellationDuringBefore_ClosesTheHelperBeforeInput(bool reuse)
     {
-        Rig rig = Rig.Factory();
+        Rig rig = Rig.Path(reuse);
         rig.Frames.Add(Frame(1));
         rig.OnInspect = (_, _) => rig.Caller.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Send("pixels", delay: 0, token: rig.Caller.Token));
 
-        Assert.Equal(1, rig.Session.Calls);
-        Assert.True(rig.Session.Disposed);
-        Assert.Equal(0, rig.Launcher.SendCount);
+        AssertClosed(rig, reuse, captures: 1, sent: 0);
     }
 
-    [Fact]
-    public async Task CancellationDuringInput_ClosesTheHelper()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CancellationDuringInput_ClosesTheHelper(bool reuse)
     {
-        Rig rig = Rig.Factory();
+        Rig rig = Rig.Path(reuse);
         rig.Frames.AddRange([Frame(1), Frame(2)]);
         rig.Launcher.CancelOnSend = true;
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Send("pixels", delay: 0, token: rig.Caller.Token));
 
-        Assert.Equal(1, rig.Session!.Calls);
-        Assert.True(rig.Session.Disposed);
-        Assert.Equal(1, rig.Launcher.SendCount);
+        AssertClosed(rig, reuse, captures: 1, sent: 1);
     }
 
-    [Fact]
-    public async Task CancellationDuringDelay_ClosesTheHelper()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CancellationDuringDelay_ClosesTheHelper(bool reuse)
     {
-        Rig rig = Rig.Factory();
+        Rig rig = Rig.Path(reuse);
         rig.Frames.AddRange([Frame(1), Frame(2)]);
         rig.Clock.CancelOnDelay = true;
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Send("pixels", delay: 400, token: rig.Caller.Token));
 
-        Assert.Equal(1, rig.Session!.Calls);
-        Assert.True(rig.Session.Disposed);
-        Assert.Equal(1, rig.Launcher.SendCount);
+        AssertClosed(rig, reuse, captures: 1, sent: 1);
     }
 
-    [Fact]
-    public async Task CancellationDuringAfter_ClosesTheHelper()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CancellationDuringAfter_ClosesTheHelper(bool reuse)
     {
-        Rig rig = Rig.Factory();
+        Rig rig = Rig.Path(reuse);
         rig.Frames.AddRange([Frame(1), Frame(2)]);
         rig.OnInspect = (index, _) =>
         {
@@ -469,17 +468,17 @@ public class ObserveHelperReuseTests : IDisposable
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Send("pixels", delay: 0, token: rig.Caller.Token));
 
-        Assert.Equal(2, rig.Session.Calls);
-        Assert.True(rig.Session.Disposed);
-        Assert.Equal(1, rig.Launcher.SendCount);
+        AssertClosed(rig, reuse, captures: 2, sent: 1);
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    public async Task Timeout_ClosesTheHelperAndKeepsAcceptedInput(int failingCapture)
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    public async Task Timeout_ClosesTheHelperAndKeepsAcceptedInput(int failingCapture, bool reuse)
     {
-        Rig rig = Rig.Factory();
+        Rig rig = Rig.Path(reuse);
         rig.Frames.AddRange([
             Frame(1, error: failingCapture == 0 ? "helper_timeout" : null),
             Frame(2, error: failingCapture == 1 ? "helper_timeout" : null)]);
@@ -494,15 +493,19 @@ public class ObserveHelperReuseTests : IDisposable
 
         Assert.Equal(InputInjectionStatus.Submitted, Injection(result).GetProperty("status").GetString());
         Assert.Equal(2, Injection(result).GetProperty("submittedEvents").GetInt32());
-        Assert.True(rig.Session!.Disposed);
-        Assert.Equal(1, rig.Launcher.SendCount);
+        AssertClosed(rig, reuse, captures: 2, sent: 1);
+        if (!reuse)
+        {
+            Assert.Equal(2, rig.Launcher.InspectScreenCount);
+        }
     }
 
     [Fact]
     public async Task SessionChange_DoesNotReportNoResponse()
     {
         Rig rig = Rig.Factory();
-        rig.Frames.AddRange([Frame(1), Frame(2, session: 9)]);
+        rig.Tools.ActiveConsoleSessionOverride = () => 9;
+        rig.Frames.AddRange([Frame(1), Frame(2)]);
 
         JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
 
@@ -511,6 +514,20 @@ public class ObserveHelperReuseTests : IDisposable
         Assert.Equal(InputInjectionStatus.Submitted, Injection(result).GetProperty("status").GetString());
         Assert.Equal(1, rig.Launcher.SendCount);
         Assert.True(rig.Session!.Disposed);
+    }
+
+    [Fact]
+    public async Task CaptureFromAnotherSession_IsInconclusive()
+    {
+        Rig rig = Rig.Factory();
+        rig.Tools.ActiveConsoleSessionOverride = () => 7;
+        rig.Frames.AddRange([Frame(1), Frame(2, session: 9)]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
+
+        Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
+        Assert.Equal("session_changed", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
+        Assert.Equal(1, rig.Launcher.SendCount);
     }
 
     [Fact]
@@ -587,10 +604,91 @@ public class ObserveHelperReuseTests : IDisposable
     }
 
     [Fact]
-    public async Task EnvironmentSwitch_LaunchesOneInspectionProcessAndOneInputProcess()
+    public async Task OneShot_BeforeFailureStillSubmitsAndDoesNotOpenASession()
     {
-        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, "1");
+        Rig rig = Rig.OneShot();
+        rig.Frames.AddRange([Frame(1, error: "helper_failed"), Frame(2, error: "helper_failed")]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0);
+
+        Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
+        Assert.Equal("helper_failed", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
+        Assert.Equal(InputInjectionStatus.Submitted, Injection(result).GetProperty("status").GetString());
+        Assert.Equal(1, rig.Launcher.SendCount);
+        Assert.Equal(2, rig.Launcher.InspectScreenCount);
+        Assert.Equal(0, rig.Launcher.InspectSessionCount);
+        Assert.Null(rig.Session);
+    }
+
+    [Fact]
+    public async Task OneShot_DifferentSessionId_IsClassifiedInsteadOfSessionChanged()
+    {
+        Rig rig = Rig.OneShot();
+        rig.Frames.AddRange([Frame(1), Frame(2, session: 9)]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
+
+        Assert.Equal("observed", Response(result).GetProperty("status").GetString());
+        Assert.False(Root(result).TryGetProperty("observeError", out _));
+        Assert.Equal(2, rig.Launcher.InspectScreenCount);
+        Assert.Equal(1, rig.Launcher.SendCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0")]
+    [InlineData("1")]
+    public async Task ObserveFalse_LaunchesOnlyTheInputHelper(string? reuse)
+    {
+        Rig rig = Rig.OneShot();
+        rig.Tools.ReuseHelperVariableOverride = () => reuse;
+
+        CallToolResult result = await rig.Tools.SendInput(
+            [new InputActionSpec { Type = "key", Keys = "f8" }],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsError is not true);
+        Assert.Equal(1, rig.Launcher.SendCount);
+        Assert.Equal(0, rig.Launcher.InspectScreenCount);
+        Assert.Equal(0, rig.Launcher.InspectSessionCount);
+        Assert.Null(rig.Session);
+    }
+
+    [Fact]
+    public async Task HelperExitBetweenCaptures_PreservesTheInjectionAndDoesNotReplay()
+    {
         Rig rig = Rig.Environment();
+        rig.Tools.ReuseHelperVariableOverride = () => "1";
+        rig.StopHelperAfter = 1;
+        rig.Frames.AddRange([Frame(1), Frame(2)]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
+
+        Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
+        Assert.Equal("helper_failed", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
+        Assert.Equal(InputInjectionStatus.Submitted, Injection(result).GetProperty("status").GetString());
+        Assert.Equal(2, Injection(result).GetProperty("submittedEvents").GetInt32());
+        Assert.Equal(1, rig.Launcher.SendCount);
+        Assert.Equal(1, rig.Launcher.InspectSessionCount);
+        Assert.Equal(0, rig.Launcher.InspectScreenCount);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("1", true)]
+    [InlineData(" 1 ", true)]
+    [InlineData("0", false)]
+    [InlineData(" 0 ", false)]
+    [InlineData("00", true)]
+    public void ShouldReuseInspection_TreatsOnlyZeroAsRollback(string? value, bool reuse) =>
+        Assert.Equal(reuse, InputTools.ShouldReuseInspection(value));
+
+    [Fact]
+    public async Task OverrideOne_LaunchesOneInspectionProcessAndOneInputProcess()
+    {
+        Rig rig = Rig.Environment();
+        rig.Tools.ReuseHelperVariableOverride = () => "1";
         DesktopRect crop = new(20, 16, 835, 450);
         DesktopRect bounds = new(120, 96, 835, 450);
         DesktopRect window = new(100, 80, 1920, 1160);
@@ -649,6 +747,23 @@ public class ObserveHelperReuseTests : IDisposable
         Assert.Equal(before, after);
     }
 
+    private static void AssertClosed(Rig rig, bool reuse, int captures, int sent)
+    {
+        Assert.Equal(sent, rig.Launcher.SendCount);
+        if (reuse)
+        {
+            Assert.Equal(captures, rig.Session!.Calls);
+            Assert.True(rig.Session.Disposed);
+            Assert.Equal(0, rig.Launcher.InspectScreenCount);
+        }
+        else
+        {
+            Assert.Null(rig.Session);
+            Assert.Equal(captures, rig.Launcher.InspectScreenCount);
+            Assert.Equal(0, rig.Launcher.InspectSessionCount);
+        }
+    }
+
     private static JsonElement Root(JsonElement result)
     {
         using JsonDocument document = JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!);
@@ -700,9 +815,9 @@ public class ObserveHelperReuseTests : IDisposable
             new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero), "9007199254740997"),
             new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 1, TimeSpan.Zero), "9007199254740999")));
 
-    private sealed record Scripted(byte Marker, DesktopRect Bounds, DesktopRect? Crop, DesktopRect? Window, string Element, string? Error, int Session = 7);
+    internal sealed record Scripted(byte Marker, DesktopRect Bounds, DesktopRect? Crop, DesktopRect? Window, string Element, string? Error, int Session = 7);
 
-    private sealed class Rig
+    internal sealed class Rig
     {
         private Rig(bool environment)
         {
@@ -728,7 +843,10 @@ public class ObserveHelperReuseTests : IDisposable
                     ? new DiffResult([], 0)
                     : new DiffResult([new ChangedRegion(new DesktopRect(0, 0, 10, 10))], 4.5)
             };
-            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock);
+            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock)
+            {
+                ActiveConsoleSessionOverride = () => 7
+            };
             Clock.Caller = Caller;
         }
 
@@ -754,16 +872,36 @@ public class ObserveHelperReuseTests : IDisposable
 
         public int Served { get; set; }
 
+        public int? StopHelperAfter { get; set; }
+
+        public static Rig Path(bool reuse) => reuse ? Factory() : OneShot();
+
         public static Rig Factory()
         {
             Rig rig = new(environment: false);
+            rig.Tools.ReuseHelperVariableOverride = () => null;
             rig.Tools.InspectSessionFactory = _ => Task.FromResult(rig.OpenSession());
             return rig;
         }
 
-        public static Rig OneShot() => new(environment: false);
+        public static Rig OneShot()
+        {
+            Rig rig = new(environment: false);
+            rig.Tools.ReuseHelperVariableOverride = () => "0";
+            return rig;
+        }
 
         public static Rig Environment() => new(environment: true);
+
+        public void AddChangedCrop()
+        {
+            DesktopRect crop = new(20, 16, 835, 450);
+            DesktopRect bounds = new(120, 96, 835, 450);
+            DesktopRect window = new(100, 80, 1920, 1160);
+            Frames.AddRange([
+                Frame(1, bounds, crop, window),
+                Frame(2, bounds, crop, window)]);
+        }
 
         public async Task<JsonElement> Send(
             string mode,
@@ -828,7 +966,7 @@ public class ObserveHelperReuseTests : IDisposable
         }
     }
 
-    private sealed class ScriptedInspection(Rig rig) : IInspectCaptureSession
+    internal sealed class ScriptedInspection(Rig rig) : IInspectCaptureSession
     {
         public int Calls { get; private set; }
 
@@ -861,7 +999,7 @@ public class ObserveHelperReuseTests : IDisposable
         }
     }
 
-    private sealed class ScriptedLauncher(Rig rig, bool bridge) : IProcessLauncher
+    internal sealed class ScriptedLauncher(Rig rig, bool bridge) : IProcessLauncher
     {
         public List<string> Commands { get; } = [];
 
@@ -906,6 +1044,8 @@ public class ObserveHelperReuseTests : IDisposable
             }
 
             int index = rig.Served++;
+            rig.OnInspect?.Invoke(index, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             Scripted frame = rig.Frames[index];
             if (frame.Error is not null)
             {
@@ -931,6 +1071,13 @@ public class ObserveHelperReuseTests : IDisposable
                     return SessionHelper.RunInspectSession(reader, writer, (capture, uia, ocr) =>
                     {
                         BridgedCrops.Add(capture.WindowCrop);
+                        if (rig.StopHelperAfter is int stop && BridgedCrops.Count > stop)
+                        {
+                            request.ReleaseInheritedInput?.Invoke();
+                            request.ReleaseInheritedOutput?.Invoke();
+                            throw new IOException("The inspection helper exited.");
+                        }
+
                         int index = BridgedCrops.Count - 1;
                         Scripted frame = rig.Frames[index];
                         return frame.Error is null
@@ -987,7 +1134,7 @@ public class ObserveHelperReuseTests : IDisposable
         }
     }
 
-    private sealed class RecordingClock : TimeProvider
+    internal sealed class RecordingClock : TimeProvider
     {
         public List<TimeSpan> Delays { get; } = [];
 
@@ -1017,6 +1164,82 @@ public class ObserveHelperReuseTests : IDisposable
             }
 
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+}
+
+/// <summary>
+///     Reads <c>VESTIGO_OBSERVE_REUSE_HELPER</c> from the process. The host collection does not run beside tests
+///     that also change that variable.
+/// </summary>
+[Collection("VestigoHost")]
+public sealed class ObserveHelperReuseEnvironmentTests : IDisposable
+{
+    private readonly string _settings = Directory.CreateTempSubdirectory("vestigo-observe-reuse-env").FullName;
+    private readonly string? _previousSettings = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
+    private readonly string? _previousReuse = Environment.GetEnvironmentVariable(InputTools.ReuseHelperVariable);
+
+    public ObserveHelperReuseEnvironmentTests()
+    {
+        Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _settings);
+    }
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _previousSettings);
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, _previousReuse);
+        try
+        {
+            Directory.Delete(_settings, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("1", true)]
+    [InlineData("0", false)]
+    [InlineData(" 0 ", false)]
+    public async Task ProcessSwitch_SelectsTheHelperForTheNextCall(string? value, bool reuse)
+    {
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, value);
+        await AssertPath(reuse);
+    }
+
+    [Fact]
+    public async Task ProcessSwitch_LastsUntilTheVariableChangesAgain()
+    {
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, null);
+        await AssertPath(reuse: true);
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, "0");
+        await AssertPath(reuse: false);
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, null);
+        await AssertPath(reuse: true);
+    }
+
+    private static async Task AssertPath(bool reuse)
+    {
+        ObserveHelperReuseTests.Rig rig = ObserveHelperReuseTests.Rig.Environment();
+        rig.AddChangedCrop();
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 835, 450));
+
+        using JsonDocument document = JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!);
+        Assert.Equal("observed", document.RootElement.GetProperty("response").GetProperty("status").GetString());
+        Assert.Equal("window-crop-pixels", document.RootElement.GetProperty("response").GetProperty("compared").GetString());
+        Assert.Equal(1, rig.Launcher.SendCount);
+        if (reuse)
+        {
+            Assert.Equal(1, rig.Launcher.InspectSessionCount);
+            Assert.Equal(0, rig.Launcher.InspectScreenCount);
+            Assert.Equal(2, rig.Launcher.BridgedCaptures);
+        }
+        else
+        {
+            Assert.Equal(0, rig.Launcher.InspectSessionCount);
+            Assert.Equal(2, rig.Launcher.InspectScreenCount);
         }
     }
 }

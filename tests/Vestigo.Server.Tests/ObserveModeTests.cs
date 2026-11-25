@@ -12,7 +12,8 @@ using Vestigo.Vision;
 namespace Vestigo.Server.Tests;
 
 /// <summary>
-///     Contract tests for <c>send_input</c> <c>observeMode</c> and the observation crop. Helper output and image
+///     Contract tests for <c>send_input</c> <c>observeMode</c> and the observation crop. Each case runs with the
+///     default reused inspection helper and with <c>VESTIGO_OBSERVE_REUSE_HELPER=0</c>. Helper output and image
 ///     analysis are scripted, so these exercise the service logic on any OS; the OpenCV path has its own tests.
 /// </summary>
 public class ObserveModeTests
@@ -22,18 +23,20 @@ public class ObserveModeTests
     private static readonly DesktopRect FullWindow = new(100, 100, 800, 600);
 
     [Theory]
-    [InlineData(null)]
-    [InlineData("full")]
-    [InlineData(" FULL ")]
-    public async Task Full_KeepsUiaOcrElementsAndTheDefaultWait(string? mode)
+    [InlineData(null, true)]
+    [InlineData(null, false)]
+    [InlineData("full", true)]
+    [InlineData("full", false)]
+    [InlineData(" FULL ", true)]
+    [InlineData(" FULL ", false)]
+    public async Task Full_KeepsUiaOcrElementsAndTheDefaultWait(string? mode, bool reuse)
     {
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([Frame(1, element: "ready"), Frame(1, element: "changed")]);
 
         JsonElement result = await rig.Send(mode is null ? null : mode);
 
-        Assert.Equal(2, rig.Inspections.Count);
-        Assert.All(rig.Inspections, inspect => Assert.Contains("--uia true --ocr true", inspect, StringComparison.Ordinal));
+        rig.AssertCaptures(2, (_, uia, ocr) => Assert.True(uia && ocr));
         Assert.Equal([TimeSpan.FromMilliseconds(300)], rig.Clock.Delays);
         // Same pixels, different elements: the full classification still sees the element change.
         Assert.Equal("observed", Response(result).GetProperty("status").GetString());
@@ -42,18 +45,20 @@ public class ObserveModeTests
     }
 
     [Theory]
-    [InlineData("none", false)]
-    [InlineData("raw", false)]
-    [InlineData("annotated", true)]
-    public async Task Pixels_SkipsUiaAndOcrInBothPhasesWhateverTheImageMode(string imageMode, bool annotatesAfter)
+    [InlineData("none", false, true)]
+    [InlineData("none", false, false)]
+    [InlineData("raw", false, true)]
+    [InlineData("raw", false, false)]
+    [InlineData("annotated", true, true)]
+    [InlineData("annotated", true, false)]
+    public async Task Pixels_SkipsUiaAndOcrInBothPhasesWhateverTheImageMode(string imageMode, bool annotatesAfter, bool reuse)
     {
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([Frame(1), Frame(2)]);
 
         JsonElement result = await rig.Send("pixels", imageMode: imageMode, delay: 0);
 
-        Assert.Equal(2, rig.Inspections.Count);
-        Assert.All(rig.Inspections, inspect => Assert.Contains("--uia false --ocr false", inspect, StringComparison.Ordinal));
+        rig.AssertCaptures(2, (_, uia, ocr) => Assert.False(uia || ocr));
         Assert.Equal([false, annotatesAfter], rig.Annotated);
         Assert.Equal("observed", Response(result).GetProperty("status").GetString());
         Assert.Equal("window-pixels", Response(result).GetProperty("compared").GetString());
@@ -63,10 +68,12 @@ public class ObserveModeTests
         Assert.Equal("skipped", described.RootElement.GetProperty("ocr").GetString());
     }
 
-    [Fact]
-    public async Task Pixels_ReportsNoResponseForAnUnchangedFrameEvenWhenElementsDiffer()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Pixels_ReportsNoResponseForAnUnchangedFrameEvenWhenElementsDiffer(bool reuse)
     {
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([Frame(1), Frame(1)]);
 
         JsonElement result = await rig.Send("pixels", delay: 0);
@@ -75,16 +82,18 @@ public class ObserveModeTests
         Assert.Equal(InputInjectionStatus.Submitted, Injection(result).GetProperty("status").GetString());
     }
 
-    [Fact]
-    public async Task Pixels_DelayedUpdateNeedsTheExplicitWait()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Pixels_DelayedUpdateNeedsTheExplicitWait(bool reuse)
     {
-        Rig immediate = new();
+        Rig immediate = new(reuse);
         immediate.MarkerFor = (index, rig) => index == 0 ? (byte)1 : rig.Clock.Delays.Count > 0 ? (byte)2 : (byte)1;
         immediate.Frames.AddRange([Frame(0), Frame(0)]);
         JsonElement missed = await immediate.Send("pixels", delay: 0);
         Assert.Equal("no-response", Response(missed).GetProperty("status").GetString());
 
-        Rig waited = new();
+        Rig waited = new(reuse);
         waited.MarkerFor = immediate.MarkerFor;
         waited.Frames.AddRange([Frame(0), Frame(0)]);
         JsonElement seen = await waited.Send("pixels", delay: 400);
@@ -92,17 +101,19 @@ public class ObserveModeTests
         Assert.Equal([TimeSpan.FromMilliseconds(400)], waited.Clock.Delays);
     }
 
-    [Fact]
-    public async Task Pixels_IncompatibleCropIsInconclusiveWithoutRetryAndKeepsTheInjection()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Pixels_IncompatibleCropIsInconclusiveWithoutRetryAndKeepsTheInjection(bool reuse)
     {
         DesktopRect first = new(120, 116, 100, 50);
         DesktopRect second = new(100, 100, 100, 50);
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([Frame(1, bounds: first, crop: new DesktopRect(20, 16, 100, 50)), Frame(2, bounds: second, crop: new DesktopRect(0, 0, 100, 50))]);
 
         JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
 
-        Assert.Equal(2, rig.Inspections.Count);
+        rig.AssertCaptures(2);
         Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
         Assert.Equal("capture_mismatch", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
         JsonElement injection = Injection(result);
@@ -120,30 +131,41 @@ public class ObserveModeTests
     [InlineData("full", 1, 1, 10, 10, "  ")]
     public async Task InvalidObserveArguments_AreRefusedBeforeAnyHelperRuns(string mode, int? x, int? y, int? width, int? height, string? handle)
     {
-        Rig rig = new();
+        foreach (bool reuse in new[] { true, false })
+        {
+            await Refuse(reuse);
+        }
 
-        CallToolResult result = await rig.Tools.SendInput(
-            [new InputActionSpec { Type = "key", Keys = "a" }],
-            observe: true,
-            observeMode: mode,
-            observeWindowHandle: handle,
-            observeCropX: x,
-            observeCropY: y,
-            observeCropWidth: width,
-            observeCropHeight: height,
-            cancellationToken: TestContext.Current.CancellationToken);
+        async Task Refuse(bool reuse)
+        {
+            Rig rig = new(reuse);
 
-        Assert.Equal("invalid_request", InputTests.ErrorCode(result));
-        Assert.Empty(rig.Launcher.Commands);
+            CallToolResult result = await rig.Tools.SendInput(
+                [new InputActionSpec { Type = "key", Keys = "a" }],
+                observe: true,
+                observeMode: mode,
+                observeWindowHandle: handle,
+                observeCropX: x,
+                observeCropY: y,
+                observeCropWidth: width,
+                observeCropHeight: height,
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.Equal("invalid_request", InputTests.ErrorCode(result));
+            Assert.Empty(rig.Launcher.Commands);
+            Assert.Null(rig.Session);
+        }
     }
 
-    [Fact]
-    public async Task Crop_AppliesToBothInspectionsAndTheCaptureMapsToTheEffectiveCrop()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Crop_AppliesToBothInspectionsAndTheCaptureMapsToTheEffectiveCrop(bool reuse)
     {
         // The window moved between the inspections; the same crop of the same window still compares.
         DesktopRect movedWindow = new(300, 200, 800, 600);
         DesktopRect crop = new(20, 16, 100, 50);
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([
             Frame(1, bounds: new DesktopRect(120, 116, 100, 50), crop: crop, window: FullWindow),
             Frame(1, bounds: new DesktopRect(320, 216, 100, 50), crop: crop, window: movedWindow)]);
@@ -152,13 +174,12 @@ public class ObserveModeTests
 
         Assert.Equal("no-response", Response(result).GetProperty("status").GetString());
         Assert.Equal("window-crop-pixels", Response(result).GetProperty("compared").GetString());
-        foreach (string inspect in rig.InspectionArguments)
+        rig.AssertCaptures(2, (request, uia, ocr) =>
         {
-            Assert.True(SessionHelper.TryParseInspect(Arguments(inspect), out ScreenCaptureRequest request, out bool uia, out bool ocr, out string? error), error);
             Assert.Equal(new DesktopRect(20, 16, 100, 50), request.WindowCrop);
             Assert.Equal(Window, request.WindowHandle);
             Assert.False(uia || ocr);
-        }
+        });
 
         using JsonDocument described = Described(result);
         Assert.Equal(20, described.RootElement.GetProperty("effectiveCrop").GetProperty("x").GetInt32());
@@ -175,11 +196,13 @@ public class ObserveModeTests
         Assert.Equal((370, 241), (plan.Value!.Steps[0].X, plan.Value.Steps[0].Y));
     }
 
-    [Fact]
-    public async Task Crop_PartialOverlapIsClippedAndReported()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Crop_PartialOverlapIsClippedAndReported(bool reuse)
     {
         DesktopRect clipped = new(700, 500, 100, 100);
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([
             Frame(1, bounds: new DesktopRect(800, 600, 100, 100), crop: clipped, window: FullWindow),
             Frame(2, bounds: new DesktopRect(800, 600, 100, 100), crop: clipped, window: FullWindow)]);
@@ -191,14 +214,15 @@ public class ObserveModeTests
         JsonElement effective = described.RootElement.GetProperty("effectiveCrop");
         Assert.Equal((700, 500, 100, 100), (effective.GetProperty("x").GetInt32(), effective.GetProperty("y").GetInt32(), effective.GetProperty("width").GetInt32(), effective.GetProperty("height").GetInt32()));
         // The request carries the unclipped crop; clipping is the capture helper's job and is reported back.
-        Assert.True(SessionHelper.TryParseInspect(Arguments(rig.InspectionArguments[0]), out ScreenCaptureRequest request, out _, out _, out _));
-        Assert.Equal(new DesktopRect(700, 500, 400, 400), request.WindowCrop);
+        rig.AssertCaptures(2, (request, _, _) => Assert.Equal(new DesktopRect(700, 500, 400, 400), request.WindowCrop));
     }
 
-    [Fact]
-    public async Task Crop_DoesNotChangeInputTargeting()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Crop_DoesNotChangeInputTargeting(bool reuse)
     {
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([Frame(1), Frame(1)]);
 
         await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50), actions: [new InputActionSpec { Type = "click", X = 400, Y = 300 }]);
@@ -212,11 +236,13 @@ public class ObserveModeTests
     }
 
     [Theory]
-    [InlineData("full", false)]
-    [InlineData("pixels", true)]
-    public async Task StaleWindowRejection_SubmitsNothingAndSkipsTheAfterInspection(string mode, bool crop)
+    [InlineData("full", false, true)]
+    [InlineData("full", false, false)]
+    [InlineData("pixels", true, true)]
+    [InlineData("pixels", true, false)]
+    public async Task StaleWindowRejection_SubmitsNothingAndSkipsTheAfterInspection(string mode, bool crop, bool reuse)
     {
-        Rig rig = new() { SendResult = Rejected() };
+        Rig rig = new(reuse) { SendResult = Rejected() };
         rig.Frames.Add(Frame(1));
 
         JsonElement result = await rig.Send(mode, delay: 2000, crop: crop ? (20, 16, 100, 50) : null);
@@ -225,17 +251,20 @@ public class ObserveModeTests
         Assert.Equal(0, Injection(result).GetProperty("submittedEvents").GetInt32());
         Assert.Equal("skipped", Response(result).GetProperty("status").GetString());
         Assert.Equal("input_rejected", Response(result).GetProperty("reason").GetString());
-        Assert.Single(rig.Inspections);
+        rig.AssertCaptures(1);
         Assert.Empty(rig.Clock.Delays);
+        Assert.Equal(1, rig.SendCount);
         Assert.Contains("\"requireFocus\":true", Encoding.UTF8.GetString(Convert.FromBase64String(rig.SendCommand.Split(' ').Last())), StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("full")]
-    [InlineData("pixels")]
-    public async Task ObservationFailureAfterAcceptedInput_PreservesTheInjection(string mode)
+    [InlineData("full", true)]
+    [InlineData("full", false)]
+    [InlineData("pixels", true)]
+    [InlineData("pixels", false)]
+    public async Task ObservationFailureAfterAcceptedInput_PreservesTheInjection(string mode, bool reuse)
     {
-        Rig rig = new();
+        Rig rig = new(reuse);
         rig.Frames.AddRange([Frame(1), Frame(2, error: "empty_region")]);
 
         JsonElement result = await rig.Send(mode, delay: 0, crop: (20, 16, 100, 50));
@@ -247,12 +276,105 @@ public class ObserveModeTests
         Assert.Equal(2, injection.GetProperty("submittedEvents").GetInt32());
         Assert.True(injection.TryGetProperty("timing", out _));
         Assert.Equal(1, result.GetProperty("content").GetArrayLength());
+        rig.AssertCaptures(2);
+        Assert.Equal(1, rig.SendCount);
     }
 
-    [Fact]
-    public async Task ObserveOptions_AreIgnoredWithoutObserve()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Full_WindowMoveRetriesOnceWithoutSendingInputAgain(bool reuse)
     {
-        Rig rig = new();
+        Rig rig = new(reuse);
+        DesktopRect moved = new(300, 200, 800, 600);
+        rig.Frames.AddRange([
+            Frame(1, bounds: FullWindow),
+            Frame(1, bounds: moved),
+            Frame(1, bounds: moved)]);
+
+        JsonElement result = await rig.Send("full", delay: 0);
+
+        Assert.Equal("observed", Response(result).GetProperty("status").GetString());
+        Assert.Equal("window", Response(result).GetProperty("compared").GetString());
+        rig.AssertCaptures(3, (capture, uia, ocr) =>
+        {
+            Assert.Null(capture.WindowCrop);
+            Assert.True(uia && ocr);
+        });
+        Assert.Equal(1, rig.SendCount);
+        JsonElement injection = Injection(result);
+        Assert.Equal(InputInjectionStatus.Submitted, injection.GetProperty("status").GetString());
+        Assert.Equal("9007199254740997", injection.GetProperty("timing").GetProperty("firstSubmitted").GetProperty("qpcTicks").GetString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WindowClose_PreservesTheInjectionAndDoesNotReplay(bool reuse)
+    {
+        Rig rig = new(reuse);
+        rig.Frames.AddRange([Frame(1), Frame(2, error: "window_not_found")]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
+
+        Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
+        Assert.Equal("window_not_found", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
+        JsonElement injection = Injection(result);
+        Assert.Equal(InputInjectionStatus.Submitted, injection.GetProperty("status").GetString());
+        Assert.Equal(2, injection.GetProperty("submittedEvents").GetInt32());
+        Assert.True(injection.TryGetProperty("timing", out _));
+        Assert.Equal(1, result.GetProperty("content").GetArrayLength());
+        rig.AssertCaptures(2);
+        Assert.Equal(1, rig.SendCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PartialSubmission_KeepsCleanupWhenTheLaterCaptureChanges(bool reuse)
+    {
+        Rig rig = new(reuse) { SendResult = Partial() };
+        rig.Frames.AddRange([Frame(1), Frame(2)]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
+
+        Assert.Equal("observed", Response(result).GetProperty("status").GetString());
+        JsonElement injection = Injection(result);
+        Assert.Equal(InputInjectionStatus.Partial, injection.GetProperty("status").GetString());
+        Assert.Equal(InputStopCodes.FocusLost, injection.GetProperty("stopCode").GetString());
+        Assert.Equal(1, injection.GetProperty("cleanupReleasedEvents").GetInt32());
+        Assert.True(injection.GetProperty("timing").GetProperty("includesCleanupReleases").GetBoolean());
+        rig.AssertCaptures(2);
+        Assert.Equal(1, rig.SendCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PartialSubmission_KeepsCleanupWhenObservationFails(bool reuse)
+    {
+        Rig rig = new(reuse) { SendResult = Partial() };
+        rig.Frames.AddRange([Frame(1), Frame(2, error: "helper_failed")]);
+
+        JsonElement result = await rig.Send("full", delay: 0);
+
+        Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
+        Assert.Equal("helper_failed", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
+        JsonElement injection = Injection(result);
+        Assert.Equal(InputInjectionStatus.Partial, injection.GetProperty("status").GetString());
+        Assert.Equal(1, injection.GetProperty("cleanupReleasedEvents").GetInt32());
+        Assert.True(injection.GetProperty("timing").GetProperty("includesCleanupReleases").GetBoolean());
+        Assert.Equal(1, result.GetProperty("content").GetArrayLength());
+        rig.AssertCaptures(2);
+        Assert.Equal(1, rig.SendCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ObserveOptions_AreIgnoredWithoutObserve(bool reuse)
+    {
+        Rig rig = new(reuse);
 
         CallToolResult result = await rig.Tools.SendInput(
             [new InputActionSpec { Type = "key", Keys = "a" }],
@@ -261,7 +383,10 @@ public class ObserveModeTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(result.IsError is not true);
-        Assert.DoesNotContain(rig.Launcher.Commands, command => command.Contains("inspect-screen", StringComparison.Ordinal));
+        Assert.Equal(1, rig.SendCount);
+        Assert.Equal(0, rig.Launcher.InspectScreenCount);
+        Assert.Equal(0, rig.Launcher.InspectSessionCount);
+        Assert.Null(rig.Session);
     }
 
     private static JsonElement Root(JsonElement result)
@@ -309,6 +434,27 @@ public class ObserveModeTests
         StoppedAtActionIndex: 0,
         StoppedAtActionKind: InputKinds.Key);
 
+    private static InputResult Partial() => new(
+        0,
+        7,
+        null,
+        2,
+        "0x20",
+        "0xB2",
+        false,
+        Status: InputInjectionStatus.Partial,
+        StopCode: InputStopCodes.FocusLost,
+        StopReason: "The requested window was no longer the foreground window. Later actions were not submitted.",
+        StoppedAtActionIndex: 0,
+        StoppedAtActionKind: InputKinds.Key,
+        CleanupReleasedEvents: 1,
+        Timing: new InputTiming(
+            InputTiming.QueryPerformanceCounter,
+            "10000000",
+            true,
+            new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero), "9007199254740997"),
+            new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero).AddMilliseconds(40), "9007199254740999")));
+
     private static InputResult Submitted() => new(
         1,
         7,
@@ -330,8 +476,9 @@ public class ObserveModeTests
 
     private sealed class Rig
     {
-        public Rig()
+        public Rig(bool reuse)
         {
+            Reuse = reuse;
             VestigoOptions options = new() { Input = { AllowInput = true }, Desktop = { AllowScreenshots = true } };
             Launcher = new ScriptedLauncher(this);
             SessionHelperClient helper = new(Launcher);
@@ -354,8 +501,24 @@ public class ObserveModeTests
                     ? new DiffResult([], 0)
                     : new DiffResult([new ChangedRegion(new DesktopRect(0, 0, 10, 10))], 4.5)
             };
-            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock);
+            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock)
+            {
+                ActiveConsoleSessionOverride = () => 7
+            };
+            if (reuse)
+            {
+                Tools.ReuseHelperVariableOverride = () => null;
+                Tools.InspectSessionFactory = _ => Task.FromResult(OpenSession());
+            }
+            else
+            {
+                Tools.ReuseHelperVariableOverride = () => "0";
+            }
         }
+
+        public bool Reuse { get; }
+
+        public ScriptedInspection? Session { get; private set; }
 
         public List<bool> Annotated { get; } = [];
 
@@ -375,11 +538,71 @@ public class ObserveModeTests
 
         public int Served { get; set; }
 
-        public List<string> Inspections => Launcher.Commands.Where(command => command.Contains("inspect-screen", StringComparison.Ordinal)).ToList();
-
-        public List<string> InspectionArguments => Inspections;
+        public int SendCount => Launcher.Commands.Count(command => command.Contains("send-input", StringComparison.Ordinal));
 
         public string SendCommand => Launcher.Commands.Single(command => command.Contains("send-input", StringComparison.Ordinal));
+
+        public void AssertCaptures(int count, Action<ScreenCaptureRequest, bool, bool>? assert = null)
+        {
+            if (Reuse)
+            {
+                Assert.NotNull(Session);
+                Assert.Equal(count, Session.Calls);
+                Assert.Equal(0, Launcher.InspectScreenCount);
+                Assert.Equal(0, Launcher.InspectSessionCount);
+                Assert.True(Session.Disposed);
+                if (assert is not null)
+                {
+                    foreach ((ScreenCaptureRequest capture, bool uia, bool ocr) in Session.Requests)
+                    {
+                        assert(capture, uia, ocr);
+                    }
+                }
+            }
+            else
+            {
+                Assert.Null(Session);
+                Assert.Equal(count, Launcher.InspectScreenCount);
+                if (assert is not null)
+                {
+                    foreach (string inspect in Launcher.Commands.Where(command => command.Contains("inspect-screen", StringComparison.Ordinal)))
+                    {
+                        Assert.True(SessionHelper.TryParseInspect(Arguments(inspect), out ScreenCaptureRequest request, out bool uia, out bool ocr, out string? error), error);
+                        assert(request, uia, ocr);
+                    }
+                }
+            }
+        }
+
+        public OperationResult<IInspectCaptureSession> OpenSession()
+        {
+            Session = new ScriptedInspection(this);
+            return OperationResult<IInspectCaptureSession>.Ok(Session);
+        }
+
+        public InspectCaptureResult ResultFor(int index, bool uia)
+        {
+            Scripted frame = Frames[index];
+            byte marker = MarkerFor?.Invoke(index, this) ?? frame.Marker;
+            return new InspectCaptureResult(
+                new ScreenCaptureResult(
+                    ScreenCaptureTarget.Window,
+                    frame.Bounds,
+                    new DesktopSize(frame.Bounds.Width, frame.Bounds.Height),
+                    null,
+                    96,
+                    ["a"],
+                    Window,
+                    "Fixture",
+                    null,
+                    Convert.ToBase64String([marker]),
+                    7,
+                    WindowBounds: frame.Window,
+                    EffectiveCrop: frame.Crop),
+                uia ? [new ScreenElement(0, ElementSource.Uia, "text", frame.Element, null, new DesktopRect(frame.Bounds.X, frame.Bounds.Y, 10, 10))] : [],
+                uia ? "ok" : "skipped",
+                uia ? "ok" : "skipped");
+        }
 
         public async Task<JsonElement> Send(
             string? mode,
@@ -410,9 +633,45 @@ public class ObserveModeTests
         }
     }
 
+    private sealed class ScriptedInspection(Rig rig) : IInspectCaptureSession
+    {
+        public int Calls { get; private set; }
+
+        public bool Disposed { get; private set; }
+
+        public List<(ScreenCaptureRequest Capture, bool Uia, bool Ocr)> Requests { get; } = [];
+
+        public Task<OperationResult<InspectCaptureResult>> InspectAsync(
+            ScreenCaptureRequest capture,
+            bool uia,
+            bool ocr,
+            TimeSpan timeout,
+            long maxOutputBytes,
+            CancellationToken cancellationToken)
+        {
+            int index = Calls++;
+            Requests.Add((capture, uia, ocr));
+            cancellationToken.ThrowIfCancellationRequested();
+            Scripted frame = rig.Frames[index];
+            return Task.FromResult(frame.Error is null
+                ? OperationResult<InspectCaptureResult>.Ok(rig.ResultFor(index, uia))
+                : OperationResult<InspectCaptureResult>.Fail(frame.Error, "scripted"));
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class ScriptedLauncher(Rig rig) : IProcessLauncher
     {
         public List<string> Commands { get; } = [];
+
+        public int InspectScreenCount => Commands.Count(command => command.Contains("inspect-screen", StringComparison.Ordinal));
+
+        public int InspectSessionCount => Commands.Count(command => command.Contains("inspect-session", StringComparison.Ordinal));
 
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
 
@@ -435,26 +694,7 @@ public class ObserveModeTests
             }
 
             bool uia = command.Contains("--uia true", StringComparison.Ordinal);
-            byte marker = rig.MarkerFor?.Invoke(index, rig) ?? frame.Marker;
-            InspectCaptureResult value = new(
-                new ScreenCaptureResult(
-                    ScreenCaptureTarget.Window,
-                    frame.Bounds,
-                    new DesktopSize(frame.Bounds.Width, frame.Bounds.Height),
-                    null,
-                    96,
-                    ["a"],
-                    Window,
-                    "Fixture",
-                    null,
-                    Convert.ToBase64String([marker]),
-                    1,
-                    WindowBounds: frame.Window,
-                    EffectiveCrop: frame.Crop),
-                uia ? [new ScreenElement(0, ElementSource.Uia, "text", frame.Element, null, new DesktopRect(frame.Bounds.X, frame.Bounds.Y, 10, 10))] : [],
-                uia ? "ok" : "skipped",
-                uia ? "ok" : "skipped");
-            File.WriteAllText(output.OutputPath, JsonSerializer.Serialize(value, SessionHelper.Json));
+            File.WriteAllText(output.OutputPath, JsonSerializer.Serialize(rig.ResultFor(index, uia), SessionHelper.Json));
             return Task.FromResult(0);
         }
     }

@@ -91,6 +91,10 @@ public class InputMcpTests : IDisposable
     [Fact]
     public async Task SendInput_ListsObserveModeAndCropAndRefusesBadCrops()
     {
+        string? previous = Environment.GetEnvironmentVariable(InputTools.ReuseHelperVariable);
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, "1");
+        try
+        {
         await using WebApplicationFactory<Program> factory = Create();
         using HttpClient client = factory.CreateClient();
 
@@ -148,6 +152,49 @@ public class InputMcpTests : IDisposable
         Assert.Equal(InputInjectionStatus.Submitted, summary.RootElement.GetProperty("injection").GetProperty("status").GetString());
         Assert.Equal("inconclusive", summary.RootElement.GetProperty("response").GetProperty("status").GetString());
         Assert.True(summary.RootElement.TryGetProperty("observeError", out _));
+        Assert.Contains(_launcher.Commands, command => command.Contains(SessionHelper.InspectSessionCommand, StringComparison.Ordinal));
+        Assert.DoesNotContain(_launcher.Commands, command => command.Contains(SessionHelper.InspectScreenCommand, StringComparison.Ordinal));
+        Assert.Contains(_launcher.Commands, command => command.Contains(SessionHelper.SendInputCommand, StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, previous);
+        }
+    }
+
+    [Fact]
+    public async Task SendInput_RollbackUsesOneShotInspection()
+    {
+        string? previous = Environment.GetEnvironmentVariable(InputTools.ReuseHelperVariable);
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, "0");
+        try
+        {
+            await using WebApplicationFactory<Program> factory = Create();
+            using HttpClient client = factory.CreateClient();
+            _launcher.NextSendJson = JsonSerializer.Serialize(Submitted(), SessionHelper.Json);
+            _launcher.Commands.Clear();
+
+            JsonElement pixels = await Call(client, new
+            {
+                actions = new[] { new { type = "key", keys = "a" } },
+                observe = true,
+                observeMode = "pixels",
+                observeDelayMs = 0,
+                observeWindowHandle = "0xA1"
+            });
+
+            string text = pixels.GetProperty("content")[0].GetProperty("text").GetString()!;
+            using JsonDocument summary = JsonDocument.Parse(text);
+            Assert.Equal(InputInjectionStatus.Submitted, summary.RootElement.GetProperty("injection").GetProperty("status").GetString());
+            Assert.Equal("inconclusive", summary.RootElement.GetProperty("response").GetProperty("status").GetString());
+            Assert.Equal(2, _launcher.Commands.Count(command => command.Contains(SessionHelper.InspectScreenCommand, StringComparison.Ordinal)));
+            Assert.DoesNotContain(_launcher.Commands, command => command.Contains(SessionHelper.InspectSessionCommand, StringComparison.Ordinal));
+            Assert.Single(_launcher.Commands, command => command.Contains(SessionHelper.SendInputCommand, StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, previous);
+        }
     }
 
     private WebApplicationFactory<Program> Create()
@@ -297,16 +344,26 @@ public class InputMcpTests : IDisposable
 
         public string? LastSend { get; set; }
 
+        public List<string> Commands { get; } = [];
+
         public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
 
         public Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken)
         {
             string arguments = string.Join('\n', request.Arguments);
+            Commands.Add(arguments);
             if (request.Arguments.Contains(SessionHelper.SendInputCommand))
             {
                 LastSend = arguments;
                 File.WriteAllText(output.OutputPath, NextSendJson ?? "{}");
                 return Task.FromResult(0);
+            }
+
+            if (request.Arguments.Contains(SessionHelper.InspectSessionCommand))
+            {
+                request.ReleaseInheritedInput?.Invoke();
+                request.ReleaseInheritedOutput?.Invoke();
+                return Task.FromResult(2);
             }
 
             File.WriteAllText(output.OutputPath, """{"error":"not used","errorCode":"helper_failed"}""");

@@ -8,6 +8,7 @@ using ModelContextProtocol.Server;
 using Vestigo.Configuration;
 using Vestigo.Desktop;
 using Vestigo.Processes;
+using Vestigo.SystemInfo;
 using Vestigo.Vision;
 
 namespace Vestigo.Input;
@@ -30,17 +31,35 @@ public sealed class InputTools(
     private const long HelperMaxOutputBytes = 64 * 1024;
 
     /// <summary>
-    ///     Experimental process switch. When it is <c>1</c>, one <c>observe: true</c> call keeps a single inspection
-    ///     helper for both captures. This is not a <c>VestigoOptions</c> setting.
+    ///     Process switch for one <c>observe: true</c> call. Unset, or any value other than <c>0</c>, keeps a single
+    ///     inspection helper for that call. <c>0</c> rolls back to one helper per capture. This is not a
+    ///     <c>VestigoOptions</c> setting. The value is read from this process for every call, so a change lasts until
+    ///     the process exits or the variable is changed again.
     /// </summary>
     internal const string ReuseHelperVariable = "VESTIGO_OBSERVE_REUSE_HELPER";
 
-    /// <summary>Test hook that supplies the inspection helper instead of reading <see cref="ReuseHelperVariable"/>.</summary>
+    /// <summary>
+    ///     When set, replaces <see cref="ReuseHelperVariable"/>. A null result means the variable is unset.
+    /// </summary>
+    internal Func<string?>? ReuseHelperVariableOverride { get; set; }
+
+    /// <summary>Test hook that supplies the inspection helper when reuse is enabled.</summary>
     internal Func<CancellationToken, Task<OperationResult<IInspectCaptureSession>>>? InspectSessionFactory { get; set; }
 
+    /// <summary>
+    ///     When set, replaces the active console session read. A null result means the session is unknown.
+    ///     The reused helper stays in the session where it started, so its capture cannot report a later switch.
+    /// </summary>
+    internal Func<int?>? ActiveConsoleSessionOverride { get; set; }
+
+    /// <summary>Unset and every value except <c>0</c> reuse one inspection helper. <c>0</c> is the one-shot rollback.</summary>
+    internal static bool ShouldReuseInspection(string? value) =>
+        !string.Equals(value?.Trim(), "0", StringComparison.Ordinal);
+
     private bool ReuseInspection =>
-        InspectSessionFactory is not null
-        || string.Equals(Environment.GetEnvironmentVariable(ReuseHelperVariable), "1", StringComparison.Ordinal);
+        ShouldReuseInspection(ReuseHelperVariableOverride is not null
+            ? ReuseHelperVariableOverride()
+            : Environment.GetEnvironmentVariable(ReuseHelperVariable));
 
     public const string ObserveFull = "full";
 
@@ -304,9 +323,11 @@ public sealed class InputTools(
                 }
             }
 
+            int? consoleSession = ActiveConsoleSession();
             if (inspection is not null
                 && observed.Success
-                && observed.Value!.Capture.SessionId != evidence.SessionId)
+                && (observed.Value!.Capture.SessionId != evidence.SessionId
+                    || consoleSession is int activeSession && activeSession != evidence.SessionId))
             {
                 summary["response"] = new JsonObject
                 {
@@ -355,6 +376,22 @@ public sealed class InputTools(
                 await inspection.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    private int? ActiveConsoleSession()
+    {
+        if (ActiveConsoleSessionOverride is not null)
+        {
+            return ActiveConsoleSessionOverride();
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        uint session = ConsoleSession.ActiveConsoleSessionId();
+        return session == ConsoleSession.NoSession ? null : checked((int)session);
     }
 
     private Task<OperationResult<IInspectCaptureSession>> OpenInspectionSessionAsync(

@@ -329,8 +329,21 @@ internal sealed class InspectHelperChannel(Stream commands, Stream results, Acti
     internal async ValueTask DisposeStreamsAsync()
     {
         _closed = true;
-        await _commands.DisposeAsync().ConfigureAwait(false);
-        await results.DisposeAsync().ConfigureAwait(false);
+        try
+        {
+            await _commands.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            await results.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+        }
     }
 
     private OperationResult<InspectCaptureResult> Parse(string line, string requestId)

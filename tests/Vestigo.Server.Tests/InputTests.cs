@@ -809,8 +809,10 @@ public class InputTests
         Assert.Empty(platform.Submitted);
     }
 
-    [Fact]
-    public async Task SendInput_ObservationDoesNotChangeTheInputInterval()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SendInput_ObservationDoesNotChangeTheInputInterval(bool reuse)
     {
         InputTiming timing = new(
             InputTiming.QueryPerformanceCounter,
@@ -826,7 +828,15 @@ public class InputTests
             Desktop = { AllowScreenshots = true }
         };
         SessionHelperClient helper = new(launcher);
-        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options);
+        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options)
+        {
+            ReuseHelperVariableOverride = () => reuse ? null : "0"
+        };
+        if (reuse)
+        {
+            tools.InspectSessionFactory = _ => Task.FromResult(
+                OperationResult<IInspectCaptureSession>.Fail("start_failed", "The inspection helper did not start."));
+        }
 
         CallToolResult result = await tools.SendInput(
             [new InputActionSpec { Type = "key", Keys = "a" }],
@@ -839,12 +849,23 @@ public class InputTests
         Assert.Equal("9007199254740999", returned.GetProperty("lastSubmitted").GetProperty("qpcTicks").GetString());
         Assert.Equal(JsonValueKind.String, returned.GetProperty("firstSubmitted").GetProperty("qpcTicks").ValueKind);
         Assert.True(result.IsError is not true);
-        Assert.Equal(3, launcher.Commands.Count);
         Assert.Contains(launcher.Commands, command => command.Contains("send-input", StringComparison.Ordinal));
+        if (reuse)
+        {
+            Assert.Single(launcher.Commands);
+            Assert.DoesNotContain(launcher.Commands, command => command.Contains("inspect-screen", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Equal(3, launcher.Commands.Count);
+            Assert.Equal(2, launcher.Commands.Count(command => command.Contains("inspect-screen", StringComparison.Ordinal)));
+        }
     }
 
-    [Fact]
-    public async Task SendInput_RejectedObservationIsSkipped()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SendInput_RejectedObservationIsSkipped(bool reuse)
     {
         InputResult injected = new(
             0,
@@ -867,7 +888,15 @@ public class InputTests
         };
         SessionHelperClient helper = new(launcher);
         RecordingTimeProvider clock = new();
-        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options, clock: clock);
+        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options, clock: clock)
+        {
+            ReuseHelperVariableOverride = () => reuse ? null : "0"
+        };
+        if (reuse)
+        {
+            tools.InspectSessionFactory = _ => Task.FromResult(
+                OperationResult<IInspectCaptureSession>.Fail("start_failed", "The inspection helper did not start."));
+        }
         CallToolResult result = await tools.SendInput(
             [new InputActionSpec { Type = "key", Keys = "a" }],
             focusWindow: "0xA1",
@@ -886,7 +915,15 @@ public class InputTests
         Assert.Equal("input_rejected", document.RootElement.GetProperty("response").GetProperty("reason").GetString());
         Assert.Empty(clock.Delays);
         Assert.Single(launcher.Commands, command => command.Contains("send-input", StringComparison.Ordinal));
-        Assert.Single(launcher.Commands, command => command.Contains("inspect-screen", StringComparison.Ordinal));
+        if (reuse)
+        {
+            Assert.Single(launcher.Commands);
+            Assert.DoesNotContain(launcher.Commands, command => command.Contains("inspect-screen", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Single(launcher.Commands, command => command.Contains("inspect-screen", StringComparison.Ordinal));
+        }
         string batch = launcher.Commands.Single(command => command.Contains("send-input", StringComparison.Ordinal));
         Assert.Contains("\"requireFocus\":true", Encoding.UTF8.GetString(Convert.FromBase64String(batch.Split(' ').Last())), StringComparison.Ordinal);
     }
@@ -1251,6 +1288,13 @@ public class InputTests
             {
                 File.WriteAllText(output.OutputPath, sendInputJson);
                 return Task.FromResult(0);
+            }
+
+            if (command.Contains("inspect-session", StringComparison.Ordinal))
+            {
+                request.ReleaseInheritedInput?.Invoke();
+                request.ReleaseInheritedOutput?.Invoke();
+                return Task.FromResult(2);
             }
 
             File.WriteAllText(output.OutputPath, """{"error":"observation is not under test","errorCode":"helper_failed"}""");
