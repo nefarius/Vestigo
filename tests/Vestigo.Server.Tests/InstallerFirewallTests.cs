@@ -150,6 +150,38 @@ public class InstallerFirewallTests
     }
 
     [Fact]
+    public void Sync_DoesNotKeepARuleWhenTheLookupCannotProveItIsTheOnlyOne()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        AlwaysPartialStore store = new();
+        store.Rules.Add(FirewallRuleSync.CreateRule(6000));
+        store.Rules.Add(FirewallRuleSync.CreateRule(7000));
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        Assert.DoesNotContain(log, line => line.StartsWith("Kept inbound firewall rule", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.Contains("does not match", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Sync_DoesNotReplayTheSnapshotWhenARemovalFailsAfterEarlierOnesSucceeded()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        FakeStore store = new() { FailRemovalsAfter = 1 };
+        store.Rules.Add(FirewallRuleSync.CreateRule(5098));
+        store.Rules.Add(FirewallRuleSync.CreateRule(5098));
+        store.Rules.Add(FirewallRuleSync.CreateRule(5098));
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        Assert.DoesNotContain(log, line => line.StartsWith("Added inbound firewall rule", StringComparison.Ordinal));
+        Assert.DoesNotContain(log, line => line.StartsWith("Restored", StringComparison.Ordinal));
+        Assert.Equal(2, store.Rules.Count);
+    }
+
+    [Fact]
     public void Sync_DoesNotAddOrReplayWhenCleanupHitsTheRemovalCap()
     {
         ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
@@ -404,6 +436,11 @@ public class InstallerFirewallTests
         /// <summary>When set, reading rules throws while a rule with this local port exists (a replacement that fails read-back).</summary>
         public string? UnreadablePort { get; set; }
 
+        /// <summary>When set, <see cref="Remove" /> fails with a non-missing error after this many successful removals.</summary>
+        public int? FailRemovalsAfter { get; set; }
+
+        private int _removals;
+
         public IReadOnlyList<FirewallRuleRecord> FindByName(string name)
         {
             if (UnreadablePort is not null && Rules.Any(rule => rule.Name == name && rule.LocalPorts == UnreadablePort))
@@ -416,6 +453,12 @@ public class InstallerFirewallTests
 
         public void Remove(string name)
         {
+            if (FailRemovalsAfter is int limit && _removals >= limit)
+            {
+                throw new UnauthorizedAccessException("Access is denied.");
+            }
+
+            _removals++;
             int index = Rules.FindIndex(rule => rule.Name == name);
             if (index < 0)
             {
@@ -454,6 +497,31 @@ public class InstallerFirewallTests
             LastLookupWasComplete = Rules.Count == 0 || Rules.Any(rule => rule.LocalPorts == "5098");
             List<FirewallRuleRecord> all = Rules.Where(rule => rule.Name == name).ToList();
             return LastLookupWasComplete ? all : all.Take(1).ToList();
+        }
+
+        public void Remove(string name)
+        {
+            int index = Rules.FindIndex(rule => rule.Name == name);
+            if (index >= 0)
+            {
+                Rules.RemoveAt(index);
+            }
+        }
+
+        public void Add(FirewallRuleRecord rule) => Rules.Add(rule);
+    }
+
+    private sealed class AlwaysPartialStore : IFirewallRuleStore, IFirewallLookupDiagnostics
+    {
+        public List<FirewallRuleRecord> Rules { get; } = [];
+
+        public bool LastLookupWasComplete { get; private set; }
+
+        public IReadOnlyList<FirewallRuleRecord> FindByName(string name)
+        {
+            // Mimics the Item(name) fallback: only the first matching rule is visible.
+            LastLookupWasComplete = Rules.Count(rule => rule.Name == name) <= 1;
+            return Rules.Where(rule => rule.Name == name).Take(1).ToList();
         }
 
         public void Remove(string name)
