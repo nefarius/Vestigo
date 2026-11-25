@@ -1,3 +1,4 @@
+using Vestigo.Processes;
 using Vestigo.Vision;
 
 namespace Vestigo.Input;
@@ -12,7 +13,8 @@ public static class InputPlanner
         string? captureId,
         string? focusWindow,
         CaptureCache cache,
-        InputOptions limits)
+        InputOptions limits,
+        bool requireFocus = false)
     {
         if (actions is null || actions.Count == 0)
         {
@@ -77,7 +79,13 @@ public static class InputPlanner
             return Fail("invalid_request", $"At most {limits.MaxTypedCharacters} characters may be typed per call.");
         }
 
-        return OperationResult<InputBatch>.Ok(new InputBatch(steps, string.IsNullOrWhiteSpace(focusWindow) ? null : focusWindow.Trim()));
+        string? focus = string.IsNullOrWhiteSpace(focusWindow) ? null : focusWindow.Trim();
+        if (requireFocus && (focus is null || !WindowInspection.TryParseHandle(focus, out _)))
+        {
+            return Fail("invalid_request", "requireFocus needs focusWindow to be a window handle from list_windows.");
+        }
+
+        return OperationResult<InputBatch>.Ok(new InputBatch(steps, focus, requireFocus));
     }
 
     private static OperationResult<InputStep> PlanOne(string kind, InputActionSpec action, string label, CaptureRecord? capture)

@@ -20,8 +20,13 @@ public sealed class InputTools(
     PerceptionService perception,
     VestigoOptions options,
     ILogger<InputTools>? logger = null,
-    IManagedDesktopDirectory? desktops = null)
+    IManagedDesktopDirectory? desktops = null,
+    InputSubmissionGate? submissions = null,
+    TimeProvider? clock = null)
 {
+    private readonly InputSubmissionGate _submissions = submissions ?? new();
+
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private const long HelperMaxOutputBytes = 64 * 1024;
 
     [McpServerTool(Name = "send_input", Destructive = true, OpenWorld = false)]
@@ -29,10 +34,18 @@ public sealed class InputTools(
         "Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), "
         + "drag (x,y to toX,toY), type (text as Unicode characters), key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). "
         + "A point is elementId from inspect_screen or find_on_screen, or x and y: in the pixels of the returned image when captureId is set, otherwise absolute virtual-screen physical pixels. "
-        + "focusWindow (hex handle from list_windows) is brought to the foreground first. click and key accept holdMilliseconds. Any action accepts delayAfterMilliseconds. "
-        + "observe:true waits observeDelayMs, then compares a fresh inspect_screen result with one taken before the input. "
-        + "injection.status submitted means SendInput accepted the events. response.status observed means the screen, window, or elements changed. "
-        + "A submitted injection is not an observed application response. observe needs Vestigo:Desktop:AllowScreenshots. "
+        + "focusWindow (hex handle from list_windows) is brought to the foreground first. requireFocus defaults to false. When true, focusWindow is required and must be the foreground window in that session immediately before the first input submission and before every later submission, including after waits. "
+        + "A mismatch or a closed window before any event is submitted returns injection.status rejected, the requested and actual HWNDs, and submittedEvents 0. "
+        + "If focus is lost after events were submitted, the batch stops, injection.status is partial, and keys or buttons this batch still holds are released. "
+        + "focusActual is the foreground window from the check that stopped the batch. Cleanup retries a release SendInput did not fully accept. If a held input remains down, stopReason reports the accepted release count. "
+        + "Calls that target the same input desktop run one at a time until the helper exits, including those releases. "
+        + "Windows can change the foreground between that check and SendInput, and a mouse click still goes to the window under the pointer. "
+        + "injection.status submitted means SendInput accepted the events into the input stream. "
+        + "injection.timing is captured in the helper around the first and last native submission that accepted events: utc, qpcTicks and qpcFrequency for the same host. Tick values are decimal strings so they stay exact. "
+        + "The interval excludes helper startup, RPC, trailing waits and observe delays. Cleanup releases are inside the interval when includesCleanupReleases is true. A rejection before any submission omits timing. "
+        + "click and key accept holdMilliseconds. Any action accepts delayAfterMilliseconds. "
+        + "observe:true waits observeDelayMs, then compares a fresh inspect_screen result with one taken before the input, except when injection.status is rejected. "
+        + "response.status observed means the screen, window, or elements changed. A submitted injection is not an observed application response. observe needs Vestigo:Desktop:AllowScreenshots. "
         + "desktopSessionId sends input to that managed desktop only when it is already the input desktop and does not activate it. "
         + "Cannot reach the secure desktop (UAC prompt, lock screen, Ctrl+Alt+Del) and cannot "
         + "reach elevated windows unless elevated=true. Requires Vestigo:Input:AllowInput. Interactive session only.")]
@@ -40,6 +53,7 @@ public sealed class InputTools(
         [Description("Actions to perform in order.")] List<InputActionSpec> actions,
         [Description("captureId that element ids and x,y refer to.")] string? captureId = null,
         [Description("Hex window handle from list_windows to focus first.")] string? focusWindow = null,
+        [Description("When true, focusWindow must be the foreground window immediately before every submission. Default false.")] bool requireFocus = false,
         [Description("Return a fresh inspect_screen result after the actions.")] bool observe = false,
         [Description("Milliseconds to wait before observing, 0 to 5000. Default 300.")] int observeDelayMs = 300,
         [Description("Observe only: window handle to inspect instead of the whole desktop.")] string? observeWindowHandle = null,
@@ -73,7 +87,7 @@ public sealed class InputTools(
             }
         }
 
-        OperationResult<InputBatch> plan = InputPlanner.Plan(actions, captureId, focusWindow, perception.Cache, options.Input);
+        OperationResult<InputBatch> plan = InputPlanner.Plan(actions, captureId, focusWindow, perception.Cache, options.Input, requireFocus);
         if (!plan.Success)
         {
             return DesktopTools.ErrorResult(plan.ErrorCode!, plan.Error!);
@@ -108,8 +122,10 @@ public sealed class InputTools(
             before = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, cancellationToken).ConfigureAwait(false);
         }
 
-        OperationResult<InputResult> sent = await helper
-            .RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath)
+        OperationResult<InputResult> sent = await _submissions.RunAsync(
+                desktopPath,
+                () => helper.RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath),
+                cancellationToken)
             .ConfigureAwait(false);
         if (!sent.Success)
         {
@@ -118,27 +134,61 @@ public sealed class InputTools(
 
         // Typed text is never logged, only the kinds and counts.
         logger?.LogInformation(
-            "Input actions={Count} kinds={Kinds} typedCharacters={Typed} observe={Observe}",
+            "Input actions={Count} kinds={Kinds} typedCharacters={Typed} observe={Observe} status={Status} submittedEvents={Submitted}",
             plan.Value!.Steps.Count,
             string.Join(',', plan.Value.Steps.Select(step => step.Kind).Distinct()),
             plan.Value.Steps.Sum(step => step.Text?.Length ?? 0),
-            observe);
+            observe,
+            sent.Value!.Status,
+            sent.Value.SubmittedEvents);
 
         InputResult evidence = sent.Value!;
+        bool rejected = string.Equals(evidence.Status, InputInjectionStatus.Rejected, StringComparison.Ordinal);
+        JsonObject injection = new()
+        {
+            ["status"] = string.IsNullOrEmpty(evidence.Status) ? InputInjectionStatus.Submitted : evidence.Status,
+            ["submittedEvents"] = evidence.SubmittedEvents,
+            ["focusRequested"] = evidence.FocusRequested,
+            ["focusActual"] = evidence.FocusActual,
+            ["focusGranted"] = evidence.FocusGranted,
+            ["cursorActual"] = evidence.CursorX is null ? null : new JsonObject { ["x"] = evidence.CursorX, ["y"] = evidence.CursorY },
+            ["cleanupReleasedEvents"] = evidence.CleanupReleasedEvents
+        };
+        if (evidence.StopCode is not null)
+        {
+            injection["stopCode"] = evidence.StopCode;
+        }
+
+        if (evidence.StopReason is not null)
+        {
+            injection["stopReason"] = evidence.StopReason;
+        }
+
+        if (evidence.StoppedAtActionIndex is not null)
+        {
+            injection["stoppedAtActionIndex"] = evidence.StoppedAtActionIndex;
+        }
+
+        if (evidence.StoppedAtActionKind is not null)
+        {
+            injection["stoppedAtActionKind"] = evidence.StoppedAtActionKind;
+        }
+
+        if (evidence.Timing is not null)
+        {
+            injection["timing"] = JsonSerializer.SerializeToNode(evidence.Timing, VisionJson.Options);
+        }
+
         JsonObject summary = new()
         {
             ["performed"] = evidence.Performed,
             ["sessionId"] = evidence.SessionId,
-            ["injection"] = new JsonObject
-            {
-                ["status"] = "submitted",
-                ["submittedEvents"] = evidence.SubmittedEvents,
-                ["focusRequested"] = evidence.FocusRequested,
-                ["focusActual"] = evidence.FocusActual,
-                ["focusGranted"] = evidence.FocusGranted,
-                ["cursorActual"] = evidence.CursorX is null ? null : new JsonObject { ["x"] = evidence.CursorX, ["y"] = evidence.CursorY }
-            },
-            ["response"] = new JsonObject { ["status"] = observe ? "pending" : "not-requested" }
+            ["injection"] = injection,
+            ["response"] = observe
+                ? rejected
+                    ? new JsonObject { ["status"] = "skipped", ["reason"] = "input_rejected" }
+                    : new JsonObject { ["status"] = "pending" }
+                : new JsonObject { ["status"] = "not-requested" }
         };
         if (evidence.FocusWarning is not null)
         {
@@ -146,14 +196,14 @@ public sealed class InputTools(
         }
 
         List<ContentBlock> content = [new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) }];
-        if (!observe)
+        if (!observe || rejected)
         {
             return new CallToolResult { Content = content };
         }
 
         if (observeDelayMs > 0)
         {
-            await Task.Delay(observeDelayMs, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(observeDelayMs), _clock, cancellationToken).ConfigureAwait(false);
         }
 
         string? baselineId = before is { Success: true } ? before.Value!.Record.Id : null;
