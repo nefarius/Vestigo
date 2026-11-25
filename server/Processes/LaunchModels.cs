@@ -54,7 +54,9 @@ public sealed record LaunchRequest(
     string? Desktop = null,
     ProcessLaunchReportBox? Report = null,
     SafeHandle? StandardInput = null,
-    Action? ReleaseInheritedInput = null);
+    Action? ReleaseInheritedInput = null,
+    SafeHandle? StandardOutput = null,
+    Action? ReleaseInheritedOutput = null);
 
 /// <summary>Raised when a process cannot be started. <see cref="Code" /> is a stable error code.</summary>
 /// <param name="reason">Optional stable token, such as why no console user is available.</param>

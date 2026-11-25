@@ -29,6 +29,19 @@ public sealed class InputTools(
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private const long HelperMaxOutputBytes = 64 * 1024;
 
+    /// <summary>
+    ///     Experimental process switch. When it is <c>1</c>, one <c>observe: true</c> call keeps a single inspection
+    ///     helper for both captures. This is not a <c>VestigoOptions</c> setting.
+    /// </summary>
+    internal const string ReuseHelperVariable = "VESTIGO_OBSERVE_REUSE_HELPER";
+
+    /// <summary>Test hook that supplies the inspection helper instead of reading <see cref="ReuseHelperVariable"/>.</summary>
+    internal Func<CancellationToken, Task<OperationResult<IInspectCaptureSession>>>? InspectSessionFactory { get; set; }
+
+    private bool ReuseInspection =>
+        InspectSessionFactory is not null
+        || string.Equals(Environment.GetEnvironmentVariable(ReuseHelperVariable), "1", StringComparison.Ordinal);
+
     public const string ObserveFull = "full";
 
     public const string ObservePixels = "pixels";
@@ -154,146 +167,181 @@ public sealed class InputTools(
             250d + step.Milliseconds + (double)step.HoldMilliseconds * step.Count + step.DelayAfterMilliseconds + step.Count * 100d + (step.Text?.Length ?? 0) * 5d + (step.Kind == InputKinds.Drag ? 2000d : 0d));
         TimeSpan timeout = TimeSpan.FromSeconds(30) + TimeSpan.FromMilliseconds(stepMilliseconds);
         string? desktopPath = targeted.Value?.DesktopPath;
-        OperationResult<PerceptionOutcome>? before = null;
-        bool pixelOnly = observation == ObservePixels;
-        if (observe)
+        IInspectCaptureSession? inspection = null;
+        try
         {
-            // The before image is only compared, never returned, so it is never annotated.
-            before = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, pixelOnly, windowCrop, annotate: false, cancellationToken).ConfigureAwait(false);
-        }
-
-        OperationResult<InputResult> sent = await _submissions.RunAsync(
-                desktopPath,
-                () => helper.RunInputAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!sent.Success)
-        {
-            return DesktopTools.ErrorResult(sent);
-        }
-
-        // Typed text is never logged, only the kinds and counts.
-        logger?.LogInformation(
-            "Input actions={Count} kinds={Kinds} typedCharacters={Typed} observe={Observe} status={Status} submittedEvents={Submitted} observeMode={ObserveMode}",
-            plan.Value!.Steps.Count,
-            string.Join(',', plan.Value.Steps.Select(step => step.Kind).Distinct()),
-            plan.Value.Steps.Sum(step => step.Text?.Length ?? 0),
-            observe,
-            sent.Value!.Status,
-            sent.Value.SubmittedEvents,
-            observe ? observation : "none");
-
-        InputResult evidence = sent.Value!;
-        bool rejected = string.Equals(evidence.Status, InputInjectionStatus.Rejected, StringComparison.Ordinal);
-        JsonObject injection = new()
-        {
-            ["status"] = string.IsNullOrEmpty(evidence.Status) ? InputInjectionStatus.Submitted : evidence.Status,
-            ["submittedEvents"] = evidence.SubmittedEvents,
-            ["focusRequested"] = evidence.FocusRequested,
-            ["focusActual"] = evidence.FocusActual,
-            ["focusGranted"] = evidence.FocusGranted,
-            ["cursorActual"] = evidence.CursorX is null ? null : new JsonObject { ["x"] = evidence.CursorX, ["y"] = evidence.CursorY },
-            ["cleanupReleasedEvents"] = evidence.CleanupReleasedEvents
-        };
-        if (evidence.StopCode is not null)
-        {
-            injection["stopCode"] = evidence.StopCode;
-        }
-
-        if (evidence.StopReason is not null)
-        {
-            injection["stopReason"] = evidence.StopReason;
-        }
-
-        if (evidence.StoppedAtActionIndex is not null)
-        {
-            injection["stoppedAtActionIndex"] = evidence.StoppedAtActionIndex;
-        }
-
-        if (evidence.StoppedAtActionKind is not null)
-        {
-            injection["stoppedAtActionKind"] = evidence.StoppedAtActionKind;
-        }
-
-        if (evidence.Timing is not null)
-        {
-            injection["timing"] = JsonSerializer.SerializeToNode(evidence.Timing, VisionJson.Options);
-        }
-
-        JsonObject summary = new()
-        {
-            ["performed"] = evidence.Performed,
-            ["sessionId"] = evidence.SessionId,
-            ["injection"] = injection,
-            ["response"] = observe
-                ? rejected
-                    ? new JsonObject { ["status"] = "skipped", ["reason"] = "input_rejected" }
-                    : new JsonObject { ["status"] = "pending" }
-                : new JsonObject { ["status"] = "not-requested" }
-        };
-        if (evidence.FocusWarning is not null)
-        {
-            summary["focusWarning"] = evidence.FocusWarning;
-        }
-
-        List<ContentBlock> content = [new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) }];
-        if (!observe || rejected)
-        {
-            return new CallToolResult { Content = content };
-        }
-
-        if (observeDelayMs > 0)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(observeDelayMs), _clock, cancellationToken).ConfigureAwait(false);
-        }
-
-        string? baselineId = before is { Success: true } ? before.Value!.Record.Id : null;
-        OperationResult<PerceptionOutcome> observed = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, baselineId, pixelOnly, windowCrop, mode == PerceptionTools.ImageAnnotated, cancellationToken).ConfigureAwait(false);
-        // Pixel mode compares only the same pixels, so a mismatched capture is inconclusive instead of retried.
-        if (!pixelOnly && !observed.Success && observed.ErrorCode == "capture_mismatch" && before is { Success: true })
-        {
-            OperationResult<PerceptionOutcome> retry = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, false, windowCrop, mode == PerceptionTools.ImageAnnotated, cancellationToken).ConfigureAwait(false);
-            if (retry.Success && retry.Value is not null && BoundsChanged(before.Value!, retry.Value))
+            OperationResult<IInspectCaptureSession>? sessionStart = null;
+            if (observe && ReuseInspection)
             {
-                observed = retry;
-            }
-            else
-            {
-                summary["response"] = new JsonObject
+                sessionStart = await OpenInspectionSessionAsync(elevated, desktopPath, cancellationToken).ConfigureAwait(false);
+                if (sessionStart.Success)
                 {
-                    ["status"] = "inconclusive",
-                    ["compared"] = string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
-                };
+                    inspection = sessionStart.Value;
+                }
+            }
+
+            OperationResult<PerceptionOutcome>? before = null;
+            bool pixelOnly = observation == ObservePixels;
+            if (observe)
+            {
+                // The before image is only compared, never returned, so it is never annotated.
+                // A reusable helper that fails to start is not replaced with a one-shot helper.
+                before = sessionStart is { Success: false }
+                    ? sessionStart.FailAs<PerceptionOutcome>()
+                    : await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, pixelOnly, windowCrop, annotate: false, cancellationToken, inspection).ConfigureAwait(false);
+            }
+
+            OperationResult<InputResult> sent = await _submissions.RunAsync(
+                    desktopPath,
+                    () => helper.RunInputAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!sent.Success)
+            {
+                return DesktopTools.ErrorResult(sent);
+            }
+
+            // Typed text is never logged, only the kinds and counts.
+            logger?.LogInformation(
+                "Input actions={Count} kinds={Kinds} typedCharacters={Typed} observe={Observe} status={Status} submittedEvents={Submitted} observeMode={ObserveMode}",
+                plan.Value!.Steps.Count,
+                string.Join(',', plan.Value.Steps.Select(step => step.Kind).Distinct()),
+                plan.Value.Steps.Sum(step => step.Text?.Length ?? 0),
+                observe,
+                sent.Value!.Status,
+                sent.Value.SubmittedEvents,
+                observe ? observation : "none");
+
+            InputResult evidence = sent.Value!;
+            bool rejected = string.Equals(evidence.Status, InputInjectionStatus.Rejected, StringComparison.Ordinal);
+            JsonObject injection = new()
+            {
+                ["status"] = string.IsNullOrEmpty(evidence.Status) ? InputInjectionStatus.Submitted : evidence.Status,
+                ["submittedEvents"] = evidence.SubmittedEvents,
+                ["focusRequested"] = evidence.FocusRequested,
+                ["focusActual"] = evidence.FocusActual,
+                ["focusGranted"] = evidence.FocusGranted,
+                ["cursorActual"] = evidence.CursorX is null ? null : new JsonObject { ["x"] = evidence.CursorX, ["y"] = evidence.CursorY },
+                ["cleanupReleasedEvents"] = evidence.CleanupReleasedEvents
+            };
+            if (evidence.StopCode is not null)
+            {
+                injection["stopCode"] = evidence.StopCode;
+            }
+
+            if (evidence.StopReason is not null)
+            {
+                injection["stopReason"] = evidence.StopReason;
+            }
+
+            if (evidence.StoppedAtActionIndex is not null)
+            {
+                injection["stoppedAtActionIndex"] = evidence.StoppedAtActionIndex;
+            }
+
+            if (evidence.StoppedAtActionKind is not null)
+            {
+                injection["stoppedAtActionKind"] = evidence.StoppedAtActionKind;
+            }
+
+            if (evidence.Timing is not null)
+            {
+                injection["timing"] = JsonSerializer.SerializeToNode(evidence.Timing, VisionJson.Options);
+            }
+
+            JsonObject summary = new()
+            {
+                ["performed"] = evidence.Performed,
+                ["sessionId"] = evidence.SessionId,
+                ["injection"] = injection,
+                ["response"] = observe
+                    ? rejected
+                        ? new JsonObject { ["status"] = "skipped", ["reason"] = "input_rejected" }
+                        : new JsonObject { ["status"] = "pending" }
+                    : new JsonObject { ["status"] = "not-requested" }
+            };
+            if (evidence.FocusWarning is not null)
+            {
+                summary["focusWarning"] = evidence.FocusWarning;
+            }
+
+            List<ContentBlock> content = [new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) }];
+            if (!observe || rejected)
+            {
+                return new CallToolResult { Content = content };
+            }
+
+            if (observeDelayMs > 0)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(observeDelayMs), _clock, cancellationToken).ConfigureAwait(false);
+            }
+
+            string? baselineId = before is { Success: true } ? before.Value!.Record.Id : null;
+            OperationResult<PerceptionOutcome> observed = sessionStart is { Success: false }
+                ? sessionStart.FailAs<PerceptionOutcome>()
+                : await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, baselineId, pixelOnly, windowCrop, mode == PerceptionTools.ImageAnnotated, cancellationToken, inspection).ConfigureAwait(false);
+            // Pixel mode compares only the same pixels, so a mismatched capture is inconclusive instead of retried.
+            // The retry uses the same helper. Input is never sent again.
+            if (!pixelOnly && !observed.Success && observed.ErrorCode == "capture_mismatch" && before is { Success: true } && sessionStart is not { Success: false })
+            {
+                OperationResult<PerceptionOutcome> retry = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, false, windowCrop, mode == PerceptionTools.ImageAnnotated, cancellationToken, inspection).ConfigureAwait(false);
+                if (retry.Success && retry.Value is not null && BoundsChanged(before.Value!, retry.Value))
+                {
+                    observed = retry;
+                }
+                else
+                {
+                    summary["response"] = new JsonObject
+                    {
+                        ["status"] = "inconclusive",
+                        ["compared"] = string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
+                    };
+                    summary["observeError"] = JsonSerializer.SerializeToNode(
+                        new { errorCode = observed.ErrorCode, error = observed.Error, reason = observed.Reason },
+                        VisionJson.Options);
+                    content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
+                    return new CallToolResult { Content = content };
+                }
+            }
+
+            string responseStatus = pixelOnly ? ClassifyPixels(before, observed) : ClassifyResponse(before, observed);
+            summary["response"] = new JsonObject
+            {
+                ["status"] = responseStatus,
+                ["compared"] = pixelOnly
+                    ? windowCrop is not null ? "window-crop-pixels" : string.IsNullOrWhiteSpace(observeWindowHandle) ? "pixels" : "window-pixels"
+                    : string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
+            };
+            if (!observed.Success)
+            {
                 summary["observeError"] = JsonSerializer.SerializeToNode(
                     new { errorCode = observed.ErrorCode, error = observed.Error, reason = observed.Reason },
                     VisionJson.Options);
                 content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
                 return new CallToolResult { Content = content };
             }
-        }
 
-        string responseStatus = pixelOnly ? ClassifyPixels(before, observed) : ClassifyResponse(before, observed);
-        summary["response"] = new JsonObject
-        {
-            ["status"] = responseStatus,
-            ["compared"] = pixelOnly
-                ? windowCrop is not null ? "window-crop-pixels" : string.IsNullOrWhiteSpace(observeWindowHandle) ? "pixels" : "window-pixels"
-                : string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
-        };
-        if (!observed.Success)
-        {
-            summary["observeError"] = JsonSerializer.SerializeToNode(
-                new { errorCode = observed.ErrorCode, error = observed.Error, reason = observed.Reason },
-                VisionJson.Options);
             content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
+            CallToolResult perceived = PerceptionTools.Describe(observed.Value!, mode, null);
+            content.AddRange(perceived.Content);
             return new CallToolResult { Content = content };
         }
-
-        content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
-        CallToolResult perceived = PerceptionTools.Describe(observed.Value!, mode, null);
-        content.AddRange(perceived.Content);
-        return new CallToolResult { Content = content };
+        finally
+        {
+            if (inspection is not null)
+            {
+                await inspection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
+
+    private Task<OperationResult<IInspectCaptureSession>> OpenInspectionSessionAsync(
+        bool elevated,
+        string? desktop,
+        CancellationToken cancellationToken) =>
+        InspectSessionFactory is not null
+            ? InspectSessionFactory(cancellationToken)
+            : InspectHelperSession.StartAsync(launcher, elevated, desktop, cancellationToken);
 
     private Task<OperationResult<PerceptionOutcome>> ObserveAsync(
         string? observeWindowHandle,
@@ -305,7 +353,8 @@ public sealed class InputTools(
         bool pixelOnly,
         DesktopRect? windowCrop,
         bool annotate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IInspectCaptureSession? session = null)
     {
         bool window = !string.IsNullOrWhiteSpace(observeWindowHandle);
         ScreenCaptureRequest capture = ScreenCaptureRequest.DesktopPreview with
@@ -317,10 +366,10 @@ public sealed class InputTools(
             MaxBytes = options.Desktop.MaxScreenshotBytes,
             WindowCrop = window ? windowCrop : null
         };
-        return perception.InspectAsync(
-            new PerceptionRequest(capture, !pixelOnly, !pixelOnly, maxEdge, false, annotate, diffAgainst, elevated, Desktop: desktop),
-            null,
-            cancellationToken);
+        PerceptionRequest perceptionRequest = new(capture, !pixelOnly, !pixelOnly, maxEdge, false, annotate, diffAgainst, elevated, Desktop: desktop);
+        return session is null
+            ? perception.InspectAsync(perceptionRequest, null, cancellationToken)
+            : perception.InspectAsync(perceptionRequest, null, session, cancellationToken);
     }
 
     private static string ClassifyPixels(OperationResult<PerceptionOutcome>? before, OperationResult<PerceptionOutcome> after)

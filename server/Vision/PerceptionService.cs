@@ -54,9 +54,24 @@ public sealed class PerceptionService(
     ///     Optional extra elements (for example template matches) computed from the analyzed image. They are added
     ///     after merging, so they get ids that follow the merged list. Boxes are physical pixels.
     /// </param>
-    public async Task<OperationResult<PerceptionOutcome>> InspectAsync(
+    public Task<OperationResult<PerceptionOutcome>> InspectAsync(
         PerceptionRequest request,
         Func<AnalysisResult, DesktopRect, IReadOnlyList<ScreenElement>>? extraElements,
+        CancellationToken cancellationToken) =>
+        InspectCoreAsync(request, extraElements, null, cancellationToken);
+
+    /// <summary>Same inspection as <see cref="InspectAsync" />, reading the capture from a helper that is already running.</summary>
+    internal Task<OperationResult<PerceptionOutcome>> InspectAsync(
+        PerceptionRequest request,
+        Func<AnalysisResult, DesktopRect, IReadOnlyList<ScreenElement>>? extraElements,
+        IInspectCaptureSession session,
+        CancellationToken cancellationToken) =>
+        InspectCoreAsync(request, extraElements, session, cancellationToken);
+
+    private async Task<OperationResult<PerceptionOutcome>> InspectCoreAsync(
+        PerceptionRequest request,
+        Func<AnalysisResult, DesktopRect, IReadOnlyList<ScreenElement>>? extraElements,
+        IInspectCaptureSession? session,
         CancellationToken cancellationToken)
     {
         CaptureRecord? previous = null;
@@ -74,13 +89,15 @@ public sealed class PerceptionService(
         long maxBytes = options.Desktop.MaxScreenshotBytes;
         ScreenCaptureRequest capture = request.Capture with { MaxBytes = maxBytes, IncludeFullImage = true, MaxEdge = 0 };
         Stopwatch clock = Stopwatch.StartNew();
-        OperationResult<InspectCaptureResult> helperResult = await helper.RunAsync<InspectCaptureResult>(
-            SessionHelper.BuildInspectArguments(capture, request.Uia, request.Ocr),
-            request.Elevated,
-            HelperTimeout,
-            maxBytes,
-            cancellationToken,
-            request.Desktop).ConfigureAwait(false);
+        OperationResult<InspectCaptureResult> helperResult = session is null
+            ? await helper.RunAsync<InspectCaptureResult>(
+                SessionHelper.BuildInspectArguments(capture, request.Uia, request.Ocr),
+                request.Elevated,
+                HelperTimeout,
+                maxBytes,
+                cancellationToken,
+                request.Desktop).ConfigureAwait(false)
+            : await session.InspectAsync(capture, request.Uia, request.Ocr, HelperTimeout, maxBytes, cancellationToken).ConfigureAwait(false);
         if (!helperResult.Success)
         {
             return helperResult.FailAs<PerceptionOutcome>();

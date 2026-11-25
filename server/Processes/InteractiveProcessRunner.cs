@@ -53,9 +53,17 @@ internal static class InteractiveProcessRunner
         Dictionary<string, string> environment = ReadUserEnvironment(token.Handle);
         char[] block = EnvironmentBlock.Build(environment, request.Environment);
         string desktop = ResolveDesktop(request);
-        PROCESS_INFORMATION info = StartSuspended(token.Handle, request, spool, request.StandardInput ?? nul, block, desktop);
+        PROCESS_INFORMATION info = StartSuspended(
+            token.Handle,
+            request,
+            spool,
+            request.StandardInput ?? nul,
+            request.StandardOutput ?? spool,
+            block,
+            desktop);
         Publish(request, info, token);
         request.ReleaseInheritedInput?.Invoke();
+        request.ReleaseInheritedOutput?.Invoke();
 
         using SafeFileHandle process = new(info.hProcess, ownsHandle: true);
         using SafeFileHandle thread = new(info.hThread, ownsHandle: true);
@@ -158,16 +166,22 @@ internal static class InteractiveProcessRunner
         SafeFileHandle token,
         LaunchRequest request,
         SafeHandle spool,
-        SafeHandle nul,
+        SafeHandle stdin,
+        SafeHandle stdout,
         char[] block,
         string desktop)
     {
         char[] commandLine = (CommandLineBuilder.Build(request.Executable, request.Arguments) + '\0').ToCharArray();
+        HANDLE stdinHandle = (HANDLE)stdin.DangerousGetHandle();
+        HANDLE stdoutHandle = (HANDLE)stdout.DangerousGetHandle();
         HANDLE spoolHandle = (HANDLE)spool.DangerousGetHandle();
-        HANDLE nulHandle = (HANDLE)nul.DangerousGetHandle();
-        HANDLE* inherited = stackalloc HANDLE[2] { spoolHandle, nulHandle };
+        // CreateProcess rejects a handle list that names the same handle twice. Stdin may be NUL and stdout may be the spool.
+        HANDLE* inherited = stackalloc HANDLE[3];
+        int inheritedCount = AddInheritedHandle(inherited, 0, stdinHandle);
+        inheritedCount = AddInheritedHandle(inherited, inheritedCount, stdoutHandle);
+        inheritedCount = AddInheritedHandle(inherited, inheritedCount, spoolHandle);
 
-        // Only these two handles are inherited, so concurrent launches cannot leak each other's spool files.
+        // Only these handles are inherited, so concurrent launches cannot leak each other's spool files.
         nuint attributeSize = 0;
         PInvoke.InitializeProcThreadAttributeList(default, 1, 0, &attributeSize);
         byte[] attributeStorage = new byte[attributeSize];
@@ -191,7 +205,7 @@ internal static class InteractiveProcessRunner
                         0,
                         ProcThreadAttributeHandleList,
                         inherited,
-                        (nuint)(sizeof(HANDLE) * 2),
+                        (nuint)(sizeof(HANDLE) * inheritedCount),
                         null,
                         null))
                 {
@@ -202,8 +216,8 @@ internal static class InteractiveProcessRunner
                 startup.StartupInfo.cb = (uint)sizeof(STARTUPINFOEXW);
                 startup.StartupInfo.lpDesktop = desktopPointer;
                 startup.StartupInfo.dwFlags = STARTUPINFOW_FLAGS.STARTF_USESTDHANDLES;
-                startup.StartupInfo.hStdInput = nulHandle;
-                startup.StartupInfo.hStdOutput = spoolHandle;
+                startup.StartupInfo.hStdInput = stdinHandle;
+                startup.StartupInfo.hStdOutput = stdoutHandle;
                 startup.StartupInfo.hStdError = spoolHandle;
                 startup.lpAttributeList = list;
 
@@ -238,6 +252,22 @@ internal static class InteractiveProcessRunner
 
         return info;
     }
+
+    private static unsafe int AddInheritedHandle(HANDLE* handles, int count, HANDLE handle)
+    {
+        nint value = (nint)handle;
+        for (int index = 0; index < count; index++)
+        {
+            if ((nint)handles[index] == value)
+            {
+                return count;
+            }
+        }
+
+        handles[count] = handle;
+        return count + 1;
+    }
+
     private readonly struct PreparedToken(SafeFileHandle handle, string elevationType) : IDisposable
     {
         public SafeFileHandle Handle { get; } = handle;
