@@ -10,8 +10,9 @@ A new MCP tool, tool category, or `VestigoModule` is not done until the user-fac
 ## New tool in an existing module
 
 - `docs/tools.md`: add or extend the narrative section.
+- `docs/limitations.md`: record the tool's bounds, refusals, and caveats.
 - Regenerate `docs/generated/mcp-tools.md` by running tests with `VESTIGO_REGENERATE_DOCS=1`, then run the suite again without that variable.
-- `README.md`: intro, Limitations, or credits when the tool is a new capability, constraint, or dependency.
+- `README.md`: a feature bullet when the tool opens a new capability area, and a credit when it adds a dependency. Keep that file a short overview. Put per-tool caveats in `docs/limitations.md`, and put gates in `docs/security.md`.
 - `docs/security.md` when the tool discloses data, mutates the machine, or adds a gate.
 - `docs/troubleshooting.md` when it adds stable error codes.
 - For any configuration change, follow `configuration-parity.mdc` to keep host JSON, MSI setup and `/config` availability aligned. Update `docs/configuration.md` and regenerate `docs/generated/configuration.md` when settings change.
@@ -24,7 +25,8 @@ Do the tool list above, then:
 - `docs/configuration.md` `Modules` row, default-off list, and installer-owned keys.
 - `docs/windows-service.md` feature tree, defaults, and silent-install examples.
 - `docs/security.md`: a dedicated section when the module is opt-in or gated.
-- `README.md` intro, Security opt-in and gates bullet, and Limitations.
+- `docs/limitations.md`: the module's bounds and caveats.
+- `README.md`: one feature bullet for the new capability area, and a credit when it adds a dependency. Do not list each new gate in the README. Gates stay in `docs/security.md`, and caveats stay in `docs/limitations.md`.
 - `server/Hosting/LandingPage.html` capability sentence.
 - `site/` GitHub Pages booklet: update Features, Security, Intro and relevant QA/developer workflows for new public capabilities. Ensure the Pages build passes and verify deployment after merge.
 - Installer module metadata (`ModuleSelection` / feature parent) so MSI pages stay aligned.

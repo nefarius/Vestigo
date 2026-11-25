@@ -61,9 +61,12 @@ fallback; preserve native ownership, bounds, errors and DLL search restrictions.
 ## New MCP tools and modules
 
 Update tests and every applicable documentation surface, not only catalogs:
-`docs/tools.md`, `docs/security.md`, `docs/troubleshooting.md`,
+`docs/tools.md`, `docs/limitations.md`, `docs/security.md`, `docs/troubleshooting.md`,
 `docs/configuration.md`, `docs/architecture.md`, `docs/windows-service.md`,
-`README.md`, the `site/` GitHub Pages booklet, and `server/Hosting/LandingPage.html`. Keep installer module
+the `site/` GitHub Pages booklet, and `server/Hosting/LandingPage.html`.
+Keep `README.md` a short overview: add a feature bullet or credit when the
+change is a new capability area or dependency, and put caveats in
+`docs/limitations.md`. Keep installer module
 metadata and dependencies aligned. Read `mcp-docs.mdc` for the full checklist.
 Regenerate catalogs with `VESTIGO_REGENERATE_DOCS=1`, then verify tests again
 without that variable. Report failures and environment-dependent skips honestly.
