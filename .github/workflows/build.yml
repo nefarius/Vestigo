@@ -114,6 +114,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Test
+        timeout-minutes: 15
         run: dotnet test -c Release --filter-not-trait "Category=WindowsElevated"
 
       - name: Verify net48 custom-action package
