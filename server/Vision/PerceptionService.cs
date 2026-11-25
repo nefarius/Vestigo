@@ -113,11 +113,10 @@ public sealed class PerceptionService(
                 cancellationToken).ConfigureAwait(false);
             if (previous is not null)
             {
-                if (previous.ImageSize != analysis.ImageSize || previous.Bounds != value.Capture.Bounds)
+                string? mismatch = CaptureCompatibility.DescribeMismatch(previous, analysis.ImageSize, value.Capture);
+                if (mismatch is not null)
                 {
-                    return OperationResult<PerceptionOutcome>.Fail(
-                        "capture_mismatch",
-                        "diffAgainst needs the same target, area and maxEdge as the earlier capture.");
+                    return OperationResult<PerceptionOutcome>.Fail("capture_mismatch", mismatch);
                 }
 
                 diff = await Task.Run(() => ScreenAnalyzer.Diff(previous.WorkingPng, analysis.WorkingPng), cancellationToken).ConfigureAwait(false);
@@ -144,7 +143,15 @@ public sealed class PerceptionService(
             elements = combined;
         }
 
-        CaptureRecord record = Cache.Add(value.Capture.Bounds, analysis.ImageSize, elements, analysis.WorkingPng);
+        CaptureRecord record = Cache.Add(
+            value.Capture.Bounds,
+            analysis.ImageSize,
+            elements,
+            analysis.WorkingPng,
+            value.Capture.Target,
+            value.Capture.WindowHandle,
+            value.Capture.WindowBounds,
+            value.Capture.EffectiveCrop);
         logger?.LogInformation(
             "Inspect target={Target} image={Width}x{Height} elements={Elements} uia={Uia} ocr={Ocr} omittedUia={OmittedUia} omittedOcr={OmittedOcr} omittedCv={OmittedCv} durationMs={Ms}",
             value.Capture.Target,

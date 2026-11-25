@@ -192,6 +192,170 @@ public class DesktopTests
         Assert.Equal(800, parsed.MaxEdge);
         Assert.True(parsed.IncludeFullImage);
         Assert.Equal(4096, parsed.MaxBytes);
+        Assert.Null(parsed.WindowCrop);
+        Assert.DoesNotContain("--crop", args);
+    }
+
+    [Fact]
+    public void SessionHelper_RoundTripsWindowCropOnCaptureAndInspect()
+    {
+        ScreenCaptureRequest request = new(
+            ScreenCaptureTarget.Window,
+            null,
+            "0x10",
+            [],
+            [],
+            null,
+            null,
+            false,
+            0,
+            true,
+            4096,
+            new DesktopRect(-4, 8, 120, 40));
+
+        string[] args = SessionHelper.BuildCaptureArguments(request).ToArray();
+        int crop = Array.IndexOf(args, "--crop");
+        Assert.True(crop >= 0);
+        Assert.Equal("-4,8,120,40", args[crop + 1]);
+        Assert.True(SessionHelper.TryParseCapture(args, out ScreenCaptureRequest parsed, out string? error));
+        Assert.Null(error);
+        Assert.Equal(new DesktopRect(-4, 8, 120, 40), parsed.WindowCrop);
+
+        string[] inspect = SessionHelper.BuildInspectArguments(request, uia: true, ocr: false).ToArray();
+        Assert.Equal(SessionHelper.InspectScreenCommand, inspect[1]);
+        Assert.True(SessionHelper.TryParseInspect(inspect, out ScreenCaptureRequest inspected, out bool uia, out bool ocr, out error));
+        Assert.Null(error);
+        Assert.True(uia);
+        Assert.False(ocr);
+        Assert.Equal(parsed.WindowCrop, inspected.WindowCrop);
+        Assert.True(inspected.IncludeFullImage);
+        Assert.Equal(0, inspected.MaxEdge);
+
+        Assert.False(SessionHelper.TryParseCapture(
+            [SessionHelper.Flag, SessionHelper.CaptureScreenCommand, "--crop", "1,2,3"],
+            out _,
+            out _));
+        Assert.False(SessionHelper.TryParseCapture(
+            [SessionHelper.Flag, SessionHelper.CaptureScreenCommand, "--crop", "a,b,c,d"],
+            out _,
+            out _));
+        Assert.False(SessionHelper.TryParseInspect(
+            [SessionHelper.Flag, SessionHelper.InspectScreenCommand, "--crop", "1,2", "--uia", "true", "--ocr", "false"],
+            out _,
+            out _,
+            out _,
+            out _));
+    }
+
+    [Fact]
+    public void ScreenCaptureResult_OmitsCropFieldsWhenUnset()
+    {
+        ScreenCaptureResult plain = new(
+            ScreenCaptureTarget.Desktop,
+            new DesktopRect(0, 0, 2, 2),
+            new DesktopSize(2, 2),
+            null,
+            96,
+            [],
+            null,
+            null,
+            null,
+            null,
+            1);
+        string json = JsonSerializer.Serialize(plain, SessionHelper.Json);
+        Assert.DoesNotContain("effectiveCrop", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("windowBounds", json, StringComparison.Ordinal);
+
+        ScreenCaptureResult cropped = plain with
+        {
+            Target = ScreenCaptureTarget.Window,
+            WindowBounds = new DesktopRect(5, 6, 200, 100),
+            EffectiveCrop = new DesktopRect(1, 2, 30, 40)
+        };
+        string withCrop = JsonSerializer.Serialize(cropped, SessionHelper.Json);
+        ScreenCaptureResult? parsed = JsonSerializer.Deserialize<ScreenCaptureResult>(withCrop, SessionHelper.Json);
+        Assert.NotNull(parsed);
+        Assert.Equal(cropped.EffectiveCrop, parsed.EffectiveCrop);
+        Assert.Equal(cropped.WindowBounds, parsed.WindowBounds);
+    }
+
+    [Fact]
+    public void ScreenCapture_PrivateWindowCrop_StaysWindowRelativeAfterAMove()
+    {
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_OCR_CROP_FIXTURES") != "1")
+        {
+            Assert.Skip("Requires Windows and VESTIGO_OCR_CROP_FIXTURES=1. Skipped so this run does not open or capture a user window.");
+        }
+
+        string className = "VestigoOcrCrop_" + Guid.NewGuid().ToString("N");
+        if (!TryCreateHiddenWindow(className, out nint hwnd, 80, 90, 640, 480))
+        {
+            UnregisterClass(className, GetModuleHandle(null));
+            Assert.Skip("Could not open a private hidden window for the crop fixture.");
+        }
+
+        try
+        {
+            DesktopRect crop = new(10, 20, 80, 40);
+            ScreenCaptureRequest request = new(
+                ScreenCaptureTarget.Window,
+                null,
+                "0x" + hwnd.ToString("X"),
+                [],
+                [],
+                null,
+                null,
+                false,
+                0,
+                true,
+                DesktopOptions.DefaultMaxScreenshotBytes,
+                crop);
+
+            OperationResult<ScreenCaptureResult> first = ScreenCapture.Capture(request);
+            if (first.ErrorCode is "desktop_unavailable" or "unsupported_on_inactive_desktop")
+            {
+                Assert.Skip("The input desktop is not available, so the private window was not captured.");
+            }
+
+            Assert.True(first.Success, first.Error);
+            Assert.Equal(crop, first.Value!.EffectiveCrop);
+            Assert.NotNull(first.Value.WindowBounds);
+            Assert.Equal(crop.Width, first.Value.Bounds.Width);
+            Assert.Equal(crop.Height, first.Value.Bounds.Height);
+            Assert.Equal(first.Value.WindowBounds.X + crop.X, first.Value.Bounds.X);
+            Assert.Equal(first.Value.WindowBounds.Y + crop.Y, first.Value.Bounds.Y);
+            byte[] png = Convert.FromBase64String(first.Value.FullPngBase64!);
+            Assert.Equal(new DesktopSize(crop.Width, crop.Height), ScreenCapture.ReadPngSize(png));
+
+            Assert.True(SetWindowPos(hwnd, 0, 220, 160, 0, 0, 0x0001 | 0x0004 | 0x0010));
+            OperationResult<ScreenCaptureResult> second = ScreenCapture.Capture(request);
+            Assert.True(second.Success, second.Error);
+            Assert.Equal(first.Value.EffectiveCrop, second.Value!.EffectiveCrop);
+            Assert.NotEqual(first.Value.WindowBounds, second.Value.WindowBounds);
+            Assert.Equal(
+                second.Value.WindowBounds!.X - first.Value.WindowBounds.X,
+                second.Value.Bounds.X - first.Value.Bounds.X);
+            Assert.Equal(
+                second.Value.WindowBounds.Y - first.Value.WindowBounds.Y,
+                second.Value.Bounds.Y - first.Value.Bounds.Y);
+
+            Assert.Equal(
+                "empty_region",
+                ScreenCapture.Capture(request with { WindowCrop = new DesktopRect(10_000, 10_000, 20, 20) }).ErrorCode);
+            Assert.Equal(
+                "invalid_request",
+                ScreenCapture.Capture(request with { Target = ScreenCaptureTarget.Desktop }).ErrorCode);
+            OperationResult<ScreenCaptureResult> full = ScreenCapture.Capture(request with { WindowCrop = null });
+            Assert.True(full.Success, full.Error);
+            Assert.Null(full.Value!.EffectiveCrop);
+            Assert.Null(full.Value.WindowBounds);
+            Assert.Equal(second.Value.WindowBounds, full.Value.Bounds);
+        }
+        finally
+        {
+            DestroyWindow(hwnd);
+            UnregisterClass(className, GetModuleHandle(null));
+        }
     }
 
     [Theory]
@@ -782,7 +946,7 @@ public class DesktopTests
     private static readonly WndProc WindowProcedure = (window, message, wParam, lParam) =>
         DefWindowProc(window, message, wParam, lParam);
 
-    private static bool TryCreateHiddenWindow(string className, out nint hwnd)
+    private static bool TryCreateHiddenWindow(string className, out nint hwnd, int x = 0, int y = 0, int width = 200, int height = 100)
     {
         hwnd = 0;
         WndClass wc = new()
@@ -796,7 +960,7 @@ public class DesktopTests
             return false;
         }
 
-        hwnd = CreateWindowEx(0, className, "Vestigo Desktop Test", 0, 0, 0, 200, 100, 0, 0, wc.hInstance, 0);
+        hwnd = CreateWindowEx(0, className, "Vestigo Desktop Test", 0, x, y, width, height, 0, 0, wc.hInstance, 0);
         return hwnd != 0;
     }
 
@@ -837,6 +1001,9 @@ public class DesktopTests
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyWindow(nint window);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(nint window, nint insertAfter, int x, int y, int width, int height, uint flags);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool UnregisterClass(string className, nint instance);

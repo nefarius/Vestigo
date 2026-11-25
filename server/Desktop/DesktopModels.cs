@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 using Vestigo.Processes;
@@ -198,7 +199,8 @@ public sealed record ScreenCaptureRequest(
     bool IncludeCursor,
     int MaxEdge,
     bool IncludeFullImage,
-    long MaxBytes)
+    long MaxBytes,
+    DesktopRect? WindowCrop = null)
 {
     public static ScreenCaptureRequest DesktopPreview { get; } = new(
         ScreenCaptureTarget.Desktop,
@@ -227,7 +229,9 @@ public sealed record ScreenCaptureResult(
     string? PreviewPngBase64,
     string? FullPngBase64,
     int SessionId,
-    string CaptureFidelity = "input-desktop");
+    string CaptureFidelity = "input-desktop",
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DesktopRect? WindowBounds = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DesktopRect? EffectiveCrop = null);
 
 /// <summary>Screenshot metadata returned to the MCP client. Image bytes travel as MCP image content, not here.</summary>
 public sealed record ScreenCaptureInfo(

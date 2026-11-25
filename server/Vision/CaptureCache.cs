@@ -12,7 +12,11 @@ public sealed class CaptureRecord(
     DesktopSize imageSize,
     IReadOnlyList<ScreenElement> elements,
     byte[] workingPng,
-    DateTimeOffset createdAt)
+    DateTimeOffset createdAt,
+    string target = "desktop",
+    string? windowHandle = null,
+    DesktopRect? windowBounds = null,
+    DesktopRect? effectiveCrop = null)
 {
     public string Id { get; } = id;
 
@@ -28,6 +32,18 @@ public sealed class CaptureRecord(
     public byte[] WorkingPng { get; } = workingPng;
 
     public DateTimeOffset CreatedAt { get; } = createdAt;
+
+    /// <summary>Capture target, such as <c>desktop</c> or <c>window</c>.</summary>
+    public string Target { get; } = target;
+
+    /// <summary>Window handle when the capture was a window. Null for other targets.</summary>
+    public string? WindowHandle { get; } = windowHandle;
+
+    /// <summary>Window frame in virtual-screen physical pixels. Null when the capture was not cropped.</summary>
+    public DesktopRect? WindowBounds { get; } = windowBounds;
+
+    /// <summary>Window-relative crop after clipping. Null when the capture was the full target.</summary>
+    public DesktopRect? EffectiveCrop { get; } = effectiveCrop;
 
     /// <summary>Maps a point in image pixels to virtual-screen physical pixels, clamped to the captured area.</summary>
     public (int X, int Y) ToScreen(double imageX, double imageY)
@@ -93,10 +109,28 @@ public sealed class CaptureCache(TimeProvider? clock = null, int capacity = Capt
         }
     }
 
-    public CaptureRecord Add(DesktopRect bounds, DesktopSize imageSize, IReadOnlyList<ScreenElement> elements, byte[] workingPng)
+    public CaptureRecord Add(
+        DesktopRect bounds,
+        DesktopSize imageSize,
+        IReadOnlyList<ScreenElement> elements,
+        byte[] workingPng,
+        string target = "desktop",
+        string? windowHandle = null,
+        DesktopRect? windowBounds = null,
+        DesktopRect? effectiveCrop = null)
     {
         string id = "cap-" + Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
-        CaptureRecord record = new(id, bounds, imageSize, elements, workingPng, _clock.GetUtcNow());
+        CaptureRecord record = new(
+            id,
+            bounds,
+            imageSize,
+            elements,
+            workingPng,
+            _clock.GetUtcNow(),
+            target,
+            windowHandle,
+            windowBounds,
+            effectiveCrop);
         lock (_gate)
         {
             Evict();
@@ -125,5 +159,62 @@ public sealed class CaptureCache(TimeProvider? clock = null, int capacity = Capt
     {
         DateTimeOffset cutoff = _clock.GetUtcNow() - _ttl;
         _records.RemoveAll(item => item.CreatedAt < cutoff);
+    }
+}
+
+/// <summary>Decides whether two inspections are the same picture for <c>diffAgainst</c>.</summary>
+internal static class CaptureCompatibility
+{
+    /// <summary>Null when the earlier capture can be diffed against the new one. Otherwise the <c>capture_mismatch</c> message.</summary>
+    public static string? DescribeMismatch(CaptureRecord previous, DesktopSize imageSize, ScreenCaptureResult current)
+    {
+        if (!string.Equals(previous.Target, current.Target, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"diffAgainst needs the same target. The earlier capture was '{previous.Target}' and this one is '{current.Target}'.";
+        }
+
+        if (previous.ImageSize != imageSize)
+        {
+            return "diffAgainst preview scale/maxEdge does not match. The earlier image is "
+                + $"{previous.ImageSize.Width}x{previous.ImageSize.Height} and this one is {imageSize.Width}x{imageSize.Height}.";
+        }
+
+        if (string.Equals(previous.Target, ScreenCaptureTarget.Window, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(previous.WindowHandle, current.WindowHandle, StringComparison.OrdinalIgnoreCase))
+        {
+            return "diffAgainst needs the same window. The earlier capture was '"
+                + (previous.WindowHandle ?? "unknown")
+                + "' and this one is '"
+                + (current.WindowHandle ?? "unknown")
+                + "'.";
+        }
+
+        bool previousCrop = previous.EffectiveCrop is not null;
+        bool currentCrop = current.EffectiveCrop is not null;
+        if (previousCrop != currentCrop)
+        {
+            return "diffAgainst crop geometry does not match. One capture is a window crop and the other is the full window.";
+        }
+
+        if (previous.EffectiveCrop is { } earlier && current.EffectiveCrop is { } crop)
+        {
+            if (earlier != crop
+                || earlier.Width != previous.Bounds.Width
+                || earlier.Height != previous.Bounds.Height
+                || crop.Width != current.Bounds.Width
+                || crop.Height != current.Bounds.Height)
+            {
+                return "diffAgainst crop geometry does not match the earlier capture.";
+            }
+
+            return null;
+        }
+
+        if (previous.Bounds != current.Bounds)
+        {
+            return "diffAgainst needs the same target, area and maxEdge as the earlier capture.";
+        }
+
+        return null;
     }
 }
