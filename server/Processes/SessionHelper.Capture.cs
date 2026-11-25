@@ -64,6 +64,14 @@ public static partial class SessionHelper
                 $"{region.X},{region.Y},{region.Width},{region.Height}"));
         }
 
+        if (request.WindowCrop is { } crop)
+        {
+            arguments.Add("--crop");
+            arguments.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{crop.X},{crop.Y},{crop.Width},{crop.Height}"));
+        }
+
         return arguments;
     }
 
@@ -74,7 +82,7 @@ public static partial class SessionHelper
         error = null;
         if (args.Length < 2 || args[0] != Flag || args[1] != CaptureScreenCommand)
         {
-            error = $"Usage: {Flag} {CaptureScreenCommand} [--target desktop|display|window|region] [--display NAME] [--hwnd HWND] [--pid N] [--name NAME] [--title REGEX] [--rect x,y,w,h] [--cursor true|false] [--max-edge N] [--full true|false] [--max-bytes N]";
+            error = $"Usage: {Flag} {CaptureScreenCommand} [--target desktop|display|window|region] [--display NAME] [--hwnd HWND] [--pid N] [--name NAME] [--title REGEX] [--rect x,y,w,h] [--crop x,y,w,h] [--cursor true|false] [--max-edge N] [--full true|false] [--max-bytes N]";
             return false;
         }
 
@@ -85,6 +93,7 @@ public static partial class SessionHelper
         List<string> names = [];
         string? title = null;
         DesktopRect? region = null;
+        DesktopRect? crop = null;
         bool cursor = false;
         int maxEdge = ScreenCaptureTarget.DefaultMaxEdge;
         bool full = false;
@@ -119,6 +128,8 @@ public static partial class SessionHelper
                     break;
                 case "--rect" when TryParseRect(value, out region):
                     break;
+                case "--crop" when TryParseRect(value, out crop):
+                    break;
                 case "--cursor" when TryParseFlag(value, out cursor):
                     break;
                 case "--max-edge" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
@@ -137,7 +148,7 @@ public static partial class SessionHelper
             }
         }
 
-        request = new ScreenCaptureRequest(target, display, hwnd, pids, names, title, region, cursor, maxEdge, full, maxBytes);
+        request = new ScreenCaptureRequest(target, display, hwnd, pids, names, title, region, cursor, maxEdge, full, maxBytes, crop);
         return true;
     }
 

@@ -6,6 +6,7 @@ using OpenCvSharp;
 
 using Vestigo.Configuration;
 using Vestigo.Desktop;
+using Vestigo.Input;
 using Vestigo.Processes;
 using Vestigo.Security;
 using Vestigo.Vision;
@@ -227,9 +228,157 @@ public class VisionTests
         Assert.Equal("Notepad.*", parsed.TitlePattern);
         Assert.True(parsed.IncludeFullImage);
         Assert.Equal(0, parsed.MaxEdge);
+        Assert.Null(parsed.WindowCrop);
 
         Assert.False(SessionHelper.TryParseInspect([SessionHelper.Flag, SessionHelper.InspectScreenCommand, "--uia", "maybe"], out _, out _, out _, out _));
         Assert.False(SessionHelper.TryParseInspect([SessionHelper.Flag, SessionHelper.InspectScreenCommand, "--bogus", "1"], out _, out _, out _, out _));
+    }
+
+    [Fact]
+    public void ClipWindowCrop_ClipsToTheWindowAndRejectsAMiss()
+    {
+        DesktopRect window = new(100, 200, 800, 600);
+
+        OperationResult<WindowCropClip> inside = ScreenCapture.ClipWindowCrop(window, new DesktopRect(10, 20, 30, 40));
+        Assert.True(inside.Success);
+        Assert.Equal(new DesktopRect(110, 220, 30, 40), inside.Value!.ScreenBounds);
+        Assert.Equal(new DesktopRect(10, 20, 30, 40), inside.Value.EffectiveCrop);
+
+        OperationResult<WindowCropClip> partial = ScreenCapture.ClipWindowCrop(window, new DesktopRect(-10, 590, 30, 40));
+        Assert.True(partial.Success);
+        Assert.Equal(new DesktopRect(100, 790, 20, 10), partial.Value!.ScreenBounds);
+        Assert.Equal(new DesktopRect(0, 590, 20, 10), partial.Value.EffectiveCrop);
+
+        OperationResult<WindowCropClip> miss = ScreenCapture.ClipWindowCrop(window, new DesktopRect(800, 0, 10, 10));
+        Assert.False(miss.Success);
+        Assert.Equal("empty_region", miss.ErrorCode);
+        Assert.Contains("does not intersect the window", miss.Error, StringComparison.Ordinal);
+
+        Assert.Equal("invalid_request", ScreenCapture.ClipWindowCrop(window, new DesktopRect(0, 0, 0, 10)).ErrorCode);
+        Assert.Equal("invalid_request", ScreenCapture.ClipWindowCrop(window, new DesktopRect(0, 0, 10, -1)).ErrorCode);
+
+        OperationResult<WindowCropClip> huge = ScreenCapture.ClipWindowCrop(window, new DesktopRect(0, 0, int.MaxValue, 100));
+        Assert.True(huge.Success, huge.Error);
+        Assert.Equal(new DesktopRect(100, 200, 800, 100), huge.Value!.ScreenBounds);
+        Assert.Equal(new DesktopRect(0, 0, 800, 100), huge.Value.EffectiveCrop);
+
+        OperationResult<WindowCropClip> negative = ScreenCapture.ClipWindowCrop(
+            new DesktopRect(-1000, 0, 200, 100),
+            new DesktopRect(int.MinValue, 0, int.MaxValue, 10));
+        Assert.Equal("empty_region", negative.ErrorCode);
+    }
+
+    [Fact]
+    public void DescribeMismatch_AcceptsTheSameCropAfterTheWindowMoves()
+    {
+        DesktopRect crop = new(10, 20, 200, 100);
+        DesktopRect oldWindow = new(100, 200, 800, 600);
+        DesktopRect newWindow = new(400, 500, 800, 600);
+        DesktopRect oldBounds = new(110, 220, 200, 100);
+        DesktopRect newBounds = new(410, 520, 200, 100);
+        DesktopSize preview = new(100, 50);
+        ScreenElement button = new(1, ElementSource.Uia, "button", "Go", null, new DesktopRect(450, 535, 20, 10));
+
+        CaptureRecord before = CroppedRecord("cap-old", oldBounds, preview, oldWindow, crop, []);
+        CaptureRecord after = CroppedRecord("cap-new", newBounds, preview, newWindow, crop, [button]);
+        Assert.Null(CaptureCompatibility.DescribeMismatch(before, preview, CaptureOf(newBounds, newWindow, crop)));
+
+        Assert.Equal((160, 240), before.ToScreen(25, 10));
+        Assert.Equal((460, 540), after.ToScreen(25, 10));
+        Assert.Equal((460, 540), after.ElementCenter(1));
+
+        CaptureRecord quarter = CroppedRecord("cap-quarter", newBounds, new DesktopSize(40, 20), newWindow, crop, [button]);
+        Assert.Equal((460, 540), quarter.ToScreen(10, 4));
+        Assert.Equal((460, 540), quarter.ElementCenter(1));
+
+        CaptureCache cache = new();
+        CaptureRecord stored = cache.Add(
+            newBounds,
+            preview,
+            [button],
+            [1],
+            ScreenCaptureTarget.Window,
+            "0x20",
+            newWindow,
+            crop);
+        OperationResult<InputBatch> plan = InputPlanner.Plan(
+            [
+                new InputActionSpec { Type = "click", ElementId = 1 },
+                new InputActionSpec { Type = "move", X = 25, Y = 10 }
+            ],
+            stored.Id,
+            null,
+            cache,
+            new InputOptions());
+        Assert.True(plan.Success, plan.Error);
+        Assert.Equal((460, 540), (plan.Value!.Steps[0].X, plan.Value.Steps[0].Y));
+        Assert.Equal((460, 540), (plan.Value.Steps[1].X, plan.Value.Steps[1].Y));
+    }
+
+    [Fact]
+    public void DescribeMismatch_NamesTargetScaleAndCropGeometry()
+    {
+        DesktopRect bounds = new(10, 20, 200, 100);
+        DesktopRect crop = new(0, 0, 200, 100);
+        DesktopSize preview = new(100, 50);
+        CaptureRecord window = CroppedRecord("cap-window", bounds, preview, new DesktopRect(0, 0, 800, 600), crop, []);
+        CaptureRecord full = new(
+            "cap-full",
+            bounds,
+            preview,
+            [],
+            [1],
+            DateTimeOffset.UnixEpoch,
+            ScreenCaptureTarget.Window,
+            "0x20");
+
+        string? target = CaptureCompatibility.DescribeMismatch(window, preview, CaptureOf(bounds, null, null, ScreenCaptureTarget.Desktop));
+        Assert.NotNull(target);
+        Assert.Contains("target", target, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("window", target, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("desktop", target, StringComparison.OrdinalIgnoreCase);
+
+        string? scale = CaptureCompatibility.DescribeMismatch(window, new DesktopSize(50, 25), CaptureOf(bounds, window.WindowBounds, crop));
+        Assert.NotNull(scale);
+        Assert.Contains("scale", scale, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("maxEdge", scale, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("100x50", scale, StringComparison.Ordinal);
+        Assert.Contains("50x25", scale, StringComparison.Ordinal);
+
+        string? mixed = CaptureCompatibility.DescribeMismatch(window, preview, CaptureOf(bounds, null, null));
+        Assert.NotNull(mixed);
+        Assert.Contains("geometry", mixed, StringComparison.OrdinalIgnoreCase);
+
+        string? otherCrop = CaptureCompatibility.DescribeMismatch(
+            window,
+            preview,
+            CaptureOf(new DesktopRect(10, 20, 80, 40), window.WindowBounds, new DesktopRect(0, 0, 80, 40)));
+        Assert.NotNull(otherCrop);
+        Assert.Contains("geometry", otherCrop, StringComparison.OrdinalIgnoreCase);
+
+        ScreenCaptureResult otherWindow = CaptureOf(bounds, window.WindowBounds, crop) with { WindowHandle = "0x30" };
+        string? otherHandle = CaptureCompatibility.DescribeMismatch(window, preview, otherWindow);
+        Assert.NotNull(otherHandle);
+        Assert.Contains("same window", otherHandle, StringComparison.OrdinalIgnoreCase);
+
+        string? badSize = CaptureCompatibility.DescribeMismatch(
+            window,
+            preview,
+            CaptureOf(new DesktopRect(10, 20, 180, 100), window.WindowBounds, crop));
+        Assert.NotNull(badSize);
+        Assert.Contains("geometry", badSize, StringComparison.OrdinalIgnoreCase);
+
+        string? area = CaptureCompatibility.DescribeMismatch(
+            full,
+            preview,
+            CaptureOf(new DesktopRect(0, 0, 200, 100), null, null));
+        Assert.Equal("diffAgainst needs the same target, area and maxEdge as the earlier capture.", area);
+        Assert.Null(CaptureCompatibility.DescribeMismatch(full, preview, CaptureOf(bounds, null, null)));
+
+        ScreenCaptureResult otherFull = CaptureOf(bounds, null, null) with { WindowHandle = "0x30" };
+        string? otherFullWindow = CaptureCompatibility.DescribeMismatch(full, preview, otherFull);
+        Assert.NotNull(otherFullWindow);
+        Assert.Contains("same window", otherFullWindow, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -247,6 +396,10 @@ public class VisionTests
         Assert.Equal("invalid_request", InputTests.ErrorCode(await tools.InspectScreen(target: "region", x: 0, y: 0)));
         Assert.Equal("invalid_request", InputTests.ErrorCode(await tools.InspectScreen(windowHandle: "0x1", pid: 4)));
         Assert.Equal("capture_expired", InputTests.ErrorCode(await tools.InspectScreen(diffAgainst: "cap-none")));
+        Assert.Equal("invalid_request", InputTests.ErrorCode(await tools.InspectScreen(target: "window", windowHandle: "0x1", cropX: 1)));
+        Assert.Equal("invalid_request", InputTests.ErrorCode(await tools.InspectScreen(target: "window", windowHandle: "0x1", cropX: 0, cropY: 0, cropWidth: 0, cropHeight: 10)));
+        Assert.Equal("invalid_request", InputTests.ErrorCode(await tools.InspectScreen(target: "desktop", cropX: 0, cropY: 0, cropWidth: 10, cropHeight: 10)));
+        Assert.Equal("invalid_request", InputTests.ErrorCode(await tools.InspectScreen(target: "region", x: 0, y: 0, width: 20, height: 20, cropX: 1, cropY: 1, cropWidth: 4, cropHeight: 4)));
         Assert.Equal("no_interactive_session", InputTests.ErrorCode(await tools.InspectScreen()));
 
         Assert.Equal("invalid_request", InputTests.ErrorCode(await tools.FindOnScreen()));
@@ -290,6 +443,8 @@ public class VisionTests
         Assert.Equal(10, element.GetProperty("box").GetProperty("x").GetInt32());
         Assert.Equal(20, element.GetProperty("box").GetProperty("width").GetInt32());
         Assert.False(element.TryGetProperty("text", out _));
+        Assert.False(document.RootElement.TryGetProperty("effectiveCrop", out _));
+        Assert.False(document.RootElement.TryGetProperty("windowBounds", out _));
 
         CallToolResult raw = PerceptionTools.Describe(outcome, PerceptionTools.ImageRaw, null);
         Assert.Equal([1, 2, 3], Assert.IsType<ImageContentBlock>(raw.Content[0]).DecodedData.ToArray());
@@ -322,6 +477,65 @@ public class VisionTests
         Assert.Equal(30, document.RootElement.GetProperty("omitted").GetProperty("uia").GetInt32());
         Assert.Equal(0, document.RootElement.GetProperty("omitted").GetProperty("ocr").GetInt32());
         Assert.Equal(3, document.RootElement.GetProperty("omitted").GetProperty("cv").GetInt32());
+        Assert.False(document.RootElement.TryGetProperty("effectiveCrop", out _));
+        Assert.False(document.RootElement.TryGetProperty("windowBounds", out _));
+    }
+
+    [Fact]
+    public void Describe_IncludesCropBoundsOnlyWhenSet()
+    {
+        DesktopRect window = new(480, 280, 800, 600);
+        DesktopRect crop = new(20, 20, 200, 100);
+        DesktopRect bounds = new(500, 300, 200, 100);
+        CaptureRecord record = new(
+            "cap-crop",
+            bounds,
+            new DesktopSize(100, 50),
+            [new ScreenElement(1, ElementSource.Ocr, "text", null, "Hi", new DesktopRect(500, 300, 40, 20))],
+            [1],
+            DateTimeOffset.UnixEpoch,
+            ScreenCaptureTarget.Window,
+            "0x2",
+            window,
+            crop);
+        PerceptionOutcome outcome = new(
+            record,
+            new ScreenCaptureResult(
+                ScreenCaptureTarget.Window,
+                bounds,
+                new DesktopSize(200, 100),
+                null,
+                96,
+                ["a"],
+                "0x2",
+                "Fixture",
+                null,
+                null,
+                1,
+                WindowBounds: window,
+                EffectiveCrop: crop),
+            null,
+            "ok",
+            "ok",
+            null,
+            new SourceCounts(0, 1, 0),
+            new SourceCounts(0, 0, 0),
+            0);
+
+        CallToolResult result = PerceptionTools.Describe(outcome, PerceptionTools.ImageNone, null);
+        using JsonDocument document = JsonDocument.Parse(Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text);
+        JsonElement effective = document.RootElement.GetProperty("effectiveCrop");
+        JsonElement frame = document.RootElement.GetProperty("windowBounds");
+        Assert.Equal(20, effective.GetProperty("x").GetInt32());
+        Assert.Equal(20, effective.GetProperty("y").GetInt32());
+        Assert.Equal(200, effective.GetProperty("width").GetInt32());
+        Assert.Equal(100, effective.GetProperty("height").GetInt32());
+        Assert.Equal(480, frame.GetProperty("x").GetInt32());
+        Assert.Equal(280, frame.GetProperty("y").GetInt32());
+        JsonElement box = document.RootElement.GetProperty("elements")[0].GetProperty("box");
+        Assert.Equal(0, box.GetProperty("x").GetInt32());
+        Assert.Equal(0, box.GetProperty("y").GetInt32());
+        Assert.Equal(20, box.GetProperty("width").GetInt32());
     }
 
     [Fact]
@@ -401,6 +615,35 @@ public class VisionTests
     private static bool Matches(ScreenElement element, string text) =>
         (element.Name?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
         || (element.Text?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private static CaptureRecord CroppedRecord(
+        string id,
+        DesktopRect bounds,
+        DesktopSize image,
+        DesktopRect window,
+        DesktopRect crop,
+        IReadOnlyList<ScreenElement> elements) =>
+        new(id, bounds, image, elements, [1], DateTimeOffset.UnixEpoch, ScreenCaptureTarget.Window, "0x20", window, crop);
+
+    private static ScreenCaptureResult CaptureOf(
+        DesktopRect bounds,
+        DesktopRect? window,
+        DesktopRect? crop,
+        string target = ScreenCaptureTarget.Window) =>
+        new(
+            target,
+            bounds,
+            new DesktopSize(bounds.Width, bounds.Height),
+            null,
+            96,
+            [],
+            "0x20",
+            null,
+            null,
+            null,
+            1,
+            WindowBounds: window,
+            EffectiveCrop: crop);
 
     private static ScreenElement Uia(string role, string name, DesktopRect box) => new(0, ElementSource.Uia, role, name, null, box);
 
