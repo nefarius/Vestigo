@@ -105,10 +105,12 @@ public class InspectParallelWindowsTests
         start.ArgumentList.Add("false");
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException("The inspection helper did not start.");
+        Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> errorTask = process.StandardError.ReadToEndAsync();
         if (process.WaitForExit(3000))
         {
-            string output = process.StandardOutput.ReadToEnd();
-            string error = process.StandardError.ReadToEnd();
+            string output = outputTask.GetAwaiter().GetResult();
+            string error = errorTask.GetAwaiter().GetResult();
             if (process.ExitCode != 0)
             {
                 Assert.Fail($"The inspection helper exited {process.ExitCode} before the hang could be observed.{Environment.NewLine}{output}{Environment.NewLine}{error}");
@@ -119,6 +121,14 @@ public class InspectParallelWindowsTests
 
         process.Kill(entireProcessTree: true);
         Assert.True(process.WaitForExit(3000));
+        try
+        {
+            outputTask.GetAwaiter().GetResult();
+            errorTask.GetAwaiter().GetResult();
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private sealed class Inspection
