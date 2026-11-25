@@ -79,8 +79,41 @@ public class InspectSessionProtocolTests
         Assert.Equal("The inspect request could not be read.", Error(lines[1]));
         Assert.Equal("Unknown inspect-session operation.", Error(lines[2]));
         Assert.Equal("The inspect request has no capture.", Error(lines[3]));
-        Assert.Equal("The inspection helper has served its request limit.", Error(lines[^1]));
-        Assert.Equal("n" + SessionHelper.MaxInspectSessionRequests, JsonDocument.Parse(lines[^1]).RootElement.GetProperty("requestId").GetString());
+        Assert.Equal("n" + (SessionHelper.MaxInspectSessionRequests - 1), JsonDocument.Parse(lines[^1]).RootElement.GetProperty("requestId").GetString());
+        Assert.True(JsonDocument.Parse(lines[^1]).RootElement.GetProperty("success").GetBoolean());
+    }
+
+    [Fact]
+    public void Loop_AcceptsAMaxSizedLineEndedByCarriageReturn()
+    {
+        string body = new string('x', SessionHelper.MaxInspectSessionRequestBytes);
+        StringWriter output = new();
+        int code = SessionHelper.RunInspectSession(new StringReader(body + "\r\n"), output, (_, _, _) =>
+            OperationResult<InspectCaptureResult>.Ok(Sample(1)));
+
+        Assert.Equal(0, code);
+        Assert.Equal("The inspect request could not be read.", Error(Lines(output.ToString())[0]));
+    }
+
+    [Fact]
+    public void Loop_CaptureFailureStaysOnTheHelper()
+    {
+        int calls = 0;
+        string transcript = Run(
+            [Request("inspect", "bad", crop: new DesktopRect(1, 2, 3, 4)), Request("inspect", "next", crop: new DesktopRect(1, 2, 3, 4))],
+            (_, _, _) =>
+            {
+                if (calls++ == 0)
+                {
+                    throw new InvalidOperationException("window list unavailable");
+                }
+
+                return OperationResult<InspectCaptureResult>.Ok(Sample(1));
+            });
+
+        string[] lines = Lines(transcript);
+        Assert.Equal("capture_failed", ErrorCode(lines[0]));
+        Assert.Equal("next", JsonDocument.Parse(lines[1]).RootElement.GetProperty("requestId").GetString());
     }
 
     [Fact]
@@ -466,6 +499,21 @@ public class ObserveHelperReuseTests : IDisposable
     }
 
     [Fact]
+    public async Task SessionChange_DoesNotReportNoResponse()
+    {
+        Rig rig = Rig.Factory();
+        rig.Frames.AddRange([Frame(1), Frame(2, session: 9)]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
+
+        Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
+        Assert.Equal("session_changed", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
+        Assert.Equal(InputInjectionStatus.Submitted, Injection(result).GetProperty("status").GetString());
+        Assert.Equal(1, rig.Launcher.SendCount);
+        Assert.True(rig.Session!.Disposed);
+    }
+
+    [Fact]
     public async Task WindowMove_RevalidatesTheSameCropAndReportsNoResponse()
     {
         DesktopRect crop = new(20, 16, 100, 50);
@@ -583,6 +631,24 @@ public class ObserveHelperReuseTests : IDisposable
         Assert.True(launcher.Completed.IsCompleted);
     }
 
+    [Fact]
+    public async Task StartAsync_ReturnsFailureWhenTheHelperFaultsBeforeRunning()
+    {
+        string spool = Path.Combine(VestigoPaths.SpoolDirectory, "helper");
+        int before = Directory.Exists(spool) ? Directory.GetFiles(spool).Length : 0;
+
+        OperationResult<IInspectCaptureSession> started = await InspectHelperSession.StartAsync(
+            new FaultedLauncher(),
+            elevated: false,
+            desktop: null,
+            CancellationToken.None);
+
+        Assert.False(started.Success);
+        Assert.Equal("start_failed", started.ErrorCode);
+        int after = Directory.Exists(spool) ? Directory.GetFiles(spool).Length : 0;
+        Assert.Equal(before, after);
+    }
+
     private static JsonElement Root(JsonElement result)
     {
         using JsonDocument document = JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!);
@@ -599,8 +665,9 @@ public class ObserveHelperReuseTests : IDisposable
         DesktopRect? crop = null,
         DesktopRect? window = null,
         string element = "label",
-        string? error = null) =>
-        new(marker, bounds ?? new DesktopRect(100, 100, 800, 600), crop, crop is null ? null : window ?? new DesktopRect(100, 100, 800, 600), element, error);
+        string? error = null,
+        int session = 7) =>
+        new(marker, bounds ?? new DesktopRect(100, 100, 800, 600), crop, crop is null ? null : window ?? new DesktopRect(100, 100, 800, 600), element, error, session);
 
     private static InputResult Rejected() => new(
         0,
@@ -633,7 +700,7 @@ public class ObserveHelperReuseTests : IDisposable
             new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero), "9007199254740997"),
             new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 1, TimeSpan.Zero), "9007199254740999")));
 
-    private sealed record Scripted(byte Marker, DesktopRect Bounds, DesktopRect? Crop, DesktopRect? Window, string Element, string? Error);
+    private sealed record Scripted(byte Marker, DesktopRect Bounds, DesktopRect? Crop, DesktopRect? Window, string Element, string? Error, int Session = 7);
 
     private sealed class Rig
     {
@@ -752,7 +819,7 @@ public class ObserveHelperReuseTests : IDisposable
                     "Fixture",
                     null,
                     Convert.ToBase64String([frame.Marker]),
-                    1,
+                    frame.Session,
                     WindowBounds: frame.Window,
                     EffectiveCrop: frame.Crop),
                 uia ? [new ScreenElement(0, ElementSource.Uia, "text", frame.Element, null, new DesktopRect(frame.Bounds.X, frame.Bounds.Y, 10, 10))] : [],
@@ -877,6 +944,14 @@ public class ObserveHelperReuseTests : IDisposable
                 }
             });
         }
+    }
+
+    private sealed class FaultedLauncher : IProcessLauncher
+    {
+        public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
+
+        public Task<int> RunAsync(LaunchRequest request, JobContext output, CancellationToken cancellationToken) =>
+            Task.FromException<int>(new InvalidOperationException("The inspection helper did not start."));
     }
 
     private sealed class WaitingLauncher : IProcessLauncher

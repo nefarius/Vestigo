@@ -304,6 +304,28 @@ public sealed class InputTools(
                 }
             }
 
+            if (inspection is not null
+                && observed.Success
+                && observed.Value!.Capture.SessionId != evidence.SessionId)
+            {
+                summary["response"] = new JsonObject
+                {
+                    ["status"] = "inconclusive",
+                    ["compared"] = pixelOnly
+                        ? windowCrop is not null ? "window-crop-pixels" : string.IsNullOrWhiteSpace(observeWindowHandle) ? "pixels" : "window-pixels"
+                        : string.IsNullOrWhiteSpace(observeWindowHandle) ? "screenshot-and-elements" : "window"
+                };
+                summary["observeError"] = JsonSerializer.SerializeToNode(
+                    new
+                    {
+                        errorCode = "session_changed",
+                        error = "The console session changed after the inspection helper started, so the later capture is not the session that received the input."
+                    },
+                    VisionJson.Options);
+                content[0] = new TextContentBlock { Text = summary.ToJsonString(VisionJson.Options) };
+                return new CallToolResult { Content = content };
+            }
+
             string responseStatus = pixelOnly ? ClassifyPixels(before, observed) : ClassifyResponse(before, observed);
             summary["response"] = new JsonObject
             {

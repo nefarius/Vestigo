@@ -49,12 +49,15 @@ internal static class InspectHelperSession
         }
 
         string outputPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".log");
-        File.WriteAllBytes(outputPath, []);
-        AnonymousPipeServerStream commands = new(PipeDirection.Out, HandleInheritability.Inheritable);
-        AnonymousPipeServerStream results = new(PipeDirection.In, HandleInheritability.Inheritable);
-        CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        AnonymousPipeServerStream? commands = null;
+        AnonymousPipeServerStream? results = null;
+        CancellationTokenSource? cancellation = null;
         try
         {
+            File.WriteAllBytes(outputPath, []);
+            commands = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
+            results = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+            cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             (string executable, List<string> prefix) = SessionHelperClient.Host();
             List<string> arguments = [.. prefix, SessionHelper.Flag, SessionHelper.InspectSessionCommand];
             LaunchRequest request = new(
@@ -74,7 +77,7 @@ internal static class InspectHelperSession
             if (run.IsFaulted)
             {
                 Observe(run);
-                DisposeStart(commands, results, cancellation);
+                ReleaseStart(commands, results, cancellation, outputPath);
                 return Task.FromResult(LaunchFailure(run));
             }
 
@@ -89,27 +92,58 @@ internal static class InspectHelperSession
         }
         catch (Exception ex)
         {
-            DisposeStart(commands, results, cancellation);
-            try
+            ReleaseStart(commands, results, cancellation, outputPath);
+            if (ex is ProcessLaunchException launch)
             {
-                File.Delete(outputPath);
-            }
-            catch (IOException)
-            {
+                return Task.FromResult(OperationResult<IInspectCaptureSession>.Fail(launch.Code, launch.Message, launch.Reason));
             }
 
-            return ex is ProcessLaunchException launch
-                ? Task.FromResult(OperationResult<IInspectCaptureSession>.Fail(launch.Code, launch.Message, launch.Reason))
-                : Task.FromException<OperationResult<IInspectCaptureSession>>(ex);
+            if (ex is IOException or UnauthorizedAccessException)
+            {
+                return Task.FromResult(OperationResult<IInspectCaptureSession>.Fail("start_failed", ex.Message));
+            }
+
+            return Task.FromException<OperationResult<IInspectCaptureSession>>(ex);
         }
     }
 
-    private static void DisposeStart(AnonymousPipeServerStream commands, AnonymousPipeServerStream results, CancellationTokenSource cancellation)
+    private static void ReleaseStart(
+        AnonymousPipeServerStream? commands,
+        AnonymousPipeServerStream? results,
+        CancellationTokenSource? cancellation,
+        string outputPath)
     {
-        cancellation.Cancel();
-        cancellation.Dispose();
-        commands.Dispose();
-        results.Dispose();
+        try
+        {
+            commands?.DisposeLocalCopyOfClientHandle();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            results?.DisposeLocalCopyOfClientHandle();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        if (cancellation is not null)
+        {
+            cancellation.Cancel();
+            cancellation.Dispose();
+        }
+
+        commands?.Dispose();
+        results?.Dispose();
+        try
+        {
+            File.Delete(outputPath);
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private static OperationResult<IInspectCaptureSession> LaunchFailure(Task<int> run)
@@ -164,8 +198,9 @@ internal static class InspectHelperSession
                 {
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or ProcessLaunchException)
+            catch (Exception)
             {
+                cancellation.Cancel();
             }
 
             await channel.DisposeStreamsAsync().ConfigureAwait(false);
@@ -185,7 +220,11 @@ internal static class InspectHelperSession
 internal sealed class InspectHelperChannel(Stream commands, Stream results, Action? onBroken = null) : IInspectCaptureSession
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly StreamWriter _commands = new(commands, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
+    private readonly StreamWriter _commands = new(commands, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+    {
+        AutoFlush = true,
+        NewLine = "\n"
+    };
     private readonly byte[] _chunk = new byte[8192];
     private int _chunkOffset;
     private int _chunkCount;
@@ -326,6 +365,7 @@ internal sealed class InspectHelperChannel(Stream commands, Stream results, Acti
     private async Task<OperationResult<string>> ReadLineAsync(long maxBytes, CancellationToken cancellationToken)
     {
         using MemoryStream line = new();
+        bool carriageReturn = false;
         while (true)
         {
             if (_chunkCount == 0)
@@ -346,19 +386,48 @@ internal sealed class InspectHelperChannel(Stream commands, Stream results, Acti
             {
                 byte value = _chunk[_chunkOffset++];
                 _chunkCount--;
-                if (value == (byte)'\n')
+                if (carriageReturn)
                 {
-                    return OperationResult<string>.Ok(Encoding.UTF8.GetString(line.ToArray()).TrimEnd('\r'));
+                    carriageReturn = false;
+                    if (value == (byte)'\n')
+                    {
+                        return OperationResult<string>.Ok(Encoding.UTF8.GetString(line.ToArray()));
+                    }
+
+                    if (!TryAppend(line, (byte)'\r', maxBytes))
+                    {
+                        return OperationResult<string>.Fail("too_large", "The inspection helper output exceeded the limit.");
+                    }
                 }
 
-                if (line.Length >= maxBytes)
+                if (value == (byte)'\n')
+                {
+                    return OperationResult<string>.Ok(Encoding.UTF8.GetString(line.ToArray()));
+                }
+
+                if (value == (byte)'\r')
+                {
+                    carriageReturn = true;
+                    continue;
+                }
+
+                if (!TryAppend(line, value, maxBytes))
                 {
                     return OperationResult<string>.Fail("too_large", "The inspection helper output exceeded the limit.");
                 }
-
-                line.WriteByte(value);
             }
         }
+    }
+
+    private static bool TryAppend(MemoryStream line, byte value, long maxBytes)
+    {
+        if (line.Length >= maxBytes)
+        {
+            return false;
+        }
+
+        line.WriteByte(value);
+        return true;
     }
 
     private void Break()

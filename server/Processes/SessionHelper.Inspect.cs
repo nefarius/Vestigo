@@ -148,7 +148,11 @@ public static partial class SessionHelper
             return RejectInspect($"Usage: {Flag} {InspectSessionCommand}");
         }
 
-        using StreamWriter results = new(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
+        using StreamWriter results = new(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+        {
+            AutoFlush = true,
+            NewLine = "\n"
+        };
         using StreamReader commands = new(Console.OpenStandardInput(), Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
         return RunInspectSession(commands, results, ExecuteInspect);
     }
@@ -222,11 +226,23 @@ public static partial class SessionHelper
             }
 
             served++;
+            OperationResult<InspectCaptureResult> captured;
+            try
+            {
+                captured = capture(request.Capture, request.Uia, request.Ocr);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                captured = OperationResult<InspectCaptureResult>.Fail("capture_failed", ex.Message);
+            }
 
-            OperationResult<InspectCaptureResult> captured = capture(request.Capture, request.Uia, request.Ocr);
             WriteSession(results, captured.Success
                 ? new InspectSessionResponse(request.RequestId, true, captured.Value)
                 : new InspectSessionResponse(request.RequestId, false, Error: captured.Error, ErrorCode: captured.ErrorCode, Reason: captured.Reason));
+            if (served >= MaxInspectSessionRequests)
+            {
+                return 0;
+            }
         }
     }
 
@@ -250,9 +266,15 @@ public static partial class SessionHelper
                 return tooLong || builder.Length == 0 ? null : builder.ToString();
             }
 
-            if (next == '\n')
+            if (next is '\n')
             {
-                return tooLong ? "" : builder.ToString().TrimEnd('\r');
+                return tooLong ? "" : builder.ToString();
+            }
+
+            if (next == '\r' && commands.Peek() == '\n')
+            {
+                commands.Read();
+                return tooLong ? "" : builder.ToString();
             }
 
             if (tooLong)
@@ -260,8 +282,18 @@ public static partial class SessionHelper
                 continue;
             }
 
-            char ch = (char)next;
-            int charBytes = ch <= 0x7F ? 1 : Encoding.UTF8.GetByteCount([ch]);
+            string text = char.ToString((char)next);
+            if (char.IsHighSurrogate((char)next))
+            {
+                int low = commands.Peek();
+                if (low >= 0 && char.IsLowSurrogate((char)low))
+                {
+                    commands.Read();
+                    text += (char)low;
+                }
+            }
+
+            int charBytes = Encoding.UTF8.GetByteCount(text);
             if (bytes + charBytes > MaxInspectSessionRequestBytes)
             {
                 tooLong = true;
@@ -270,7 +302,7 @@ public static partial class SessionHelper
             }
 
             bytes += charBytes;
-            builder.Append(ch);
+            builder.Append(text);
         }
     }
 
