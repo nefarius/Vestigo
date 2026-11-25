@@ -16,32 +16,54 @@ internal static class PhysicalKeySender
         PhysicalKeyPlan plan,
         Func<bool>? focusStillHeld,
         Func<PhysicalKeyStroke, OperationResult<int>> sendStroke,
-        Action<IReadOnlyList<ushort>> releaseModifiers)
+        Func<IReadOnlyList<ushort>, OperationResult<bool>> releaseModifiers,
+        Func<ushort, bool>? userHolds = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(sendStroke);
         ArgumentNullException.ThrowIfNull(releaseModifiers);
         List<ushort> held = [];
         int submitted = 0;
+        OperationResult<int> result = OperationResult<int>.Ok(0);
+        bool succeeded = true;
         try
         {
             for (int index = 0; index < plan.Strokes.Count; index++)
             {
                 if (focusStillHeld is not null && !focusStillHeld())
                 {
-                    return OperationResult<int>.Fail("focus_lost", "The focus window is no longer in the foreground.");
+                    result = OperationResult<int>.Fail("focus_lost", "The focus window is no longer in the foreground.");
+                    succeeded = false;
+                    break;
                 }
 
                 PhysicalKeyStroke stroke = plan.Strokes[index];
-                ReleaseExcept(held, Modifiers(stroke), releaseModifiers);
-                OperationResult<int> sent = sendStroke(stroke);
+                OperationResult<PhysicalKeyStroke> adjusted = WithoutUserModifiers(stroke, held, userHolds);
+                if (!adjusted.Success)
+                {
+                    result = OperationResult<int>.Fail(adjusted.ErrorCode!, adjusted.Error!);
+                    succeeded = false;
+                    break;
+                }
+
+                OperationResult<bool> released = ReleaseExcept(held, Modifiers(adjusted.Value!), releaseModifiers);
+                if (!released.Success)
+                {
+                    result = OperationResult<int>.Fail(released.ErrorCode!, released.Error!);
+                    succeeded = false;
+                    break;
+                }
+
+                OperationResult<int> sent = sendStroke(adjusted.Value!);
                 if (!sent.Success)
                 {
-                    return OperationResult<int>.Fail(sent.ErrorCode!, sent.Error!);
+                    result = OperationResult<int>.Fail(sent.ErrorCode!, sent.Error!);
+                    succeeded = false;
+                    break;
                 }
 
                 submitted += sent.Value;
-                foreach (ushort vk in Modifiers(stroke))
+                foreach (ushort vk in Modifiers(adjusted.Value!))
                 {
                     if (!held.Contains(vk))
                     {
@@ -50,7 +72,10 @@ internal static class PhysicalKeySender
                 }
             }
 
-            return OperationResult<int>.Ok(submitted);
+            if (succeeded)
+            {
+                result = OperationResult<int>.Ok(submitted);
+            }
         }
         finally
         {
@@ -62,10 +87,16 @@ internal static class PhysicalKeySender
                     leftover[index] = held[held.Count - 1 - index];
                 }
 
+                OperationResult<bool> released = releaseModifiers(leftover);
                 held.Clear();
-                releaseModifiers(leftover);
+                if (succeeded && !released.Success)
+                {
+                    result = OperationResult<int>.Fail(released.ErrorCode!, released.Error!);
+                }
             }
         }
+
+        return result;
     }
 
     internal static ushort[] Modifiers(PhysicalKeyStroke stroke)
@@ -89,7 +120,38 @@ internal static class PhysicalKeySender
         return [.. modifiers];
     }
 
-    private static void ReleaseExcept(List<ushort> held, IReadOnlyList<ushort> needed, Action<IReadOnlyList<ushort>> releaseModifiers)
+    private static OperationResult<PhysicalKeyStroke> WithoutUserModifiers(
+        PhysicalKeyStroke stroke,
+        List<ushort> held,
+        Func<ushort, bool>? userHolds)
+    {
+        if (userHolds is null)
+        {
+            return OperationResult<PhysicalKeyStroke>.Ok(stroke);
+        }
+
+        bool shiftHeld = userHolds(Shift) && !held.Contains(Shift);
+        bool controlHeld = userHolds(Control) && !held.Contains(Control);
+        bool altHeld = userHolds(Alt) && !held.Contains(Alt);
+        if ((shiftHeld && !stroke.Shift) || (controlHeld && !stroke.Control) || (altHeld && !stroke.Alt))
+        {
+            return OperationResult<PhysicalKeyStroke>.Fail(
+                "modifier_held",
+                "A keyboard modifier is already held, so this character was not sent.");
+        }
+
+        return OperationResult<PhysicalKeyStroke>.Ok(stroke with
+        {
+            Shift = stroke.Shift && !shiftHeld,
+            Control = stroke.Control && !controlHeld,
+            Alt = stroke.Alt && !altHeld
+        });
+    }
+
+    private static OperationResult<bool> ReleaseExcept(
+        List<ushort> held,
+        IReadOnlyList<ushort> needed,
+        Func<IReadOnlyList<ushort>, OperationResult<bool>> releaseModifiers)
     {
         List<ushort> dropping = [];
         for (int index = held.Count - 1; index >= 0; index--)
@@ -102,7 +164,13 @@ internal static class PhysicalKeySender
 
         if (dropping.Count == 0)
         {
-            return;
+            return OperationResult<bool>.Ok(true);
+        }
+
+        OperationResult<bool> released = releaseModifiers(dropping);
+        if (!released.Success)
+        {
+            return released;
         }
 
         foreach (ushort vk in dropping)
@@ -110,6 +178,6 @@ internal static class PhysicalKeySender
             held.Remove(vk);
         }
 
-        releaseModifiers(dropping);
+        return released;
     }
 }

@@ -77,24 +77,27 @@ public static class InputInjector
             ActiveModifiers = [];
             DateTimeOffset startedAt = DateTimeOffset.UtcNow;
             int performed = 0;
+            OperationResult<InputResult> result = OperationResult<InputResult>.Fail("input_failed", "Input stopped before completion.");
             try
             {
+                bool stopped = false;
                 foreach (InputStep step in batch.Steps)
                 {
                     if (batch.StrictFocus && FocusGranted(batch.FocusWindow, ReadForeground()) != true)
                     {
-                        ReleaseActiveModifiers();
-                        return OperationResult<InputResult>.Fail(
-                            "focus_lost",
-                            $"The focus window is no longer in the foreground. ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
+                        result = FocusLost(batch, performed);
+                        stopped = true;
+                        break;
                     }
 
                     OperationResult<bool> done = Perform(step, batch);
                     if (!done.Success)
                     {
-                        return OperationResult<InputResult>.Fail(
+                        result = OperationResult<InputResult>.Fail(
                             done.ErrorCode!,
                             $"{done.Error} ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
+                        stopped = true;
+                        break;
                     }
 
                     performed++;
@@ -108,27 +111,46 @@ public static class InputInjector
                     }
                 }
 
-                string? actualFocus = ReadForeground();
-                bool? granted = FocusGranted(batch.FocusWindow, actualFocus);
-                ReadCursor(out int? cursorX, out int? cursorY);
-                return OperationResult<InputResult>.Ok(new InputResult(
-                    performed,
-                    System.Diagnostics.Process.GetCurrentProcess().SessionId,
-                    warning,
-                    Submitted,
-                    string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim(),
-                    actualFocus,
-                    granted,
-                    cursorX,
-                    cursorY,
-                    startedAt,
-                    DateTimeOffset.UtcNow));
+                if (!stopped)
+                {
+                    string? actualFocus = ReadForeground();
+                    bool? granted = FocusGranted(batch.FocusWindow, actualFocus);
+                    if (batch.StrictFocus && granted != true)
+                    {
+                        result = FocusLost(batch, performed);
+                    }
+                    else
+                    {
+                        ReadCursor(out int? cursorX, out int? cursorY);
+                        result = OperationResult<InputResult>.Ok(new InputResult(
+                            performed,
+                            System.Diagnostics.Process.GetCurrentProcess().SessionId,
+                            warning,
+                            Submitted,
+                            string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim(),
+                            actualFocus,
+                            granted,
+                            cursorX,
+                            cursorY,
+                            startedAt,
+                            DateTimeOffset.UtcNow));
+                    }
+                }
             }
             finally
             {
-                ReleaseActiveModifiers();
+                OperationResult<bool> released = ReleaseActiveModifiers();
+                if (result.Success && !released.Success)
+                {
+                    result = OperationResult<InputResult>.Fail(
+                        released.ErrorCode!,
+                        $"{released.Error} ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
+                }
+
                 ActiveModifiers = null;
             }
+
+            return result;
         }
         finally
         {
@@ -179,7 +201,7 @@ public static class InputInjector
                 return MoveTo(step.X!.Value, step.Y!.Value);
 
             case InputKinds.Click:
-                return Click(step);
+                return Click(step, batch);
 
             case InputKinds.Down:
                 return Button(step, up: false);
@@ -191,7 +213,7 @@ public static class InputInjector
                 return Scroll(step);
 
             case InputKinds.Drag:
-                return Drag(step);
+                return Drag(step, batch);
 
             case InputKinds.Type:
                 if (IsKeysMode(step.InputMode))
@@ -217,14 +239,15 @@ public static class InputInjector
                     Thread.Sleep(step.HoldMilliseconds);
                 }
 
-                return SendKeys(step.Keys!.Reverse().ToList(), release: true);
+                OperationResult<bool> released = SendKeys(step.Keys!.Reverse().ToList(), release: true);
+                return released.Success ? RequireFocus(batch) : released;
 
             default:
                 return OperationResult<bool>.Fail("invalid_request", $"Unknown action '{step.Kind}'.");
         }
     }
 
-    private static OperationResult<bool> Click(InputStep step)
+    private static OperationResult<bool> Click(InputStep step, InputBatch batch)
     {
         if (step.X is { } x && step.Y is { } y && MoveTo(x, y) is { Success: false } moveFailure)
         {
@@ -233,6 +256,15 @@ public static class InputInjector
 
         for (int index = 0; index < step.Count; index++)
         {
+            if (index > 0)
+            {
+                OperationResult<bool> stillFocused = RequireFocus(batch);
+                if (!stillFocused.Success)
+                {
+                    return stillFocused;
+                }
+            }
+
             OperationResult<bool> down = SendMouse(ButtonFlag(step.Button, up: false), 0, 0, 0);
             if (!down.Success)
             {
@@ -291,7 +323,7 @@ public static class InputInjector
             : Done();
     }
 
-    private static OperationResult<bool> Drag(InputStep step)
+    private static OperationResult<bool> Drag(InputStep step, InputBatch batch)
     {
         int fromX = step.X!.Value;
         int fromY = step.Y!.Value;
@@ -314,6 +346,12 @@ public static class InputInjector
             Thread.Sleep(60);
             for (int index = 1; index <= DragSteps; index++)
             {
+                OperationResult<bool> stillFocused = RequireFocus(batch);
+                if (!stillFocused.Success)
+                {
+                    return stillFocused;
+                }
+
                 int x = fromX + (toX - fromX) * index / DragSteps;
                 int y = fromY + (toY - fromY) * index / DragSteps;
                 result = MoveTo(x, y);
@@ -383,19 +421,37 @@ public static class InputInjector
         Func<bool>? focusStillHeld = batch.StrictFocus
             ? () => FocusGranted(batch.FocusWindow, ReadForeground()) == true
             : null;
-        OperationResult<int> sent = PhysicalKeySender.Send(plan!, focusStillHeld, stroke => SendPhysicalStroke(stroke, down), ReleaseNamedModifiers);
+        OperationResult<int> sent = PhysicalKeySender.Send(
+            plan!,
+            focusStillHeld,
+            stroke => SendPhysicalStroke(stroke, down),
+            ReleaseNamedModifiers,
+            UserHoldsModifier);
         return sent.Success ? Done() : OperationResult<bool>.Fail(sent.ErrorCode!, sent.Error!);
     }
 
     private static HWND LayoutWindow(InputBatch batch)
     {
-        if (!string.IsNullOrWhiteSpace(batch.FocusWindow) && WindowInspection.TryParseHandle(batch.FocusWindow, out HWND hwnd))
+        if (FocusGranted(batch.FocusWindow, ReadForeground()) == true
+            && WindowInspection.TryParseHandle(batch.FocusWindow, out HWND hwnd))
         {
             return hwnd;
         }
 
         return PInvoke.GetForegroundWindow();
     }
+
+    private static bool UserHoldsModifier(ushort virtualKey) => (PInvoke.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+    private static OperationResult<InputResult> FocusLost(InputBatch batch, int performed) =>
+        OperationResult<InputResult>.Fail(
+            "focus_lost",
+            $"The focus window is no longer in the foreground. ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
+
+    private static OperationResult<bool> RequireFocus(InputBatch batch) =>
+        !batch.StrictFocus || FocusGranted(batch.FocusWindow, ReadForeground()) == true
+            ? Done()
+            : OperationResult<bool>.Fail("focus_lost", "The focus window is no longer in the foreground.");
 
     private static OperationResult<int> SendPhysicalStroke(PhysicalKeyStroke stroke, List<ushort> down)
     {
@@ -415,9 +471,11 @@ public static class InputInjector
         inputs.Add(Key(stroke.Vk, stroke.Scan, up: true, extended: stroke.Extended));
         int before = Submitted;
         OperationResult<bool> sent = Send(inputs);
+        int delivered = Submitted - before;
         if (!sent.Success)
         {
-            ReleasePartialStroke(pressing, stroke, Submitted - before);
+            RememberPartialStroke(down, pressing, stroke, delivered);
+            ReleaseTrackedKeys(down, KeysToRelease(pressing, stroke, delivered));
             return OperationResult<int>.Fail(sent.ErrorCode!, sent.Error!);
         }
 
@@ -425,53 +483,91 @@ public static class InputInjector
         return OperationResult<int>.Ok(inputs.Count);
     }
 
-    private static void ReleasePartialStroke(List<ushort> pressing, PhysicalKeyStroke stroke, int delivered)
+    internal static void RememberPartialStroke(List<ushort> down, IReadOnlyList<ushort> pressing, PhysicalKeyStroke stroke, int delivered)
     {
-        if (delivered <= 0)
+        int modifiersAccepted = Math.Min(Math.Max(delivered, 0), pressing.Count);
+        for (int index = 0; index < modifiersAccepted; index++)
         {
-            return;
+            if (!down.Contains(pressing[index]))
+            {
+                down.Add(pressing[index]);
+            }
         }
 
-        List<INPUT> ups = [];
-        int pressedModifiers = Math.Min(delivered, pressing.Count);
-        for (int index = pressedModifiers - 1; index >= 0; index--)
+        if (delivered > pressing.Count && !down.Contains(stroke.Vk))
         {
-            ups.Add(Key(pressing[index], 0, up: true));
-        }
-
-        if (delivered == pressing.Count + 1)
-        {
-            ups.Add(Key(stroke.Vk, stroke.Scan, up: true, extended: stroke.Extended));
-        }
-
-        if (ups.Count > 0)
-        {
-            _ = Send(ups);
+            down.Add(stroke.Vk);
         }
     }
 
-    private static void ReleaseNamedModifiers(IReadOnlyList<ushort> virtualKeys)
+    internal static List<ushort> KeysToRelease(IReadOnlyList<ushort> pressing, PhysicalKeyStroke stroke, int delivered)
+    {
+        List<ushort> order = [];
+        int modifiersAccepted = Math.Min(Math.Max(delivered, 0), pressing.Count);
+        for (int index = modifiersAccepted - 1; index >= 0; index--)
+        {
+            order.Add(pressing[index]);
+        }
+
+        if (delivered > pressing.Count)
+        {
+            order.Add(stroke.Vk);
+        }
+
+        return order;
+    }
+
+    private static void ReleaseTrackedKeys(List<ushort> down, IReadOnlyList<ushort> virtualKeys)
     {
         if (virtualKeys.Count == 0)
         {
             return;
         }
 
+        List<INPUT> ups = [];
+        foreach (ushort vk in virtualKeys)
+        {
+            ups.Add(Key(vk, 0, up: true));
+        }
+
+        int before = Submitted;
+        _ = Send(ups);
+        int accepted = Math.Min(Submitted - before, virtualKeys.Count);
+        for (int index = 0; index < accepted; index++)
+        {
+            down.Remove(virtualKeys[index]);
+        }
+    }
+
+    private static OperationResult<bool> ReleaseNamedModifiers(IReadOnlyList<ushort> virtualKeys)
+    {
+        if (virtualKeys.Count == 0 || ActiveModifiers is null)
+        {
+            return Done();
+        }
+
         List<INPUT> inputs = [];
         foreach (ushort vk in virtualKeys)
         {
             inputs.Add(Key(vk, 0, up: true));
-            ActiveModifiers?.Remove(vk);
         }
 
-        _ = Send(inputs);
+        int before = Submitted;
+        OperationResult<bool> sent = Send(inputs);
+        int accepted = Math.Min(Math.Max(Submitted - before, 0), virtualKeys.Count);
+        for (int index = 0; index < accepted; index++)
+        {
+            ActiveModifiers.Remove(virtualKeys[index]);
+        }
+
+        return sent;
     }
 
-    private static void ReleaseActiveModifiers()
+    private static OperationResult<bool> ReleaseActiveModifiers()
     {
         if (ActiveModifiers is not { Count: > 0 } held)
         {
-            return;
+            return Done();
         }
 
         ushort[] virtualKeys = new ushort[held.Count];
@@ -480,7 +576,7 @@ public static class InputInjector
             virtualKeys[index] = held[held.Count - 1 - index];
         }
 
-        ReleaseNamedModifiers(virtualKeys);
+        return ReleaseNamedModifiers(virtualKeys);
     }
 
     private static OperationResult<bool> SendKeys(IReadOnlyList<KeyStroke> keys, bool release)

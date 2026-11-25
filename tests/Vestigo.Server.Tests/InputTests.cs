@@ -529,7 +529,11 @@ public class InputTests
                 calls++;
                 return OperationResult<int>.Ok(2);
             },
-            keys => released.Add([.. keys]));
+            keys =>
+            {
+                released.Add([.. keys]);
+                return OperationResult<bool>.Ok(true);
+            });
 
         Assert.False(result.Success);
         Assert.Equal("focus_lost", result.ErrorCode);
@@ -556,7 +560,11 @@ public class InputTests
                     ? OperationResult<int>.Ok(2)
                     : OperationResult<int>.Fail("input_failed", "The second event was rejected.");
             },
-            keys => released.Add([.. keys]));
+            keys =>
+            {
+                released.Add([.. keys]);
+                return OperationResult<bool>.Ok(true);
+            });
 
         Assert.False(result.Success);
         Assert.Equal("input_failed", result.ErrorCode);
@@ -577,11 +585,99 @@ public class InputTests
             ]),
             null,
             _ => OperationResult<int>.Ok(2),
-            keys => released.Add([.. keys]));
+            keys =>
+            {
+                released.Add([.. keys]);
+                return OperationResult<bool>.Ok(true);
+            });
 
         Assert.True(result.Success, result.Error);
         Assert.Equal([(ushort)0x11], Assert.Single(released));
         Assert.DoesNotContain(released.SelectMany(keys => keys), vk => vk is 0x10 or 0x12);
+    }
+
+    [Fact]
+    public void PhysicalKeySender_StopsWhenAModifierReleaseIsRejected()
+    {
+        int calls = 0;
+        OperationResult<int> result = PhysicalKeySender.Send(
+            new PhysicalKeyPlan(
+            [
+                new PhysicalKeyStroke(0x41, 0x1E, false, true, false, false),
+                new PhysicalKeyStroke(0x42, 0x30, false, false, false, false)
+            ]),
+            null,
+            _ =>
+            {
+                calls++;
+                return OperationResult<int>.Ok(2);
+            },
+            _ => OperationResult<bool>.Fail("input_failed", "The modifier release was rejected."));
+
+        Assert.False(result.Success);
+        Assert.Equal("input_failed", result.ErrorCode);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void PhysicalKeySender_UsesAModifierTheUserAlreadyHolds()
+    {
+        PhysicalKeyStroke? seen = null;
+        List<ushort[]> released = [];
+        OperationResult<int> result = PhysicalKeySender.Send(
+            new PhysicalKeyPlan([new PhysicalKeyStroke(0x41, 0x1E, false, true, false, false)]),
+            null,
+            stroke =>
+            {
+                seen = stroke;
+                return OperationResult<int>.Ok(1);
+            },
+            keys =>
+            {
+                released.Add([.. keys]);
+                return OperationResult<bool>.Ok(true);
+            },
+            vk => vk == 0x10);
+
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(seen);
+        Assert.False(seen.Shift);
+        Assert.Empty(released);
+    }
+
+    [Fact]
+    public void PhysicalKeySender_RejectsAModifierTheCharacterDoesNotNeed()
+    {
+        int calls = 0;
+        OperationResult<int> result = PhysicalKeySender.Send(
+            new PhysicalKeyPlan([new PhysicalKeyStroke(0x43, 0x2E, false, false, false, false)]),
+            null,
+            _ =>
+            {
+                calls++;
+                return OperationResult<int>.Ok(1);
+            },
+            _ => OperationResult<bool>.Ok(true),
+            vk => vk == 0x11);
+
+        Assert.False(result.Success);
+        Assert.Equal("modifier_held", result.ErrorCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public void RememberPartialStroke_KeepsAcceptedModifiersUntilTheirReleaseSucceeds()
+    {
+        List<ushort> down = [];
+        PhysicalKeyStroke stroke = new(0x41, 0x1E, false, true, true, false);
+        ushort[] pressing = [0x10, 0x11];
+        InputInjector.RememberPartialStroke(down, pressing, stroke, delivered: 1);
+        Assert.Equal([(ushort)0x10], down);
+
+        List<ushort> release = InputInjector.KeysToRelease(pressing, stroke, delivered: 2);
+        Assert.Equal([(ushort)0x11, (ushort)0x10], release);
+        List<ushort> withKey = InputInjector.KeysToRelease(pressing, stroke, delivered: 3);
+        Assert.Equal([(ushort)0x11, (ushort)0x10, (ushort)0x41], withKey);
     }
 
     [Fact]
@@ -600,6 +696,28 @@ public class InputTests
         Assert.Equal(lower.Vk, upper.Vk);
         Assert.NotEqual(lower.Shift, upper.Shift);
         Assert.False(layout.IsDeadKey('a'));
+    }
+
+    [Fact]
+    public void WindowsKeyboardLayout_AcceptsShiftedDegreeWhenTheLayoutHasOneKey()
+    {
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_KEY_FIXTURES") != "1")
+        {
+            Assert.Skip("Requires Windows and VESTIGO_KEY_FIXTURES=1. This run did not use a keyboard fixture.");
+        }
+
+        WindowsKeyboardLayout layout = new(default);
+        PhysicalKeyStroke? degree = layout.TryMap('°');
+        PhysicalKeyStroke? circumflex = layout.TryMap('^');
+        if (degree is null || circumflex is null || degree.Vk != circumflex.Vk)
+        {
+            Assert.Skip("This layout does not put ^ and ° on one key.");
+        }
+
+        Assert.True(degree.Shift);
+        Assert.False(circumflex.Shift);
+        Assert.False(layout.IsDeadKey('°'));
+        Assert.True(layout.IsDeadKey('^'));
     }
 
     [Fact]
