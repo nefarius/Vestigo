@@ -606,6 +606,83 @@ public class InputTests
     }
 
     [Fact]
+    public void Injector_AlreadyFocusedTarget_SkipsRequestAndSettleWait()
+    {
+        ScriptedInputPlatform platform = new();
+        OperationResult<InputResult> result = InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Submitted, result.Value!.Status);
+        Assert.Equal(0, platform.RequestCount);
+        Assert.Equal(0, platform.RestoreCount);
+        Assert.DoesNotContain(120, platform.Delays);
+        Assert.All(platform.FocusAtSubmit, focus => Assert.Equal(ScriptedInputPlatform.Target, focus));
+    }
+
+    [Fact]
+    public void Injector_MinimizedTarget_RestoresRequestsAndWaits()
+    {
+        ScriptedInputPlatform platform = new() { Minimized = true };
+        OperationResult<InputResult> result = InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Submitted, result.Value!.Status);
+        Assert.Equal(1, platform.RestoreCount);
+        Assert.Equal(1, platform.RequestCount);
+        Assert.Equal(120, platform.Delays[0]);
+    }
+
+    [Fact]
+    public void Injector_DeniedFocusRequest_StrictSubmitsNothingAndStillRequestsAndWaits()
+    {
+        ScriptedInputPlatform platform = new() { ForegroundHandle = "0xB2" };
+        OperationResult<InputResult> result = InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), platform);
+
+        Assert.Equal(InputStopCodes.FocusNotGranted, result.Value!.StopCode);
+        Assert.Equal(1, platform.RequestCount);
+        Assert.Equal(120, platform.Delays[0]);
+        Assert.Empty(platform.Submitted);
+    }
+
+    [Fact]
+    public void Injector_AlreadyFocusedTarget_FocusLossBetweenActionsStopsWithCleanup()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(200, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("a"), WaitStep(200), KeyStep("b")], requireFocus: true),
+            platform);
+
+        InputResult value = result.Value!;
+        Assert.Equal(0, platform.RequestCount);
+        Assert.Equal(InputInjectionStatus.Partial, value.Status);
+        Assert.Equal(InputStopCodes.FocusLost, value.StopCode);
+        Assert.Equal(2, value.SubmittedEvents);
+    }
+
+    [Fact]
+    public void Injector_DefaultPause_AppliesOnlyBetweenActions()
+    {
+        ScriptedInputPlatform single = new();
+        Assert.True(InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), single).Success);
+        Assert.Empty(single.Delays);
+
+        ScriptedInputPlatform multiple = new();
+        Assert.True(InputInjector.Execute(Batch([KeyStep("a"), KeyStep("b")], requireFocus: true), multiple).Success);
+        Assert.Equal([30], multiple.Delays);
+        Assert.Equal(4, multiple.Submitted.Count);
+    }
+
+    [Fact]
+    public void Injector_ExplicitFinalDelayAndWait_AreHonored()
+    {
+        ScriptedInputPlatform platform = new();
+        InputStep last = KeyStep("a", delayAfter: 7);
+        Assert.True(InputInjector.Execute(Batch([WaitStep(50), last], requireFocus: true), platform).Success);
+        Assert.Equal([50, 7], platform.Delays);
+    }
+
+    [Fact]
     public void Injector_RequireFocus_ReleasesHeldKeyWhenFocusIsLostDuringHold()
     {
         ScriptedInputPlatform platform = new();
@@ -1071,14 +1148,27 @@ public class InputTests
         public bool IsWindow(string handle) =>
             WindowOpen && string.Equals(handle, Target, StringComparison.OrdinalIgnoreCase);
 
-        public bool IsIconic(string handle) => false;
+        public bool Minimized { get; set; }
+
+        public int RestoreCount { get; private set; }
+
+        public int RequestCount { get; private set; }
+
+        public bool GrantFocusOnRequest { get; set; } = true;
+
+        public List<int> Delays { get; } = [];
+
+        public bool IsIconic(string handle) => Minimized;
 
         public void RestoreWindow(string handle)
         {
+            RestoreCount++;
+            Minimized = false;
         }
 
         public void RequestForeground(string handle)
         {
+            RequestCount++;
         }
 
         public string? Foreground()
@@ -1101,6 +1191,7 @@ public class InputTests
                 return;
             }
 
+            Delays.Add(milliseconds);
             Ticks += milliseconds * Frequency / 1000;
             Utc = Utc.AddMilliseconds(milliseconds);
             OnDelay?.Invoke(milliseconds);

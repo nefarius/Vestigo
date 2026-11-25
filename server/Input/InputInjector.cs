@@ -116,13 +116,19 @@ public static class InputInjector
                     return Finish(InputStopCodes.WindowNotFound, 0, warning: null);
                 }
 
-                if (platform.IsIconic(focus))
+                bool minimized = platform.IsIconic(focus);
+                bool alreadyFocused = !minimized && FocusGranted(focus, platform.Foreground()) == true;
+                if (!alreadyFocused)
                 {
-                    platform.RestoreWindow(focus);
+                    if (minimized)
+                    {
+                        platform.RestoreWindow(focus);
+                    }
+
+                    platform.RequestForeground(focus);
+                    platform.Delay(FocusSettleMilliseconds);
                 }
 
-                platform.RequestForeground(focus);
-                platform.Delay(FocusSettleMilliseconds);
                 bool stillOpen = platform.IsWindow(focus);
                 string? foreground = platform.Foreground();
                 if (batch.RequireFocus && !stillOpen)
@@ -165,7 +171,7 @@ public static class InputInjector
                 {
                     platform.Delay(steps[index].DelayAfterMilliseconds);
                 }
-                else if (steps[index].Kind != InputKinds.Wait)
+                else if (steps[index].Kind != InputKinds.Wait && index < steps.Count - 1)
                 {
                     platform.Delay(StepPauseMilliseconds);
                 }
