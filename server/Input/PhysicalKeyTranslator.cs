@@ -19,6 +19,9 @@ internal interface IKeyboardLayout
     PhysicalKeyStroke? TryMap(char value);
 
     bool IsDeadKey(char value);
+
+    /// <summary>False when the layout changed after this instance was created.</summary>
+    bool Unchanged();
 }
 
 /// <summary>
@@ -88,9 +91,11 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
 {
     private readonly HKL _layout;
     private readonly bool _capsLock;
+    private readonly HWND _window;
 
     public WindowsKeyboardLayout(HWND window)
     {
+        _window = window;
         uint threadId = 0;
         if (!window.IsNull)
         {
@@ -102,6 +107,8 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
     }
 
     public bool CapsLock => _capsLock;
+
+    public bool Unchanged() => SameLayout(_window);
 
     /// <summary>Low word of the layout handle. German (Germany) is <c>0x0407</c>.</summary>
     public int LanguageId => unchecked((int)((nint)_layout & 0xFFFF));

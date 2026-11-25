@@ -1,3 +1,4 @@
+using Vestigo.Processes;
 using Vestigo.Vision;
 
 namespace Vestigo.Input;
@@ -13,7 +14,7 @@ public static class InputPlanner
         string? focusWindow,
         CaptureCache cache,
         InputOptions limits,
-        bool strictFocus = false)
+        bool requireFocus = false)
     {
         if (actions is null || actions.Count == 0)
         {
@@ -25,9 +26,9 @@ public static class InputPlanner
             return Fail("invalid_request", $"At most {limits.MaxActions} actions are allowed per call.");
         }
 
-        if (strictFocus && string.IsNullOrWhiteSpace(focusWindow))
+        if (requireFocus && string.IsNullOrWhiteSpace(focusWindow))
         {
-            return Fail("invalid_request", "strictFocus requires focusWindow.");
+            return Fail("invalid_request", "requireFocus requires focusWindow.");
         }
 
         CaptureRecord? capture = null;
@@ -90,7 +91,12 @@ public static class InputPlanner
         }
 
         string? focus = string.IsNullOrWhiteSpace(focusWindow) ? null : focusWindow.Trim();
-        return OperationResult<InputBatch>.Ok(new InputBatch(steps, focus, strictFocus));
+        if (requireFocus && (focus is null || !WindowInspection.TryParseHandle(focus, out _)))
+        {
+            return Fail("invalid_request", "requireFocus needs focusWindow to be a window handle from list_windows.");
+        }
+
+        return OperationResult<InputBatch>.Ok(new InputBatch(steps, focus, requireFocus));
     }
 
     private static OperationResult<string?> NormalizeInputMode(InputActionSpec action, string kind, string label)

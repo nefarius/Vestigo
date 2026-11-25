@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using ModelContextProtocol.Protocol;
 
@@ -171,8 +174,7 @@ public class InputTests
                 new InputStep("type", null, null, null, null, null, 1, 0, 0, "héllo \"quoted\"\n", null, 0, InputMode: "keys"),
                 new InputStep("key", null, null, null, null, null, 1, 0, 0, null, [new KeyStroke(0x11, false), new KeyStroke(0x2E, true)], 0)
             ],
-            "0xABC",
-            true);
+            "0xABC");
 
         string[] args = SessionHelper.BuildSendInputArguments(batch).ToArray();
 
@@ -180,7 +182,7 @@ public class InputTests
         Assert.True(SessionHelper.TryParseSendInput(args, out InputBatch parsed, out string? error));
         Assert.Null(error);
         Assert.Equal("0xABC", parsed.FocusWindow);
-        Assert.True(parsed.StrictFocus);
+        Assert.False(parsed.RequireFocus);
         Assert.Equal(3, parsed.Steps.Count);
         Assert.Equal("héllo \"quoted\"\n", parsed.Steps[1].Text);
         Assert.Equal("keys", parsed.Steps[1].InputMode);
@@ -395,7 +397,778 @@ public class InputTests
     }
 
     [Fact]
-    public void Planner_AcceptsKeysModeAndStrictFocus()
+    public void FocusGranted_IgnoresHexPadding()
+    {
+        Assert.True(InputInjector.FocusGranted("0x00001A2B", "0x1A2B"));
+        Assert.False(InputInjector.FocusGranted("0x1A2B", "0x1A2C"));
+        Assert.Null(InputInjector.FocusGranted("  ", "0x1A2B"));
+    }
+
+    [Fact]
+    public void Planner_RequireFocusNeedsAHandle()
+    {
+        CaptureCache cache = new();
+        InputOptions limits = new();
+        Assert.Equal("invalid_request", InputPlanner.Plan([Spec("click")], null, null, cache, limits, requireFocus: true).ErrorCode);
+        Assert.Equal("invalid_request", InputPlanner.Plan([Spec("click")], null, "next", cache, limits, requireFocus: true).ErrorCode);
+        Assert.Equal("invalid_request", InputPlanner.Plan([Spec("click")], null, "0x0", cache, limits, requireFocus: true).ErrorCode);
+
+        OperationResult<InputBatch> strict = InputPlanner.Plan([Spec("click")], null, " 0x2A ", cache, limits, requireFocus: true);
+        Assert.True(strict.Success, strict.Error);
+        Assert.True(strict.Value!.RequireFocus);
+        Assert.Equal("0x2A", strict.Value.FocusWindow);
+
+        OperationResult<InputBatch> open = InputPlanner.Plan([Spec("click")], null, null, cache, limits, requireFocus: false);
+        Assert.True(open.Success, open.Error);
+        Assert.False(open.Value!.RequireFocus);
+        Assert.Null(open.Value.FocusWindow);
+    }
+
+    [Fact]
+    public void SessionHelper_MissingRequireFocusStaysOff()
+    {
+        InputBatch batch = new([WaitStep(5)], "0x11", true);
+        string json = JsonSerializer.Serialize(batch, SessionHelper.Json);
+        JsonNode node = JsonNode.Parse(json)!;
+        node.AsObject().Remove("requireFocus");
+        string[] args =
+        [
+            SessionHelper.Flag,
+            SessionHelper.SendInputCommand,
+            "--batch",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(node.ToJsonString()))
+        ];
+
+        Assert.True(SessionHelper.TryParseSendInput(args, out InputBatch parsed, out string? error));
+        Assert.Null(error);
+        Assert.False(parsed.RequireFocus);
+        Assert.Equal("0x11", parsed.FocusWindow);
+    }
+
+    [Fact]
+    public void InputResult_RoundTripsLosslessTicksAndDefaultsStatus()
+    {
+        InputResult result = new(
+            1,
+            4,
+            null,
+            2,
+            "0xA1",
+            "0xA1",
+            true,
+            1,
+            2,
+            InputInjectionStatus.Submitted,
+            Timing: new InputTiming(
+                InputTiming.QueryPerformanceCounter,
+                "10000000",
+                false,
+                new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero), "9007199254740997"),
+                new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero).AddMilliseconds(40), "9007199254740999")));
+        string json = JsonSerializer.Serialize(result, SessionHelper.Json);
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement ticks = document.RootElement.GetProperty("timing").GetProperty("firstSubmitted").GetProperty("qpcTicks");
+        Assert.Equal(JsonValueKind.String, ticks.ValueKind);
+        Assert.Equal("9007199254740997", ticks.GetString());
+        long parsedTicks = long.Parse(ticks.GetString()!, CultureInfo.InvariantCulture);
+        Assert.NotEqual(parsedTicks, (long)(double)parsedTicks);
+
+        InputResult? restored = JsonSerializer.Deserialize<InputResult>(json, SessionHelper.Json);
+        Assert.Equal("9007199254740999", restored!.Timing!.LastSubmitted.QpcTicks);
+        InputResult? legacy = JsonSerializer.Deserialize<InputResult>(
+            """{"performed":1,"sessionId":2,"focusWarning":null,"submittedEvents":0}""",
+            SessionHelper.Json);
+        Assert.Equal(InputInjectionStatus.Submitted, legacy!.Status);
+        Assert.Null(legacy.Timing);
+        Assert.Equal(0, legacy.CleanupReleasedEvents);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_AcquiresFocus()
+    {
+        ScriptedInputPlatform platform = new();
+        OperationResult<InputResult> result = InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Submitted, result.Value!.Status);
+        Assert.True(result.Value.FocusGranted);
+        Assert.Equal(1, result.Value.Performed);
+        Assert.Equal(2, result.Value.SubmittedEvents);
+        Assert.Equal(0, result.Value.CleanupReleasedEvents);
+        Assert.Null(result.Value.StopCode);
+        Assert.False(result.Value.Timing!.IncludesCleanupReleases);
+        AssertOrdered(result.Value.Timing);
+        Assert.Equal(2, platform.Submitted.Count);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_DeniesInitialFocusWithoutSubmitting()
+    {
+        ScriptedInputPlatform platform = new() { ForegroundHandle = "0xB2" };
+        OperationResult<InputResult> result = InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), platform);
+
+        Assert.True(result.Success, result.Error);
+        InputResult value = result.Value!;
+        Assert.Equal(InputInjectionStatus.Rejected, value.Status);
+        Assert.Equal(InputStopCodes.FocusNotGranted, value.StopCode);
+        Assert.Equal(0, value.SubmittedEvents);
+        Assert.Equal(0, value.CleanupReleasedEvents);
+        Assert.Equal(0, value.Performed);
+        Assert.Equal(0, value.StoppedAtActionIndex);
+        Assert.Equal(InputKinds.Key, value.StoppedAtActionKind);
+        Assert.Equal("0xA1", value.FocusRequested);
+        Assert.Equal("0xB2", value.FocusActual);
+        Assert.False(value.FocusGranted);
+        Assert.Null(value.Timing);
+        Assert.Empty(platform.Submitted);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Injector_WithoutRequireFocus_StillSubmitsWhenForegroundDiffers(bool explicitFalse)
+    {
+        ScriptedInputPlatform platform = new() { ForegroundHandle = "0xB2" };
+        InputBatch batch = explicitFalse
+            ? new InputBatch([KeyStep("a")], "0xA1", false)
+            : new InputBatch([KeyStep("a")], "0xA1");
+        OperationResult<InputResult> result = InputInjector.Execute(batch, platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Submitted, result.Value!.Status);
+        Assert.False(result.Value.FocusGranted);
+        Assert.Contains("foreground_not_granted", result.Value.FocusWarning, StringComparison.Ordinal);
+        Assert.Null(result.Value.StopCode);
+        Assert.Equal(2, result.Value.SubmittedEvents);
+        Assert.Equal(2, platform.Submitted.Count);
+    }
+
+    [Fact]
+    public void Injector_ClosedWindow_IsStructuredWhenStrictAndHardErrorOtherwise()
+    {
+        ScriptedInputPlatform closed = new() { WindowOpen = false };
+        OperationResult<InputResult> strict = InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), closed);
+        Assert.True(strict.Success, strict.Error);
+        Assert.Equal(InputInjectionStatus.Rejected, strict.Value!.Status);
+        Assert.Equal(InputStopCodes.WindowNotFound, strict.Value.StopCode);
+        Assert.Equal(0, strict.Value.SubmittedEvents);
+        Assert.Null(strict.Value.Timing);
+        Assert.Empty(closed.Submitted);
+
+        ScriptedInputPlatform legacy = new() { WindowOpen = false };
+        OperationResult<InputResult> open = InputInjector.Execute(Batch([KeyStep("a")]), legacy);
+        Assert.False(open.Success);
+        Assert.Equal("window_not_found", open.ErrorCode);
+        Assert.Empty(legacy.Submitted);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_TargetClosedDuringLeadingWaitSubmitsNothing()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.CloseAfter(80);
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([WaitStep(80), KeyStep("a")], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Rejected, result.Value!.Status);
+        Assert.Equal(InputStopCodes.WindowNotFound, result.Value.StopCode);
+        Assert.Equal(0, result.Value.SubmittedEvents);
+        Assert.Equal(1, result.Value.StoppedAtActionIndex);
+        Assert.Equal(InputKinds.Key, result.Value.StoppedAtActionKind);
+        Assert.Null(result.Value.Timing);
+        Assert.Empty(platform.Submitted);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_StopsDelayedSequenceAndSubmitsNoFurtherActions()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(200, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("a"), WaitStep(200), TypeStep("Z")], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        InputResult value = result.Value!;
+        Assert.Equal(InputInjectionStatus.Partial, value.Status);
+        Assert.Equal(InputStopCodes.FocusLost, value.StopCode);
+        Assert.Equal(2, value.Performed);
+        Assert.Equal(2, value.StoppedAtActionIndex);
+        Assert.Equal(InputKinds.Type, value.StoppedAtActionKind);
+        Assert.Equal(2, value.SubmittedEvents);
+        Assert.Equal(0, value.CleanupReleasedEvents);
+        Assert.False(value.Timing!.IncludesCleanupReleases);
+        Assert.Equal("0xB2", value.FocusActual);
+        Assert.Equal(2, platform.Submitted.OfType<PreparedKey>().Count(key => !key.Unicode));
+        Assert.DoesNotContain(platform.Submitted.OfType<PreparedKey>(), key => key.Unicode);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_ReleasesHeldKeyWhenFocusIsLostDuringHold()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(100, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("a", hold: 100), TypeStep("Z")], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        InputResult value = result.Value!;
+        Assert.Equal(InputInjectionStatus.Partial, value.Status);
+        Assert.Equal(InputStopCodes.FocusLost, value.StopCode);
+        Assert.Equal(0, value.Performed);
+        Assert.Equal(0, value.StoppedAtActionIndex);
+        Assert.Equal(2, value.SubmittedEvents);
+        Assert.Equal(1, value.CleanupReleasedEvents);
+        Assert.True(value.Timing!.IncludesCleanupReleases);
+        PreparedKey down = Assert.IsType<PreparedKey>(platform.Submitted[0]);
+        PreparedKey up = Assert.IsType<PreparedKey>(platform.Submitted[1]);
+        Assert.False(down.Up);
+        Assert.True(up.Up);
+        Assert.Equal(down.Vk, up.Vk);
+        Assert.Equal(ScriptedInputPlatform.Target, platform.FocusAtSubmit[0]);
+        Assert.Equal("0xB2", platform.FocusAtSubmit[1]);
+        Assert.Equal(2, platform.Submitted.Count);
+        Assert.DoesNotContain(platform.Submitted.OfType<PreparedKey>(), key => key.Unicode);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_ReleasesHeldButtonAfterWaitAndDoesNotClickTheNewForeground()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(70, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch(
+                [
+                    new InputStep(InputKinds.Down, null, null, null, null, "left", 1, 0, 0, null, null, 0),
+                    WaitStep(70),
+                    new InputStep(InputKinds.Up, null, null, null, null, "left", 1, 0, 0, null, null, 0),
+                    new InputStep(InputKinds.Click, 20, 20, null, null, "left", 1, 0, 0, null, null, 0)
+                ],
+                requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(2, result.Value.Performed);
+        Assert.Equal(2, result.Value.StoppedAtActionIndex);
+        Assert.Equal(InputKinds.Up, result.Value.StoppedAtActionKind);
+        Assert.Equal(1, result.Value.CleanupReleasedEvents);
+        Assert.Equal(2, platform.Submitted.Count);
+        Assert.Equal(InputMouseAction.LeftDown, Assert.IsType<PreparedMouse>(platform.Submitted[0]).Action);
+        Assert.Equal(InputMouseAction.LeftUp, Assert.IsType<PreparedMouse>(platform.Submitted[1]).Action);
+        Assert.Equal("0xB2", platform.FocusAtSubmit[1]);
+        Assert.DoesNotContain(platform.Submitted.OfType<PreparedMouse>(), mouse => mouse.Action == InputMouseAction.Move);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_StopsDragAndReleasesTheButton()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(20, "0xB2");
+        InputStep drag = new(InputKinds.Drag, 10, 10, 70, 10, "left", 1, 0, 0, null, null, 0);
+        OperationResult<InputResult> result = InputInjector.Execute(Batch([drag], requireFocus: true), platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(InputStopCodes.FocusLost, result.Value.StopCode);
+        Assert.Equal(1, result.Value.CleanupReleasedEvents);
+        Assert.Equal(2, platform.Submitted.OfType<PreparedMouse>().Count(mouse => mouse.Action == InputMouseAction.Move));
+        Assert.Equal(1, platform.Submitted.OfType<PreparedMouse>().Count(mouse => mouse.Action == InputMouseAction.LeftDown));
+        PreparedMouse release = Assert.IsType<PreparedMouse>(platform.Submitted[^1]);
+        Assert.Equal(InputMouseAction.LeftUp, release.Action);
+        Assert.Equal("0xB2", platform.FocusAtSubmit[^1]);
+        Assert.Equal(4, platform.Submitted.Count);
+    }
+
+    [Fact]
+    public void Injector_TimestampsAreOrderedAndExcludeTrailingDelay()
+    {
+        ScriptedInputPlatform platform = new() { Ticks = 5_000 };
+        OperationResult<InputResult> held = InputInjector.Execute(
+            Batch([KeyStep("a", hold: 250, delayAfter: 1000)]),
+            platform);
+        Assert.True(held.Success, held.Error);
+        long elapsed = Elapsed(held.Value!.Timing!);
+        long holdTicks = 250L * platform.Frequency / 1000;
+        long delayTicks = 1000L * platform.Frequency / 1000;
+        AssertOrdered(held.Value.Timing!);
+        Assert.InRange(elapsed, holdTicks, holdTicks + platform.Frequency / 10);
+        Assert.True(elapsed < holdTicks + delayTicks / 2);
+
+        ScriptedInputPlatform waited = new();
+        OperationResult<InputResult> afterWait = InputInjector.Execute(Batch([KeyStep("a"), WaitStep(400)]), waited);
+        Assert.True(afterWait.Success, afterWait.Error);
+        Assert.True(Elapsed(afterWait.Value!.Timing!) < waited.Frequency / 20);
+        Assert.False(afterWait.Value.Timing!.IncludesCleanupReleases);
+    }
+
+    [Fact]
+    public void Injector_TimestampsUseLosslessQpcTicks()
+    {
+        long start = (1L << 53) + 5;
+        ScriptedInputPlatform platform = new() { Ticks = start };
+        OperationResult<InputResult> result = InputInjector.Execute(new InputBatch([KeyStep("a")], null), platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(start.ToString(CultureInfo.InvariantCulture), result.Value!.Timing!.FirstSubmitted.QpcTicks);
+        Assert.Equal(InputTiming.QueryPerformanceCounter, result.Value.Timing.Clock);
+        string json = JsonSerializer.Serialize(result.Value, SessionHelper.Json);
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement ticks = document.RootElement.GetProperty("timing").GetProperty("qpcFrequency");
+        Assert.Equal(JsonValueKind.String, ticks.ValueKind);
+        Assert.Equal(platform.Frequency.ToString(CultureInfo.InvariantCulture), ticks.GetString());
+    }
+
+    [Fact]
+    public void Injector_InactiveDesktopSubmitsNothing()
+    {
+        ScriptedInputPlatform platform = new() { Inactive = true };
+        OperationResult<InputResult> result = InputInjector.Execute(Batch([KeyStep("a")], requireFocus: true), platform);
+        Assert.Equal("unsupported_on_inactive_desktop", result.ErrorCode);
+        Assert.Equal("desktop_inactive", result.Reason);
+        Assert.Empty(platform.Submitted);
+    }
+
+    [Fact]
+    public async Task SendInput_ObservationDoesNotChangeTheInputInterval()
+    {
+        InputTiming timing = new(
+            InputTiming.QueryPerformanceCounter,
+            "10000000",
+            false,
+            new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero), "9007199254740997"),
+            new InputTimestamp(new DateTimeOffset(2026, 3, 1, 0, 0, 1, TimeSpan.Zero), "9007199254740999"));
+        InputResult injected = new(1, 7, null, 2, null, "0xA1", null, 3, 4, Timing: timing);
+        ScriptedHelper launcher = new(JsonSerializer.Serialize(injected, SessionHelper.Json));
+        VestigoOptions options = new()
+        {
+            Input = { AllowInput = true },
+            Desktop = { AllowScreenshots = true }
+        };
+        SessionHelperClient helper = new(launcher);
+        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options);
+
+        CallToolResult result = await tools.SendInput(
+            [new InputActionSpec { Type = "key", Keys = "a" }],
+            observe: true,
+            observeDelayMs: 0);
+        TextContentBlock text = Assert.IsType<TextContentBlock>(result.Content[0]);
+        using JsonDocument document = JsonDocument.Parse(text.Text);
+        JsonElement returned = document.RootElement.GetProperty("injection").GetProperty("timing");
+        Assert.Equal("9007199254740997", returned.GetProperty("firstSubmitted").GetProperty("qpcTicks").GetString());
+        Assert.Equal("9007199254740999", returned.GetProperty("lastSubmitted").GetProperty("qpcTicks").GetString());
+        Assert.Equal(JsonValueKind.String, returned.GetProperty("firstSubmitted").GetProperty("qpcTicks").ValueKind);
+        Assert.True(result.IsError is not true);
+        Assert.Equal(3, launcher.Commands.Count);
+        Assert.Contains(launcher.Commands, command => command.Contains("send-input", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SendInput_RejectedObservationIsSkipped()
+    {
+        InputResult injected = new(
+            0,
+            7,
+            null,
+            0,
+            "0xA1",
+            "0xB2",
+            false,
+            Status: InputInjectionStatus.Rejected,
+            StopCode: InputStopCodes.FocusNotGranted,
+            StopReason: "The requested window was not the foreground window immediately before input submission.",
+            StoppedAtActionIndex: 0,
+            StoppedAtActionKind: InputKinds.Key);
+        ScriptedHelper launcher = new(JsonSerializer.Serialize(injected, SessionHelper.Json));
+        VestigoOptions options = new()
+        {
+            Input = { AllowInput = true },
+            Desktop = { AllowScreenshots = true }
+        };
+        SessionHelperClient helper = new(launcher);
+        RecordingTimeProvider clock = new();
+        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options, clock: clock);
+        CallToolResult result = await tools.SendInput(
+            [new InputActionSpec { Type = "key", Keys = "a" }],
+            focusWindow: "0xA1",
+            requireFocus: true,
+            observe: true,
+            observeDelayMs: 2000);
+
+        Assert.True(result.IsError is not true);
+        TextContentBlock text = Assert.IsType<TextContentBlock>(result.Content[0]);
+        using JsonDocument document = JsonDocument.Parse(text.Text);
+        JsonElement injection = document.RootElement.GetProperty("injection");
+        Assert.Equal(InputInjectionStatus.Rejected, injection.GetProperty("status").GetString());
+        Assert.Equal(0, injection.GetProperty("submittedEvents").GetInt32());
+        Assert.False(injection.TryGetProperty("timing", out _));
+        Assert.Equal("skipped", document.RootElement.GetProperty("response").GetProperty("status").GetString());
+        Assert.Equal("input_rejected", document.RootElement.GetProperty("response").GetProperty("reason").GetString());
+        Assert.Empty(clock.Delays);
+        Assert.Single(launcher.Commands, command => command.Contains("send-input", StringComparison.Ordinal));
+        Assert.Single(launcher.Commands, command => command.Contains("inspect-screen", StringComparison.Ordinal));
+        string batch = launcher.Commands.Single(command => command.Contains("send-input", StringComparison.Ordinal));
+        Assert.Contains("\"requireFocus\":true", Encoding.UTF8.GetString(Convert.FromBase64String(batch.Split(' ').Last())), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_ReportsTheForegroundThatStoppedTheBatch()
+    {
+        ScriptedInputPlatform platform = new() { ReturnTargetAfterStolenRead = true };
+        platform.StealAfter(80, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("a"), WaitStep(80), KeyStep("b")], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(InputStopCodes.FocusLost, result.Value.StopCode);
+        Assert.Equal("0xB2", result.Value.FocusActual);
+        Assert.False(result.Value.FocusGranted);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_RetriesCleanupAndReportsInputThatStaysDown()
+    {
+        ScriptedInputPlatform platform = new();
+        int releaseCalls = 0;
+        platform.Limit = inputs =>
+        {
+            if (inputs.Count > 0 && inputs[0] is PreparedKey { Up: true })
+            {
+                releaseCalls++;
+                return releaseCalls == 1 ? 1 : 0;
+            }
+
+            return inputs.Count;
+        };
+        platform.StealAfter(100, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("ctrl+c", hold: 100)], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(InputStopCodes.FocusLost, result.Value.StopCode);
+        Assert.Equal(1, result.Value.CleanupReleasedEvents);
+        Assert.Contains("no longer the foreground", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.Contains("could not be released", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.True(result.Value.Timing!.IncludesCleanupReleases);
+        Assert.Equal(1, platform.Submitted.Count(input => input is PreparedKey { Up: true }));
+        Assert.Equal(2, releaseCalls);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_SecondCleanupAttemptReleasesTheRemainder()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.Limit = inputs => inputs.Count > 0 && inputs[0] is PreparedKey { Up: true } ? 1 : inputs.Count;
+        platform.StealAfter(100, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("ctrl+c", hold: 100)], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(2, result.Value!.CleanupReleasedEvents);
+        Assert.Contains("were released", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.DoesNotContain("could not be released", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.Equal(2, platform.Submitted.Count(input => input is PreparedKey { Up: true }));
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_DoesNotReleaseAButtonThatWasAlreadyReleased()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(40, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([
+                MouseStep(InputKinds.Down),
+                MouseStep(InputKinds.Down),
+                MouseStep(InputKinds.Up),
+                WaitStep(40),
+                KeyStep("z")
+            ], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(0, result.Value.CleanupReleasedEvents);
+        Assert.Equal(2, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftDown }));
+        Assert.Equal(1, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftUp }));
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_ReleasesOneButtonAfterARepeatedDown()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(40, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([MouseStep(InputKinds.Down), MouseStep(InputKinds.Down), WaitStep(40), KeyStep("z")], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(1, result.Value!.CleanupReleasedEvents);
+        Assert.Equal(2, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftDown }));
+        Assert.Equal(1, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftUp }));
+    }
+
+    [Fact]
+    public async Task SendInput_SerializesHelpersOnTheSameDesktop()
+    {
+        BlockingLauncher launcher = new();
+        InputSubmissionGate gate = new();
+        InputTools tools = Tools(launcher, gate: gate);
+        Task first = tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }]);
+        await launcher.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task second = tools.SendInput([new InputActionSpec { Type = "key", Keys = "b" }]);
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (gate.Waiters == 0 && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Yield();
+        }
+
+        Assert.Equal(1, gate.Waiters);
+        Assert.Equal(1, launcher.EnteredCount);
+        launcher.Release.TrySetResult();
+        await Task.WhenAll(first, second);
+        Assert.Equal(2, launcher.EnteredCount);
+    }
+
+    [Fact]
+    public async Task SendInput_ReleasesTheDesktopGateWhenCancelled()
+    {
+        BlockingLauncher launcher = new();
+        InputTools tools = Tools(launcher);
+        using CancellationTokenSource cancel = new();
+        Task first = tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }], cancellationToken: cancel.Token);
+        await launcher.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        Task second = tools.SendInput([new InputActionSpec { Type = "key", Keys = "b" }]);
+        await launcher.EnteredAgain.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        launcher.Release.TrySetResult();
+        await second;
+    }
+
+    [Fact]
+    public async Task SendInput_DifferentDesktopsCanOverlap()
+    {
+        BlockingLauncher launcher = new();
+        InputTools tools = Tools(launcher, new NamedDesktops());
+        Task first = tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }], desktopSessionId: "alpha");
+        Task second = tools.SendInput([new InputActionSpec { Type = "key", Keys = "b" }], desktopSessionId: "beta");
+        await launcher.EnteredAgain.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, launcher.EnteredCount);
+        launcher.Release.TrySetResult();
+        await Task.WhenAll(first, second);
+    }
+
+    private static InputTools Tools(IProcessLauncher launcher, IManagedDesktopDirectory? desktops = null, InputSubmissionGate? gate = null)
+    {
+        VestigoOptions options = new() { Input = { AllowInput = true } };
+        SessionHelperClient helper = new(launcher);
+        return new InputTools(
+            helper,
+            launcher,
+            new PerceptionService(launcher, helper, new CaptureCache(), options),
+            options,
+            desktops: desktops,
+            submissions: gate ?? new InputSubmissionGate());
+    }
+
+    private static InputBatch Batch(IReadOnlyList<InputStep> steps, bool requireFocus = false) =>
+        new(steps, "0xA1", requireFocus);
+
+    private static InputStep KeyStep(string keys, int hold = 0, int delayAfter = 0)
+    {
+        Assert.True(KeyChordParser.TryParse(keys, out IReadOnlyList<KeyStroke> parsed, out string? error), error);
+        return new InputStep(InputKinds.Key, null, null, null, null, null, 1, 0, 0, null, parsed, 0, hold, delayAfter);
+    }
+
+    private static InputStep MouseStep(string kind, string button = "left") =>
+        new(kind, null, null, null, null, button, 1, 0, 0, null, null, 0);
+
+    private static InputStep WaitStep(int milliseconds) =>
+        new(InputKinds.Wait, null, null, null, null, null, 1, 0, 0, null, null, milliseconds);
+
+    private static InputStep TypeStep(string text) =>
+        new(InputKinds.Type, null, null, null, null, null, 1, 0, 0, text, null, 0);
+
+    private static long Elapsed(InputTiming timing) =>
+        long.Parse(timing.LastSubmitted.QpcTicks, CultureInfo.InvariantCulture)
+        - long.Parse(timing.FirstSubmitted.QpcTicks, CultureInfo.InvariantCulture);
+
+    private static void AssertOrdered(InputTiming timing)
+    {
+        Assert.True(timing.FirstSubmitted.Utc <= timing.LastSubmitted.Utc);
+        Assert.True(Elapsed(timing) >= 0);
+    }
+
+    private sealed class ScriptedInputPlatform : IInputPlatform
+    {
+        public const string Target = "0xA1";
+
+        public string? ForegroundHandle { get; set; } = Target;
+
+        public bool WindowOpen { get; set; } = true;
+
+        public bool Inactive { get; set; }
+
+        public long Frequency { get; set; } = 10_000_000;
+
+        public long Ticks { get; set; } = 1_000_000;
+
+        public DateTimeOffset Utc { get; set; } = new(2026, 3, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public bool ReturnTargetAfterStolenRead { get; set; }
+
+        public Func<IReadOnlyList<PreparedInput>, int>? Limit { get; set; }
+
+        public Action<int>? OnDelay { get; set; }
+
+        public void StealAfter(int milliseconds, string handle) =>
+            OnDelay = delay =>
+            {
+                if (delay == milliseconds)
+                {
+                    ForegroundHandle = handle;
+                }
+            };
+
+        public void CloseAfter(int milliseconds) =>
+            OnDelay = delay =>
+            {
+                if (delay == milliseconds)
+                {
+                    WindowOpen = false;
+                }
+            };
+
+        public List<PreparedInput> Submitted { get; } = [];
+
+        public List<string?> FocusAtSubmit { get; } = [];
+
+        public int SessionId => 3;
+
+        public long PerformanceFrequency => Frequency;
+
+        public bool TryReadDesktop(out string? error, out bool inactive)
+        {
+            inactive = Inactive;
+            error = Inactive ? null : null;
+            return !Inactive;
+        }
+
+        public nint SetDpiAware() => 1;
+
+        public void RestoreDpi(nint previous)
+        {
+        }
+
+        public bool IsWindow(string handle) =>
+            WindowOpen && string.Equals(handle, Target, StringComparison.OrdinalIgnoreCase);
+
+        public bool IsIconic(string handle) => false;
+
+        public void RestoreWindow(string handle)
+        {
+        }
+
+        public void RequestForeground(string handle)
+        {
+        }
+
+        public string? Foreground()
+        {
+            string? current = ForegroundHandle;
+            if (ReturnTargetAfterStolenRead
+                && current is not null
+                && !string.Equals(current, Target, StringComparison.OrdinalIgnoreCase))
+            {
+                ForegroundHandle = Target;
+            }
+
+            return current;
+        }
+
+        public void Delay(int milliseconds)
+        {
+            if (milliseconds <= 0)
+            {
+                return;
+            }
+
+            Ticks += milliseconds * Frequency / 1000;
+            Utc = Utc.AddMilliseconds(milliseconds);
+            OnDelay?.Invoke(milliseconds);
+        }
+
+        public bool TryVirtualScreen(out int left, out int top, out int width, out int height)
+        {
+            left = 0;
+            top = 0;
+            width = 1920;
+            height = 1080;
+            return true;
+        }
+
+        public bool IsKeyDown(ushort virtualKey) => false;
+
+        public bool TryCursor(out int x, out int y)
+        {
+            x = 4;
+            y = 5;
+            return true;
+        }
+
+        public (DateTimeOffset Utc, long Ticks) Now() => (Utc, Ticks);
+
+        public (int Sent, int Win32Error) Send(IReadOnlyList<PreparedInput> inputs)
+        {
+            int sent = Limit?.Invoke(inputs) ?? inputs.Count;
+            sent = Math.Clamp(sent, 0, inputs.Count);
+            for (int index = 0; index < sent; index++)
+            {
+                Submitted.Add(inputs[index]);
+                FocusAtSubmit.Add(ForegroundHandle);
+            }
+
+            if (sent > 0)
+            {
+                Ticks += 10;
+                Utc = Utc.AddTicks(10);
+            }
+
+            return sent == inputs.Count ? (sent, 0) : (sent, 31);
+        }
+    }
+
+    private sealed class ScriptedHelper(string sendInputJson) : IProcessLauncher
+    {
+        public List<string> Commands { get; } = [];
+
+        public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
+
+        public Task<int> RunAsync(LaunchRequest request, Vestigo.Jobs.JobContext output, CancellationToken cancellationToken)
+        {
+            string command = string.Join(' ', request.Arguments);
+            Commands.Add(command);
+            if (command.Contains("send-input", StringComparison.Ordinal))
+            {
+                File.WriteAllText(output.OutputPath, sendInputJson);
+                return Task.FromResult(0);
+            }
+
+            File.WriteAllText(output.OutputPath, """{"error":"observation is not under test","errorCode":"helper_failed"}""");
+            return Task.FromResult(2);
+        }
+    }
+
+    [Fact]
+    public void Planner_AcceptsKeysModeAndRequireFocus()
     {
         CaptureCache cache = new();
         InputOptions limits = new() { MaxTypedCharacters = 5 };
@@ -403,7 +1176,7 @@ public class InputTests
         OperationResult<InputBatch> omitted = InputPlanner.Plan([Type("a")], null, null, cache, limits);
         Assert.True(omitted.Success, omitted.Error);
         Assert.Null(omitted.Value!.Steps[0].InputMode);
-        Assert.False(omitted.Value.StrictFocus);
+        Assert.False(omitted.Value.RequireFocus);
 
         OperationResult<InputBatch> keys = InputPlanner.Plan(
             [new InputActionSpec { Type = "type", Text = "Ab", InputMode = " Keys " }],
@@ -411,15 +1184,15 @@ public class InputTests
             "0x10",
             cache,
             limits,
-            strictFocus: true);
+            requireFocus: true);
         Assert.True(keys.Success, keys.Error);
         Assert.Equal("keys", keys.Value!.Steps[0].InputMode);
-        Assert.True(keys.Value.StrictFocus);
+        Assert.True(keys.Value.RequireFocus);
         Assert.Equal("0x10", keys.Value.FocusWindow);
 
         Assert.Equal("invalid_request", InputPlanner.Plan([new InputActionSpec { Type = "click", InputMode = "keys" }], null, null, cache, limits).ErrorCode);
         Assert.Equal("invalid_request", InputPlanner.Plan([new InputActionSpec { Type = "type", Text = "a", InputMode = "scancode" }], null, null, cache, limits).ErrorCode);
-        Assert.Equal("invalid_request", InputPlanner.Plan([Type("a")], null, "  ", cache, limits, strictFocus: true).ErrorCode);
+        Assert.Equal("invalid_request", InputPlanner.Plan([Type("a")], null, "  ", cache, limits, requireFocus: true).ErrorCode);
         Assert.Equal(
             "invalid_request",
             InputPlanner.Plan([new InputActionSpec { Type = "type", Text = "abcdef", InputMode = "keys" }], null, null, cache, limits).ErrorCode);
@@ -666,21 +1439,6 @@ public class InputTests
     }
 
     [Fact]
-    public void RememberPartialStroke_KeepsAcceptedModifiersUntilTheirReleaseSucceeds()
-    {
-        List<ushort> down = [];
-        PhysicalKeyStroke stroke = new(0x41, 0x1E, false, true, true, false);
-        ushort[] pressing = [0x10, 0x11];
-        InputInjector.RememberPartialStroke(down, pressing, stroke, delivered: 1);
-        Assert.Equal([(ushort)0x10], down);
-
-        List<ushort> release = InputInjector.KeysToRelease(pressing, stroke, delivered: 2);
-        Assert.Equal([(ushort)0x11, (ushort)0x10], release);
-        List<ushort> withKey = InputInjector.KeysToRelease(pressing, stroke, delivered: 3);
-        Assert.Equal([(ushort)0x11, (ushort)0x10, (ushort)0x41], withKey);
-    }
-
-    [Fact]
     public void ChooseShift_KeepsAltGrWhenTheShiftedSampleHasNoTranslation()
     {
         Assert.False(WindowsKeyboardLayout.ChooseShift(false, true, '@', false, null, '@', letter: true));
@@ -713,23 +1471,6 @@ public class InputTests
         Assert.False(result.Success);
         Assert.Equal("layout_changed", result.ErrorCode);
         Assert.Equal(1, calls);
-    }
-
-    [Fact]
-    public void PendingReleases_SkipsModifiersAlreadyReleased()
-    {
-        Assert.Equal([(ushort)0x11], InputInjector.PendingReleases([0x10, 0x11], [0x11]));
-        Assert.Empty(InputInjector.PendingReleases([0x10], []));
-    }
-
-    [Fact]
-    public void RememberButton_TracksExplicitDownUntilTheMatchingUp()
-    {
-        List<string> held = [];
-        InputInjector.RememberButton(held, null, up: false);
-        InputInjector.RememberButton(held, "right", up: false);
-        InputInjector.RememberButton(held, "left", up: true);
-        Assert.Equal(["right"], held);
     }
 
     [Fact]
@@ -775,14 +1516,6 @@ public class InputTests
         Assert.True(layout.IsDeadKey('^'));
     }
 
-    [Fact]
-    public void FocusGranted_IgnoresHexPadding()
-    {
-        Assert.True(InputInjector.FocusGranted("0x00001A2B", "0x1A2B"));
-        Assert.False(InputInjector.FocusGranted("0x1A2B", "0x1A2C"));
-        Assert.Null(InputInjector.FocusGranted("  ", "0x1A2B"));
-    }
-
     private sealed class MapLayout(IReadOnlyDictionary<char, PhysicalKeyStroke> map, IReadOnlySet<char>? dead = null) : IKeyboardLayout
     {
         public PhysicalKeyStroke? TryMap(char value)
@@ -796,6 +1529,8 @@ public class InputTests
             RejectReserved(value);
             return dead?.Contains(value) == true;
         }
+
+        public bool Unchanged() => true;
 
         private static void RejectReserved(char value)
         {
@@ -827,6 +1562,77 @@ public class InputTests
 
             return Task.FromResult(0);
         }
+    }
+
+    private sealed class RecordingTimeProvider : TimeProvider
+    {
+        public List<TimeSpan> Delays { get; } = [];
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            Delays.Add(dueTime);
+            callback(state);
+            return new NoopTimer();
+        }
+
+        private sealed class NoopTimer : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+
+            public void Dispose()
+            {
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class BlockingLauncher : IProcessLauncher
+    {
+        private readonly string _json = JsonSerializer.Serialize(new InputResult(1, 3, null, 2), SessionHelper.Json);
+
+        private int _entered;
+
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource EnteredAgain { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int EnteredCount => Volatile.Read(ref _entered);
+
+        public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
+
+        public async Task<int> RunAsync(LaunchRequest request, Vestigo.Jobs.JobContext output, CancellationToken cancellationToken)
+        {
+            int count = Interlocked.Increment(ref _entered);
+            if (count == 1)
+            {
+                Entered.TrySetResult();
+            }
+            else
+            {
+                EnteredAgain.TrySetResult();
+            }
+
+            await Release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await File.WriteAllTextAsync(output.OutputPath, _json, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+    }
+
+    private sealed class NamedDesktops : IManagedDesktopDirectory
+    {
+        public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult(OperationResult<ManagedDesktopLease>.Fail("not_used", "This directory only describes sessions."));
+
+        public Task<OperationResult<DesktopHelperTarget>> DescribeAsync(string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult(OperationResult<DesktopHelperTarget>.Ok(
+                new DesktopHelperTarget(sessionId, @"winsta0\" + sessionId, sessionId, true)));
     }
 
     internal sealed class UnavailableLauncher : IProcessLauncher
