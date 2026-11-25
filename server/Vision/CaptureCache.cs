@@ -179,6 +179,16 @@ internal static class CaptureCompatibility
                 + $"{previous.ImageSize.Width}x{previous.ImageSize.Height} and this one is {imageSize.Width}x{imageSize.Height}.";
         }
 
+        if (string.Equals(previous.Target, ScreenCaptureTarget.Window, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(previous.WindowHandle, current.WindowHandle, StringComparison.OrdinalIgnoreCase))
+        {
+            return "diffAgainst needs the same window. The earlier capture was '"
+                + (previous.WindowHandle ?? "unknown")
+                + "' and this one is '"
+                + (current.WindowHandle ?? "unknown")
+                + "'.";
+        }
+
         bool previousCrop = previous.EffectiveCrop is not null;
         bool currentCrop = current.EffectiveCrop is not null;
         if (previousCrop != currentCrop)
@@ -188,15 +198,6 @@ internal static class CaptureCompatibility
 
         if (previous.EffectiveCrop is { } earlier && current.EffectiveCrop is { } crop)
         {
-            if (!string.Equals(previous.WindowHandle, current.WindowHandle, StringComparison.OrdinalIgnoreCase))
-            {
-                return "diffAgainst needs the same window. The earlier capture was '"
-                    + (previous.WindowHandle ?? "unknown")
-                    + "' and this one is '"
-                    + (current.WindowHandle ?? "unknown")
-                    + "'.";
-            }
-
             if (earlier != crop
                 || earlier.Width != previous.Bounds.Width
                 || earlier.Height != previous.Bounds.Height

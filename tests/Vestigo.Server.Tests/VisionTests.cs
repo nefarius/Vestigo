@@ -374,6 +374,11 @@ public class VisionTests
             CaptureOf(new DesktopRect(0, 0, 200, 100), null, null));
         Assert.Equal("diffAgainst needs the same target, area and maxEdge as the earlier capture.", area);
         Assert.Null(CaptureCompatibility.DescribeMismatch(full, preview, CaptureOf(bounds, null, null)));
+
+        ScreenCaptureResult otherFull = CaptureOf(bounds, null, null) with { WindowHandle = "0x30" };
+        string? otherFullWindow = CaptureCompatibility.DescribeMismatch(full, preview, otherFull);
+        Assert.NotNull(otherFullWindow);
+        Assert.Contains("same window", otherFullWindow, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
