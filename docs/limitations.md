@@ -98,7 +98,7 @@ Windows servicing diagnostics do not install updates, repair Windows, clear queu
 
 ## External plugins
 
-External plugin loading and module activation are disabled by default and require explicit administrative opt-in. Installation and updates require a service restart. Optional trusted .NET 10 plugins can add tools to the existing MCP endpoint and authenticated HTTP routes. They run in-process with the service's privileges. Assembly dependency isolation is not a security sandbox. The public MSI contains no private plugins.
+External plugin loading and module activation are disabled by default and require explicit administrative opt-in. Installation and updates require a service restart. Optional trusted .NET 10 plugins can add tools to the existing MCP endpoint and HTTP routes. Plugin routes require an API token only when `ApiTokens` is set. With empty `ApiTokens`, they are anonymous, as `/mcp` is. They run in-process with the service's privileges. Assembly dependency isolation is not a security sandbox. The public MSI contains no private plugins.
 
 API 1.1 adds optional DI-registered tool providers with host-owned prefix validation, schema and result preservation, and explicit authenticated application session identities. API 1.0 plugins remain supported. Providers own backend resources, leases, and cleanup. This host bundles no Playwright plugin, browser, or interactive launcher.
 
