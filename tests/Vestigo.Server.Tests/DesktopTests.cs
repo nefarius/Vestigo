@@ -349,7 +349,7 @@ public class DesktopTests
             Assert.True(full.Success, full.Error);
             Assert.Null(full.Value!.EffectiveCrop);
             Assert.Null(full.Value.WindowBounds);
-            Assert.Equal(first.Value.WindowBounds, full.Value.Bounds);
+            Assert.Equal(second.Value.WindowBounds, full.Value.Bounds);
         }
         finally
         {

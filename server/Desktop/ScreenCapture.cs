@@ -177,17 +177,36 @@ public static class ScreenCapture
                 "cropWidth and cropHeight must be greater than zero.");
         }
 
-        DesktopRect candidate = new(windowBounds.X + crop.X, windowBounds.Y + crop.Y, crop.Width, crop.Height);
-        DesktopRect? intersection = candidate.Intersection(windowBounds);
-        if (intersection is null)
+        long windowLeft = windowBounds.X;
+        long windowTop = windowBounds.Y;
+        long windowRight = windowLeft + windowBounds.Width;
+        long windowBottom = windowTop + windowBounds.Height;
+        long cropLeft = windowLeft + crop.X;
+        long cropTop = windowTop + crop.Y;
+        long left = Math.Max(windowLeft, cropLeft);
+        long top = Math.Max(windowTop, cropTop);
+        long right = Math.Min(windowRight, cropLeft + crop.Width);
+        long bottom = Math.Min(windowBottom, cropTop + crop.Height);
+        long width = right - left;
+        long height = bottom - top;
+        if (width <= 0 || height <= 0)
         {
             return OperationResult<WindowCropClip>.Fail(
                 "empty_region",
                 "The crop rectangle does not intersect the window.");
         }
 
-        DesktopRect screen = intersection;
-        DesktopRect effective = new(screen.X - windowBounds.X, screen.Y - windowBounds.Y, screen.Width, screen.Height);
+        if (left < int.MinValue || top < int.MinValue || left > int.MaxValue || top > int.MaxValue
+            || width > int.MaxValue || height > int.MaxValue
+            || left + width > int.MaxValue || top + height > int.MaxValue)
+        {
+            return OperationResult<WindowCropClip>.Fail(
+                "invalid_request",
+                "The clipped crop is outside the range of screen coordinates.");
+        }
+
+        DesktopRect screen = new((int)left, (int)top, (int)width, (int)height);
+        DesktopRect effective = new((int)(left - windowLeft), (int)(top - windowTop), (int)width, (int)height);
         return OperationResult<WindowCropClip>.Ok(new WindowCropClip(screen, effective));
     }
 

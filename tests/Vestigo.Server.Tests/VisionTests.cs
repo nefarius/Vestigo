@@ -256,6 +256,16 @@ public class VisionTests
 
         Assert.Equal("invalid_request", ScreenCapture.ClipWindowCrop(window, new DesktopRect(0, 0, 0, 10)).ErrorCode);
         Assert.Equal("invalid_request", ScreenCapture.ClipWindowCrop(window, new DesktopRect(0, 0, 10, -1)).ErrorCode);
+
+        OperationResult<WindowCropClip> huge = ScreenCapture.ClipWindowCrop(window, new DesktopRect(0, 0, int.MaxValue, 100));
+        Assert.True(huge.Success, huge.Error);
+        Assert.Equal(new DesktopRect(100, 200, 800, 100), huge.Value!.ScreenBounds);
+        Assert.Equal(new DesktopRect(0, 0, 800, 100), huge.Value.EffectiveCrop);
+
+        OperationResult<WindowCropClip> negative = ScreenCapture.ClipWindowCrop(
+            new DesktopRect(-1000, 0, 200, 100),
+            new DesktopRect(int.MinValue, 0, int.MaxValue, 10));
+        Assert.Equal("empty_region", negative.ErrorCode);
     }
 
     [Fact]
@@ -345,6 +355,11 @@ public class VisionTests
             CaptureOf(new DesktopRect(10, 20, 80, 40), window.WindowBounds, new DesktopRect(0, 0, 80, 40)));
         Assert.NotNull(otherCrop);
         Assert.Contains("geometry", otherCrop, StringComparison.OrdinalIgnoreCase);
+
+        ScreenCaptureResult otherWindow = CaptureOf(bounds, window.WindowBounds, crop) with { WindowHandle = "0x30" };
+        string? otherHandle = CaptureCompatibility.DescribeMismatch(window, preview, otherWindow);
+        Assert.NotNull(otherHandle);
+        Assert.Contains("same window", otherHandle, StringComparison.OrdinalIgnoreCase);
 
         string? badSize = CaptureCompatibility.DescribeMismatch(
             window,

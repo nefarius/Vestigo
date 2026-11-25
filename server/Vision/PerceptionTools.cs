@@ -35,7 +35,7 @@ public sealed class PerceptionTools(PerceptionService perception, VestigoOptions
         + "(id, source uia|ocr|cv, role, name or text, box in image pixels) that works without seeing the image. Elements come from UI Automation, "
         + "Windows OCR, and OpenCV contour regions where the first two find nothing. The result has a captureId: pass it to send_input to click an "
         + "elementId, or to use x,y in the returned image's pixels. The id stays valid for about two minutes. diffAgainst compares with an earlier captureId "
-        + "of the same target and maxEdge. The same window-relative crop is accepted after the window moves; a different crop, a mix of cropped and full window, "
+        + "of the same target and maxEdge. The same window-relative crop of the same window is accepted after the window moves; a different crop, a mix of cropped and full window, "
         + "or a different preview scale is capture_mismatch. imageMode 'annotated' (default), 'raw' or 'none' controls the image. "
         + "grid:true draws a labelled coordinate grid instead of boxes. The list holds at most 150 elements, shared evenly by UI Automation and OCR, "
         + "with OpenCV regions filling what remains. uia and ocr report how collection went (ok, skipped, truncated, or a failure). "

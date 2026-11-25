@@ -188,6 +188,15 @@ internal static class CaptureCompatibility
 
         if (previous.EffectiveCrop is { } earlier && current.EffectiveCrop is { } crop)
         {
+            if (!string.Equals(previous.WindowHandle, current.WindowHandle, StringComparison.OrdinalIgnoreCase))
+            {
+                return "diffAgainst needs the same window. The earlier capture was '"
+                    + (previous.WindowHandle ?? "unknown")
+                    + "' and this one is '"
+                    + (current.WindowHandle ?? "unknown")
+                    + "'.";
+            }
+
             if (earlier != crop
                 || earlier.Width != previous.Bounds.Width
                 || earlier.Height != previous.Bounds.Height
