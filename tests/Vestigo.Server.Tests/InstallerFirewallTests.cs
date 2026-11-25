@@ -103,6 +103,62 @@ public class InstallerFirewallTests
     }
 
     [Fact]
+    public void Sync_RestoresThePreviousRuleWhenTheReplacementCannotBeReadBack()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        FakeStore store = new() { UnreadablePort = "6000" };
+        store.Rules.Add(FirewallRuleSync.CreateRule(5098));
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        Assert.DoesNotContain(log, line => line.StartsWith("Added inbound firewall rule", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.StartsWith("Restored 1", StringComparison.Ordinal));
+        FirewallRuleRecord restored = Assert.Single(store.Rules);
+        Assert.Equal("5098", restored.LocalPorts);
+    }
+
+    [Fact]
+    public void Sync_RejectsAReplacementWhoseScopeWasNarrowed()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        NarrowingStore store = new();
+        store.Add(FirewallRuleSync.CreateRule(5098));
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        Assert.DoesNotContain(log, line => line.StartsWith("Added inbound firewall rule", StringComparison.Ordinal));
+        Assert.Contains(log, line => line.Contains("differs from the requested one", StringComparison.Ordinal));
+        FirewallRuleRecord restored = Assert.Single(store.Rules);
+        Assert.Equal("5098", restored.LocalPorts);
+    }
+
+    [Fact]
+    public void Sync_DoesNotAddOrReplayWhenCleanupHitsTheRemovalCap()
+    {
+        ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
+        FakeStore store = new();
+        for (int i = 0; i < FirewallRuleSync.MaxRemovals + 2; i++)
+        {
+            store.Rules.Add(FirewallRuleSync.CreateRule(5098));
+        }
+
+        List<string> log = [];
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+
+        Assert.Equal(2, store.Rules.Count);
+        Assert.All(store.Rules, rule => Assert.Equal("5098", rule.LocalPorts));
+        Assert.Contains(log, line => line.Contains("not adding a replacement", StringComparison.Ordinal));
+        Assert.DoesNotContain(log, line => line.StartsWith("Restored", StringComparison.Ordinal));
+
+        FirewallRuleSync.Sync(lan, store, log.Add);
+        FirewallRuleRecord converged = Assert.Single(store.Rules);
+        Assert.Equal("6000", converged.LocalPorts);
+    }
+
+    [Fact]
     public void Sync_LogsTheInnerComErrorInsteadOfTheReflectionWrapper()
     {
         ResolvedSettings lan = ListenSettings.Resolve("any", "none", "6000", null, null);
@@ -156,14 +212,9 @@ public class InstallerFirewallTests
         Assert.Contains("FirewallRuleSync.FormatError", actions, StringComparison.Ordinal);
     }
 
-    [Fact]
+    [WindowsFact]
     public void ComRule_RoundTripsTheUnrestrictedRuleThroughRealWindowsFirewallObjects()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         FirewallRuleRecord desired = FirewallRuleSync.CreateRule(5098, TestRulePrefix + Guid.NewGuid().ToString("N"));
 
         FirewallRuleRecord read = RoundTrip(desired);
@@ -173,14 +224,9 @@ public class InstallerFirewallTests
         Assert.True(read.Enabled);
     }
 
-    [Fact]
+    [WindowsFact]
     public void ComRule_RoundTripsRestrictedAndPortlessRules()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         string name = TestRulePrefix + Guid.NewGuid().ToString("N");
         FirewallRuleRecord restricted = Copy(
             FirewallRuleSync.CreateRule(6000, name),
@@ -224,6 +270,7 @@ public class InstallerFirewallTests
         ResolvedSettings localhost = ListenSettings.Resolve("localhost", "none", "5098", null, null);
         List<string> log = [];
         WindowsFirewallRuleStore store = new();
+        bool cleanupFailed = false;
         try
         {
             FirewallRuleSync.Sync(lan, store, log.Add, name);
@@ -256,13 +303,22 @@ public class InstallerFirewallTests
         {
             try
             {
-                FirewallRuleSync.Remove(store, null, name);
+                List<string> cleanup = [];
+                FirewallRuleSync.Remove(store, cleanup.Add, name);
+                if (store.FindByName(name).Count > 0)
+                {
+                    // Reported without masking an earlier assertion failure from the try block.
+                    Console.Error.WriteLine("Could not remove the temporary firewall rule '" + name + "': " + string.Join(" ", cleanup));
+                    cleanupFailed = true;
+                }
             }
             finally
             {
                 store.Dispose();
             }
         }
+
+        Assert.False(cleanupFailed, "The temporary firewall rule '" + name + "' was not removed.");
     }
 
     private static FirewallRuleRecord RoundTrip(FirewallRuleRecord rule)
@@ -330,8 +386,18 @@ public class InstallerFirewallTests
 
         public Exception? AddFailure { get; set; }
 
-        public IReadOnlyList<FirewallRuleRecord> FindByName(string name) =>
-            Rules.Where(rule => rule.Name == name).ToList();
+        /// <summary>When set, reading rules throws while a rule with this local port exists (a replacement that fails read-back).</summary>
+        public string? UnreadablePort { get; set; }
+
+        public IReadOnlyList<FirewallRuleRecord> FindByName(string name)
+        {
+            if (UnreadablePort is not null && Rules.Any(rule => rule.Name == name && rule.LocalPorts == UnreadablePort))
+            {
+                throw new InvalidOperationException("Could not read firewall rule property 'LocalPorts'.");
+            }
+
+            return Rules.Where(rule => rule.Name == name).ToList();
+        }
 
         public void Remove(string name)
         {
@@ -358,6 +424,45 @@ public class InstallerFirewallTests
             }
 
             Rules.Add(rule);
+        }
+    }
+
+    private sealed class NarrowingStore : IFirewallRuleStore
+    {
+        public List<FirewallRuleRecord> Rules { get; } = [];
+
+        public IReadOnlyList<FirewallRuleRecord> FindByName(string name) =>
+            Rules.Where(rule => rule.Name == name).ToList();
+
+        public void Remove(string name)
+        {
+            int index = Rules.FindIndex(rule => rule.Name == name);
+            if (index >= 0)
+            {
+                Rules.RemoveAt(index);
+            }
+        }
+
+        public void Add(FirewallRuleRecord rule)
+        {
+            // Simulates Windows keeping only the Domain profile for the new rule.
+            Rules.Add(rule.LocalPorts == "6000"
+                ? new FirewallRuleRecord(
+                    rule.Name, rule.Description, rule.Protocol, rule.LocalPorts, rule.RemoteAddresses, rule.Direction,
+                    rule.Action, 1, rule.Enabled, rule.InterfaceTypes, rule.LocalAddresses, rule.ApplicationName,
+                    rule.ServiceName, rule.RemotePorts, rule.EdgeTraversal)
+                : rule);
+        }
+    }
+
+    private sealed class WindowsFactAttribute : FactAttribute
+    {
+        public WindowsFactAttribute()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                Skip = "Requires Windows Firewall COM objects.";
+            }
         }
     }
 

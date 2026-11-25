@@ -250,7 +250,7 @@ namespace Vestigo.Installer.Actions.Logic
                 IReadOnlyList<FirewallRuleRecord> previous = Copy(store.FindByName(ruleName));
                 if (!resolved.BindsAny)
                 {
-                    int removed = RemoveAll(store, log, ruleName);
+                    int removed = RemoveAll(store, log, ruleName, out _);
                     Write(log, "No inbound firewall rule for localhost mode after removing " +
                                removed.ToString(CultureInfo.InvariantCulture) + ".");
                     return;
@@ -270,9 +270,17 @@ namespace Vestigo.Installer.Actions.Logic
                       previous.Count.ToString(CultureInfo.InvariantCulture) + " found); replacing it.");
                 try
                 {
-                    int removed = RemoveAll(store, log, ruleName);
+                    int removed = RemoveAll(store, log, ruleName, out bool complete);
+                    if (!complete)
+                    {
+                        Write(log, "Could not remove all " + previous.Count.ToString(CultureInfo.InvariantCulture) +
+                                   " existing rules named '" + ruleName + "'; not adding a replacement and leaving the " +
+                                   "remaining rules in place. Repair the installation again to continue the cleanup.");
+                        return;
+                    }
+
                     store.Add(desired);
-                    VerifyAdded(store, desired, ruleName, log);
+                    VerifyAdded(store, desired, ruleName);
                     Write(log, "Added inbound firewall rule '" + ruleName + "' for TCP port " +
                                resolved.Port.ToString(CultureInfo.InvariantCulture) +
                                " after removing " + removed.ToString(CultureInfo.InvariantCulture) + ".");
@@ -294,7 +302,7 @@ namespace Vestigo.Installer.Actions.Logic
         ///     Reads the rule back after <c>Add</c>. Throws unless exactly one enabled inbound allow rule for the TCP port
         ///     exists, so a silently dropped or mangled rule is never reported as added.
         /// </summary>
-        private static void VerifyAdded(IFirewallRuleStore store, FirewallRuleRecord desired, string ruleName, Action<string>? log)
+        private static void VerifyAdded(IFirewallRuleStore store, FirewallRuleRecord desired, string ruleName)
         {
             IReadOnlyList<FirewallRuleRecord> after = store.FindByName(ruleName);
             if (after == null || after.Count != 1)
@@ -314,7 +322,8 @@ namespace Vestigo.Installer.Actions.Logic
 
             if (!SameRule(actual, desired))
             {
-                Write(log, "The stored rule '" + ruleName + "' differs from the requested one in scope details; keeping it.");
+                throw new InvalidOperationException(
+                    "The rule read back after adding '" + ruleName + "' differs from the requested one in its scope (profiles, addresses, interfaces, program, service, remote ports or edge traversal).");
             }
         }
 
@@ -323,7 +332,14 @@ namespace Vestigo.Installer.Actions.Logic
         {
             try
             {
-                RemoveAll(store, log, ruleName);
+                RemoveAll(store, log, ruleName, out bool complete);
+                if (!complete)
+                {
+                    Write(log, "Could not restore the Windows Firewall rule '" + ruleName +
+                               "': matching rules remain after cleanup, so the previous rules were not replayed over them.");
+                    return;
+                }
+
                 int restored = 0;
                 if (previous != null)
                 {
@@ -426,7 +442,7 @@ namespace Vestigo.Installer.Actions.Logic
         {
             try
             {
-                int removed = RemoveAll(store, log, ruleName);
+                int removed = RemoveAll(store, log, ruleName, out _);
                 Write(log, "Removed " + removed.ToString(CultureInfo.InvariantCulture) + " firewall rule(s) named '" + ruleName + "'.");
             }
             catch (Exception ex)
@@ -435,28 +451,65 @@ namespace Vestigo.Installer.Actions.Logic
             }
         }
 
-        private static int RemoveAll(IFirewallRuleStore store, Action<string>? log, string ruleName)
+        /// <summary>
+        ///     Removes up to <see cref="MaxRemovals" /> rules named <paramref name="ruleName" />. <paramref name="complete" />
+        ///     is false when matching rules were still present after the cap. When a rule cannot be read back, removal
+        ///     falls back to deleting by name only, so a replacement that fails read-back can still be cleaned up.
+        /// </summary>
+        private static int RemoveAll(IFirewallRuleStore store, Action<string>? log, string ruleName, out bool complete)
         {
             int removed = 0;
-            for (int i = 0; i < MaxRemovals; i++)
+            try
             {
-                IReadOnlyList<FirewallRuleRecord> found = store.FindByName(ruleName);
-                if (found == null || found.Count == 0)
+                for (int i = 0; i < MaxRemovals; i++)
                 {
-                    break;
+                    IReadOnlyList<FirewallRuleRecord> found = store.FindByName(ruleName);
+                    if (found == null || found.Count == 0)
+                    {
+                        break;
+                    }
+
+                    store.Remove(ruleName);
+                    removed++;
                 }
 
-                store.Remove(ruleName);
-                removed++;
-            }
+                IReadOnlyList<FirewallRuleRecord> leftover = store.FindByName(ruleName);
+                complete = leftover == null || leftover.Count == 0;
+                if (!complete)
+                {
+                    Write(log, "Stopped after removing " + MaxRemovals.ToString(CultureInfo.InvariantCulture) +
+                               " firewall rules named '" + ruleName + "'.");
+                }
 
-            IReadOnlyList<FirewallRuleRecord> leftover = store.FindByName(ruleName);
-            if (removed == MaxRemovals && leftover != null && leftover.Count > 0)
+                return removed;
+            }
+            catch (Exception ex)
             {
-                Write(log, "Stopped after removing " + MaxRemovals.ToString(CultureInfo.InvariantCulture) +
-                           " firewall rules named '" + ruleName + "'.");
+                Write(log, "Could not read the rules named '" + ruleName + "' (" + FormatError(ex) +
+                           "); removing them by name only.");
             }
 
+            for (int i = removed; i < MaxRemovals; i++)
+            {
+                try
+                {
+                    store.Remove(ruleName);
+                    removed++;
+                }
+                catch (Exception)
+                {
+                    if (i == removed && removed == 0)
+                    {
+                        // Nothing could be deleted at all: the store is down, not empty.
+                        throw;
+                    }
+
+                    // Deleting a name that no longer exists is the normal end of the loop.
+                    break;
+                }
+            }
+
+            complete = true;
             return removed;
         }
 
