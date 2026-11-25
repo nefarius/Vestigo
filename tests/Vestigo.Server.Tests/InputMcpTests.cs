@@ -91,6 +91,10 @@ public class InputMcpTests : IDisposable
     [Fact]
     public async Task SendInput_ListsObserveModeAndCropAndRefusesBadCrops()
     {
+        string? previous = Environment.GetEnvironmentVariable(InputTools.ReuseHelperVariable);
+        Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, "1");
+        try
+        {
         await using WebApplicationFactory<Program> factory = Create();
         using HttpClient client = factory.CreateClient();
 
@@ -151,6 +155,11 @@ public class InputMcpTests : IDisposable
         Assert.Contains(_launcher.Commands, command => command.Contains(SessionHelper.InspectSessionCommand, StringComparison.Ordinal));
         Assert.DoesNotContain(_launcher.Commands, command => command.Contains(SessionHelper.InspectScreenCommand, StringComparison.Ordinal));
         Assert.Contains(_launcher.Commands, command => command.Contains(SessionHelper.SendInputCommand, StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, previous);
+        }
     }
 
     [Fact]

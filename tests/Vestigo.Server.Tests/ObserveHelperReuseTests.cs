@@ -504,7 +504,8 @@ public class ObserveHelperReuseTests : IDisposable
     public async Task SessionChange_DoesNotReportNoResponse()
     {
         Rig rig = Rig.Factory();
-        rig.Frames.AddRange([Frame(1), Frame(2, session: 9)]);
+        rig.Tools.ActiveConsoleSessionOverride = () => 9;
+        rig.Frames.AddRange([Frame(1), Frame(2)]);
 
         JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
 
@@ -513,6 +514,20 @@ public class ObserveHelperReuseTests : IDisposable
         Assert.Equal(InputInjectionStatus.Submitted, Injection(result).GetProperty("status").GetString());
         Assert.Equal(1, rig.Launcher.SendCount);
         Assert.True(rig.Session!.Disposed);
+    }
+
+    [Fact]
+    public async Task UnchangedConsoleSession_ClassifiesTheCapture()
+    {
+        Rig rig = Rig.Factory();
+        rig.Tools.ActiveConsoleSessionOverride = () => 7;
+        rig.Frames.AddRange([Frame(1), Frame(2, session: 9)]);
+
+        JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
+
+        Assert.Equal("observed", Response(result).GetProperty("status").GetString());
+        Assert.False(Root(result).TryGetProperty("observeError", out _));
+        Assert.Equal(1, rig.Launcher.SendCount);
     }
 
     [Fact]

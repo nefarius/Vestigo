@@ -8,6 +8,7 @@ using ModelContextProtocol.Server;
 using Vestigo.Configuration;
 using Vestigo.Desktop;
 using Vestigo.Processes;
+using Vestigo.SystemInfo;
 using Vestigo.Vision;
 
 namespace Vestigo.Input;
@@ -44,6 +45,12 @@ public sealed class InputTools(
 
     /// <summary>Test hook that supplies the inspection helper when reuse is enabled.</summary>
     internal Func<CancellationToken, Task<OperationResult<IInspectCaptureSession>>>? InspectSessionFactory { get; set; }
+
+    /// <summary>
+    ///     When set, replaces the active console session read. A null result means the session is unknown.
+    ///     The reused helper stays in the session where it started, so its capture cannot report a later switch.
+    /// </summary>
+    internal Func<int?>? ActiveConsoleSessionOverride { get; set; }
 
     /// <summary>Unset and every value except <c>0</c> reuse one inspection helper. <c>0</c> is the one-shot rollback.</summary>
     internal static bool ShouldReuseInspection(string? value) =>
@@ -316,9 +323,11 @@ public sealed class InputTools(
                 }
             }
 
+            int? consoleSession = ActiveConsoleSession();
             if (inspection is not null
                 && observed.Success
-                && observed.Value!.Capture.SessionId != evidence.SessionId)
+                && consoleSession is int activeSession
+                && activeSession != evidence.SessionId)
             {
                 summary["response"] = new JsonObject
                 {
@@ -367,6 +376,22 @@ public sealed class InputTools(
                 await inspection.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    private int? ActiveConsoleSession()
+    {
+        if (ActiveConsoleSessionOverride is not null)
+        {
+            return ActiveConsoleSessionOverride();
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        uint session = ConsoleSession.ActiveConsoleSessionId();
+        return session == ConsoleSession.NoSession ? null : checked((int)session);
     }
 
     private Task<OperationResult<IInspectCaptureSession>> OpenInspectionSessionAsync(
