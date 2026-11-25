@@ -1,13 +1,9 @@
 using System.ComponentModel;
-using System.Runtime.InteropServices;
+using System.Globalization;
 
-using Vestigo.Desktop;
 using Vestigo.Processes;
 
-using Windows.Win32;
 using Windows.Win32.Foundation;
-using Windows.Win32.UI.Input.KeyboardAndMouse;
-using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Vestigo.Input;
 
@@ -18,9 +14,6 @@ namespace Vestigo.Input;
 /// </summary>
 public static class InputInjector
 {
-    [ThreadStatic]
-    private static int Submitted;
-
     private const int StepPauseMilliseconds = 30;
 
     private const int ClickPauseMilliseconds = 40;
@@ -31,6 +24,8 @@ public static class InputInjector
 
     private const int ErrorAccessDenied = 5;
 
+    private const int FocusSettleMilliseconds = 120;
+
     public static OperationResult<InputResult> Execute(InputBatch batch)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
@@ -38,73 +33,11 @@ public static class InputInjector
             return OperationResult<InputResult>.Fail("windows_required", "Input injection requires Windows 10 or later.");
         }
 
-        nint previousDpi = WindowEnumerator.SetDpiAware();
-        try
-        {
-            if (!ScreenCapture.TryReadDesktopRelation(out string? desktopError, out bool inactive, requireDesktopNames: true) || inactive)
-            {
-                return inactive
-                    ? OperationResult<InputResult>.Fail(
-                        "unsupported_on_inactive_desktop",
-                        "The helper is not running on the input desktop.",
-                        "desktop_inactive")
-                    : OperationResult<InputResult>.Fail("secure_desktop_active", desktopError!);
-            }
-
-            string? warning = null;
-            if (!string.IsNullOrWhiteSpace(batch.FocusWindow))
-            {
-                OperationResult<string?> focused = Focus(batch.FocusWindow);
-                if (!focused.Success)
-                {
-                    return OperationResult<InputResult>.Fail(focused.ErrorCode!, focused.Error!);
-                }
-
-                warning = focused.Value;
-            }
-
-            Submitted = 0;
-            int performed = 0;
-            foreach (InputStep step in batch.Steps)
-            {
-                OperationResult<bool> done = Perform(step);
-                if (!done.Success)
-                {
-                    return OperationResult<InputResult>.Fail(
-                        done.ErrorCode!,
-                        $"{done.Error} ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
-                }
-
-                performed++;
-                if (step.DelayAfterMilliseconds > 0)
-                {
-                    Thread.Sleep(step.DelayAfterMilliseconds);
-                }
-                else if (step.Kind != InputKinds.Wait)
-                {
-                    Thread.Sleep(StepPauseMilliseconds);
-                }
-            }
-
-            string? actualFocus = ReadForeground();
-            bool? granted = FocusGranted(batch.FocusWindow, actualFocus);
-            ReadCursor(out int? cursorX, out int? cursorY);
-            return OperationResult<InputResult>.Ok(new InputResult(
-                performed,
-                System.Diagnostics.Process.GetCurrentProcess().SessionId,
-                warning,
-                Submitted,
-                string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim(),
-                actualFocus,
-                granted,
-                cursorX,
-                cursorY));
-        }
-        finally
-        {
-            WindowEnumerator.RestoreDpi(previousDpi);
-        }
+        return Execute(batch, new WindowsInputPlatform());
     }
+
+    internal static OperationResult<InputResult> Execute(InputBatch batch, IInputPlatform platform) =>
+        new Runner(batch, platform).Run();
 
     internal static bool? FocusGranted(string? requested, string? actual)
     {
@@ -118,339 +51,569 @@ public static class InputInjector
                && (nint)wanted == (nint)seen;
     }
 
-    private static OperationResult<string?> Focus(string handleText)
+    private sealed class Runner(InputBatch batch, IInputPlatform platform)
     {
-        if (!WindowInspection.TryParseHandle(handleText, out HWND hwnd) || !PInvoke.IsWindow(hwnd))
+        private readonly List<HeldInput> _held = [];
+
+        private int _submitted;
+
+        private int _performed;
+
+        private bool _cleanupIncluded;
+
+        private InputTimestamp? _first;
+
+        private InputTimestamp? _last;
+
+        public OperationResult<InputResult> Run()
         {
-            return OperationResult<string?>.Fail("window_not_found", "focusWindow is not an existing window.");
+            if (!platform.TryReadDesktop(out string? desktopError, out bool inactive) || inactive)
+            {
+                return inactive
+                    ? OperationResult<InputResult>.Fail(
+                        "unsupported_on_inactive_desktop",
+                        "The helper is not running on the input desktop.",
+                        "desktop_inactive")
+                    : OperationResult<InputResult>.Fail("secure_desktop_active", desktopError!);
+            }
+
+            nint previousDpi = platform.SetDpiAware();
+            try
+            {
+                return Replay();
+            }
+            finally
+            {
+                platform.RestoreDpi(previousDpi);
+            }
         }
 
-        if (PInvoke.IsIconic(hwnd))
+        private OperationResult<InputResult> Replay()
         {
-            PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
-        }
+            string? focus = string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim();
+            if (batch.RequireFocus && (focus is null || !WindowInspection.TryParseHandle(focus, out _)))
+            {
+                return OperationResult<InputResult>.Fail(
+                    "invalid_request",
+                    "requireFocus needs focusWindow to be a window handle from list_windows.");
+            }
 
-        PInvoke.SetForegroundWindow(hwnd);
-        Thread.Sleep(120);
-        return PInvoke.GetForegroundWindow() == hwnd
-            ? OperationResult<string?>.Ok(null)
-            : OperationResult<string?>.Ok("foreground_not_granted: Windows did not bring the window to the foreground; input goes to the current foreground window.");
-    }
-
-    private static OperationResult<bool> Perform(InputStep step)
-    {
-        switch (step.Kind)
-        {
-            case InputKinds.Wait:
-                Thread.Sleep(step.Milliseconds);
-                return Done();
-
-            case InputKinds.Move:
-                return MoveTo(step.X!.Value, step.Y!.Value);
-
-            case InputKinds.Click:
-                return Click(step);
-
-            case InputKinds.Down:
-                return Button(step, up: false);
-
-            case InputKinds.Up:
-                return Button(step, up: true);
-
-            case InputKinds.Scroll:
-                return Scroll(step);
-
-            case InputKinds.Drag:
-                return Drag(step);
-
-            case InputKinds.Type:
-                return Type(step.Text!);
-
-            case InputKinds.Key:
-                if (SendKeys(step.Keys!, release: false) is { Success: false } pressFailure)
+            string? warning = null;
+            if (focus is not null)
+            {
+                if (!platform.IsWindow(focus))
                 {
-                    return pressFailure;
+                    return batch.RequireFocus
+                        ? Finish(InputStopCodes.WindowNotFound, 0, warning: null)
+                        : OperationResult<InputResult>.Fail("window_not_found", "focusWindow is not an existing window.");
+                }
+
+                if (platform.IsIconic(focus))
+                {
+                    platform.RestoreWindow(focus);
+                }
+
+                platform.RequestForeground(focus);
+                platform.Delay(FocusSettleMilliseconds);
+                if (batch.RequireFocus && !platform.IsWindow(focus))
+                {
+                    return Finish(InputStopCodes.WindowNotFound, 0, warning: null);
+                }
+
+                if (FocusGranted(focus, platform.Foreground()) != true)
+                {
+                    if (batch.RequireFocus)
+                    {
+                        return Finish(InputStopCodes.FocusNotGranted, 0, warning: null);
+                    }
+
+                    warning = "foreground_not_granted: Windows did not bring the window to the foreground; input goes to the current foreground window.";
+                }
+            }
+
+            IReadOnlyList<InputStep> steps = batch.Steps;
+            for (int index = 0; index < steps.Count; index++)
+            {
+                ActionOutcome done = Perform(steps[index]);
+                if (done.FocusStopped)
+                {
+                    return Finish(done.StopCode!, index, warning: null);
+                }
+
+                if (!done.Ok)
+                {
+                    ReleaseHeld();
+                    return OperationResult<InputResult>.Fail(
+                        done.ErrorCode!,
+                        $"{done.Error} ({_performed} of {steps.Count} actions were performed first. {_submitted} Win32 input events were submitted.)");
+                }
+
+                _performed++;
+                if (steps[index].DelayAfterMilliseconds > 0)
+                {
+                    platform.Delay(steps[index].DelayAfterMilliseconds);
+                }
+                else if (steps[index].Kind != InputKinds.Wait)
+                {
+                    platform.Delay(StepPauseMilliseconds);
+                }
+            }
+
+            return Finish(stopCode: null, stopIndex: null, warning);
+        }
+
+        private OperationResult<InputResult> Finish(string? stopCode, int? stopIndex, string? warning)
+        {
+            int submittedBeforeCleanup = _submitted;
+            int cleanup = stopCode is null ? 0 : ReleaseHeld();
+            string status = stopCode is null
+                ? InputInjectionStatus.Submitted
+                : submittedBeforeCleanup == 0 ? InputInjectionStatus.Rejected : InputInjectionStatus.Partial;
+            string? focus = string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim();
+            string? actual = platform.Foreground();
+            bool cursorKnown = platform.TryCursor(out int cursorX, out int cursorY);
+            InputTiming? timing = _submitted == 0 || _first is null || _last is null
+                ? null
+                : new InputTiming(
+                    InputTiming.QueryPerformanceCounter,
+                    platform.PerformanceFrequency.ToString(CultureInfo.InvariantCulture),
+                    _cleanupIncluded,
+                    _first,
+                    _last);
+            string? kind = stopIndex is int stopped && stopped >= 0 && stopped < batch.Steps.Count
+                ? batch.Steps[stopped].Kind
+                : null;
+            return OperationResult<InputResult>.Ok(new InputResult(
+                _performed,
+                platform.SessionId,
+                status == InputInjectionStatus.Submitted ? warning : null,
+                _submitted,
+                focus,
+                actual,
+                FocusGranted(focus, actual),
+                cursorKnown ? cursorX : null,
+                cursorKnown ? cursorY : null,
+                status,
+                stopCode,
+                stopCode is null ? null : Reason(stopCode, cleanup),
+                stopIndex,
+                kind,
+                cleanup,
+                timing));
+        }
+
+        private static string Reason(string stopCode, int cleanup)
+        {
+            string reason = stopCode switch
+            {
+                InputStopCodes.FocusNotGranted => "The requested window was not the foreground window immediately before input submission.",
+                InputStopCodes.FocusLost => "The requested window was no longer the foreground window. Later actions were not submitted.",
+                InputStopCodes.WindowNotFound => "focusWindow is not an existing window.",
+                _ => "Input stopped before the batch finished."
+            };
+            return cleanup > 0
+                ? reason + " Keys or buttons still held by this batch were released."
+                : reason;
+        }
+
+        private int ReleaseHeld()
+        {
+            if (_held.Count == 0)
+            {
+                return 0;
+            }
+
+            List<PreparedInput> releases = new(_held.Count);
+            for (int index = _held.Count - 1; index >= 0; index--)
+            {
+                releases.Add(_held[index].Release);
+            }
+
+            int before = _submitted;
+            Submit(releases, checkFocus: false);
+            _held.Clear();
+            return _submitted - before;
+        }
+
+        private ActionOutcome Perform(InputStep step)
+        {
+            switch (step.Kind)
+            {
+                case InputKinds.Wait:
+                    platform.Delay(step.Milliseconds);
+                    return ActionOutcome.Done();
+
+                case InputKinds.Move:
+                    return MoveTo(step.X!.Value, step.Y!.Value);
+
+                case InputKinds.Click:
+                    return Click(step);
+
+                case InputKinds.Down:
+                    return Button(step, up: false);
+
+                case InputKinds.Up:
+                    return Button(step, up: true);
+
+                case InputKinds.Scroll:
+                    return Scroll(step);
+
+                case InputKinds.Drag:
+                    return Drag(step);
+
+                case InputKinds.Type:
+                    return Type(step.Text!);
+
+                case InputKinds.Key:
+                    if (SendKeys(step.Keys!, release: false) is { Ok: false } pressFailure)
+                    {
+                        return pressFailure;
+                    }
+
+                    if (step.HoldMilliseconds > 0)
+                    {
+                        platform.Delay(step.HoldMilliseconds);
+                    }
+
+                    return SendKeys(step.Keys!.Reverse().ToList(), release: true);
+
+                default:
+                    return ActionOutcome.Fail("invalid_request", $"Unknown action '{step.Kind}'.");
+            }
+        }
+
+        private ActionOutcome Click(InputStep step)
+        {
+            if (step.X is { } x && step.Y is { } y && MoveTo(x, y) is { Ok: false } moveFailure)
+            {
+                return moveFailure;
+            }
+
+            for (int index = 0; index < step.Count; index++)
+            {
+                ActionOutcome down = SendMouse(ButtonAction(step.Button, up: false), 0, 0, 0);
+                if (!down.Ok)
+                {
+                    return down;
                 }
 
                 if (step.HoldMilliseconds > 0)
                 {
-                    Thread.Sleep(step.HoldMilliseconds);
+                    platform.Delay(step.HoldMilliseconds);
                 }
 
-                return SendKeys(step.Keys!.Reverse().ToList(), release: true);
+                ActionOutcome up = SendMouse(ButtonAction(step.Button, up: true), 0, 0, 0);
+                if (!up.Ok)
+                {
+                    return up;
+                }
 
-            default:
-                return OperationResult<bool>.Fail("invalid_request", $"Unknown action '{step.Kind}'.");
-        }
-    }
-
-    private static OperationResult<bool> Click(InputStep step)
-    {
-        if (step.X is { } x && step.Y is { } y && MoveTo(x, y) is { Success: false } moveFailure)
-        {
-            return moveFailure;
-        }
-
-        for (int index = 0; index < step.Count; index++)
-        {
-            OperationResult<bool> down = SendMouse(ButtonFlag(step.Button, up: false), 0, 0, 0);
-            if (!down.Success)
-            {
-                return down;
+                if (index + 1 < step.Count)
+                {
+                    platform.Delay(ClickPauseMilliseconds);
+                }
             }
 
-            if (step.HoldMilliseconds > 0)
+            return ActionOutcome.Done();
+        }
+
+        private ActionOutcome Button(InputStep step, bool up)
+        {
+            if (step.X is { } x && step.Y is { } y && MoveTo(x, y) is { Ok: false } moveFailure)
             {
-                Thread.Sleep(step.HoldMilliseconds);
+                return moveFailure;
             }
 
-            OperationResult<bool> up = SendMouse(ButtonFlag(step.Button, up: true), 0, 0, 0);
-            if (!up.Success)
+            return SendMouse(ButtonAction(step.Button, up), 0, 0, 0);
+        }
+
+        private ActionOutcome Scroll(InputStep step)
+        {
+            if (step.X is { } x && step.Y is { } y && MoveTo(x, y) is { Ok: false } moveFailure)
             {
-                return up;
+                return moveFailure;
             }
 
-            if (index + 1 < step.Count)
+            if (step.DeltaY != 0)
             {
-                Thread.Sleep(ClickPauseMilliseconds);
+                ActionOutcome vertical = SendMouse(InputMouseAction.Wheel, 0, 0, unchecked((uint)(-step.DeltaY * WheelDelta)));
+                if (!vertical.Ok)
+                {
+                    return vertical;
+                }
             }
+
+            return step.DeltaX != 0
+                ? SendMouse(InputMouseAction.HorizontalWheel, 0, 0, unchecked((uint)(step.DeltaX * WheelDelta)))
+                : ActionOutcome.Done();
         }
 
-        return Done();
-    }
-
-    private static OperationResult<bool> Button(InputStep step, bool up)
-    {
-        if (step.X is { } x && step.Y is { } y && MoveTo(x, y) is { Success: false } moveFailure)
+        private ActionOutcome Drag(InputStep step)
         {
-            return moveFailure;
-        }
-
-        return SendMouse(ButtonFlag(step.Button, up), 0, 0, 0);
-    }
-
-    private static OperationResult<bool> Scroll(InputStep step)
-    {
-        if (step.X is { } x && step.Y is { } y && MoveTo(x, y) is { Success: false } moveFailure)
-        {
-            return moveFailure;
-        }
-
-        if (step.DeltaY != 0)
-        {
-            // Positive wheel data scrolls up, and the contract says positive scrolls down.
-            OperationResult<bool> vertical = SendMouse(MOUSE_EVENT_FLAGS.MOUSEEVENTF_WHEEL, 0, 0, unchecked((uint)(-step.DeltaY * WheelDelta)));
-            if (!vertical.Success)
+            int fromX = step.X!.Value;
+            int fromY = step.Y!.Value;
+            int toX = step.ToX!.Value;
+            int toY = step.ToY!.Value;
+            ActionOutcome result = MoveTo(fromX, fromY);
+            if (!result.Ok)
             {
-                return vertical;
+                return result;
             }
-        }
 
-        return step.DeltaX != 0
-            ? SendMouse(MOUSE_EVENT_FLAGS.MOUSEEVENTF_HWHEEL, 0, 0, unchecked((uint)(step.DeltaX * WheelDelta)))
-            : Done();
-    }
+            result = SendMouse(ButtonAction(step.Button, up: false), 0, 0, 0);
+            if (!result.Ok)
+            {
+                return result;
+            }
 
-    private static OperationResult<bool> Drag(InputStep step)
-    {
-        int fromX = step.X!.Value;
-        int fromY = step.Y!.Value;
-        int toX = step.ToX!.Value;
-        int toY = step.ToY!.Value;
-        OperationResult<bool> result = MoveTo(fromX, fromY);
-        if (!result.Success)
-        {
-            return result;
-        }
-
-        result = SendMouse(ButtonFlag(step.Button, up: false), 0, 0, 0);
-        if (!result.Success)
-        {
-            return result;
-        }
-
-        try
-        {
-            Thread.Sleep(60);
+            platform.Delay(60);
             for (int index = 1; index <= DragSteps; index++)
             {
                 int x = fromX + (toX - fromX) * index / DragSteps;
                 int y = fromY + (toY - fromY) * index / DragSteps;
                 result = MoveTo(x, y);
-                if (!result.Success)
+                if (!result.Ok)
                 {
                     return result;
                 }
 
-                Thread.Sleep(20);
+                platform.Delay(20);
             }
 
-            Thread.Sleep(60);
-        }
-        finally
-        {
-            // Always release so a failed drag does not leave the button held down.
-            _ = SendMouse(ButtonFlag(step.Button, up: true), 0, 0, 0);
+            platform.Delay(60);
+            return SendMouse(ButtonAction(step.Button, up: true), 0, 0, 0);
         }
 
-        return Done();
-    }
-
-    private static OperationResult<bool> Type(string text)
-    {
-        List<INPUT> inputs = [];
-        foreach (char c in text)
+        private ActionOutcome Type(string text)
         {
-            switch (c)
+            List<PreparedInput> inputs = [];
+            foreach (char c in text)
             {
-                case '\r':
-                    continue;
-                case '\n':
-                    inputs.Add(Key((ushort)VIRTUAL_KEY.VK_RETURN, 0, up: false));
-                    inputs.Add(Key((ushort)VIRTUAL_KEY.VK_RETURN, 0, up: true));
-                    break;
-                case '\t':
-                    inputs.Add(Key((ushort)VIRTUAL_KEY.VK_TAB, 0, up: false));
-                    inputs.Add(Key((ushort)VIRTUAL_KEY.VK_TAB, 0, up: true));
-                    break;
-                default:
-                    inputs.Add(Key(0, c, up: false, unicode: true));
-                    inputs.Add(Key(0, c, up: true, unicode: true));
-                    break;
+                switch (c)
+                {
+                    case '\r':
+                        continue;
+                    case '\n':
+                        inputs.Add(new PreparedKey((ushort)0x0D, 0, false, false, false));
+                        inputs.Add(new PreparedKey((ushort)0x0D, 0, true, false, false));
+                        break;
+                    case '\t':
+                        inputs.Add(new PreparedKey((ushort)0x09, 0, false, false, false));
+                        inputs.Add(new PreparedKey((ushort)0x09, 0, true, false, false));
+                        break;
+                    default:
+                        inputs.Add(new PreparedKey(0, c, false, true, false));
+                        inputs.Add(new PreparedKey(0, c, true, true, false));
+                        break;
+                }
+            }
+
+            return Submit(inputs, checkFocus: true);
+        }
+
+        private ActionOutcome SendKeys(IReadOnlyList<KeyStroke> keys, bool release)
+        {
+            List<PreparedInput> inputs = [];
+            foreach (KeyStroke key in keys)
+            {
+                inputs.Add(new PreparedKey(key.Vk, 0, release, false, key.Extended));
+            }
+
+            return Submit(inputs, checkFocus: true);
+        }
+
+        private ActionOutcome MoveTo(int x, int y)
+        {
+            if (!platform.TryVirtualScreen(out int left, out int top, out int width, out int height))
+            {
+                return ActionOutcome.Fail("desktop_unavailable", "No displays are attached.");
+            }
+
+            if (x < left || y < top || x >= left + width || y >= top + height)
+            {
+                return ActionOutcome.Fail(
+                    "invalid_request",
+                    $"Point ({x},{y}) is outside the virtual screen ({left},{top} {width}x{height}).");
+            }
+
+            int normalizedX = (int)((x - left) * 65535L / (width - 1));
+            int normalizedY = (int)((y - top) * 65535L / (height - 1));
+            return SendMouse(InputMouseAction.Move, normalizedX, normalizedY, 0);
+        }
+
+        private static InputMouseAction ButtonAction(string? button, bool up) => (button, up) switch
+        {
+            ("right", false) => InputMouseAction.RightDown,
+            ("right", true) => InputMouseAction.RightUp,
+            ("middle", false) => InputMouseAction.MiddleDown,
+            ("middle", true) => InputMouseAction.MiddleUp,
+            (_, false) => InputMouseAction.LeftDown,
+            _ => InputMouseAction.LeftUp
+        };
+
+        private ActionOutcome SendMouse(InputMouseAction action, int dx, int dy, uint data) =>
+            Submit([new PreparedMouse(action, dx, dy, data)], checkFocus: true);
+
+        private ActionOutcome Submit(IReadOnlyList<PreparedInput> inputs, bool checkFocus)
+        {
+            if (inputs.Count == 0)
+            {
+                return ActionOutcome.Done();
+            }
+
+            if (checkFocus && FocusBlocked() is { } stop)
+            {
+                return ActionOutcome.Stopped(stop);
+            }
+
+            (DateTimeOffset utcBefore, long qpcBefore) = platform.Now();
+            (int sent, int error) = platform.Send(inputs);
+            (DateTimeOffset utcAfter, long qpcAfter) = platform.Now();
+            if (sent > 0)
+            {
+                _first ??= new InputTimestamp(utcBefore, qpcBefore.ToString(CultureInfo.InvariantCulture));
+                _last = new InputTimestamp(utcAfter, qpcAfter.ToString(CultureInfo.InvariantCulture));
+                _submitted += sent;
+                if (!checkFocus)
+                {
+                    _cleanupIncluded = true;
+                }
+
+                Track(inputs, sent);
+            }
+
+            if (sent == inputs.Count)
+            {
+                return ActionOutcome.Done();
+            }
+
+            return error == ErrorAccessDenied
+                ? ActionOutcome.Fail("uipi_blocked", "Windows blocked the input: the foreground window is elevated or on another desktop. Retry with elevated=true.")
+                : ActionOutcome.Fail("input_failed", $"SendInput delivered {sent} of {inputs.Count} events: {new Win32Exception(error).Message}");
+        }
+
+        private string? FocusBlocked()
+        {
+            if (!batch.RequireFocus)
+            {
+                return null;
+            }
+
+            string? focus = batch.FocusWindow?.Trim();
+            if (focus is null)
+            {
+                return InputStopCodes.FocusNotGranted;
+            }
+
+            if (!platform.IsWindow(focus))
+            {
+                return InputStopCodes.WindowNotFound;
+            }
+
+            if (FocusGranted(focus, platform.Foreground()) == true)
+            {
+                return null;
+            }
+
+            return _submitted == 0 ? InputStopCodes.FocusNotGranted : InputStopCodes.FocusLost;
+        }
+
+        private void Track(IReadOnlyList<PreparedInput> inputs, int sent)
+        {
+            int count = Math.Min(sent, inputs.Count);
+            for (int index = 0; index < count; index++)
+            {
+                switch (inputs[index])
+                {
+                    case PreparedKey key when key.Up:
+                        ReleaseLast(held => held.Matches(key));
+                        break;
+                    case PreparedKey key:
+                        _held.Add(HeldInput.FromKey(key));
+                        break;
+                    case PreparedMouse mouse when HeldInput.FromMouse(mouse) is { } held:
+                        if (mouse.Action is InputMouseAction.LeftUp or InputMouseAction.RightUp or InputMouseAction.MiddleUp)
+                        {
+                            ReleaseLast(candidate => candidate.Matches(mouse));
+                        }
+                        else
+                        {
+                            _held.Add(held);
+                        }
+
+                        break;
+                }
             }
         }
 
-        return Send(inputs);
+        private void ReleaseLast(Func<HeldInput, bool> match)
+        {
+            for (int index = _held.Count - 1; index >= 0; index--)
+            {
+                if (match(_held[index]))
+                {
+                    _held.RemoveAt(index);
+                    return;
+                }
+            }
+        }
     }
 
-    private static OperationResult<bool> SendKeys(IReadOnlyList<KeyStroke> keys, bool release)
+    private abstract record HeldInput
     {
-        List<INPUT> inputs = [];
-        foreach (KeyStroke key in keys)
-        {
-            inputs.Add(Key(key.Vk, 0, release, extended: key.Extended));
-        }
+        public abstract PreparedInput Release { get; }
 
-        return Send(inputs);
-    }
+        public abstract bool Matches(PreparedInput input);
 
-    private static INPUT Key(ushort vk, ushort scan, bool up, bool unicode = false, bool extended = false)
-    {
-        KEYBD_EVENT_FLAGS flags = 0;
-        if (up)
-        {
-            flags |= KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP;
-        }
+        public static HeldInput FromKey(PreparedKey key) => new HeldKey(key.Vk, key.Scan, key.Unicode, key.Extended);
 
-        if (unicode)
+        public static HeldInput? FromMouse(PreparedMouse mouse) => mouse.Action switch
         {
-            flags |= KEYBD_EVENT_FLAGS.KEYEVENTF_UNICODE;
-        }
-
-        if (extended)
-        {
-            flags |= KEYBD_EVENT_FLAGS.KEYEVENTF_EXTENDEDKEY;
-        }
-
-        INPUT input = default;
-        input.type = INPUT_TYPE.INPUT_KEYBOARD;
-        input.Anonymous.ki = new KEYBDINPUT
-        {
-            wVk = (VIRTUAL_KEY)vk,
-            wScan = scan,
-            dwFlags = flags
+            InputMouseAction.LeftDown => new HeldButton(InputMouseAction.LeftUp),
+            InputMouseAction.RightDown => new HeldButton(InputMouseAction.RightUp),
+            InputMouseAction.MiddleDown => new HeldButton(InputMouseAction.MiddleUp),
+            InputMouseAction.LeftUp or InputMouseAction.RightUp or InputMouseAction.MiddleUp => new HeldButton(mouse.Action),
+            _ => null
         };
-        return input;
     }
 
-    private static OperationResult<bool> MoveTo(int x, int y)
+    private sealed record HeldKey(ushort Vk, ushort Scan, bool Unicode, bool Extended) : HeldInput
     {
-        int left = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_XVIRTUALSCREEN);
-        int top = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_YVIRTUALSCREEN);
-        int width = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXVIRTUALSCREEN);
-        int height = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CYVIRTUALSCREEN);
-        if (width <= 1 || height <= 1)
-        {
-            return OperationResult<bool>.Fail("desktop_unavailable", "No displays are attached.");
-        }
+        public override PreparedInput Release => new PreparedKey(Vk, Scan, true, Unicode, Extended);
 
-        if (x < left || y < top || x >= left + width || y >= top + height)
-        {
-            return OperationResult<bool>.Fail(
-                "invalid_request",
-                $"Point ({x},{y}) is outside the virtual screen ({left},{top} {width}x{height}).");
-        }
-
-        int normalizedX = (int)((x - left) * 65535L / (width - 1));
-        int normalizedY = (int)((y - top) * 65535L / (height - 1));
-        return SendMouse(
-            MOUSE_EVENT_FLAGS.MOUSEEVENTF_MOVE | MOUSE_EVENT_FLAGS.MOUSEEVENTF_ABSOLUTE | MOUSE_EVENT_FLAGS.MOUSEEVENTF_VIRTUALDESK,
-            normalizedX,
-            normalizedY,
-            0);
+        public override bool Matches(PreparedInput input) =>
+            input is PreparedKey key
+            && key.Up
+            && key.Unicode == Unicode
+            && key.Vk == Vk
+            && key.Scan == Scan
+            && key.Extended == Extended;
     }
 
-    private static MOUSE_EVENT_FLAGS ButtonFlag(string? button, bool up) => (button, up) switch
+    private sealed record HeldButton(InputMouseAction Up) : HeldInput
     {
-        ("right", false) => MOUSE_EVENT_FLAGS.MOUSEEVENTF_RIGHTDOWN,
-        ("right", true) => MOUSE_EVENT_FLAGS.MOUSEEVENTF_RIGHTUP,
-        ("middle", false) => MOUSE_EVENT_FLAGS.MOUSEEVENTF_MIDDLEDOWN,
-        ("middle", true) => MOUSE_EVENT_FLAGS.MOUSEEVENTF_MIDDLEUP,
-        (_, false) => MOUSE_EVENT_FLAGS.MOUSEEVENTF_LEFTDOWN,
-        _ => MOUSE_EVENT_FLAGS.MOUSEEVENTF_LEFTUP
-    };
+        public override PreparedInput Release => new PreparedMouse(Up, 0, 0, 0);
 
-    private static OperationResult<bool> SendMouse(MOUSE_EVENT_FLAGS flags, int dx, int dy, uint data)
-    {
-        INPUT input = default;
-        input.type = INPUT_TYPE.INPUT_MOUSE;
-        input.Anonymous.mi = new MOUSEINPUT
-        {
-            dx = dx,
-            dy = dy,
-            mouseData = data,
-            dwFlags = flags
-        };
-        return Send([input]);
+        public override bool Matches(PreparedInput input) =>
+            input is PreparedMouse mouse && mouse.Action == Up;
     }
 
-    private static OperationResult<bool> Send(List<INPUT> inputs)
+    private readonly struct ActionOutcome
     {
-        if (inputs.Count == 0)
-        {
-            return Done();
-        }
+        public bool Ok { get; private init; }
 
-        INPUT[] array = [.. inputs];
-        uint sent = PInvoke.SendInput(array, Marshal.SizeOf<INPUT>());
-        Submitted += (int)sent;
-        if (sent == array.Length)
-        {
-            return Done();
-        }
+        public bool FocusStopped { get; private init; }
 
-        int error = Marshal.GetLastWin32Error();
-        return error == ErrorAccessDenied
-            ? OperationResult<bool>.Fail("uipi_blocked", "Windows blocked the input: the foreground window is elevated or on another desktop. Retry with elevated=true.")
-            : OperationResult<bool>.Fail("input_failed", $"SendInput delivered {sent} of {array.Length} events: {new Win32Exception(error).Message}");
-    }
+        public string? StopCode { get; private init; }
 
-    private static OperationResult<bool> Done() => OperationResult<bool>.Ok(true);
+        public string? ErrorCode { get; private init; }
 
-    private static unsafe string? ReadForeground()
-    {
-        HWND foreground = PInvoke.GetForegroundWindow();
-        return foreground.IsNull ? null : "0x" + ((nint)foreground.Value).ToString("X");
-    }
+        public string? Error { get; private init; }
 
-    private static void ReadCursor(out int? x, out int? y)
-    {
-        x = null;
-        y = null;
-        if (PInvoke.GetCursorPos(out System.Drawing.Point cursor))
-        {
-            x = cursor.X;
-            y = cursor.Y;
-        }
+        public static ActionOutcome Done() => new() { Ok = true };
+
+        public static ActionOutcome Stopped(string stopCode) => new() { FocusStopped = true, StopCode = stopCode };
+
+        public static ActionOutcome Fail(string code, string error) => new() { ErrorCode = code, Error = error };
     }
 }

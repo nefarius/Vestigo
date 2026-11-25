@@ -169,7 +169,7 @@ DISPLAYCONFIG_SOURCE_MODE
 DISPLAYCONFIG_TARGET_MODE
 DISPLAYCONFIG_VIDEO_SIGNAL_INFO
 
-// Input module: SendInput injection and foreground handling
+// Input module: SendInput injection, foreground handling, and host-side QPC timestamps
 SendInput
 INPUT
 MOUSEINPUT
@@ -182,6 +182,8 @@ GetForegroundWindow
 GetCursorPos
 ShowWindow
 SHOW_WINDOW_CMD
+QueryPerformanceCounter
+QueryPerformanceFrequency
 
 // Desktop module: UI Automation element walk (CsWin32 COM interop, no UI Automation wrapper package: a wrapper would add the WindowsDesktop runtime requirement)
 CUIAutomation

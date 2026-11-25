@@ -95,8 +95,55 @@ public sealed record InputStep(
     int HoldMilliseconds = 0,
     int DelayAfterMilliseconds = 0);
 
+/// <summary>Values of <c>injection.status</c> on a <c>send_input</c> result.</summary>
+public static class InputInjectionStatus
+{
+    /// <summary><c>SendInput</c> accepted every requested event.</summary>
+    public const string Submitted = "submitted";
+
+    /// <summary>Strict focus failed before any event was submitted.</summary>
+    public const string Rejected = "rejected";
+
+    /// <summary>Strict focus failed after at least one event was submitted.</summary>
+    public const string Partial = "partial";
+}
+
+/// <summary>Why a strict-focus batch stopped.</summary>
+public static class InputStopCodes
+{
+    public const string FocusNotGranted = "focus_not_granted";
+
+    public const string FocusLost = "focus_lost";
+
+    public const string WindowNotFound = "window_not_found";
+}
+
 /// <summary>The batch handed to the session helper.</summary>
-public sealed record InputBatch(IReadOnlyList<InputStep> Steps, string? FocusWindow);
+public sealed record InputBatch(IReadOnlyList<InputStep> Steps, string? FocusWindow, bool RequireFocus = false);
+
+/// <summary>
+///     One edge of the host-side submission interval. <paramref name="QpcTicks" /> is a base-10
+///     <see cref="long" /> so a JSON number cannot round it.
+/// </summary>
+public sealed record InputTimestamp(DateTimeOffset Utc, string QpcTicks);
+
+/// <summary>
+///     Interval covering the native submissions that accepted events, measured in the interactive helper.
+///     <paramref name="FirstSubmitted" /> is the sample taken immediately before the first accepted
+///     <c>SendInput</c>. <paramref name="LastSubmitted" /> is the sample taken immediately after the last
+///     accepted <c>SendInput</c>. Helper startup, RPC, trailing waits, and <c>observe</c> delays are outside
+///     this interval. When <paramref name="IncludesCleanupReleases" /> is true, key or button releases this
+///     batch sent while stopping are inside the interval.
+/// </summary>
+public sealed record InputTiming(
+    string Clock,
+    string QpcFrequency,
+    bool IncludesCleanupReleases,
+    InputTimestamp FirstSubmitted,
+    InputTimestamp LastSubmitted)
+{
+    public const string QueryPerformanceCounter = "QueryPerformanceCounter";
+}
 
 /// <summary>Helper output of <c>send-input</c>.</summary>
 public sealed record InputResult(
@@ -108,4 +155,11 @@ public sealed record InputResult(
     string? FocusActual = null,
     bool? FocusGranted = null,
     int? CursorX = null,
-    int? CursorY = null);
+    int? CursorY = null,
+    string Status = InputInjectionStatus.Submitted,
+    string? StopCode = null,
+    string? StopReason = null,
+    int? StoppedAtActionIndex = null,
+    string? StoppedAtActionKind = null,
+    int CleanupReleasedEvents = 0,
+    InputTiming? Timing = null);
