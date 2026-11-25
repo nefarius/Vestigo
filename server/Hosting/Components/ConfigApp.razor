@@ -1,14 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="vestigo-theme-pending">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <base href="/" />
     <title>Vestigo · Configuration</title>
-    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
-    <HeadOutlet />
-</head>
-<body>
+    <style>
+        html.vestigo-theme-pending body { display: none; }
+    </style>
     <script>
         window.vestigoTheme = {
             key: "vestigo-config-theme",
@@ -25,6 +24,13 @@
                 document.documentElement.style.colorScheme = dark ? "dark" : "light";
                 document.documentElement.style.backgroundColor = dark ? "#32333d" : "#ffffff";
             },
+            reveal: function () {
+                if (this.failSafe) {
+                    window.clearTimeout(this.failSafe);
+                    this.failSafe = 0;
+                }
+                document.documentElement.classList.remove("vestigo-theme-pending");
+            },
             systemDark: function () {
                 return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
             }
@@ -34,8 +40,15 @@
             var mode = stored === "dark" || stored === "light" ? stored
                 : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
             window.vestigoTheme.apply(mode);
+            // The interactive circuit removes the conceal class after MudBlazor renders the resolved theme.
+            window.vestigoTheme.failSafe = window.setTimeout(function () { window.vestigoTheme.reveal(); }, 2000);
         })();
     </script>
+    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
+    <HeadOutlet />
+</head>
+<body>
+    <noscript><style>html.vestigo-theme-pending body { display: block; }</style></noscript>
     <Router AppAssembly="typeof(ConfigApp).Assembly">
         <Found Context="routeData"><RouteView RouteData="routeData" /></Found>
     </Router>

@@ -1,6 +1,11 @@
+using System.Collections;
+using System.Reflection;
+
 using Bunit;
 
+using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
 
 using MudBlazor;
 using MudBlazor.Services;
@@ -83,5 +88,112 @@ public class ConfigThemeTests
         cut.WaitForAssertion(() => Assert.True(cut.FindComponent<MudSwitch<bool>>().Instance.Value));
         apply.VerifyInvoke("vestigoTheme.apply");
         Assert.DoesNotContain(context.JSInterop.Invocations, call => call.Identifier == "vestigoTheme.write");
+    }
+
+    [Theory]
+    [InlineData("dark", true)]
+    [InlineData("light", false)]
+    public async Task SavedThemeIsRevealedOnlyAfterTheProviderRendersIt(string stored, bool dark)
+    {
+        await using BunitContext context = new();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+        ThemeReveal reveal = WatchReveal(context, stored, systemDark: false, readFails: false);
+
+        context.Render<ConfigThemeToggle>();
+
+        Assert.True(reveal.ReadNoted);
+        Assert.True(reveal.StartedLight);
+        Assert.Equal(dark, reveal.Dark);
+    }
+
+    [Fact]
+    public async Task SystemDarkThemeIsRevealedOnlyAfterTheProviderRendersIt()
+    {
+        await using BunitContext context = new();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+        ThemeReveal reveal = WatchReveal(context, stored: null, systemDark: true, readFails: false);
+
+        context.Render<ConfigThemeToggle>();
+
+        Assert.True(reveal.ReadNoted);
+        Assert.True(reveal.StartedLight);
+        Assert.True(reveal.Dark);
+        Assert.True(reveal.FollowsSystem);
+    }
+
+    [Fact]
+    public async Task UnreadableThemeStillRevealsTheInitialPalette()
+    {
+        await using BunitContext context = new();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+        ThemeReveal reveal = WatchReveal(context, stored: null, systemDark: false, readFails: true);
+
+        context.Render<ConfigThemeToggle>();
+
+        Assert.True(reveal.ReadNoted);
+        Assert.True(reveal.StartedLight);
+        Assert.False(reveal.Dark);
+    }
+
+    private static ThemeReveal WatchReveal(BunitContext context, string? stored, bool systemDark, bool readFails)
+    {
+        ThemeReveal reveal = new();
+        JSRuntimeInvocationHandler<string?> read = context.JSInterop.Setup<string?>("vestigoTheme.read", _ =>
+        {
+            reveal.NoteRead(context.Renderer);
+            return true;
+        });
+        if (readFails)
+            read.SetException(new JSException("storage unavailable"));
+        else
+            read.SetResult(stored);
+
+        context.JSInterop.Setup<bool>("vestigoTheme.systemDark").SetResult(systemDark);
+        context.JSInterop.SetupVoid("vestigoTheme.reveal", _ =>
+        {
+            reveal.Capture(context);
+            return true;
+        });
+        return reveal;
+    }
+
+    private sealed class ThemeReveal
+    {
+        public bool ReadNoted { get; private set; }
+        public bool? StartedLight { get; private set; }
+        public bool? Dark { get; private set; }
+        public bool? FollowsSystem { get; private set; }
+
+        public void NoteRead(object renderer)
+        {
+            if (ReadNoted)
+                return;
+
+            ReadNoted = true;
+            StartedLight = !FindProvider(renderer).IsDarkMode;
+        }
+
+        public void Capture(BunitContext context)
+        {
+            MudThemeProvider provider = FindProvider(context.Renderer);
+            Dark = provider.IsDarkMode;
+            FollowsSystem = provider.ObserveSystemDarkModeChange;
+        }
+
+        private static MudThemeProvider FindProvider(object renderer)
+        {
+            FieldInfo field = typeof(Renderer).GetField("_componentStateByComponent", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("The Blazor renderer did not expose its component map.");
+            foreach (DictionaryEntry entry in (IDictionary)field.GetValue(renderer)!)
+            {
+                if (entry.Key is MudThemeProvider provider)
+                    return provider;
+            }
+
+            throw new InvalidOperationException("MudThemeProvider was not rendered.");
+        }
     }
 }
