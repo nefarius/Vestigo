@@ -30,7 +30,8 @@ internal static class InspectHelperSession
         bool elevated,
         string? desktop,
         CancellationToken cancellationToken,
-        TimeSpan? shutdownGrace = null)
+        TimeSpan? shutdownGrace = null,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
         if (!available.Success)
@@ -64,7 +65,8 @@ internal static class InspectHelperSession
                 executable,
                 arguments,
                 Path.GetDirectoryName(executable),
-                new Dictionary<string, string>(),
+                environment ?? SessionHelper.ParallelRecognitionEnvironment(
+                    Environment.GetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable)),
                 LaunchContext.Interactive,
                 elevated,
                 desktop,
@@ -272,6 +274,7 @@ internal sealed class InspectHelperChannel(Stream commands, Stream results, Acti
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                Break();
                 throw;
             }
             catch (OperationCanceledException)

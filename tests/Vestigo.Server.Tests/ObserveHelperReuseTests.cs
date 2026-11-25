@@ -870,6 +870,8 @@ public class ObserveHelperReuseTests : IDisposable
 
         public Action<int, CancellationToken>? OnInspect { get; set; }
 
+        public Func<ScreenCaptureRequest, bool, bool, OperationResult<InspectCaptureResult>>? InspectHook { get; set; }
+
         public int Served { get; set; }
 
         public int? StopHelperAfter { get; set; }
@@ -986,6 +988,11 @@ public class ObserveHelperReuseTests : IDisposable
             Requests.Add((capture, uia, ocr));
             rig.OnInspect?.Invoke(index, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            if (rig.InspectHook is { } hook)
+            {
+                return Task.FromResult(hook(capture, uia, ocr));
+            }
+
             Scripted frame = rig.Frames[index];
             return Task.FromResult(frame.Error is null
                 ? OperationResult<InspectCaptureResult>.Ok(rig.ResultFor(index, uia))
@@ -1002,6 +1009,8 @@ public class ObserveHelperReuseTests : IDisposable
     internal sealed class ScriptedLauncher(Rig rig, bool bridge) : IProcessLauncher
     {
         public List<string> Commands { get; } = [];
+
+        public List<IReadOnlyDictionary<string, string>> Environments { get; } = [];
 
         public List<DesktopRect?> BridgedCrops { get; } = [];
 
@@ -1023,6 +1032,7 @@ public class ObserveHelperReuseTests : IDisposable
         {
             string command = string.Join(' ', request.Arguments);
             Commands.Add(command);
+            Environments.Add(request.Environment);
             if (command.Contains("inspect-session", StringComparison.Ordinal))
             {
                 SessionLaunch = request;
@@ -1076,6 +1086,11 @@ public class ObserveHelperReuseTests : IDisposable
                             request.ReleaseInheritedInput?.Invoke();
                             request.ReleaseInheritedOutput?.Invoke();
                             throw new IOException("The inspection helper exited.");
+                        }
+
+                        if (rig.InspectHook is { } hook)
+                        {
+                            return hook(capture, uia, ocr);
                         }
 
                         int index = BridgedCrops.Count - 1;
@@ -1178,6 +1193,7 @@ public sealed class ObserveHelperReuseEnvironmentTests : IDisposable
     private readonly string _settings = Directory.CreateTempSubdirectory("vestigo-observe-reuse-env").FullName;
     private readonly string? _previousSettings = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
     private readonly string? _previousReuse = Environment.GetEnvironmentVariable(InputTools.ReuseHelperVariable);
+    private readonly string? _previousParallel = Environment.GetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable);
 
     public ObserveHelperReuseEnvironmentTests()
     {
@@ -1188,6 +1204,7 @@ public sealed class ObserveHelperReuseEnvironmentTests : IDisposable
     {
         Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _previousSettings);
         Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, _previousReuse);
+        Environment.SetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable, _previousParallel);
         try
         {
             Directory.Delete(_settings, recursive: true);
@@ -1218,6 +1235,65 @@ public sealed class ObserveHelperReuseEnvironmentTests : IDisposable
         Environment.SetEnvironmentVariable(InputTools.ReuseHelperVariable, null);
         await AssertPath(reuse: true);
     }
+
+    [Theory]
+    [InlineData(null, "1")]
+    [InlineData("0", "0")]
+    [InlineData("1", "1")]
+    [InlineData(" 0 ", "0")]
+    public async Task ParallelSwitch_IsForwardedToTheReusedHelper(string? value, string forwarded)
+    {
+        Environment.SetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable, value);
+        ObserveHelperReuseTests.Rig rig = ObserveHelperReuseTests.Rig.Environment();
+        rig.Tools.ReuseHelperVariableOverride = () => null;
+        rig.AddChangedCrop();
+
+        await rig.Send("pixels", delay: 0, crop: (20, 16, 835, 450));
+
+        Assert.Equal(1, rig.Launcher.InspectSessionCount);
+        Assert.Equal(forwarded, Forwarded(rig.Launcher.SessionLaunch!.Environment));
+    }
+
+    [Theory]
+    [InlineData(null, "1")]
+    [InlineData("0", "0")]
+    [InlineData(" 0 ", "0")]
+    public async Task ParallelSwitch_IsForwardedToEachOneShotHelper(string? value, string forwarded)
+    {
+        Environment.SetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable, value);
+        ObserveHelperReuseTests.Rig rig = ObserveHelperReuseTests.Rig.OneShot();
+        rig.AddChangedCrop();
+
+        await rig.Send("pixels", delay: 0, crop: (20, 16, 835, 450));
+
+        int inspections = 0;
+        for (int index = 0; index < rig.Launcher.Commands.Count; index++)
+        {
+            if (!rig.Launcher.Commands[index].Contains("inspect-screen", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            inspections++;
+            Assert.Equal(forwarded, Forwarded(rig.Launcher.Environments[index]));
+        }
+
+        Assert.Equal(2, inspections);
+    }
+
+    [Fact]
+    public void ParallelSwitch_IsWhatTheHelperProcessReads()
+    {
+        Environment.SetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable, "0");
+        Assert.False(SessionHelper.ParallelRecognitionEnabled());
+        Environment.SetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable, null);
+        Assert.True(SessionHelper.ParallelRecognitionEnabled());
+        Environment.SetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable, "1");
+        Assert.True(SessionHelper.ParallelRecognitionEnabled());
+    }
+
+    private static string Forwarded(IReadOnlyDictionary<string, string> environment) =>
+        environment[SessionHelper.ParallelRecognitionVariable];
 
     private static async Task AssertPath(bool reuse)
     {
