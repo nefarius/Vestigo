@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 using Vestigo.Desktop;
@@ -75,12 +76,27 @@ public static partial class SessionHelper
             return RejectInspect(error!);
         }
 
+        OperationResult<InspectCaptureResult> result = ExecuteInspect(request, uia, ocr);
+        if (!result.Success)
+        {
+            return RejectInspect(result.Error!, result.ErrorCode!, result.Reason);
+        }
+
+        Console.Out.WriteLine(JsonSerializer.Serialize(result.Value, InspectHelperJsonContext.Default.InspectCaptureResult));
+        return 0;
+    }
+
+    /// <summary>
+    ///     Captures one frame. Desktop relation, window identity, and the window crop are resolved again on every call.
+    /// </summary>
+    internal static OperationResult<InspectCaptureResult> ExecuteInspect(ScreenCaptureRequest request, bool uia, bool ocr)
+    {
         try
         {
             OperationResult<ScreenCaptureResult> captured = ScreenCapture.Capture(request with { IncludeFullImage = true });
             if (!captured.Success)
             {
-                return RejectInspect(captured.Error!, captured.ErrorCode!, captured.Reason);
+                return captured.FailAs<InspectCaptureResult>();
             }
 
             ScreenCaptureResult capture = captured.Value!;
@@ -108,10 +124,7 @@ public static partial class SessionHelper
                     all.AddRange(lines);
                 }
 
-                Console.Out.WriteLine(JsonSerializer.Serialize(
-                    new InspectCaptureResult(capture, all, ocrStatus, uiaStatus),
-                    InspectHelperJsonContext.Default.InspectCaptureResult));
-                return 0;
+                return OperationResult<InspectCaptureResult>.Ok(new InspectCaptureResult(capture, all, ocrStatus, uiaStatus));
             }
             finally
             {
@@ -120,11 +133,176 @@ public static partial class SessionHelper
         }
         catch (System.Text.RegularExpressions.RegexParseException ex)
         {
-            return RejectInspect("Invalid title pattern: " + ex.Message);
+            return OperationResult<InspectCaptureResult>.Fail("invalid_request", "Invalid title pattern: " + ex.Message);
         }
         catch (System.Text.RegularExpressions.RegexMatchTimeoutException ex)
         {
-            return RejectInspect("Title pattern timed out: " + ex.Message);
+            return OperationResult<InspectCaptureResult>.Fail("invalid_request", "Title pattern timed out: " + ex.Message);
+        }
+    }
+
+    private static int RunInspectSession(string[] args)
+    {
+        if (args.Length != 2 || args[0] != Flag || args[1] != InspectSessionCommand)
+        {
+            return RejectInspect($"Usage: {Flag} {InspectSessionCommand}");
+        }
+
+        using StreamWriter results = new(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+        {
+            AutoFlush = true,
+            NewLine = "\n"
+        };
+        using StreamReader commands = new(Console.OpenStandardInput(), Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
+        return RunInspectSession(commands, results, ExecuteInspect);
+    }
+
+    /// <summary>
+    ///     Serves inspect requests from <paramref name="commands" /> until <c>close</c>, end of input, or the request cap.
+    ///     A failed capture becomes a response line and leaves the helper waiting for the next request.
+    /// </summary>
+    internal static int RunInspectSession(
+        TextReader commands,
+        TextWriter results,
+        Func<ScreenCaptureRequest, bool, bool, OperationResult<InspectCaptureResult>> capture)
+    {
+        int served = 0;
+        while (true)
+        {
+            string? line = ReadRequestLine(commands, out bool tooLong);
+            if (line is null)
+            {
+                return 0;
+            }
+
+            if (tooLong)
+            {
+                WriteSession(results, SessionFailure("", "invalid_request", "The inspect request is too large."));
+                continue;
+            }
+
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            InspectSessionRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize(line, InspectHelperJsonContext.Default.InspectSessionRequest);
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
+            if (request is null || string.IsNullOrWhiteSpace(request.RequestId) || string.IsNullOrWhiteSpace(request.Op))
+            {
+                WriteSession(results, SessionFailure(request?.RequestId ?? "", "invalid_request", "The inspect request could not be read."));
+                continue;
+            }
+
+            if (request.Op == InspectSessionOp.Close)
+            {
+                return 0;
+            }
+
+            if (request.Op != InspectSessionOp.Inspect)
+            {
+                WriteSession(results, SessionFailure(request.RequestId, "invalid_request", "Unknown inspect-session operation."));
+                continue;
+            }
+
+            if (request.Capture is null)
+            {
+                WriteSession(results, SessionFailure(request.RequestId, "invalid_request", "The inspect request has no capture."));
+                continue;
+            }
+
+            if (served >= MaxInspectSessionRequests)
+            {
+                WriteSession(results, SessionFailure(request.RequestId, "invalid_request", "The inspection helper has served its request limit."));
+                return 0;
+            }
+
+            served++;
+            OperationResult<InspectCaptureResult> captured;
+            try
+            {
+                captured = capture(request.Capture, request.Uia, request.Ocr);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                captured = OperationResult<InspectCaptureResult>.Fail("capture_failed", ex.Message);
+            }
+
+            WriteSession(results, captured.Success
+                ? new InspectSessionResponse(request.RequestId, true, captured.Value)
+                : new InspectSessionResponse(request.RequestId, false, Error: captured.Error, ErrorCode: captured.ErrorCode, Reason: captured.Reason));
+            if (served >= MaxInspectSessionRequests)
+            {
+                return 0;
+            }
+        }
+    }
+
+    private static InspectSessionResponse SessionFailure(string requestId, string code, string error) =>
+        new(requestId, false, Error: error, ErrorCode: code);
+
+    private static void WriteSession(TextWriter results, InspectSessionResponse response) =>
+        results.WriteLine(JsonSerializer.Serialize(response, InspectHelperJsonContext.Default.InspectSessionResponse));
+
+    /// <summary>Reads one request line, or reports that it exceeded <see cref="MaxInspectSessionRequestBytes"/>.</summary>
+    private static string? ReadRequestLine(TextReader commands, out bool tooLong)
+    {
+        tooLong = false;
+        StringBuilder builder = new();
+        int bytes = 0;
+        while (true)
+        {
+            int next = commands.Read();
+            if (next < 0)
+            {
+                return tooLong || builder.Length == 0 ? null : builder.ToString();
+            }
+
+            if (next is '\n')
+            {
+                return tooLong ? "" : builder.ToString();
+            }
+
+            if (next == '\r' && commands.Peek() == '\n')
+            {
+                commands.Read();
+                return tooLong ? "" : builder.ToString();
+            }
+
+            if (tooLong)
+            {
+                continue;
+            }
+
+            string text = char.ToString((char)next);
+            if (char.IsHighSurrogate((char)next))
+            {
+                int low = commands.Peek();
+                if (low >= 0 && char.IsLowSurrogate((char)low))
+                {
+                    commands.Read();
+                    text += (char)low;
+                }
+            }
+
+            int charBytes = Encoding.UTF8.GetByteCount(text);
+            if (bytes + charBytes > MaxInspectSessionRequestBytes)
+            {
+                tooLong = true;
+                builder.Clear();
+                continue;
+            }
+
+            bytes += charBytes;
+            builder.Append(text);
         }
     }
 

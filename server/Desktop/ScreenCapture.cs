@@ -287,7 +287,9 @@ public static class ScreenCapture
             return DescribeWindow(hwnd, displays, windowCrop: request.WindowCrop);
         }
 
-        if (request.Pids.Count == 0 && request.ProcessNames.Count == 0 && string.IsNullOrWhiteSpace(request.TitlePattern))
+        IReadOnlyList<int> pids = request.Pids ?? [];
+        IReadOnlyList<string> names = request.ProcessNames ?? [];
+        if (pids.Count == 0 && names.Count == 0 && string.IsNullOrWhiteSpace(request.TitlePattern))
         {
             return OperationResult<ResolvedCapture>.Fail(
                 "invalid_request",
@@ -295,8 +297,8 @@ public static class ScreenCapture
         }
 
         WindowSelector selector = new(
-            request.Pids,
-            request.ProcessNames,
+            pids,
+            names,
             request.TitlePattern,
             null,
             false,

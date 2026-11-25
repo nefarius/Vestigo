@@ -25,6 +25,14 @@ public static partial class SessionHelper
 
     public const string InspectScreenCommand = "inspect-screen";
 
+    public const string InspectSessionCommand = "inspect-session";
+
+    /// <summary>Most <c>inspect</c> requests one <c>inspect-session</c> helper accepts before it exits.</summary>
+    public const int MaxInspectSessionRequests = 4;
+
+    /// <summary>Largest UTF-8 <c>inspect-session</c> request line, including the capture arguments.</summary>
+    public const int MaxInspectSessionRequestBytes = 64 * 1024;
+
     public const string SendInputCommand = "send-input";
 
     public const string InspectInputStateCommand = "inspect-input-state";
@@ -45,7 +53,7 @@ public static partial class SessionHelper
     {
         if (args.Length < 2 || args[0] != Flag)
         {
-            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}|{DesktopHostCommand}|{DesktopRecoverCommand}|{DesktopEnumerateCommand}|{InspectInputStateCommand}|{LockWorkStationCommand}> ..." }, Json));
+            Console.Out.WriteLine(JsonSerializer.Serialize(new { error = $"Usage: {Flag} <{CloseWindowCommand}|{ListWindowsCommand}|{ListDisplaysCommand}|{ListAudioCommand}|{SetDefaultAudioCommand}|{CaptureScreenCommand}|{InspectScreenCommand}|{InspectSessionCommand}|{SendInputCommand}|{ProbeCaptureCommand}|{ProbeAudioFormatCommand}|{InspectWindowCommand}|{WindowEventsCommand}|{SnapshotDisplayCommand}|{ApplyDisplayCommand}|{PlaceWindowCommand}|{RestoreWindowCommand}|{DesktopHostCommand}|{DesktopRecoverCommand}|{DesktopEnumerateCommand}|{InspectInputStateCommand}|{LockWorkStationCommand}> ..." }, Json));
             return 2;
         }
 
@@ -58,6 +66,7 @@ public static partial class SessionHelper
             SetDefaultAudioCommand => RunSetDefaultAudio(args),
             CaptureScreenCommand => RunCaptureScreen(args),
             InspectScreenCommand => RunInspectScreen(args),
+            InspectSessionCommand => RunInspectSession(args),
             SendInputCommand => RunSendInput(args),
             ProbeCaptureCommand => RunProbeCapture(args),
             ProbeAudioFormatCommand => RunProbeAudioFormat(args),
