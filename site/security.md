@@ -76,7 +76,7 @@ The MSI preserves hand-set `Desktop:AllowScreenshots`, `Desktop:AllowWindowPlace
 
 `reboot_machine` restarts this machine only. An immediate restart drops every MCP client, and `force` closes other sessions without prompting, so unsaved work is lost. `cancel_reboot` aborts a countdown.
 
-AutoLogon stores the Windows password as an LSA secret. Neither AutoLogon nor sign-in and unlock take the password as a tool argument. A person types it on a one-time `/system/logon/consent/{id}` page, so open that URL in a user-facing desktop browser, never a headless, embedded or IDE browser. The password goes only to LogonUI over a SYSTEM-only named pipe and is never logged or written to `appsettings.json`. `lock_workstation` needs only `System:AllowInteractiveLogon`. `request_interactive_logon` and `request_unlock_workstation` also need the Credential Provider, which the `Server` feature stages and the MSI Interactive logon feature registers.
+None of these tools take the password as an argument. A person types it on a one-time `/system/logon/consent/{id}` page, so open that URL in a user-facing desktop browser, never a headless, embedded or IDE browser. For AutoLogon the password is stored as an LSA secret. For sign-in and unlock it goes only to LogonUI over a SYSTEM-only named pipe. It is never logged or written to `appsettings.json`. `lock_workstation` needs only `System:AllowInteractiveLogon`. `request_interactive_logon` and `request_unlock_workstation` also need the Credential Provider, which the `Server` feature stages and the MSI Interactive logon feature registers.
 
 ## Windows servicing data
 
