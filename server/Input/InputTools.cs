@@ -20,8 +20,13 @@ public sealed class InputTools(
     PerceptionService perception,
     VestigoOptions options,
     ILogger<InputTools>? logger = null,
-    IManagedDesktopDirectory? desktops = null)
+    IManagedDesktopDirectory? desktops = null,
+    InputSubmissionGate? submissions = null,
+    TimeProvider? clock = null)
 {
+    private readonly InputSubmissionGate _submissions = submissions ?? new();
+
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private const long HelperMaxOutputBytes = 64 * 1024;
 
     [McpServerTool(Name = "send_input", Destructive = true, OpenWorld = false)]
@@ -32,6 +37,8 @@ public sealed class InputTools(
         + "focusWindow (hex handle from list_windows) is brought to the foreground first. requireFocus defaults to false. When true, focusWindow is required and must be the foreground window in that session immediately before the first input submission and before every later submission, including after waits. "
         + "A mismatch or a closed window before any event is submitted returns injection.status rejected, the requested and actual HWNDs, and submittedEvents 0. "
         + "If focus is lost after events were submitted, the batch stops, injection.status is partial, and keys or buttons this batch still holds are released. "
+        + "focusActual is the foreground window from the check that stopped the batch. Cleanup retries a release SendInput did not fully accept. If a held input remains down, stopReason reports the accepted release count. "
+        + "Calls that target the same input desktop run one at a time until the helper exits, including those releases. "
         + "Windows can change the foreground between that check and SendInput, and a mouse click still goes to the window under the pointer. "
         + "injection.status submitted means SendInput accepted the events into the input stream. "
         + "injection.timing is captured in the helper around the first and last native submission that accepted events: utc, qpcTicks and qpcFrequency for the same host. Tick values are decimal strings so they stay exact. "
@@ -115,8 +122,10 @@ public sealed class InputTools(
             before = await ObserveAsync(observeWindowHandle, mode, maxEdge, elevated, desktopPath, null, cancellationToken).ConfigureAwait(false);
         }
 
-        OperationResult<InputResult> sent = await helper
-            .RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath)
+        OperationResult<InputResult> sent = await _submissions.RunAsync(
+                desktopPath,
+                () => helper.RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath),
+                cancellationToken)
             .ConfigureAwait(false);
         if (!sent.Success)
         {
@@ -194,7 +203,7 @@ public sealed class InputTools(
 
         if (observeDelayMs > 0)
         {
-            await Task.Delay(observeDelayMs, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(observeDelayMs), _clock, cancellationToken).ConfigureAwait(false);
         }
 
         string? baselineId = before is { Success: true } ? before.Value!.Record.Id : null;

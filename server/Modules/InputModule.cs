@@ -26,5 +26,6 @@ public sealed class InputModule : VestigoModule
     {
         services.TryAddSingleton<IProcessLauncher, ProcessLauncher>();
         services.TryAddSingleton<SessionHelperClient>();
+        services.AddSingleton<InputSubmissionGate>();
     }
 }

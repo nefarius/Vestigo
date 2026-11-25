@@ -61,6 +61,10 @@ public static class InputInjector
 
         private bool _cleanupIncluded;
 
+        private bool _capturedFocus;
+
+        private string? _focusAtStop;
+
         private InputTimestamp? _first;
 
         private InputTimestamp? _last;
@@ -103,9 +107,13 @@ public static class InputInjector
             {
                 if (!platform.IsWindow(focus))
                 {
-                    return batch.RequireFocus
-                        ? Finish(InputStopCodes.WindowNotFound, 0, warning: null)
-                        : OperationResult<InputResult>.Fail("window_not_found", "focusWindow is not an existing window.");
+                    if (!batch.RequireFocus)
+                    {
+                        return OperationResult<InputResult>.Fail("window_not_found", "focusWindow is not an existing window.");
+                    }
+
+                    RememberFocus(platform.Foreground());
+                    return Finish(InputStopCodes.WindowNotFound, 0, warning: null);
                 }
 
                 if (platform.IsIconic(focus))
@@ -115,15 +123,19 @@ public static class InputInjector
 
                 platform.RequestForeground(focus);
                 platform.Delay(FocusSettleMilliseconds);
-                if (batch.RequireFocus && !platform.IsWindow(focus))
+                bool stillOpen = platform.IsWindow(focus);
+                string? foreground = platform.Foreground();
+                if (batch.RequireFocus && !stillOpen)
                 {
+                    RememberFocus(foreground);
                     return Finish(InputStopCodes.WindowNotFound, 0, warning: null);
                 }
 
-                if (FocusGranted(focus, platform.Foreground()) != true)
+                if (FocusGranted(focus, foreground) != true)
                 {
                     if (batch.RequireFocus)
                     {
+                        RememberFocus(foreground);
                         return Finish(InputStopCodes.FocusNotGranted, 0, warning: null);
                     }
 
@@ -142,10 +154,10 @@ public static class InputInjector
 
                 if (!done.Ok)
                 {
-                    ReleaseHeld();
+                    int cleanup = ReleaseHeld();
                     return OperationResult<InputResult>.Fail(
                         done.ErrorCode!,
-                        $"{done.Error} ({_performed} of {steps.Count} actions were performed first. {_submitted} Win32 input events were submitted.)");
+                        $"{done.Error} ({_performed} of {steps.Count} actions were performed first. {_submitted} Win32 input events were submitted.){CleanupNote(cleanup, _held.Count)}");
                 }
 
                 _performed++;
@@ -170,7 +182,7 @@ public static class InputInjector
                 ? InputInjectionStatus.Submitted
                 : submittedBeforeCleanup == 0 ? InputInjectionStatus.Rejected : InputInjectionStatus.Partial;
             string? focus = string.IsNullOrWhiteSpace(batch.FocusWindow) ? null : batch.FocusWindow.Trim();
-            string? actual = platform.Foreground();
+            string? actual = stopCode is null || !_capturedFocus ? platform.Foreground() : _focusAtStop;
             bool cursorKnown = platform.TryCursor(out int cursorX, out int cursorY);
             InputTiming? timing = _submitted == 0 || _first is null || _last is null
                 ? null
@@ -195,14 +207,14 @@ public static class InputInjector
                 cursorKnown ? cursorY : null,
                 status,
                 stopCode,
-                stopCode is null ? null : Reason(stopCode, cleanup),
+                stopCode is null ? null : Reason(stopCode, cleanup, _held.Count),
                 stopIndex,
                 kind,
                 cleanup,
                 timing));
         }
 
-        private static string Reason(string stopCode, int cleanup)
+        private static string Reason(string stopCode, int cleanup, int stillHeld)
         {
             string reason = stopCode switch
             {
@@ -211,28 +223,55 @@ public static class InputInjector
                 InputStopCodes.WindowNotFound => "focusWindow is not an existing window.",
                 _ => "Input stopped before the batch finished."
             };
+            return reason + CleanupNote(cleanup, stillHeld);
+        }
+
+        private static string CleanupNote(int cleanup, int stillHeld)
+        {
+            if (stillHeld > 0)
+            {
+                string events = cleanup == 1 ? "event" : "events";
+                string inputs = stillHeld == 1 ? "input" : "inputs";
+                return $" Cleanup accepted {cleanup} release {events}; {stillHeld} held {inputs} could not be released.";
+            }
+
             return cleanup > 0
-                ? reason + " Keys or buttons still held by this batch were released."
-                : reason;
+                ? " Keys or buttons still held by this batch were released."
+                : "";
         }
 
         private int ReleaseHeld()
         {
-            if (_held.Count == 0)
-            {
-                return 0;
-            }
-
-            List<PreparedInput> releases = new(_held.Count);
-            for (int index = _held.Count - 1; index >= 0; index--)
-            {
-                releases.Add(_held[index].Release);
-            }
-
             int before = _submitted;
-            Submit(releases, checkFocus: false);
-            _held.Clear();
+            int guard = _held.Count;
+            while (_held.Count > 0 && guard-- > 0)
+            {
+                List<PreparedInput> releases = new(_held.Count);
+                for (int index = _held.Count - 1; index >= 0; index--)
+                {
+                    releases.Add(_held[index].Release);
+                }
+
+                int at = _submitted;
+                Submit(releases, checkFocus: false);
+                if (_submitted == at)
+                {
+                    break;
+                }
+            }
+
             return _submitted - before;
+        }
+
+        private void RememberFocus(string? actual)
+        {
+            if (_capturedFocus)
+            {
+                return;
+            }
+
+            _focusAtStop = actual;
+            _capturedFocus = true;
         }
 
         private ActionOutcome Perform(InputStep step)
@@ -502,19 +541,24 @@ public static class InputInjector
             string? focus = batch.FocusWindow?.Trim();
             if (focus is null)
             {
+                RememberFocus(platform.Foreground());
                 return InputStopCodes.FocusNotGranted;
             }
 
-            if (!platform.IsWindow(focus))
+            bool open = platform.IsWindow(focus);
+            string? actual = platform.Foreground();
+            if (!open)
             {
+                RememberFocus(actual);
                 return InputStopCodes.WindowNotFound;
             }
 
-            if (FocusGranted(focus, platform.Foreground()) == true)
+            if (FocusGranted(focus, actual) == true)
             {
                 return null;
             }
 
+            RememberFocus(actual);
             return _submitted == 0 ? InputStopCodes.FocusNotGranted : InputStopCodes.FocusLost;
         }
 
@@ -529,7 +573,7 @@ public static class InputInjector
                         ReleaseLast(held => held.Matches(key));
                         break;
                     case PreparedKey key:
-                        _held.Add(HeldInput.FromKey(key));
+                        HoldOnce(HeldInput.FromKey(key));
                         break;
                     case PreparedMouse mouse when HeldInput.FromMouse(mouse) is { } held:
                         if (mouse.Action is InputMouseAction.LeftUp or InputMouseAction.RightUp or InputMouseAction.MiddleUp)
@@ -538,11 +582,19 @@ public static class InputInjector
                         }
                         else
                         {
-                            _held.Add(held);
+                            HoldOnce(held);
                         }
 
                         break;
                 }
+            }
+        }
+
+        private void HoldOnce(HeldInput held)
+        {
+            if (!_held.Exists(candidate => candidate.Matches(held.Release)))
+            {
+                _held.Add(held);
             }
         }
 

@@ -788,16 +788,14 @@ public class InputTests
             Desktop = { AllowScreenshots = true }
         };
         SessionHelperClient helper = new(launcher);
-        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options);
-
-        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        RecordingTimeProvider clock = new();
+        InputTools tools = new(helper, launcher, new PerceptionService(launcher, helper, new CaptureCache(), options), options, clock: clock);
         CallToolResult result = await tools.SendInput(
             [new InputActionSpec { Type = "key", Keys = "a" }],
             focusWindow: "0xA1",
             requireFocus: true,
             observe: true,
             observeDelayMs: 2000);
-        watch.Stop();
 
         Assert.True(result.IsError is not true);
         TextContentBlock text = Assert.IsType<TextContentBlock>(result.Content[0]);
@@ -808,11 +806,176 @@ public class InputTests
         Assert.False(injection.TryGetProperty("timing", out _));
         Assert.Equal("skipped", document.RootElement.GetProperty("response").GetProperty("status").GetString());
         Assert.Equal("input_rejected", document.RootElement.GetProperty("response").GetProperty("reason").GetString());
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1));
+        Assert.Empty(clock.Delays);
         Assert.Single(launcher.Commands, command => command.Contains("send-input", StringComparison.Ordinal));
         Assert.Single(launcher.Commands, command => command.Contains("inspect-screen", StringComparison.Ordinal));
         string batch = launcher.Commands.Single(command => command.Contains("send-input", StringComparison.Ordinal));
         Assert.Contains("\"requireFocus\":true", Encoding.UTF8.GetString(Convert.FromBase64String(batch.Split(' ').Last())), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_ReportsTheForegroundThatStoppedTheBatch()
+    {
+        ScriptedInputPlatform platform = new() { ReturnTargetAfterStolenRead = true };
+        platform.StealAfter(80, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("a"), WaitStep(80), KeyStep("b")], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(InputStopCodes.FocusLost, result.Value.StopCode);
+        Assert.Equal("0xB2", result.Value.FocusActual);
+        Assert.False(result.Value.FocusGranted);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_RetriesCleanupAndReportsInputThatStaysDown()
+    {
+        ScriptedInputPlatform platform = new();
+        int releaseCalls = 0;
+        platform.Limit = inputs =>
+        {
+            if (inputs.Count > 0 && inputs[0] is PreparedKey { Up: true })
+            {
+                releaseCalls++;
+                return releaseCalls == 1 ? 1 : 0;
+            }
+
+            return inputs.Count;
+        };
+        platform.StealAfter(100, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("ctrl+c", hold: 100)], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(InputStopCodes.FocusLost, result.Value.StopCode);
+        Assert.Equal(1, result.Value.CleanupReleasedEvents);
+        Assert.Contains("no longer the foreground", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.Contains("could not be released", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.True(result.Value.Timing!.IncludesCleanupReleases);
+        Assert.Equal(1, platform.Submitted.Count(input => input is PreparedKey { Up: true }));
+        Assert.Equal(2, releaseCalls);
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_SecondCleanupAttemptReleasesTheRemainder()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.Limit = inputs => inputs.Count > 0 && inputs[0] is PreparedKey { Up: true } ? 1 : inputs.Count;
+        platform.StealAfter(100, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([KeyStep("ctrl+c", hold: 100)], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(2, result.Value!.CleanupReleasedEvents);
+        Assert.Contains("were released", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.DoesNotContain("could not be released", result.Value.StopReason, StringComparison.Ordinal);
+        Assert.Equal(2, platform.Submitted.Count(input => input is PreparedKey { Up: true }));
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_DoesNotReleaseAButtonThatWasAlreadyReleased()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(40, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([
+                MouseStep(InputKinds.Down),
+                MouseStep(InputKinds.Down),
+                MouseStep(InputKinds.Up),
+                WaitStep(40),
+                KeyStep("z")
+            ], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(InputInjectionStatus.Partial, result.Value!.Status);
+        Assert.Equal(0, result.Value.CleanupReleasedEvents);
+        Assert.Equal(2, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftDown }));
+        Assert.Equal(1, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftUp }));
+    }
+
+    [Fact]
+    public void Injector_RequireFocus_ReleasesOneButtonAfterARepeatedDown()
+    {
+        ScriptedInputPlatform platform = new();
+        platform.StealAfter(40, "0xB2");
+        OperationResult<InputResult> result = InputInjector.Execute(
+            Batch([MouseStep(InputKinds.Down), MouseStep(InputKinds.Down), WaitStep(40), KeyStep("z")], requireFocus: true),
+            platform);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(1, result.Value!.CleanupReleasedEvents);
+        Assert.Equal(2, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftDown }));
+        Assert.Equal(1, platform.Submitted.Count(input => input is PreparedMouse { Action: InputMouseAction.LeftUp }));
+    }
+
+    [Fact]
+    public async Task SendInput_SerializesHelpersOnTheSameDesktop()
+    {
+        BlockingLauncher launcher = new();
+        InputSubmissionGate gate = new();
+        InputTools tools = Tools(launcher, gate: gate);
+        Task first = tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }]);
+        await launcher.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task second = tools.SendInput([new InputActionSpec { Type = "key", Keys = "b" }]);
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (gate.Waiters == 0 && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Yield();
+        }
+
+        Assert.Equal(1, gate.Waiters);
+        Assert.Equal(1, launcher.EnteredCount);
+        launcher.Release.TrySetResult();
+        await Task.WhenAll(first, second);
+        Assert.Equal(2, launcher.EnteredCount);
+    }
+
+    [Fact]
+    public async Task SendInput_ReleasesTheDesktopGateWhenCancelled()
+    {
+        BlockingLauncher launcher = new();
+        InputTools tools = Tools(launcher);
+        using CancellationTokenSource cancel = new();
+        Task first = tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }], cancellationToken: cancel.Token);
+        await launcher.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        Task second = tools.SendInput([new InputActionSpec { Type = "key", Keys = "b" }]);
+        await launcher.EnteredAgain.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        launcher.Release.TrySetResult();
+        await second;
+    }
+
+    [Fact]
+    public async Task SendInput_DifferentDesktopsCanOverlap()
+    {
+        BlockingLauncher launcher = new();
+        InputTools tools = Tools(launcher, new NamedDesktops());
+        Task first = tools.SendInput([new InputActionSpec { Type = "key", Keys = "a" }], desktopSessionId: "alpha");
+        Task second = tools.SendInput([new InputActionSpec { Type = "key", Keys = "b" }], desktopSessionId: "beta");
+        await launcher.EnteredAgain.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, launcher.EnteredCount);
+        launcher.Release.TrySetResult();
+        await Task.WhenAll(first, second);
+    }
+
+    private static InputTools Tools(IProcessLauncher launcher, IManagedDesktopDirectory? desktops = null, InputSubmissionGate? gate = null)
+    {
+        VestigoOptions options = new() { Input = { AllowInput = true } };
+        SessionHelperClient helper = new(launcher);
+        return new InputTools(
+            helper,
+            launcher,
+            new PerceptionService(launcher, helper, new CaptureCache(), options),
+            options,
+            desktops: desktops,
+            submissions: gate ?? new InputSubmissionGate());
     }
 
     private static InputBatch Batch(IReadOnlyList<InputStep> steps, bool requireFocus = false) =>
@@ -823,6 +986,9 @@ public class InputTests
         Assert.True(KeyChordParser.TryParse(keys, out IReadOnlyList<KeyStroke> parsed, out string? error), error);
         return new InputStep(InputKinds.Key, null, null, null, null, null, 1, 0, 0, null, parsed, 0, hold, delayAfter);
     }
+
+    private static InputStep MouseStep(string kind, string button = "left") =>
+        new(kind, null, null, null, null, button, 1, 0, 0, null, null, 0);
 
     private static InputStep WaitStep(int milliseconds) =>
         new(InputKinds.Wait, null, null, null, null, null, 1, 0, 0, null, null, milliseconds);
@@ -855,6 +1021,10 @@ public class InputTests
         public long Ticks { get; set; } = 1_000_000;
 
         public DateTimeOffset Utc { get; set; } = new(2026, 3, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public bool ReturnTargetAfterStolenRead { get; set; }
+
+        public Func<IReadOnlyList<PreparedInput>, int>? Limit { get; set; }
 
         public Action<int>? OnDelay { get; set; }
 
@@ -910,7 +1080,18 @@ public class InputTests
         {
         }
 
-        public string? Foreground() => ForegroundHandle;
+        public string? Foreground()
+        {
+            string? current = ForegroundHandle;
+            if (ReturnTargetAfterStolenRead
+                && current is not null
+                && !string.Equals(current, Target, StringComparison.OrdinalIgnoreCase))
+            {
+                ForegroundHandle = Target;
+            }
+
+            return current;
+        }
 
         public void Delay(int milliseconds)
         {
@@ -944,15 +1125,21 @@ public class InputTests
 
         public (int Sent, int Win32Error) Send(IReadOnlyList<PreparedInput> inputs)
         {
-            foreach (PreparedInput input in inputs)
+            int sent = Limit?.Invoke(inputs) ?? inputs.Count;
+            sent = Math.Clamp(sent, 0, inputs.Count);
+            for (int index = 0; index < sent; index++)
             {
-                Submitted.Add(input);
+                Submitted.Add(inputs[index]);
                 FocusAtSubmit.Add(ForegroundHandle);
             }
 
-            Ticks += 10;
-            Utc = Utc.AddTicks(10);
-            return (inputs.Count, 0);
+            if (sent > 0)
+            {
+                Ticks += 10;
+                Utc = Utc.AddTicks(10);
+            }
+
+            return sent == inputs.Count ? (sent, 0) : (sent, 31);
         }
     }
 
@@ -998,6 +1185,77 @@ public class InputTests
 
             return Task.FromResult(0);
         }
+    }
+
+    private sealed class RecordingTimeProvider : TimeProvider
+    {
+        public List<TimeSpan> Delays { get; } = [];
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            Delays.Add(dueTime);
+            callback(state);
+            return new NoopTimer();
+        }
+
+        private sealed class NoopTimer : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+
+            public void Dispose()
+            {
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class BlockingLauncher : IProcessLauncher
+    {
+        private readonly string _json = JsonSerializer.Serialize(new InputResult(1, 3, null, 2), SessionHelper.Json);
+
+        private int _entered;
+
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource EnteredAgain { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int EnteredCount => Volatile.Read(ref _entered);
+
+        public OperationResult<bool> CheckAvailability(LaunchContext context, bool elevated) => OperationResult<bool>.Ok(true);
+
+        public async Task<int> RunAsync(LaunchRequest request, Vestigo.Jobs.JobContext output, CancellationToken cancellationToken)
+        {
+            int count = Interlocked.Increment(ref _entered);
+            if (count == 1)
+            {
+                Entered.TrySetResult();
+            }
+            else
+            {
+                EnteredAgain.TrySetResult();
+            }
+
+            await Release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await File.WriteAllTextAsync(output.OutputPath, _json, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+    }
+
+    private sealed class NamedDesktops : IManagedDesktopDirectory
+    {
+        public Task<OperationResult<ManagedDesktopLease>> LeaseForLaunchAsync(string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult(OperationResult<ManagedDesktopLease>.Fail("not_used", "This directory only describes sessions."));
+
+        public Task<OperationResult<DesktopHelperTarget>> DescribeAsync(string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult(OperationResult<DesktopHelperTarget>.Ok(
+                new DesktopHelperTarget(sessionId, @"winsta0\" + sessionId, sessionId, true)));
     }
 
     internal sealed class UnavailableLauncher : IProcessLauncher
