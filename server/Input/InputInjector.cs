@@ -24,6 +24,9 @@ public static class InputInjector
     [ThreadStatic]
     private static List<ushort>? ActiveModifiers;
 
+    [ThreadStatic]
+    private static List<string>? ActiveButtons;
+
     private const int StepPauseMilliseconds = 30;
 
     private const int ClickPauseMilliseconds = 40;
@@ -75,6 +78,7 @@ public static class InputInjector
 
             Submitted = 0;
             ActiveModifiers = [];
+            ActiveButtons = [];
             DateTimeOffset startedAt = DateTimeOffset.UtcNow;
             int performed = 0;
             OperationResult<InputResult> result = OperationResult<InputResult>.Fail("input_failed", "Input stopped before completion.");
@@ -147,7 +151,13 @@ public static class InputInjector
                         $"{released.Error} ({performed} of {batch.Steps.Count} actions were performed first. {Submitted} Win32 input events were submitted.)");
                 }
 
+                if (!result.Success)
+                {
+                    ReleaseActiveButtons();
+                }
+
                 ActiveModifiers = null;
+                ActiveButtons = null;
             }
 
             return result;
@@ -298,7 +308,13 @@ public static class InputInjector
             return moveFailure;
         }
 
-        return SendMouse(ButtonFlag(step.Button, up), 0, 0, 0);
+        OperationResult<bool> sent = SendMouse(ButtonFlag(step.Button, up), 0, 0, 0);
+        if (sent.Success && ActiveButtons is not null)
+        {
+            RememberButton(ActiveButtons, step.Button, up);
+        }
+
+        return sent;
     }
 
     private static OperationResult<bool> Scroll(InputStep step)
@@ -421,12 +437,18 @@ public static class InputInjector
         Func<bool>? focusStillHeld = batch.StrictFocus
             ? () => FocusGranted(batch.FocusWindow, ReadForeground()) == true
             : null;
+        HWND layoutWindow = LayoutWindow(batch);
         OperationResult<int> sent = PhysicalKeySender.Send(
             plan!,
             focusStillHeld,
             stroke => SendPhysicalStroke(stroke, down),
             ReleaseNamedModifiers,
-            UserHoldsModifier);
+            UserHoldsModifier,
+            () => layout.SameLayout(layoutWindow)
+                ? null
+                : OperationResult<bool>.Fail(
+                    "layout_changed",
+                    "The keyboard layout changed before this character was sent."));
         return sent.Success ? Done() : OperationResult<bool>.Fail(sent.ErrorCode!, sent.Error!);
     }
 
@@ -539,6 +561,53 @@ public static class InputInjector
         }
     }
 
+    internal static void RememberButton(List<string> held, string? button, bool up)
+    {
+        string name = button switch
+        {
+            "right" => "right",
+            "middle" => "middle",
+            _ => "left"
+        };
+        if (up)
+        {
+            held.Remove(name);
+        }
+        else if (!held.Contains(name))
+        {
+            held.Add(name);
+        }
+    }
+
+    internal static List<ushort> PendingReleases(IReadOnlyList<ushort> requested, IReadOnlyList<ushort> active)
+    {
+        List<ushort> pending = [];
+        foreach (ushort vk in requested)
+        {
+            if (active.Contains(vk))
+            {
+                pending.Add(vk);
+            }
+        }
+
+        return pending;
+    }
+
+    private static void ReleaseActiveButtons()
+    {
+        if (ActiveButtons is not { Count: > 0 } held)
+        {
+            return;
+        }
+
+        for (int index = held.Count - 1; index >= 0; index--)
+        {
+            _ = SendMouse(ButtonFlag(held[index], up: true), 0, 0, 0);
+        }
+
+        held.Clear();
+    }
+
     private static OperationResult<bool> ReleaseNamedModifiers(IReadOnlyList<ushort> virtualKeys)
     {
         if (virtualKeys.Count == 0 || ActiveModifiers is null)
@@ -546,18 +615,24 @@ public static class InputInjector
             return Done();
         }
 
+        List<ushort> pending = PendingReleases(virtualKeys, ActiveModifiers);
+        if (pending.Count == 0)
+        {
+            return Done();
+        }
+
         List<INPUT> inputs = [];
-        foreach (ushort vk in virtualKeys)
+        foreach (ushort vk in pending)
         {
             inputs.Add(Key(vk, 0, up: true));
         }
 
         int before = Submitted;
         OperationResult<bool> sent = Send(inputs);
-        int accepted = Math.Min(Math.Max(Submitted - before, 0), virtualKeys.Count);
+        int accepted = Math.Min(Math.Max(Submitted - before, 0), pending.Count);
         for (int index = 0; index < accepted; index++)
         {
-            ActiveModifiers.Remove(virtualKeys[index]);
+            ActiveModifiers.Remove(pending[index]);
         }
 
         return sent;

@@ -681,6 +681,58 @@ public class InputTests
     }
 
     [Fact]
+    public void ChooseShift_KeepsAltGrWhenTheShiftedSampleHasNoTranslation()
+    {
+        Assert.False(WindowsKeyboardLayout.ChooseShift(false, true, '@', false, null, '@', letter: true));
+        Assert.True(WindowsKeyboardLayout.ChooseShift(false, true, 'A', true, 'a', 'a', letter: true));
+        Assert.True(WindowsKeyboardLayout.ChooseShift(false, false, null, false, null, 'a', letter: true));
+        Assert.False(WindowsKeyboardLayout.ChooseShift(false, false, null, false, null, 'ü', letter: false));
+    }
+
+    [Fact]
+    public void PhysicalKeySender_StopsBeforeTheNextStrokeWhenTheLayoutChanges()
+    {
+        int calls = 0;
+        OperationResult<int> result = PhysicalKeySender.Send(
+            new PhysicalKeyPlan(
+            [
+                new PhysicalKeyStroke(0x41, 0x1E, false, false, false, false),
+                new PhysicalKeyStroke(0x42, 0x30, false, false, false, false)
+            ]),
+            null,
+            _ =>
+            {
+                calls++;
+                return OperationResult<int>.Ok(2);
+            },
+            _ => OperationResult<bool>.Ok(true),
+            beforeStroke: () => calls == 0
+                ? null
+                : OperationResult<bool>.Fail("layout_changed", "The keyboard layout changed before this character was sent."));
+
+        Assert.False(result.Success);
+        Assert.Equal("layout_changed", result.ErrorCode);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void PendingReleases_SkipsModifiersAlreadyReleased()
+    {
+        Assert.Equal([(ushort)0x11], InputInjector.PendingReleases([0x10, 0x11], [0x11]));
+        Assert.Empty(InputInjector.PendingReleases([0x10], []));
+    }
+
+    [Fact]
+    public void RememberButton_TracksExplicitDownUntilTheMatchingUp()
+    {
+        List<string> held = [];
+        InputInjector.RememberButton(held, null, up: false);
+        InputInjector.RememberButton(held, "right", up: false);
+        InputInjector.RememberButton(held, "left", up: true);
+        Assert.Equal(["right"], held);
+    }
+
+    [Fact]
     public void WindowsKeyboardLayout_MapsCurrentThreadLettersWhenFixtureEnabled()
     {
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_KEY_FIXTURES") != "1")
@@ -707,13 +759,16 @@ public class InputTests
         }
 
         WindowsKeyboardLayout layout = new(default);
-        PhysicalKeyStroke? degree = layout.TryMap('°');
-        PhysicalKeyStroke? circumflex = layout.TryMap('^');
-        if (degree is null || circumflex is null || degree.Vk != circumflex.Vk)
+        if (layout.LanguageId != 0x0407)
         {
-            Assert.Skip("This layout does not put ^ and ° on one key.");
+            Assert.Skip("The current thread layout is not German (Germany).");
         }
 
+        PhysicalKeyStroke? degree = layout.TryMap('°');
+        PhysicalKeyStroke? circumflex = layout.TryMap('^');
+        Assert.NotNull(degree);
+        Assert.NotNull(circumflex);
+        Assert.Equal(degree.Vk, circumflex.Vk);
         Assert.True(degree.Shift);
         Assert.False(circumflex.Shift);
         Assert.False(layout.IsDeadKey('°'));

@@ -103,6 +103,35 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
 
     public bool CapsLock => _capsLock;
 
+    /// <summary>Low word of the layout handle. German (Germany) is <c>0x0407</c>.</summary>
+    public int LanguageId => unchecked((int)((nint)_layout & 0xFFFF));
+
+    public bool SameLayout(HWND window)
+    {
+        uint threadId = 0;
+        if (!window.IsNull)
+        {
+            threadId = PInvoke.GetWindowThreadProcessId(window, out _);
+        }
+
+        return PInvoke.GetKeyboardLayout(threadId) == _layout;
+    }
+
+    internal static bool ChooseShift(bool shift, bool scannedKnown, char? scanned, bool flippedKnown, char? flipped, char wanted, bool letter)
+    {
+        if (scannedKnown && scanned == wanted)
+        {
+            return shift;
+        }
+
+        if (flippedKnown && flipped == wanted)
+        {
+            return !shift;
+        }
+
+        return letter ? !shift : shift;
+    }
+
     public PhysicalKeyStroke? TryMap(char value)
     {
         if (!TryScan(value, out ushort vk, out int shiftState) || (shiftState & ~0x07) != 0)
@@ -147,13 +176,13 @@ internal sealed class WindowsKeyboardLayout : IKeyboardLayout
         }
 
         KeySample scanned = Sample(vk, shift, control, alt);
-        KeySample flipped = Sample(vk, !shift, control, alt);
-        if (scanned.Known && flipped.Known)
+        if (scanned.Known && scanned.Character == value)
         {
-            return scanned.Character == value ? shift : flipped.Character == value ? !shift : shift;
+            return shift;
         }
 
-        return vk is >= 0x41 and <= 0x5A ? !shift : shift;
+        KeySample flipped = Sample(vk, !shift, control, alt);
+        return ChooseShift(shift, scanned.Known, scanned.Character, flipped.Known, flipped.Character, value, vk is >= 0x41 and <= 0x5A);
     }
 
     private KeySample Sample(ushort vk, bool shift, bool control, bool alt)

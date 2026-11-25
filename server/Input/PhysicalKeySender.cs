@@ -17,7 +17,8 @@ internal static class PhysicalKeySender
         Func<bool>? focusStillHeld,
         Func<PhysicalKeyStroke, OperationResult<int>> sendStroke,
         Func<IReadOnlyList<ushort>, OperationResult<bool>> releaseModifiers,
-        Func<ushort, bool>? userHolds = null)
+        Func<ushort, bool>? userHolds = null,
+        Func<OperationResult<bool>?>? beforeStroke = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(sendStroke);
@@ -33,6 +34,13 @@ internal static class PhysicalKeySender
                 if (focusStillHeld is not null && !focusStillHeld())
                 {
                     result = OperationResult<int>.Fail("focus_lost", "The focus window is no longer in the foreground.");
+                    succeeded = false;
+                    break;
+                }
+
+                if (beforeStroke?.Invoke() is { Success: false } blocked)
+                {
+                    result = OperationResult<int>.Fail(blocked.ErrorCode!, blocked.Error!);
                     succeeded = false;
                     break;
                 }
