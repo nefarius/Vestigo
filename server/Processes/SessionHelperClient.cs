@@ -31,8 +31,9 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         CancellationToken cancellationToken,
         string? desktop = null,
         SafeHandle? standardInput = null,
-        Action? releaseInheritedInput = null) =>
-        RunCoreAsync<T>(helperArgs, elevated, timeout, maxOutputBytes, cancellationToken, desktop, standardInput, releaseInheritedInput, input: false);
+        Action? releaseInheritedInput = null,
+        IReadOnlyDictionary<string, string>? environment = null) =>
+        RunCoreAsync<T>(helperArgs, elevated, timeout, maxOutputBytes, cancellationToken, desktop, standardInput, releaseInheritedInput, environment, input: false);
 
     /// <summary>
     ///     Runs <c>send-input</c> once. The executable is chosen before the process starts. A timeout, launch
@@ -47,7 +48,7 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         string? desktop = null,
         SafeHandle? standardInput = null,
         Action? releaseInheritedInput = null) =>
-        RunCoreAsync<T>(helperArgs, elevated, timeout, maxOutputBytes, cancellationToken, desktop, standardInput, releaseInheritedInput, input: true);
+        RunCoreAsync<T>(helperArgs, elevated, timeout, maxOutputBytes, cancellationToken, desktop, standardInput, releaseInheritedInput, environment: null, input: true);
 
     internal static string? ResolveInputHelper(string installDirectory) =>
         ResolveInputHelper(
@@ -150,6 +151,7 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
         string? desktop,
         SafeHandle? standardInput,
         Action? releaseInheritedInput,
+        IReadOnlyDictionary<string, string>? environment,
         bool input)
     {
         OperationResult<bool> available = launcher.CheckAvailability(LaunchContext.Interactive, elevated);
@@ -178,7 +180,7 @@ public sealed class SessionHelperClient(IProcessLauncher launcher)
                 executable,
                 arguments,
                 Path.GetDirectoryName(executable),
-                new Dictionary<string, string>(),
+                environment ?? new Dictionary<string, string>(),
                 LaunchContext.Interactive,
                 elevated,
                 desktop,

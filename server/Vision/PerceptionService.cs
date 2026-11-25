@@ -49,6 +49,12 @@ public sealed class PerceptionService(
     /// <summary>Test seam for <see cref="ScreenAnalyzer.Diff" />. Null uses OpenCV.</summary>
     internal Func<byte[], byte[], DiffResult>? Differ { get; set; }
 
+    /// <summary>
+    ///     When set, replaces <see cref="SessionHelper.ParallelRecognitionVariable"/> for one-shot inspection.
+    ///     A null result means the variable is unset.
+    /// </summary>
+    internal Func<string?>? ParallelRecognitionVariableOverride { get; set; }
+
     /// <summary>Captures the screen, merges UI Automation and OCR, and caches the numbered elements.</summary>
     /// <param name="extraElements">
     ///     Optional extra elements (for example template matches) computed from the analyzed image. They are added
@@ -96,7 +102,8 @@ public sealed class PerceptionService(
                 HelperTimeout,
                 maxBytes,
                 cancellationToken,
-                request.Desktop).ConfigureAwait(false)
+                request.Desktop,
+                environment: RecognitionEnvironment()).ConfigureAwait(false)
             : await session.InspectAsync(capture, request.Uia, request.Ocr, HelperTimeout, maxBytes, cancellationToken).ConfigureAwait(false);
         if (!helperResult.Success)
         {
@@ -199,5 +206,13 @@ public sealed class PerceptionService(
             analysis.Candidates,
             analysis.Omitted,
             analysis.PriorityOmitted));
+    }
+
+    private IReadOnlyDictionary<string, string> RecognitionEnvironment()
+    {
+        string? value = ParallelRecognitionVariableOverride is not null
+            ? ParallelRecognitionVariableOverride()
+            : Environment.GetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable);
+        return SessionHelper.ParallelRecognitionEnvironment(value);
     }
 }

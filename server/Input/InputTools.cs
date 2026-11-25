@@ -47,6 +47,13 @@ public sealed class InputTools(
     internal Func<CancellationToken, Task<OperationResult<IInspectCaptureSession>>>? InspectSessionFactory { get; set; }
 
     /// <summary>
+    ///     When set, replaces <see cref="SessionHelper.ParallelRecognitionVariable"/> for the inspection helper started
+    ///     by this call. A null result means the variable is unset. One-shot inspection reads the same variable through
+    ///     <see cref="PerceptionService.ParallelRecognitionVariableOverride"/>.
+    /// </summary>
+    internal Func<string?>? ParallelRecognitionVariableOverride { get; set; }
+
+    /// <summary>
     ///     When set, replaces the active console session read. A null result means the session is unknown.
     ///     The reused helper stays in the session where it started, so its capture cannot report a later switch.
     /// </summary>
@@ -378,6 +385,11 @@ public sealed class InputTools(
         }
     }
 
+    private string? ParallelRecognitionValue() =>
+        ParallelRecognitionVariableOverride is not null
+            ? ParallelRecognitionVariableOverride()
+            : Environment.GetEnvironmentVariable(SessionHelper.ParallelRecognitionVariable);
+
     private int? ActiveConsoleSession()
     {
         if (ActiveConsoleSessionOverride is not null)
@@ -400,7 +412,12 @@ public sealed class InputTools(
         CancellationToken cancellationToken) =>
         InspectSessionFactory is not null
             ? InspectSessionFactory(cancellationToken)
-            : InspectHelperSession.StartAsync(launcher, elevated, desktop, cancellationToken);
+            : InspectHelperSession.StartAsync(
+                launcher,
+                elevated,
+                desktop,
+                cancellationToken,
+                environment: SessionHelper.ParallelRecognitionEnvironment(ParallelRecognitionValue()));
 
     private Task<OperationResult<PerceptionOutcome>> ObserveAsync(
         string? observeWindowHandle,

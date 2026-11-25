@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 
@@ -8,6 +9,27 @@ namespace Vestigo.Processes;
 
 public static partial class SessionHelper
 {
+    /// <summary>
+    ///     Process switch for inspection helpers. Unset, or any value other than <c>0</c>, overlaps OCR with UI Automation.
+    ///     <c>0</c> runs them one after the other. This is not a <c>VestigoOptions</c> setting. The service reads it from its
+    ///     own process and forwards the resolved value, because an interactive helper does not inherit the service environment.
+    /// </summary>
+    internal const string ParallelRecognitionVariable = "VESTIGO_INSPECT_PARALLEL_RECOGNITION";
+
+    /// <summary>Unset and every value except <c>0</c> overlap OCR and UI Automation. <c>0</c> is the sequential rollback.</summary>
+    internal static bool ShouldParallelizeRecognition(string? value) =>
+        !string.Equals(value?.Trim(), "0", StringComparison.Ordinal);
+
+    /// <summary>The helper environment entry for one launch. The value is always <c>1</c> or <c>0</c>.</summary>
+    internal static Dictionary<string, string> ParallelRecognitionEnvironment(string? value) =>
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            [ParallelRecognitionVariable] = ShouldParallelizeRecognition(value) ? "1" : "0"
+        };
+
+    /// <summary>Reads <see cref="ParallelRecognitionVariable"/> from this process.</summary>
+    internal static bool ParallelRecognitionEnabled() =>
+        ShouldParallelizeRecognition(Environment.GetEnvironmentVariable(ParallelRecognitionVariable));
     /// <summary>
     ///     Builds helper arguments for <c>inspect-screen</c>: the capture arguments with the full image requested,
     ///     plus switches for the UI Automation walk and OCR.
@@ -76,7 +98,7 @@ public static partial class SessionHelper
             return RejectInspect(error!);
         }
 
-        OperationResult<InspectCaptureResult> result = ExecuteInspect(request, uia, ocr);
+        OperationResult<InspectCaptureResult> result = ExecuteInspect(request, uia, ocr, ParallelRecognitionEnabled());
         if (!result.Success)
         {
             return RejectInspect(result.Error!, result.ErrorCode!, result.Reason);
@@ -88,48 +110,44 @@ public static partial class SessionHelper
 
     /// <summary>
     ///     Captures one frame. Desktop relation, window identity, and the window crop are resolved again on every call.
+    ///     Recognition follows <see cref="ParallelRecognitionEnabled"/>.
     /// </summary>
-    internal static OperationResult<InspectCaptureResult> ExecuteInspect(ScreenCaptureRequest request, bool uia, bool ocr)
+    internal static OperationResult<InspectCaptureResult> ExecuteInspect(ScreenCaptureRequest request, bool uia, bool ocr) =>
+        ExecuteInspect(request, uia, ocr, ParallelRecognitionEnabled());
+
+    /// <summary>
+    ///     Captures one frame, then UI Automation and OCR. When <paramref name="parallel"/> is set and both are requested,
+    ///     OCR runs on a worker while UI Automation stays on this thread. The worker is joined before this method returns.
+    /// </summary>
+    internal static OperationResult<InspectCaptureResult> ExecuteInspect(
+        ScreenCaptureRequest request,
+        bool uia,
+        bool ocr,
+        bool parallel) =>
+        ExecuteInspect(request, uia, ocr, parallel, ScreenCapture.Capture, CollectUia, OcrReader.Read);
+
+    /// <summary>
+    ///     Test seam for <see cref="ExecuteInspect(ScreenCaptureRequest, bool, bool, bool)"/>. UI Automation runs on the
+    ///     calling thread. OCR runs on a worker only when both branches are requested and <paramref name="parallel"/> is set.
+    /// </summary>
+    internal static OperationResult<InspectCaptureResult> ExecuteInspect(
+        ScreenCaptureRequest request,
+        bool uia,
+        bool ocr,
+        bool parallel,
+        Func<ScreenCaptureRequest, OperationResult<ScreenCaptureResult>> captureFrame,
+        Func<ScreenCaptureResult, (IReadOnlyList<ScreenElement> Elements, string Status)> readUia,
+        Func<byte[], DesktopRect, (IReadOnlyList<ScreenElement> Lines, string Status)> readOcr)
     {
         try
         {
-            OperationResult<ScreenCaptureResult> captured = ScreenCapture.Capture(request with { IncludeFullImage = true });
+            OperationResult<ScreenCaptureResult> captured = captureFrame(request with { IncludeFullImage = true });
             if (!captured.Success)
             {
                 return captured.FailAs<InspectCaptureResult>();
             }
 
-            ScreenCaptureResult capture = captured.Value!;
-            nint previousDpi = WindowEnumerator.SetDpiAware();
-            try
-            {
-                IReadOnlyList<ScreenElement> elements = [];
-                string uiaStatus = "skipped";
-                if (uia)
-                {
-                    IReadOnlyList<WindowInfo> windows = WindowEnumerator.List(WindowSelector.All with { Limit = 400 }).Windows;
-                    if (capture.WindowHandle is { Length: > 0 } handle)
-                    {
-                        windows = windows.Where(window => string.Equals(window.Handle, handle, StringComparison.OrdinalIgnoreCase)).ToList();
-                    }
-
-                    (elements, uiaStatus) = UiaWalker.Collect(windows, capture.Bounds);
-                }
-
-                List<ScreenElement> all = [.. elements];
-                string ocrStatus = "skipped";
-                if (ocr && capture.FullPngBase64 is { Length: > 0 } fullPng)
-                {
-                    (IReadOnlyList<ScreenElement> lines, ocrStatus) = OcrReader.Read(Convert.FromBase64String(fullPng), capture.Bounds);
-                    all.AddRange(lines);
-                }
-
-                return OperationResult<InspectCaptureResult>.Ok(new InspectCaptureResult(capture, all, ocrStatus, uiaStatus));
-            }
-            finally
-            {
-                WindowEnumerator.RestoreDpi(previousDpi);
-            }
+            return Recognize(captured.Value!, uia, ocr, parallel, readUia, readOcr);
         }
         catch (System.Text.RegularExpressions.RegexParseException ex)
         {
@@ -138,6 +156,119 @@ public static partial class SessionHelper
         catch (System.Text.RegularExpressions.RegexMatchTimeoutException ex)
         {
             return OperationResult<InspectCaptureResult>.Fail("invalid_request", "Title pattern timed out: " + ex.Message);
+        }
+    }
+
+    /// <summary>UI Automation for one capture: the window inventory, then the elements that overlap the frame.</summary>
+    private static (IReadOnlyList<ScreenElement> Elements, string Status) CollectUia(ScreenCaptureResult capture)
+    {
+        IReadOnlyList<WindowInfo> windows = WindowEnumerator.List(WindowSelector.All with { Limit = 400 }).Windows;
+        if (capture.WindowHandle is { Length: > 0 } handle)
+        {
+            windows = windows.Where(window => string.Equals(window.Handle, handle, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        return UiaWalker.Collect(windows, capture.Bounds);
+    }
+
+    /// <summary>
+    ///     Runs UI Automation on this thread and, when both sources are requested, OCR on a worker. UI Automation elements
+    ///     are listed before OCR elements. A worker started for this capture is finished before the method returns.
+    /// </summary>
+    private static OperationResult<InspectCaptureResult> Recognize(
+        ScreenCaptureResult capture,
+        bool uia,
+        bool ocr,
+        bool parallel,
+        Func<ScreenCaptureResult, (IReadOnlyList<ScreenElement> Elements, string Status)> readUia,
+        Func<byte[], DesktopRect, (IReadOnlyList<ScreenElement> Lines, string Status)> readOcr)
+    {
+        string? fullPng = capture.FullPngBase64;
+        bool runOcr = ocr && fullPng is { Length: > 0 };
+        Task<(IReadOnlyList<ScreenElement> Lines, string Status)>? ocrTask = null;
+        if (parallel && uia && runOcr)
+        {
+            string png = fullPng!;
+            DesktopRect bounds = capture.Bounds;
+            ocrTask = Task.Run(() => readOcr(Convert.FromBase64String(png), bounds));
+        }
+
+        IReadOnlyList<ScreenElement> elements = [];
+        string uiaStatus = "skipped";
+        Exception? uiaFailure = null;
+        nint previousDpi = 0;
+        try
+        {
+            previousDpi = WindowEnumerator.SetDpiAware();
+            if (uia)
+            {
+                try
+                {
+                    (elements, uiaStatus) = readUia(capture);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    uiaFailure = ex;
+                }
+            }
+
+            (IReadOnlyList<ScreenElement> lines, string ocrStatus) = FinishOcr(ocrTask, runOcr, fullPng, capture.Bounds, readOcr, uiaFailure);
+            if (uiaFailure is not null)
+            {
+                ExceptionDispatchInfo.Capture(uiaFailure).Throw();
+            }
+
+            return OperationResult<InspectCaptureResult>.Ok(new InspectCaptureResult(capture, [.. elements, .. lines], ocrStatus, uiaStatus));
+        }
+        finally
+        {
+            WindowEnumerator.RestoreDpi(previousDpi);
+            ObserveOcr(ocrTask);
+        }
+    }
+
+    private static (IReadOnlyList<ScreenElement> Lines, string Status) FinishOcr(
+        Task<(IReadOnlyList<ScreenElement> Lines, string Status)>? ocrTask,
+        bool runOcr,
+        string? fullPng,
+        DesktopRect bounds,
+        Func<byte[], DesktopRect, (IReadOnlyList<ScreenElement> Lines, string Status)> readOcr,
+        Exception? uiaFailure)
+    {
+        if (ocrTask is not null)
+        {
+            try
+            {
+                return ocrTask.GetAwaiter().GetResult();
+            }
+            catch (Exception ex) when (uiaFailure is not null && ex is not OutOfMemoryException)
+            {
+                return ([], "skipped");
+            }
+        }
+
+        if (!runOcr)
+        {
+            return ([], "skipped");
+        }
+
+        return readOcr(Convert.FromBase64String(fullPng!), bounds);
+    }
+
+    /// <summary>Waits out an OCR worker that <see cref="FinishOcr"/> did not already observe, so it cannot outlive the capture.</summary>
+    private static void ObserveOcr(Task? ocrTask)
+    {
+        if (ocrTask is null || ocrTask.IsCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            ocrTask.GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
         }
     }
 
