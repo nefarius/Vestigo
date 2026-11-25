@@ -212,6 +212,11 @@ public static partial class SessionHelper
                 }
             }
 
+            if (uiaFailure is not null && ocrTask is null)
+            {
+                ExceptionDispatchInfo.Capture(uiaFailure).Throw();
+            }
+
             (IReadOnlyList<ScreenElement> lines, string ocrStatus) = FinishOcr(ocrTask, runOcr, fullPng, capture.Bounds, readOcr, uiaFailure);
             if (uiaFailure is not null)
             {

@@ -282,7 +282,7 @@ public class InspectParallelWindowsTests
             _frozen.Set();
             if (!_thread.Join(TimeSpan.FromSeconds(5)))
             {
-                _thread.Interrupt();
+                Assert.Fail("The fixture window thread did not exit.");
             }
 
             _ready.Dispose();

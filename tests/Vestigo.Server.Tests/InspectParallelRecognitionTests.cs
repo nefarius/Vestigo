@@ -252,7 +252,12 @@ public class InspectParallelRecognitionTests : IDisposable
                     },
                     (_, _) =>
                     {
-                        Interlocked.Increment(ref liveWorkers);
+                        bool tracked = current == 0;
+                        if (tracked)
+                        {
+                            Interlocked.Increment(ref liveWorkers);
+                        }
+
                         try
                         {
                             if (current == 0)
@@ -264,7 +269,10 @@ public class InspectParallelRecognitionTests : IDisposable
                         }
                         finally
                         {
-                            Interlocked.Decrement(ref liveWorkers);
+                            if (tracked)
+                            {
+                                Interlocked.Decrement(ref liveWorkers);
+                            }
                         }
                     });
             });
@@ -274,6 +282,25 @@ public class InspectParallelRecognitionTests : IDisposable
         Assert.Equal("capture_failed", JsonDocument.Parse(lines[0]).RootElement.GetProperty("errorCode").GetString());
         Assert.True(JsonDocument.Parse(lines[1]).RootElement.GetProperty("success").GetBoolean());
         Assert.Equal(0, Volatile.Read(ref liveWorkers));
+    }
+
+    [Fact]
+    public void SequentialUiaException_DoesNotRunOcr()
+    {
+        int ocrCalls = 0;
+        Assert.Throws<InvalidOperationException>(() => SessionHelper.ExecuteInspect(
+            ScreenCaptureRequest.DesktopPreview,
+            true,
+            true,
+            false,
+            _ => OperationResult<ScreenCaptureResult>.Ok(Scene.Ready.Capture!),
+            _ => throw new InvalidOperationException("window list unavailable"),
+            (_, _) =>
+            {
+                ocrCalls++;
+                return (Scene.Ready.Ocr, Scene.Ready.OcrStatus);
+            }));
+        Assert.Equal(0, ocrCalls);
     }
 
     [Fact]
