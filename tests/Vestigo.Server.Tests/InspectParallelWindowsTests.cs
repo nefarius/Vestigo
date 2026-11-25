@@ -52,9 +52,10 @@ public class InspectParallelWindowsTests
         Assert.NotEqual(firstSequential.Bounds, secondSequential.Bounds);
         Assert.Contains("Vestigo Parallel B", secondSequential.Title, StringComparison.Ordinal);
 
+        nint closedHandle = window.Handle;
         window.Close();
-        OperationResult<InspectCaptureResult> closedSequential = window.Inspect(false);
-        OperationResult<InspectCaptureResult> closedParallel = window.Inspect(true);
+        OperationResult<InspectCaptureResult> closedSequential = Fixture.Inspect(closedHandle, false);
+        OperationResult<InspectCaptureResult> closedParallel = Fixture.Inspect(closedHandle, true);
         Assert.Equal("window_not_found", closedSequential.ErrorCode);
         Assert.Equal(closedSequential.ErrorCode, closedParallel.ErrorCode);
     }
@@ -107,6 +108,12 @@ public class InspectParallelWindowsTests
         if (process.WaitForExit(3000))
         {
             string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            if (process.ExitCode != 0)
+            {
+                Assert.Fail($"The inspection helper exited {process.ExitCode} before the hang could be observed.{Environment.NewLine}{output}{Environment.NewLine}{error}");
+            }
+
             Assert.Skip("UI Automation returned while the window thread was frozen, so process cleanup was not required. " + output);
         }
 
