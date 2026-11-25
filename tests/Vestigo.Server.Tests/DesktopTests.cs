@@ -288,74 +288,67 @@ public class DesktopTests
         }
 
         string className = "VestigoOcrCrop_" + Guid.NewGuid().ToString("N");
-        if (!TryCreateHiddenWindow(className, out nint hwnd, 80, 90, 640, 480))
+        using HiddenWindowHost window = new(className, 80, 90, 640, 480);
+        if (!window.Created)
         {
-            UnregisterClass(className, GetModuleHandle(null));
             Assert.Skip("Could not open a private hidden window for the crop fixture.");
         }
 
-        try
+        nint hwnd = window.Handle;
+        DesktopRect crop = new(10, 20, 80, 40);
+        ScreenCaptureRequest request = new(
+            ScreenCaptureTarget.Window,
+            null,
+            "0x" + hwnd.ToString("X"),
+            [],
+            [],
+            null,
+            null,
+            false,
+            0,
+            true,
+            DesktopOptions.DefaultMaxScreenshotBytes,
+            crop);
+
+        OperationResult<ScreenCaptureResult> first = ScreenCapture.Capture(request);
+        if (first.ErrorCode is "desktop_unavailable" or "unsupported_on_inactive_desktop")
         {
-            DesktopRect crop = new(10, 20, 80, 40);
-            ScreenCaptureRequest request = new(
-                ScreenCaptureTarget.Window,
-                null,
-                "0x" + hwnd.ToString("X"),
-                [],
-                [],
-                null,
-                null,
-                false,
-                0,
-                true,
-                DesktopOptions.DefaultMaxScreenshotBytes,
-                crop);
-
-            OperationResult<ScreenCaptureResult> first = ScreenCapture.Capture(request);
-            if (first.ErrorCode is "desktop_unavailable" or "unsupported_on_inactive_desktop")
-            {
-                Assert.Skip("The input desktop is not available, so the private window was not captured.");
-            }
-
-            Assert.True(first.Success, first.Error);
-            Assert.Equal(crop, first.Value!.EffectiveCrop);
-            Assert.NotNull(first.Value.WindowBounds);
-            Assert.Equal(crop.Width, first.Value.Bounds.Width);
-            Assert.Equal(crop.Height, first.Value.Bounds.Height);
-            Assert.Equal(first.Value.WindowBounds.X + crop.X, first.Value.Bounds.X);
-            Assert.Equal(first.Value.WindowBounds.Y + crop.Y, first.Value.Bounds.Y);
-            byte[] png = Convert.FromBase64String(first.Value.FullPngBase64!);
-            Assert.Equal(new DesktopSize(crop.Width, crop.Height), ScreenCapture.ReadPngSize(png));
-
-            Assert.True(SetWindowPos(hwnd, 0, 220, 160, 0, 0, 0x0001 | 0x0004 | 0x0010));
-            OperationResult<ScreenCaptureResult> second = ScreenCapture.Capture(request);
-            Assert.True(second.Success, second.Error);
-            Assert.Equal(first.Value.EffectiveCrop, second.Value!.EffectiveCrop);
-            Assert.NotEqual(first.Value.WindowBounds, second.Value.WindowBounds);
-            Assert.Equal(
-                second.Value.WindowBounds!.X - first.Value.WindowBounds.X,
-                second.Value.Bounds.X - first.Value.Bounds.X);
-            Assert.Equal(
-                second.Value.WindowBounds.Y - first.Value.WindowBounds.Y,
-                second.Value.Bounds.Y - first.Value.Bounds.Y);
-
-            Assert.Equal(
-                "empty_region",
-                ScreenCapture.Capture(request with { WindowCrop = new DesktopRect(10_000, 10_000, 20, 20) }).ErrorCode);
-            Assert.Equal(
-                "invalid_request",
-                ScreenCapture.Capture(request with { Target = ScreenCaptureTarget.Desktop }).ErrorCode);
-            OperationResult<ScreenCaptureResult> full = ScreenCapture.Capture(request with { WindowCrop = null });
-            Assert.True(full.Success, full.Error);
-            Assert.Null(full.Value!.EffectiveCrop);
-            Assert.Null(full.Value.WindowBounds);
-            Assert.Equal(second.Value.WindowBounds, full.Value.Bounds);
+            Assert.Skip("The input desktop is not available, so the private window was not captured.");
         }
-        finally
-        {
-            DestroyWindow(hwnd);
-            UnregisterClass(className, GetModuleHandle(null));
-        }
+
+        Assert.True(first.Success, first.Error);
+        Assert.Equal(crop, first.Value!.EffectiveCrop);
+        Assert.NotNull(first.Value.WindowBounds);
+        Assert.Equal(crop.Width, first.Value.Bounds.Width);
+        Assert.Equal(crop.Height, first.Value.Bounds.Height);
+        Assert.Equal(first.Value.WindowBounds.X + crop.X, first.Value.Bounds.X);
+        Assert.Equal(first.Value.WindowBounds.Y + crop.Y, first.Value.Bounds.Y);
+        byte[] png = Convert.FromBase64String(first.Value.FullPngBase64!);
+        Assert.Equal(new DesktopSize(crop.Width, crop.Height), ScreenCapture.ReadPngSize(png));
+
+        Assert.True(SetWindowPos(hwnd, 0, 220, 160, 0, 0, 0x0001 | 0x0004 | 0x0010));
+        OperationResult<ScreenCaptureResult> second = ScreenCapture.Capture(request);
+        Assert.True(second.Success, second.Error);
+        Assert.Equal(first.Value.EffectiveCrop, second.Value!.EffectiveCrop);
+        Assert.NotEqual(first.Value.WindowBounds, second.Value.WindowBounds);
+        Assert.Equal(
+            second.Value.WindowBounds!.X - first.Value.WindowBounds.X,
+            second.Value.Bounds.X - first.Value.Bounds.X);
+        Assert.Equal(
+            second.Value.WindowBounds.Y - first.Value.WindowBounds.Y,
+            second.Value.Bounds.Y - first.Value.Bounds.Y);
+
+        Assert.Equal(
+            "empty_region",
+            ScreenCapture.Capture(request with { WindowCrop = new DesktopRect(10_000, 10_000, 20, 20) }).ErrorCode);
+        Assert.Equal(
+            "invalid_request",
+            ScreenCapture.Capture(request with { Target = ScreenCaptureTarget.Desktop }).ErrorCode);
+        OperationResult<ScreenCaptureResult> full = ScreenCapture.Capture(request with { WindowCrop = null });
+        Assert.True(full.Success, full.Error);
+        Assert.Null(full.Value!.EffectiveCrop);
+        Assert.Null(full.Value.WindowBounds);
+        Assert.Equal(second.Value.WindowBounds, full.Value.Bounds);
     }
 
     [Theory]
@@ -784,67 +777,61 @@ public class DesktopTests
         }
 
         string className = "VestigoDesktopTest_" + Guid.NewGuid().ToString("N");
-        if (!TryCreateHiddenWindow(className, out nint hwnd))
+        using HiddenWindowHost host = new(className);
+        if (!host.Created)
         {
             return;
         }
 
-        try
+        nint hwnd = host.Handle;
+        DesktopTools tools = CreateTools(new UnavailableLauncher());
+        OperationResult<WindowListResult> listed = await tools.ListWindows(
+            pid: Environment.ProcessId,
+            className: className,
+            includeHidden: true,
+            limit: 0,
+            context: "service");
+
+        Assert.True(listed.Success, listed.Error);
+        WindowInfo window = Assert.Single(listed.Value!.Windows);
+        Assert.Equal(Environment.ProcessId, window.ProcessId);
+        Assert.Equal(className, window.ClassName);
+        Assert.False(window.Visible);
+        Assert.StartsWith("0x", window.Handle, StringComparison.Ordinal);
+        Assert.NotEmpty(listed.Value.Displays);
+        Assert.Contains(listed.Value.Displays, display => display.GdiDeviceName.StartsWith(@"\\.\DISPLAY", StringComparison.OrdinalIgnoreCase));
+        Assert.False(listed.Value.Truncated);
+
+        OperationResult<DisplayListResult> displays = await tools.ListDisplays(context: "service");
+        Assert.True(displays.Success, displays.Error);
+        Assert.NotEmpty(displays.Value!.Displays);
+        Assert.Contains(displays.Value.Displays, display => display.GdiDeviceName.StartsWith(@"\\.\DISPLAY", StringComparison.OrdinalIgnoreCase));
+
+        OperationResult<ScreenCaptureResult> shot = ScreenCapture.Capture(new ScreenCaptureRequest(
+            ScreenCaptureTarget.Window,
+            null,
+            "0x" + hwnd.ToString("X"),
+            [],
+            [],
+            null,
+            null,
+            false,
+            64,
+            false,
+            DesktopOptions.DefaultMaxScreenshotBytes));
+        if (shot.ErrorCode == "desktop_unavailable")
         {
-            DesktopTools tools = CreateTools(new UnavailableLauncher());
-            OperationResult<WindowListResult> listed = await tools.ListWindows(
-                pid: Environment.ProcessId,
-                className: className,
-                includeHidden: true,
-                limit: 0,
-                context: "service");
-
-            Assert.True(listed.Success, listed.Error);
-            WindowInfo window = Assert.Single(listed.Value!.Windows);
-            Assert.Equal(Environment.ProcessId, window.ProcessId);
-            Assert.Equal(className, window.ClassName);
-            Assert.False(window.Visible);
-            Assert.StartsWith("0x", window.Handle, StringComparison.Ordinal);
-            Assert.NotEmpty(listed.Value.Displays);
-            Assert.Contains(listed.Value.Displays, display => display.GdiDeviceName.StartsWith(@"\\.\DISPLAY", StringComparison.OrdinalIgnoreCase));
-            Assert.False(listed.Value.Truncated);
-
-            OperationResult<DisplayListResult> displays = await tools.ListDisplays(context: "service");
-            Assert.True(displays.Success, displays.Error);
-            Assert.NotEmpty(displays.Value!.Displays);
-            Assert.Contains(displays.Value.Displays, display => display.GdiDeviceName.StartsWith(@"\\.\DISPLAY", StringComparison.OrdinalIgnoreCase));
-
-            OperationResult<ScreenCaptureResult> shot = ScreenCapture.Capture(new ScreenCaptureRequest(
-                ScreenCaptureTarget.Window,
-                null,
-                "0x" + hwnd.ToString("X"),
-                [],
-                [],
-                null,
-                null,
-                false,
-                64,
-                false,
-                DesktopOptions.DefaultMaxScreenshotBytes));
-            if (shot.ErrorCode == "desktop_unavailable")
-            {
-                return;
-            }
-
-            Assert.True(shot.Success, shot.Error);
-            Assert.Equal(ScreenCaptureTarget.Window, shot.Value!.Target);
-            Assert.NotNull(shot.Value.PreviewPngBase64);
-            Assert.Null(shot.Value.FullPngBase64);
-            byte[] preview = Convert.FromBase64String(shot.Value.PreviewPngBase64);
-            Assert.Equal(0x89, preview[0]);
-            DesktopSize size = ScreenCapture.ReadPngSize(preview);
-            Assert.True(size.Width > 0 && size.Height > 0);
+            return;
         }
-        finally
-        {
-            DestroyWindow(hwnd);
-            UnregisterClass(className, GetModuleHandle(null));
-        }
+
+        Assert.True(shot.Success, shot.Error);
+        Assert.Equal(ScreenCaptureTarget.Window, shot.Value!.Target);
+        Assert.NotNull(shot.Value.PreviewPngBase64);
+        Assert.Null(shot.Value.FullPngBase64);
+        byte[] preview = Convert.FromBase64String(shot.Value.PreviewPngBase64);
+        Assert.Equal(0x89, preview[0]);
+        DesktopSize size = ScreenCapture.ReadPngSize(preview);
+        Assert.True(size.Width > 0 && size.Height > 0);
     }
 
     [Fact]
@@ -943,25 +930,145 @@ public class DesktopTests
             throw new ProcessLaunchException("no_interactive_session", "No user is logged on at the console.");
     }
 
-    private static readonly WndProc WindowProcedure = (window, message, wParam, lParam) =>
-        DefWindowProc(window, message, wParam, lParam);
-
-    private static bool TryCreateHiddenWindow(string className, out nint hwnd, int x = 0, int y = 0, int width = 200, int height = 100)
+    /// <summary>
+    ///     Owns a hidden window on a thread that runs a message loop. <c>PrintWindow</c> sends
+    ///     <c>WM_PRINT</c> to that thread and waits for the window procedure. The service-context capture
+    ///     runs after <c>await</c>, so the window cannot live on the parked xUnit worker.
+    /// </summary>
+    private sealed class HiddenWindowHost : IDisposable
     {
-        hwnd = 0;
-        WndClass wc = new()
+        private const uint WmClose = 0x0010;
+        private const uint WmDestroy = 0x0002;
+
+        private readonly object _gate = new();
+        private readonly Thread _thread;
+        private readonly ManualResetEventSlim _ready = new(false);
+        private readonly WndProc _procedure;
+        private readonly string _className;
+        private readonly nint _instance;
+        private nint _hwnd;
+        private bool _created;
+
+        public HiddenWindowHost(string className, int x = 0, int y = 0, int width = 200, int height = 100)
         {
-            lpfnWndProc = Marshal.GetFunctionPointerForDelegate(WindowProcedure),
-            hInstance = GetModuleHandle(null),
-            lpszClassName = className
-        };
-        if (RegisterClass(ref wc) == 0)
-        {
-            return false;
+            _className = className;
+            _instance = GetModuleHandle(null);
+            _procedure = Procedure;
+            _thread = new Thread(() => Run(x, y, width, height))
+            {
+                IsBackground = true,
+                Name = "VestigoHiddenWindow"
+            };
+            _thread.SetApartmentState(ApartmentState.STA);
+            _thread.Start();
+            if (!_ready.Wait(TimeSpan.FromSeconds(5)))
+            {
+                Dispose();
+                throw new TimeoutException("The hidden window thread did not start.");
+            }
         }
 
-        hwnd = CreateWindowEx(0, className, "Vestigo Desktop Test", 0, x, y, width, height, 0, 0, wc.hInstance, 0);
-        return hwnd != 0;
+        public nint Handle
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _hwnd;
+                }
+            }
+        }
+
+        public bool Created
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _created;
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            nint hwnd;
+            bool created;
+            lock (_gate)
+            {
+                hwnd = _hwnd;
+                created = _created;
+            }
+
+            if (created && hwnd != 0)
+            {
+                PostMessage(hwnd, WmClose, 0, 0);
+            }
+
+            if (_thread.Join(TimeSpan.FromSeconds(5)))
+            {
+                _ready.Dispose();
+            }
+        }
+
+        private void Run(int x, int y, int width, int height)
+        {
+            WndClass windowClass = new()
+            {
+                lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_procedure),
+                hInstance = _instance,
+                lpszClassName = _className
+            };
+            ushort atom = RegisterClass(ref windowClass);
+            nint hwnd = 0;
+            if (atom != 0)
+            {
+                hwnd = CreateWindowEx(0, _className, "Vestigo Desktop Test", 0, x, y, width, height, 0, 0, _instance, 0);
+            }
+
+            lock (_gate)
+            {
+                _hwnd = hwnd;
+                _created = hwnd != 0;
+            }
+
+            _ready.Set();
+            if (hwnd == 0)
+            {
+                if (atom != 0)
+                {
+                    UnregisterClass(_className, _instance);
+                }
+
+                return;
+            }
+
+            NativeMessage message = default;
+            while (GetMessage(ref message, 0, 0, 0) > 0)
+            {
+                TranslateMessage(ref message);
+                DispatchMessage(ref message);
+            }
+
+            UnregisterClass(_className, _instance);
+        }
+
+        private static nint Procedure(nint window, uint message, nint wParam, nint lParam)
+        {
+            if (message == WmClose)
+            {
+                DestroyWindow(window);
+                return 0;
+            }
+
+            if (message == WmDestroy)
+            {
+                PostQuitMessage(0);
+                return 0;
+            }
+
+            return DefWindowProc(window, message, wParam, lParam);
+        }
     }
 
     private delegate nint WndProc(nint window, uint message, nint wParam, nint lParam);
@@ -998,6 +1105,33 @@ public class DesktopTests
         nint menu,
         nint instance,
         nint parameter);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMessage
+    {
+        public nint Window;
+        public uint Message;
+        public nint WParam;
+        public nint LParam;
+        public uint Time;
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetMessage(ref NativeMessage message, nint window, uint filterMin, uint filterMax);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref NativeMessage message);
+
+    [DllImport("user32.dll")]
+    private static extern nint DispatchMessage(ref NativeMessage message);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern void PostQuitMessage(int exitCode);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyWindow(nint window);

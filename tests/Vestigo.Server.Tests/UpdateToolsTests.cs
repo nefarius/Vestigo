@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 
 using Minisign;
+using Minisign.Models;
 
 using Vestigo.Build;
 using Vestigo.Configuration;
@@ -12,9 +13,12 @@ using Vestigo.Updates;
 
 namespace Vestigo.Server.Tests;
 
-public class UpdateToolsTests : IDisposable
+public class UpdateToolsTests : IDisposable, IClassFixture<UpdateToolsTests.SignedFeedKeyFixture>
 {
     private readonly string _root = Directory.CreateTempSubdirectory("vestigo-updates-").FullName;
+    private readonly SignedFeedKeyFixture _keys;
+
+    public UpdateToolsTests(SignedFeedKeyFixture keys) => _keys = keys;
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
@@ -65,7 +69,7 @@ public class UpdateToolsTests : IDisposable
     [Fact]
     public async Task Feed_AcceptsAValidSignedManifest()
     {
-        using SignedFeed feed = new();
+        using SignedFeed feed = new(_keys);
         feed.Sign(UpdateFeed.CreateManifest(Sample("9.8.7.6")));
         UpdateFeedClient client = Client(feed);
 
@@ -85,7 +89,7 @@ public class UpdateToolsTests : IDisposable
     [Fact]
     public async Task Feed_RejectsASummaryLinkOutsideTheRelease()
     {
-        using SignedFeed feed = new();
+        using SignedFeed feed = new(_keys);
         string downloadUrl = UpdateEndpoints.DirectoryUrl + "Vestigo-v9.0.0.msi";
         feed.Sign(Encoding.UTF8.GetBytes(
             $$"""
@@ -113,7 +117,7 @@ public class UpdateToolsTests : IDisposable
     [Fact]
     public async Task Feed_RejectsAGitHubPackageUrl()
     {
-        using SignedFeed feed = new();
+        using SignedFeed feed = new(_keys);
         feed.Sign(Encoding.UTF8.GetBytes(
             """
             {
@@ -153,7 +157,7 @@ public class UpdateToolsTests : IDisposable
     [Fact]
     public async Task Feed_RejectsABadSignature()
     {
-        using SignedFeed feed = new();
+        using SignedFeed feed = new(_keys);
         feed.Sign(UpdateFeed.CreateManifest(Sample("9.8.7.6")));
         feed.Manifest[10] ^= 0xFF;
         UpdateFeedClient client = Client(feed);
@@ -166,7 +170,7 @@ public class UpdateToolsTests : IDisposable
     [Fact]
     public async Task Feed_RejectsAMissingSidecar()
     {
-        using SignedFeed feed = new();
+        using SignedFeed feed = new(_keys);
         feed.Sign(UpdateFeed.CreateManifest(Sample("9.8.7.6")));
         UpdateFeedClient client = Client(feed, sidecarStatus: HttpStatusCode.NotFound);
 
@@ -178,7 +182,7 @@ public class UpdateToolsTests : IDisposable
     [Fact]
     public async Task Feed_RejectsAForeignUrl()
     {
-        using SignedFeed feed = new();
+        using SignedFeed feed = new(_keys);
         feed.Sign(Encoding.UTF8.GetBytes(
             """
             {
@@ -530,12 +534,13 @@ public class UpdateToolsTests : IDisposable
 
     private sealed class SignedFeed : IDisposable
     {
+        private readonly SignedFeedKeyFixture _keys;
         private readonly string _directory = Directory.CreateTempSubdirectory("vestigo-minisign-").FullName;
 
-        public SignedFeed()
+        public SignedFeed(SignedFeedKeyFixture keys)
         {
-            Core.GenerateKeyPair("test-password", true, _directory, "vestigo-test");
-            PublicKey = File.ReadAllLines(Path.Combine(_directory, "vestigo-test.pub"))[1].Trim();
+            _keys = keys;
+            PublicKey = keys.PublicKey;
         }
 
         public string PublicKey { get; }
@@ -548,10 +553,28 @@ public class UpdateToolsTests : IDisposable
         {
             string path = Path.Combine(_directory, UpdateFeed.ManifestFileName);
             File.WriteAllBytes(path, manifest);
-            UpdateFeed.SignManifest(path, Path.Combine(_directory, "vestigo-test.key"), "test-password");
+            string signaturePath = Core.SignHashed(path, _keys.PrivateKey);
             Manifest = File.ReadAllBytes(path);
-            Sidecar = File.ReadAllBytes(path + ".minisig");
+            Sidecar = File.ReadAllBytes(signaturePath);
         }
+
+        public void Dispose() => Directory.Delete(_directory, recursive: true);
+    }
+
+    public sealed class SignedFeedKeyFixture : IDisposable
+    {
+        private readonly string _directory = Directory.CreateTempSubdirectory("vestigo-minisign-key-").FullName;
+
+        public SignedFeedKeyFixture()
+        {
+            MinisignKeyPair pair = Core.GenerateKeyPair("test-password", true, _directory, "vestigo-test");
+            PublicKey = File.ReadAllLines(Path.Combine(_directory, "vestigo-test.pub"))[1].Trim();
+            PrivateKey = pair.MinisignPrivateKey;
+        }
+
+        public string PublicKey { get; }
+
+        public MinisignPrivateKey PrivateKey { get; }
 
         public void Dispose() => Directory.Delete(_directory, recursive: true);
     }
