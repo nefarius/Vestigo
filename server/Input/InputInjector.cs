@@ -36,8 +36,8 @@ public static class InputInjector
         return Execute(batch, new WindowsInputPlatform());
     }
 
-    internal static OperationResult<InputResult> Execute(InputBatch batch, IInputPlatform platform) =>
-        new Runner(batch, platform).Run();
+    internal static OperationResult<InputResult> Execute(InputBatch batch, IInputPlatform platform, IKeyboardLayout? keys = null) =>
+        new Runner(batch, platform, keys).Run();
 
     internal static bool? FocusGranted(string? requested, string? actual)
     {
@@ -51,7 +51,7 @@ public static class InputInjector
                && (nint)wanted == (nint)seen;
     }
 
-    private sealed class Runner(InputBatch batch, IInputPlatform platform)
+    private sealed class Runner(InputBatch batch, IInputPlatform platform, IKeyboardLayout? keys)
     {
         private readonly List<HeldInput> _held = [];
 
@@ -301,7 +301,7 @@ public static class InputInjector
                     return Drag(step);
 
                 case InputKinds.Type:
-                    return Type(step.Text!);
+                    return IsKeysMode(step.InputMode) ? TypeKeys(step.Text ?? string.Empty) : Type(step.Text!);
 
                 case InputKinds.Key:
                     if (SendKeys(step.Keys!, release: false) is { Ok: false } pressFailure)
@@ -449,6 +449,103 @@ public static class InputInjector
 
             return Submit(inputs, checkFocus: true);
         }
+
+        private static bool IsKeysMode(string? inputMode) =>
+            !string.IsNullOrWhiteSpace(inputMode) && inputMode.Trim().Equals("keys", StringComparison.OrdinalIgnoreCase);
+
+        private ActionOutcome TypeKeys(string text)
+        {
+            IKeyboardLayout layout = keys ?? WindowsLayout();
+            if (!PhysicalKeyTranslator.TryPlan(text, layout, out PhysicalKeyPlan? plan, out PhysicalKeyFailure? failure))
+            {
+                return ActionOutcome.Fail(
+                    "unsupported_character",
+                    $"Unsupported character at position {failure?.Position ?? 0}.");
+            }
+
+            OperationResult<int> sent = PhysicalKeySender.Send(
+                plan!,
+                focusStillHeld: null,
+                SendPhysicalStroke,
+                ReleasePhysicalModifiers,
+                platform.IsKeyDown,
+                () => batch.RequireFocus && FocusGranted(batch.FocusWindow, platform.Foreground()) != true
+                    ? null
+                    : layout.Blocked());
+            if (sent.Success)
+            {
+                return ActionOutcome.Done();
+            }
+
+            if (sent.ErrorCode is InputStopCodes.FocusLost or InputStopCodes.FocusNotGranted or InputStopCodes.WindowNotFound)
+            {
+                return ActionOutcome.Stopped(sent.ErrorCode);
+            }
+
+            return ActionOutcome.Fail(sent.ErrorCode!, sent.Error!);
+        }
+
+        private IKeyboardLayout WindowsLayout() => new WindowsKeyboardLayout(ReceivingWindow(), ReceivingWindow);
+
+        private HWND ReceivingWindow()
+        {
+            string? foreground = platform.Foreground();
+            string? handle = FocusGranted(batch.FocusWindow, foreground) == true
+                ? batch.FocusWindow
+                : foreground;
+            return !string.IsNullOrWhiteSpace(handle) && WindowInspection.TryParseHandle(handle, out HWND parsed)
+                ? parsed
+                : default;
+        }
+
+        private OperationResult<int> SendPhysicalStroke(PhysicalKeyStroke stroke)
+        {
+            List<PreparedInput> inputs = [];
+            foreach (ushort vk in PhysicalKeySender.Modifiers(stroke))
+            {
+                if (!HoldsVirtualKey(vk))
+                {
+                    inputs.Add(new PreparedKey(vk, 0, false, false, false));
+                }
+            }
+
+            inputs.Add(new PreparedKey(stroke.Vk, stroke.Scan, false, false, stroke.Extended));
+            inputs.Add(new PreparedKey(stroke.Vk, stroke.Scan, true, false, stroke.Extended));
+            ActionOutcome sent = Submit(inputs, checkFocus: true);
+            if (sent.FocusStopped)
+            {
+                return OperationResult<int>.Fail(sent.StopCode!, "Focus changed before this character was sent.");
+            }
+
+            return sent.Ok
+                ? OperationResult<int>.Ok(inputs.Count)
+                : OperationResult<int>.Fail(sent.ErrorCode!, sent.Error!);
+        }
+
+        private OperationResult<bool> ReleasePhysicalModifiers(IReadOnlyList<ushort> virtualKeys)
+        {
+            List<PreparedInput> inputs = [];
+            foreach (ushort vk in virtualKeys)
+            {
+                if (HoldsVirtualKey(vk))
+                {
+                    inputs.Add(new PreparedKey(vk, 0, true, false, false));
+                }
+            }
+
+            if (inputs.Count == 0)
+            {
+                return OperationResult<bool>.Ok(true);
+            }
+
+            ActionOutcome sent = Submit(inputs, checkFocus: false);
+            return sent.Ok
+                ? OperationResult<bool>.Ok(true)
+                : OperationResult<bool>.Fail(sent.ErrorCode ?? "input_failed", sent.Error ?? "A modifier release was rejected.");
+        }
+
+        private bool HoldsVirtualKey(ushort vk) =>
+            _held.Exists(held => held.Release is PreparedKey key && !key.Unicode && key.Vk == vk);
 
         private ActionOutcome SendKeys(IReadOnlyList<KeyStroke> keys, bool release)
         {

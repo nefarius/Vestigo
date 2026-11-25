@@ -63,6 +63,9 @@ internal interface IInputPlatform
     (DateTimeOffset Utc, long Ticks) Now();
 
     (int Sent, int Win32Error) Send(IReadOnlyList<PreparedInput> inputs);
+
+    /// <summary>True when the console user already holds this virtual key.</summary>
+    bool IsKeyDown(ushort virtualKey);
 }
 
 internal sealed class WindowsInputPlatform : IInputPlatform
@@ -149,6 +152,8 @@ internal sealed class WindowsInputPlatform : IInputPlatform
         long ticks = QueryCounter() ?? Stopwatch.GetTimestamp();
         return (DateTimeOffset.UtcNow, ticks);
     }
+
+    public bool IsKeyDown(ushort virtualKey) => (PInvoke.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 
     public (int Sent, int Win32Error) Send(IReadOnlyList<PreparedInput> inputs)
     {

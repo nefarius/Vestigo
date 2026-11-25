@@ -182,6 +182,13 @@ GetForegroundWindow
 GetCursorPos
 ShowWindow
 SHOW_WINDOW_CMD
+GetKeyboardLayout
+VkKeyScanEx
+MapVirtualKeyEx
+ToUnicodeEx
+GetAsyncKeyState
+MAP_VIRTUAL_KEY_TYPE
+GetKeyState
 QueryPerformanceCounter
 QueryPerformanceFrequency
 

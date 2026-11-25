@@ -62,8 +62,11 @@ public sealed class InputActionSpec
     [Description("scroll only: wheel notches to scroll right (negative scrolls left).")]
     public int? DeltaX { get; set; }
 
-    [Description("type only: text typed as Unicode characters.")]
+    [Description("type only: text to type.")]
     public string? Text { get; set; }
+
+    [Description("type only. \"unicode\" (default) or \"keys\".")]
+    public string? InputMode { get; set; }
 
     [Description("key only: a key or chord such as enter, ctrl+c, ctrl+shift+esc, alt+f4 or win+r.")]
     public string? Keys { get; set; }
@@ -93,7 +96,8 @@ public sealed record InputStep(
     IReadOnlyList<KeyStroke>? Keys,
     int Milliseconds,
     int HoldMilliseconds = 0,
-    int DelayAfterMilliseconds = 0);
+    int DelayAfterMilliseconds = 0,
+    string? InputMode = null);
 
 /// <summary>Values of <c>injection.status</c> on a <c>send_input</c> result.</summary>
 public static class InputInjectionStatus

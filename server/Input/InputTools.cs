@@ -32,7 +32,8 @@ public sealed class InputTools(
     [McpServerTool(Name = "send_input", Destructive = true, OpenWorld = false)]
     [Description(
         "Injects mouse and keyboard input as the console user. actions run in order: move, click (button, count), down, up, scroll (deltaY notches down, deltaX right), "
-        + "drag (x,y to toX,toY), type (text as Unicode characters), key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). "
+        + "drag (x,y to toX,toY), type (text as Unicode characters by default; inputMode \"keys\" types virtual keys from the keyboard layout of the window that receives them; an unsupported character returns its position and sends nothing for that action; a different receiving-window layout during the action is layout_changed, and a Caps Lock change is caps_lock_changed; either sends no further characters), "
+        + "key (a key or chord such as enter, ctrl+c, alt+f4, win+r) and wait (milliseconds). "
         + "A point is elementId from inspect_screen or find_on_screen, or x and y: in the pixels of the returned image when captureId is set, otherwise absolute virtual-screen physical pixels. "
         + "focusWindow (hex handle from list_windows) is brought to the foreground first. requireFocus defaults to false. When true, focusWindow is required and must be the foreground window in that session immediately before the first input submission and before every later submission, including after waits. "
         + "A mismatch or a closed window before any event is submitted returns injection.status rejected, the requested and actual HWNDs, and submittedEvents 0. "
