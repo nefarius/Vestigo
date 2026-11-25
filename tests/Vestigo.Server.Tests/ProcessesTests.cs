@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text.Json;
 
 using Vestigo.Configuration;
 using Vestigo.Jobs;
@@ -236,9 +237,230 @@ public class ProcessesTests : IDisposable
         OperationResult<CloseReport> ok = AppCloser.ParseHelperOutput("noise\n" + json + "\n", 0);
         Assert.True(ok.Success);
         Assert.Equal(5, ok.Value!.StillRunning.Single().Pid);
+        Assert.Null(ok.Value.Outcomes);
+        const string detailed = """{"matched":[{"pid":5,"name":"notepad","windowsPosted":2}],"stillRunning":[],"windowsPosted":2,"outcomes":[{"pid":5,"name":"notepad","outcome":"exited","windowsPosted":2,"postError":"1400","verificationError":"pid_reused","pidReused":true}]}""";
+        OperationResult<CloseReport> withOutcomes = AppCloser.ParseHelperOutput(detailed, 0);
+        Assert.True(withOutcomes.Success, withOutcomes.Error);
+        CloseProcessOutcome outcome = Assert.Single(withOutcomes.Value!.Outcomes!);
+        Assert.Equal(CloseOutcome.Exited, outcome.Outcome);
+        Assert.Equal("1400", outcome.PostError);
+        Assert.Equal("pid_reused", outcome.VerificationError);
+        Assert.True(outcome.PidReused);
+        OperationResult<CloseReport> roundTrip = AppCloser.ParseHelperOutput(JsonSerializer.Serialize(withOutcomes.Value, SessionHelper.Json), 0);
+        Assert.Equal(outcome, Assert.Single(roundTrip.Value!.Outcomes!));
         Assert.Equal("invalid_request", AppCloser.ParseHelperOutput("""{"error":"bad"}""", 2).ErrorCode);
         Assert.Equal("helper_failed", AppCloser.ParseHelperOutput("", 1).ErrorCode);
         Assert.Equal("helper_failed", AppCloser.ParseHelperOutput("{oops", 0).ErrorCode);
+    }
+
+    [Fact]
+    public void Close_ExitedProcessIsNotStillRunning()
+    {
+        FakeWindowClosePlatform platform = Platform(
+            new VisibleWindow(11, 7, "notepad", "Untitled"),
+            new ProcessIdentity(7, 1, null, 0),
+            new CloseWaitResult(CloseWaitKind.Exited, null));
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([7], [], null), TimeSpan.FromSeconds(1), 99, platform);
+
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal(CloseOutcome.Exited, outcome.Outcome);
+        Assert.True(outcome.WindowsPosted >= 1);
+        Assert.False(outcome.PidReused);
+        Assert.Null(outcome.VerificationError);
+        Assert.Empty(report.StillRunning);
+        Assert.Equal(7, Assert.Single(report.Matched).Pid);
+        Assert.Equal(outcome.WindowsPosted, report.WindowsPosted);
+        int captured = platform.Events.IndexOf("capture:7");
+        int posted = platform.Events.IndexOf("post:11");
+        Assert.True(captured >= 0 && posted > captured);
+    }
+
+    [Fact]
+    public void Close_DestroyedWindowStillRunningStaysInStillRunning()
+    {
+        FakeWindowClosePlatform platform = Platform(
+            new VisibleWindow(4, 8, "notepad", "Gone"),
+            new ProcessIdentity(8, 1, null, 0),
+            new CloseWaitResult(CloseWaitKind.StillRunning, null));
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([8], [], null), TimeSpan.FromSeconds(1), 99, platform);
+
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal(CloseOutcome.StillRunning, outcome.Outcome);
+        Assert.Equal(8, Assert.Single(report.StillRunning).Pid);
+        Assert.Equal("notepad", report.StillRunning[0].Name);
+    }
+
+    [Fact]
+    public void Close_IgnoredCloseStaysRunning()
+    {
+        FakeWindowClosePlatform platform = Platform(
+            new VisibleWindow(4, 8, "notepad", "Untitled"),
+            new ProcessIdentity(8, 1, null, 0),
+            new CloseWaitResult(CloseWaitKind.StillRunning, null));
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([], ["notepad.exe"], null), TimeSpan.FromSeconds(1), 99, platform);
+
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal(CloseOutcome.StillRunning, outcome.Outcome);
+        Assert.True(outcome.WindowsPosted >= 1);
+        Assert.Null(outcome.PostError);
+        Assert.Equal(8, Assert.Single(report.StillRunning).Pid);
+        Assert.Equal(outcome.WindowsPosted, report.WindowsPosted);
+    }
+
+    [Fact]
+    public void Close_UnknownVerificationIsNotStillRunning()
+    {
+        FakeWindowClosePlatform platform = Platform(
+            new VisibleWindow(4, 8, "notepad", "Untitled"),
+            new ProcessIdentity(8, 1, null, 0),
+            new CloseWaitResult(CloseWaitKind.Unknown, "5"));
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([8], [], null), TimeSpan.Zero, 99, platform);
+
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal(CloseOutcome.Unknown, outcome.Outcome);
+        Assert.Equal("5", outcome.VerificationError);
+        Assert.Empty(report.StillRunning);
+        Assert.Equal(8, Assert.Single(report.Matched).Pid);
+    }
+
+    [Fact]
+    public void Close_ReusedPidIsExitedAndNotStillRunning()
+    {
+        FakeWindowClosePlatform platform = Platform(
+            new VisibleWindow(4, 8, "notepad", "Untitled"),
+            new ProcessIdentity(8, 1, null, 0),
+            new CloseWaitResult(CloseWaitKind.Reused, "ignored"));
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([8], [], null), TimeSpan.FromSeconds(1), 99, platform);
+
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal(CloseOutcome.Exited, outcome.Outcome);
+        Assert.True(outcome.PidReused);
+        Assert.Equal("pid_reused", outcome.VerificationError);
+        Assert.Empty(report.StillRunning);
+    }
+
+    [Fact]
+    public void Close_AlreadyGoneAtCaptureIsExited()
+    {
+        FakeWindowClosePlatform platform = new();
+        platform.Windows.Add(new VisibleWindow(4, 8, "notepad", "Untitled"));
+        platform.Identities[8] = new ProcessIdentity(8, 0, null, 87);
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([8], [], null), TimeSpan.FromSeconds(1), 99, platform);
+
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal(CloseOutcome.Exited, outcome.Outcome);
+        Assert.False(outcome.PidReused);
+        Assert.Empty(report.StillRunning);
+        Assert.DoesNotContain(platform.Events, item => item.StartsWith("wait:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Close_TwoProcesses_PopulateMatchedStillRunningAndOutcomes()
+    {
+        FakeWindowClosePlatform platform = new();
+        platform.Windows.Add(new VisibleWindow(1, 0, "idle", "zero"));
+        platform.Windows.Add(new VisibleWindow(2, 50, "own", "self"));
+        platform.Windows.Add(new VisibleWindow(3, 10, "notepad", "Untitled"));
+        platform.Windows.Add(new VisibleWindow(4, 10, "", "Second"));
+        platform.Windows.Add(new VisibleWindow(5, 20, "calc", "Calculator"));
+        platform.Windows.Add(new VisibleWindow(6, 30, "other", "Nope"));
+        platform.Identities[10] = new ProcessIdentity(10, 1, null, 0);
+        platform.Identities[20] = new ProcessIdentity(20, 1, null, 0);
+        platform.Waits[10] = new CloseWaitResult(CloseWaitKind.Exited, null);
+        platform.Waits[20] = new CloseWaitResult(CloseWaitKind.StillRunning, null);
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([10, 20], [], null), TimeSpan.FromSeconds(2), 50, platform);
+
+        Assert.Equal([10, 20], report.Matched.Select(item => item.Pid).ToArray());
+        Assert.Equal("notepad", report.Matched[0].Name);
+        Assert.Equal(2, report.Matched[0].WindowsPosted);
+        Assert.Equal(1, report.Matched[1].WindowsPosted);
+        Assert.Equal(3, report.WindowsPosted);
+        Assert.Equal(report.Matched.Sum(item => item.WindowsPosted), report.WindowsPosted);
+        Assert.Equal(20, Assert.Single(report.StillRunning).Pid);
+        Assert.Equal([CloseOutcome.Exited, CloseOutcome.StillRunning], report.Outcomes!.Select(item => item.Outcome).ToArray());
+        Assert.Equal([2, 1], report.Outcomes!.Select(item => item.WindowsPosted).ToArray());
+        Assert.Equal(["capture:10", "capture:20", "post:3", "post:4", "post:5", "wait:10", "wait:20"], platform.Events);
+    }
+
+    [Fact]
+    public void Close_PostFailureStaysMatchedAndStillVerifies()
+    {
+        FakeWindowClosePlatform platform = new();
+        platform.Windows.Add(new VisibleWindow(1, 9, "notepad", "A"));
+        platform.Windows.Add(new VisibleWindow(2, 9, "notepad", "B"));
+        platform.Identities[9] = new ProcessIdentity(9, 1, null, 0);
+        platform.PostErrors[1] = 5;
+        platform.PostErrors[2] = 1400;
+        platform.Waits[9] = new CloseWaitResult(CloseWaitKind.Exited, null);
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([9], [], null), TimeSpan.FromSeconds(1), 99, platform);
+
+        MatchedProcess matched = Assert.Single(report.Matched);
+        Assert.Equal(9, matched.Pid);
+        Assert.Equal(0, matched.WindowsPosted);
+        Assert.Equal(0, report.WindowsPosted);
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal("5", outcome.PostError);
+        Assert.Equal(CloseOutcome.Exited, outcome.Outcome);
+        Assert.Contains("wait:9", platform.Events);
+        Assert.Empty(report.StillRunning);
+    }
+
+    [Fact]
+    public void WindowCloser_CloseFixture_DoesNotCloseUnrelatedProcesses()
+    {
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_CLOSE_FIXTURES") != "1")
+        {
+            Assert.Skip("Set VESTIGO_CLOSE_FIXTURES=1 on Windows to exercise WindowCloser against a ping process this test starts.");
+        }
+
+        string pingPath = Path.Combine(Environment.SystemDirectory, "ping.exe");
+        if (!File.Exists(pingPath))
+        {
+            Assert.Skip("ping.exe was not found. This fixture only closes a ping process it starts.");
+        }
+
+        using Process ping = Process.Start(new ProcessStartInfo(pingPath, "-n 30 127.0.0.1")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        }) ?? throw new InvalidOperationException("ping.exe did not start.");
+        try
+        {
+            CloseReport report = WindowCloser.Close(new CloseSelector([ping.Id], [], null), TimeSpan.Zero, Environment.ProcessId);
+            Assert.NotNull(report.Outcomes);
+            Assert.DoesNotContain(report.Matched, item => item.Pid != ping.Id);
+            Assert.DoesNotContain(report.StillRunning, item => item.Pid != ping.Id);
+            Assert.DoesNotContain(report.Outcomes, item => item.Pid != ping.Id);
+            Assert.DoesNotContain(report.Matched, item => item.Pid == ping.Id);
+        }
+            finally
+            {
+                try
+                {
+                    if (!ping.HasExited)
+                    {
+                        ping.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                }
+
+                if (!ping.HasExited && !ping.WaitForExit(5000))
+                {
+                    throw new InvalidOperationException("The ping fixture was still running after kill.");
+                }
+            }
     }
 
     [Fact]
@@ -448,6 +670,55 @@ public class ProcessesTests : IDisposable
         Assert.Equal(0, exitCode);
         Assert.Contains("interactive-ok", text);
         Assert.DoesNotContain("nt authority\\system", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static FakeWindowClosePlatform Platform(VisibleWindow window, ProcessIdentity identity, CloseWaitResult wait)
+    {
+        FakeWindowClosePlatform platform = new();
+        platform.Windows.Add(window);
+        platform.Identities[identity.Pid] = identity;
+        platform.Waits[identity.Pid] = wait;
+        return platform;
+    }
+
+    private sealed class FakeWindowClosePlatform : IWindowClosePlatform
+    {
+        public List<VisibleWindow> Windows { get; } = [];
+
+        public Dictionary<int, ProcessIdentity> Identities { get; } = [];
+
+        public Dictionary<int, CloseWaitResult> Waits { get; } = [];
+
+        public Dictionary<nint, int> PostErrors { get; } = [];
+
+        public List<string> Events { get; } = [];
+
+        public IReadOnlyList<VisibleWindow> EnumerateVisibleWindows() => Windows;
+
+        public bool TryPostClose(nint hwnd, out int error)
+        {
+            Events.Add("post:" + hwnd.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (PostErrors.TryGetValue(hwnd, out error))
+            {
+                return false;
+            }
+
+            error = 0;
+            return true;
+        }
+
+        public ProcessIdentity CaptureIdentity(int pid)
+        {
+            Events.Add("capture:" + pid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return Identities[pid];
+        }
+
+        public CloseWaitResult Wait(ProcessIdentity identity, TimeSpan remaining)
+        {
+            Events.Add("wait:" + identity.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Assert.True(remaining >= TimeSpan.Zero);
+            return Waits[identity.Pid];
+        }
     }
 
     private sealed class NoSessionLauncher : IProcessLauncher
