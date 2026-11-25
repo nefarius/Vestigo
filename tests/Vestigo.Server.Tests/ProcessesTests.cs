@@ -414,6 +414,33 @@ public class ProcessesTests : IDisposable
     }
 
     [Fact]
+    public void Close_DoesNotPostWhenTheWindowOwnerChanged()
+    {
+        FakeWindowClosePlatform platform = new();
+        platform.Windows.Add(new VisibleWindow(4, 8, "notepad", "Reused"));
+        platform.Windows.Add(new VisibleWindow(5, 8, "notepad", "Still ours"));
+        platform.Identities[8] = new ProcessIdentity(8, 1, DateTimeOffset.UnixEpoch, 0);
+        platform.ReplacedWindows.Add(4);
+        platform.Waits[8] = new CloseWaitResult(CloseWaitKind.Exited, null);
+
+        CloseReport report = WindowCloser.Close(new CloseSelector([8], [], null), TimeSpan.FromSeconds(1), 99, platform);
+
+        CloseProcessOutcome outcome = Assert.Single(report.Outcomes!);
+        Assert.Equal(1, outcome.WindowsPosted);
+        Assert.DoesNotContain(platform.Events, item => item == "post:4");
+        Assert.Contains("post:5", platform.Events);
+        Assert.Contains("wait:8", platform.Events);
+    }
+
+    [Fact]
+    public void KindForExitCode_TreatsStillActiveAsAmbiguous()
+    {
+        Assert.Equal(CloseWaitKind.Exited, WindowsWindowClosePlatform.KindForExitCode(true, 0));
+        Assert.Null(WindowsWindowClosePlatform.KindForExitCode(true, WindowsWindowClosePlatform.StillActive));
+        Assert.Equal(CloseWaitKind.Unknown, WindowsWindowClosePlatform.KindForExitCode(false, 0));
+    }
+
+    [Fact]
     public void WindowCloser_CloseFixture_DoesNotCloseUnrelatedProcesses()
     {
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESTIGO_CLOSE_FIXTURES") != "1")
@@ -691,9 +718,13 @@ public class ProcessesTests : IDisposable
 
         public Dictionary<nint, int> PostErrors { get; } = [];
 
+        public HashSet<nint> ReplacedWindows { get; } = [];
+
         public List<string> Events { get; } = [];
 
         public IReadOnlyList<VisibleWindow> EnumerateVisibleWindows() => Windows;
+
+        public bool StillOwns(nint hwnd, ProcessIdentity identity) => !ReplacedWindows.Contains(hwnd);
 
         public bool TryPostClose(nint hwnd, out int error)
         {

@@ -76,6 +76,9 @@ internal interface IWindowClosePlatform
 
     bool TryPostClose(nint hwnd, out int error);
 
+    /// <summary>True when <paramref name="hwnd"/> still belongs to the captured process. An HWND can be recycled.</summary>
+    bool StillOwns(nint hwnd, ProcessIdentity identity);
+
     /// <summary>Called before any WM_CLOSE for this pid.</summary>
     ProcessIdentity CaptureIdentity(int pid);
 
@@ -148,6 +151,11 @@ public static class WindowCloser
         {
             foreach (VisibleWindow window in matchedWindows[pid])
             {
+                if (!platform.StillOwns(window.Hwnd, identities[pid]))
+                {
+                    continue;
+                }
+
                 if (platform.TryPostClose(window.Hwnd, out int error))
                 {
                     posted[pid] = posted.GetValueOrDefault(pid) + 1;
@@ -226,6 +234,9 @@ internal sealed class WindowsWindowClosePlatform : IWindowClosePlatform
 
     private const int StartTimePollMilliseconds = 50;
 
+    /// <summary>Exit code returned for a live process. A process can also exit with this code, so it is not proof of life.</summary>
+    internal const uint StillActive = 259;
+
     public IReadOnlyList<VisibleWindow> EnumerateVisibleWindows()
     {
         List<VisibleWindow> windows = [];
@@ -256,6 +267,38 @@ internal sealed class WindowsWindowClosePlatform : IWindowClosePlatform
 
         error = Marshal.GetLastWin32Error();
         return false;
+    }
+
+    public bool StillOwns(nint hwnd, ProcessIdentity identity)
+    {
+        uint ownerPid;
+        unsafe
+        {
+            if (PInvoke.GetWindowThreadProcessId((HWND)hwnd, &ownerPid) == 0 || ownerPid == 0)
+            {
+                return false;
+            }
+        }
+
+        if (unchecked((int)ownerPid) != identity.Pid)
+        {
+            return false;
+        }
+
+        if (identity.StartTime is not { } expected)
+        {
+            return true;
+        }
+
+        HANDLE handle = PInvoke.OpenProcess(PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, ownerPid);
+        if (handle.IsNull)
+        {
+            return false;
+        }
+
+        using SafeFileHandle process = new(handle, ownsHandle: true);
+        return ProcessStartTime.TryRead(process, out DateTimeOffset start, out _)
+               && start.UtcDateTime == expected.UtcDateTime;
     }
 
     public ProcessIdentity CaptureIdentity(int pid)
@@ -353,6 +396,18 @@ internal sealed class WindowsWindowClosePlatform : IWindowClosePlatform
                 return new CloseWaitResult(CloseWaitKind.Reused, null);
             }
 
+            if (!PInvoke.GetExitCodeProcess(process, out uint exitCode))
+            {
+                return new CloseWaitResult(
+                    CloseWaitKind.Unknown,
+                    Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (KindForExitCode(true, exitCode) == CloseWaitKind.Exited)
+            {
+                return new CloseWaitResult(CloseWaitKind.Exited, null);
+            }
+
             if (DateTime.UtcNow >= deadline)
             {
                 return new CloseWaitResult(CloseWaitKind.StillRunning, null);
@@ -367,6 +422,13 @@ internal sealed class WindowsWindowClosePlatform : IWindowClosePlatform
             Thread.Sleep(left < TimeSpan.FromMilliseconds(StartTimePollMilliseconds) ? left : TimeSpan.FromMilliseconds(StartTimePollMilliseconds));
         }
     }
+
+    /// <summary>
+    ///     A non-259 exit code means the process has terminated. 259 is ambiguous, so the caller keeps the creation-time result.
+    ///     A failed read is <see cref="CloseWaitKind.Unknown"/>.
+    /// </summary>
+    internal static CloseWaitKind? KindForExitCode(bool read, uint exitCode) =>
+        !read ? CloseWaitKind.Unknown : exitCode == StillActive ? null : CloseWaitKind.Exited;
 
     private static CloseWaitResult WaitWithoutIdentity(ProcessIdentity identity)
     {
