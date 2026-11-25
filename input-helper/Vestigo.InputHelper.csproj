@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Vestigo.InputHelper</RootNamespace>
+    <AssemblyName>Vestigo.InputHelper</AssemblyName>
+    <Description>Native AOT session helper for Vestigo send_input.</Description>
+    <Authors>Benjamin Höglinger-Stelzer</Authors>
+    <Copyright>Copyright © Benjamin Höglinger-Stelzer 2026</Copyright>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The SDK's AOT publish already imports ILCompiler. An explicit package reference skips PrivateSdkAssemblies. Pin the pack instead so a 10.0.13 SDK default is not used. -->
+    <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" ILCompilerPackVersion="10.0.15" />
+    <PackageReference Include="Microsoft.Windows.CsWin32">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="MinVer">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\server\GlobalUsings.cs" Link="GlobalUsings.cs" />
+    <Compile Include="..\server\Abstractions\OperationResult.cs" Link="OperationResult.cs" />
+    <Compile Include="..\server\Desktop\SecureDesktopName.cs" Link="SecureDesktopName.cs" />
+    <Compile Include="..\server\Desktop\InputDesktopCheck.cs" Link="InputDesktopCheck.cs" />
+    <Compile Include="..\server\Desktop\ThreadDpiAwareness.cs" Link="ThreadDpiAwareness.cs" />
+    <Compile Include="..\server\Processes\WindowHandleFormat.cs" Link="WindowHandleFormat.cs" />
+    <Compile Include="..\server\Input\InputModels.cs" Link="InputModels.cs" />
+    <Compile Include="..\server\Input\KeyChordParser.cs" Link="KeyChordParser.cs" />
+    <Compile Include="..\server\Input\PhysicalKeyTranslator.cs" Link="PhysicalKeyTranslator.cs" />
+    <Compile Include="..\server\Input\PhysicalKeySender.cs" Link="PhysicalKeySender.cs" />
+    <Compile Include="..\server\Input\InputPlatform.cs" Link="InputPlatform.cs" />
+    <Compile Include="..\server\Input\InputInjector.cs" Link="InputInjector.cs" />
+    <Compile Include="..\server\Input\InputHelperJson.cs" Link="InputHelperJson.cs" />
+  </ItemGroup>
+
+  <!-- MinVer defaults AssemblyVersion to {major}.0.0.0. Stamp the full release so it matches Vestigo.exe. -->
+  <Target Name="StampFullAssemblyVersion" AfterTargets="MinVer" Condition="'$(MinVerMajor)' != '' AND '$(MinVerMinor)' != '' AND '$(MinVerPatch)' != ''">
+    <PropertyGroup>
+      <AssemblyVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).0</AssemblyVersion>
+    </PropertyGroup>
+  </Target>
+
+</Project>

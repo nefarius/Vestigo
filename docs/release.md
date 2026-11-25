@@ -10,8 +10,8 @@ The workflow (`.github/workflows/build.yml`) builds the app once and hands the r
 
 - `security` (Ubuntu) runs Gitleaks against git history and the checked-out tree, then Semgrep (`p/csharp`). `.gitleaks.toml` allowlists the fake installer test token. Semgrep uses a digest-pinned image.
 - `osv-restore` (Windows) writes NuGet lock files for the net10 projects and the net48 custom-action project. `osv` (Ubuntu) scans those lock files with a digest-pinned OSV Scanner image. A finding fails the job, and `build-installer` needs `security` and `osv`, so secrets, SAST, and dependency advisories block the MSI and release. The DTF packages stay on the frozen WiX 5.0.2 set.
-- `build` (Windows) runs the tests and the net48 custom-action package check, then `.\build.ps1 PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep BuildCredentialProvider`, and uploads `publish-x64/` (`server`, `updater`, `tools`, `credential-provider`) as the `vestigo-publish-x64` artifact (3-day retention).
-- `build-installer` (Windows, `needs: [build, security, osv]`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep BuildCredentialProvider`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server is never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything. A `v*` tag also signs the payload and uploads `Vestigo-msi`.
+- `build` (Windows) runs the tests and the net48 custom-action package check, then `.\build.ps1 PublishLocal PublishInputHelper PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep BuildCredentialProvider`, and uploads `publish-x64/` (`server`, `input-helper`, `updater`, `tools`, `credential-provider`) as the `vestigo-publish-x64` artifact (3-day retention). `PublishInputHelper` publishes the win-x64 Native AOT `Vestigo.InputHelper.exe` with ILCompiler 10.0.15.
+- `build-installer` (Windows, `needs: [build, security, osv]`) downloads that artifact into `publish-x64`, installs WiX, and builds the MSI with `.\build.ps1 BuildInstaller --skip PublishLocal PublishInputHelper PrepareUpdater PrepareNefcon PrepareDebugView PrepareRipgrep BuildCredentialProvider`. `BuildInstaller` only runs the installer project (`dotnet run` on `installer/`, which also builds the net48 custom actions); the skipped targets are its only `DependsOn`, so the server and the input helper are never rebuilt or republished in that job. Locally, `.\build.ps1 BuildInstaller` without `--skip` still publishes and stages everything. A `v*` tag also signs the payload and uploads `Vestigo-msi`.
 - `notify-buildbot` (Ubuntu, tags only, `needs: build-installer`) waits up to 60 seconds for `Vestigo-msi` to appear in `listWorkflowRunArtifacts`, then posts the Buildbot webhook. Splitting it out also lets a failed webhook rerun without re-signing or duplicating the MSI artifact.
 - `release` (Ubuntu, tags only, `needs: build-installer`) publishes the signed files. It does not depend on the webhook.
 
@@ -23,8 +23,8 @@ The project site at `https://nefarius.github.io/Vestigo/` is built from `site/` 
 
 A `v*` tag, in `build-installer`, using the unsigned payload from the artifact:
 
-1. Checks that `Vestigo.exe`, `Vestigo.dll`, and `Vestigo.CredentialProvider.dll` are unsigned.
-2. Signs all three with SignRelay.
+1. Checks that `Vestigo.exe`, `Vestigo.dll`, `Vestigo.CredentialProvider.dll`, and `Vestigo.InputHelper.exe` are unsigned.
+2. Signs all four with SignRelay.
 3. Builds `publish-x64\installer\Vestigo-v<product-version>.msi` from those signed binaries.
 4. Signs and verifies the MSI.
 5. Writes `updates.json` for that signed MSI and creates `updates.json.minisig` with the existing Nefarius minisign key. The summary names the product version and links to the GitHub Release for the tag.

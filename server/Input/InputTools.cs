@@ -125,7 +125,7 @@ public sealed class InputTools(
 
         OperationResult<InputResult> sent = await _submissions.RunAsync(
                 desktopPath,
-                () => helper.RunAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath),
+                () => helper.RunInputAsync<InputResult>(helperArguments, elevated, timeout, HelperMaxOutputBytes, cancellationToken, desktopPath),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!sent.Success)

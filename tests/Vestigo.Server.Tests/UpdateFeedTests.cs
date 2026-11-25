@@ -202,7 +202,7 @@ public class UpdateFeedTests
         Assert.Contains(UpdateFeed.CurrentPackagePointerFileName, installer, StringComparison.Ordinal);
 
         string build = File.ReadAllText(Path.Combine(root, "build", "Build.cs"));
-        Assert.Contains("DependsOn(PublishLocal, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep, BuildCredentialProvider)", build, StringComparison.Ordinal);
+        Assert.Contains("DependsOn(PublishLocal, PublishInputHelper, PrepareUpdater, PrepareNefcon, PrepareDebugView, PrepareRipgrep, BuildCredentialProvider)", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_NEFCON", installer, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_DEBUGVIEW", build, StringComparison.Ordinal);
@@ -211,6 +211,9 @@ public class UpdateFeedTests
         Assert.Contains("VESTIGO_INSTALLER_RIPGREP", installer, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_CREDPROVIDER", build, StringComparison.Ordinal);
         Assert.Contains("VESTIGO_INSTALLER_CREDPROVIDER", installer, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_INPUTHELPER", build, StringComparison.Ordinal);
+        Assert.Contains("VESTIGO_INSTALLER_INPUTHELPER", installer, StringComparison.Ordinal);
+        Assert.Contains("Vestigo.InputHelper.exe", installer, StringComparison.Ordinal);
         Assert.Contains("ripgrep-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("nefcon-LICENSE.txt", installer, StringComparison.Ordinal);
         Assert.Contains("DebugViewPP-LICENSE.txt", installer, StringComparison.Ordinal);
@@ -247,6 +250,10 @@ public class UpdateFeedTests
         Assert.Contains("semgrep/semgrep@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0", workflow, StringComparison.Ordinal);
         Assert.Contains("wix extension add -g WixToolset.Util.wixext/5.0.2", workflow, StringComparison.Ordinal);
         Assert.Contains("Vestigo.Installer.Actions/Vestigo.Installer.Actions.csproj", workflow, StringComparison.Ordinal);
+        Assert.Contains("input-helper/Vestigo.InputHelper.csproj", workflow, StringComparison.Ordinal);
+        Assert.Contains("input-helper/packages.lock.json", workflow, StringComparison.Ordinal);
+        Assert.Contains("publish-x64/input-helper/Vestigo.InputHelper.exe", workflow, StringComparison.Ordinal);
+        Assert.Contains("PublishInputHelper", workflow, StringComparison.Ordinal);
         Assert.Contains("installer/Vestigo.Installer.Actions/packages.lock.json", workflow, StringComparison.Ordinal);
         Assert.Contains("ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6", workflow, StringComparison.Ordinal);
         int verified = workflow.IndexOf("Verify signed MSI", StringComparison.Ordinal);

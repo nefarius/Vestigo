@@ -18,10 +18,9 @@ public static class DesktopSessionPolicy
     public const string DefaultPath = @"winsta0\default";
 
     /// <summary>The lock screen and the UAC secure desktop both use this name on <c>WinSta0</c>.</summary>
-    public const string SecureDesktop = "Winlogon";
+    public const string SecureDesktop = SecureDesktopName.Winlogon;
 
-    public static bool IsSecure(string? name) =>
-        string.Equals(name, SecureDesktop, StringComparison.OrdinalIgnoreCase);
+    public static bool IsSecure(string? name) => SecureDesktopName.IsSecure(name);
 
     public static bool IsOwnedName([NotNullWhen(true)] string? name)
     {

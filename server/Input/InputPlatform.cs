@@ -86,21 +86,21 @@ internal sealed class WindowsInputPlatform : IInputPlatform
     public long PerformanceFrequency { get; }
 
     public bool TryReadDesktop(out string? error, out bool inactive) =>
-        ScreenCapture.TryReadDesktopRelation(out error, out inactive, requireDesktopNames: true);
+        InputDesktopCheck.TryReadDesktopRelation(out error, out inactive, requireDesktopNames: true);
 
-    public nint SetDpiAware() => WindowEnumerator.SetDpiAware();
+    public nint SetDpiAware() => ThreadDpiAwareness.SetDpiAware();
 
-    public void RestoreDpi(nint previous) => WindowEnumerator.RestoreDpi(previous);
+    public void RestoreDpi(nint previous) => ThreadDpiAwareness.RestoreDpi(previous);
 
     public bool IsWindow(string handle) =>
-        WindowInspection.TryParseHandle(handle, out HWND hwnd) && PInvoke.IsWindow(hwnd);
+        WindowHandleFormat.TryParseHandle(handle, out HWND hwnd) && PInvoke.IsWindow(hwnd);
 
     public bool IsIconic(string handle) =>
-        WindowInspection.TryParseHandle(handle, out HWND hwnd) && PInvoke.IsIconic(hwnd);
+        WindowHandleFormat.TryParseHandle(handle, out HWND hwnd) && PInvoke.IsIconic(hwnd);
 
     public void RestoreWindow(string handle)
     {
-        if (WindowInspection.TryParseHandle(handle, out HWND hwnd))
+        if (WindowHandleFormat.TryParseHandle(handle, out HWND hwnd))
         {
             PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
         }
@@ -108,13 +108,13 @@ internal sealed class WindowsInputPlatform : IInputPlatform
 
     public void RequestForeground(string handle)
     {
-        if (WindowInspection.TryParseHandle(handle, out HWND hwnd))
+        if (WindowHandleFormat.TryParseHandle(handle, out HWND hwnd))
         {
             PInvoke.SetForegroundWindow(hwnd);
         }
     }
 
-    public string? Foreground() => WindowInspection.FormatHandleOrNull(PInvoke.GetForegroundWindow());
+    public string? Foreground() => WindowHandleFormat.FormatHandleOrNull(PInvoke.GetForegroundWindow());
 
     public void Delay(int milliseconds)
     {
