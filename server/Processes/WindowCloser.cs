@@ -1,13 +1,25 @@
-using System.ComponentModel;
-using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
+using Microsoft.Win32.SafeHandles;
+
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.System.Threading;
 
 namespace Vestigo.Processes;
+
+/// <summary>Outcome of one process after WM_CLOSE. Vestigo never kills the process.</summary>
+public static class CloseOutcome
+{
+    public const string Exited = "exited";
+
+    public const string StillRunning = "stillRunning";
+
+    public const string Unknown = "unknown";
+}
 
 /// <summary>A process that matched a close request.</summary>
 public sealed record MatchedProcess(int Pid, string Name, int WindowsPosted);
@@ -15,11 +27,22 @@ public sealed record MatchedProcess(int Pid, string Name, int WindowsPosted);
 /// <summary>A process that was still running after the grace period. Vestigo never kills it.</summary>
 public sealed record SurvivingProcess(int Pid, string Name);
 
-/// <summary>Result of a graceful close attempt.</summary>
+/// <summary>Verification of one process that matched a close request.</summary>
+public sealed record CloseProcessOutcome(
+    int Pid,
+    string Name,
+    string Outcome,
+    int WindowsPosted,
+    string? PostError = null,
+    string? VerificationError = null,
+    bool PidReused = false);
+
+/// <summary>Result of a graceful close attempt. Outcomes is omitted by older helper JSON.</summary>
 public sealed record CloseReport(
     IReadOnlyList<MatchedProcess> Matched,
     IReadOnlyList<SurvivingProcess> StillRunning,
-    int WindowsPosted);
+    int WindowsPosted,
+    IReadOnlyList<CloseProcessOutcome>? Outcomes = null);
 
 /// <summary>Filters applied together (AND) to decide which windows receive WM_CLOSE.</summary>
 public sealed record CloseSelector(IReadOnlyList<int> Pids, IReadOnlyList<string> ProcessNames, string? TitlePattern)
@@ -47,18 +70,177 @@ public sealed record CloseSelector(IReadOnlyList<int> Pids, IReadOnlyList<string
             : new Regex(pattern, RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
 }
 
+internal interface IWindowClosePlatform
+{
+    IReadOnlyList<VisibleWindow> EnumerateVisibleWindows();
+
+    bool TryPostClose(nint hwnd, out int error);
+
+    /// <summary>True when <paramref name="hwnd"/> still belongs to the captured process. An HWND can be recycled.</summary>
+    bool StillOwns(nint hwnd, ProcessIdentity identity);
+
+    /// <summary>Called before any WM_CLOSE for this pid.</summary>
+    ProcessIdentity CaptureIdentity(int pid);
+
+    CloseWaitResult Wait(ProcessIdentity identity, TimeSpan remaining);
+}
+
+internal sealed record VisibleWindow(nint Hwnd, int Pid, string Name, string Title);
+
+internal sealed record ProcessIdentity(int Pid, nint Handle, DateTimeOffset? StartTime, int CaptureError);
+
+internal enum CloseWaitKind
+{
+    Exited,
+    StillRunning,
+    Unknown,
+    Reused
+}
+
+internal readonly record struct CloseWaitResult(CloseWaitKind Kind, string? Error);
+
 /// <summary>
-///     Posts WM_CLOSE to top-level windows on the calling thread's desktop and waits for the owners to exit.
-///     Window enumeration only sees the caller's desktop, which is why interactive closes run through the
-///     session helper (<c>Vestigo.exe --session-helper close-window</c>) inside the console user's session.
+///     Posts WM_CLOSE to top-level windows on the calling thread's desktop and reports whether each owner
+///     exited, is still running, or could not be verified. Window enumeration only sees the caller's desktop,
+///     which is why interactive closes run through the session helper
+///     (<c>Vestigo.exe --session-helper close-window</c>) inside the console user's session.
 /// </summary>
 public static class WindowCloser
 {
-    public static CloseReport Close(CloseSelector selector, TimeSpan grace, int excludePid)
+    private const int ErrorInvalidParameter = 87;
+
+    public static CloseReport Close(CloseSelector selector, TimeSpan grace, int excludePid) =>
+        Close(selector, grace, excludePid, new WindowsWindowClosePlatform());
+
+    internal static CloseReport Close(CloseSelector selector, TimeSpan grace, int excludePid, IWindowClosePlatform platform)
     {
         Regex? titleRegex = CloseSelector.CompileTitle(selector.TitlePattern);
+        Dictionary<int, List<VisibleWindow>> matchedWindows = [];
+        Dictionary<int, string> names = [];
+        foreach (VisibleWindow window in platform.EnumerateVisibleWindows())
+        {
+            if (window.Pid == 0 || window.Pid == excludePid || !selector.Matches(window.Pid, window.Name, window.Title, titleRegex))
+            {
+                continue;
+            }
 
-        EnumState state = new(selector, titleRegex, excludePid);
+            if (!matchedWindows.TryGetValue(window.Pid, out List<VisibleWindow>? windows))
+            {
+                windows = [];
+                matchedWindows[window.Pid] = windows;
+                names[window.Pid] = window.Name;
+            }
+            else if (names[window.Pid].Length == 0 && window.Name.Length > 0)
+            {
+                names[window.Pid] = window.Name;
+            }
+
+            windows.Add(window);
+        }
+
+        List<int> pids = matchedWindows.Keys.OrderBy(pid => pid).ToList();
+        Dictionary<int, ProcessIdentity> identities = [];
+        foreach (int pid in pids)
+        {
+            identities[pid] = platform.CaptureIdentity(pid);
+        }
+
+        Dictionary<int, int> posted = [];
+        Dictionary<int, string> postErrors = [];
+        foreach (int pid in pids)
+        {
+            foreach (VisibleWindow window in matchedWindows[pid])
+            {
+                if (!platform.StillOwns(window.Hwnd, identities[pid]))
+                {
+                    continue;
+                }
+
+                if (platform.TryPostClose(window.Hwnd, out int error))
+                {
+                    posted[pid] = posted.GetValueOrDefault(pid) + 1;
+                }
+                else if (!postErrors.ContainsKey(pid))
+                {
+                    postErrors[pid] = error.ToString(CultureInfo.InvariantCulture);
+                }
+            }
+        }
+
+        DateTime deadline = DateTime.UtcNow + (grace > TimeSpan.Zero ? grace : TimeSpan.Zero);
+        List<MatchedProcess> matched = [];
+        List<SurvivingProcess> surviving = [];
+        List<CloseProcessOutcome> outcomes = [];
+        foreach (int pid in pids)
+        {
+            int windowsPosted = posted.GetValueOrDefault(pid);
+            string name = names[pid];
+            ProcessIdentity identity = identities[pid];
+            string outcome;
+            string? verificationError = null;
+            bool pidReused = false;
+            if (identity.Handle == 0 && identity.CaptureError == ErrorInvalidParameter)
+            {
+                outcome = CloseOutcome.Exited;
+            }
+            else
+            {
+                TimeSpan remaining = deadline - DateTime.UtcNow;
+                CloseWaitResult wait = platform.Wait(identity, remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+                switch (wait.Kind)
+                {
+                    case CloseWaitKind.Exited:
+                        outcome = CloseOutcome.Exited;
+                        break;
+                    case CloseWaitKind.StillRunning:
+                        outcome = CloseOutcome.StillRunning;
+                        surviving.Add(new SurvivingProcess(pid, name));
+                        break;
+                    case CloseWaitKind.Reused:
+                        outcome = CloseOutcome.Exited;
+                        pidReused = true;
+                        verificationError = "pid_reused";
+                        break;
+                    case CloseWaitKind.Unknown:
+                    default:
+                        outcome = CloseOutcome.Unknown;
+                        verificationError = string.IsNullOrEmpty(wait.Error) ? "verification_failed" : wait.Error;
+                        break;
+                }
+            }
+
+            matched.Add(new MatchedProcess(pid, name, windowsPosted));
+            outcomes.Add(new CloseProcessOutcome(
+                pid,
+                name,
+                outcome,
+                windowsPosted,
+                postErrors.GetValueOrDefault(pid),
+                verificationError,
+                pidReused));
+        }
+
+        return new CloseReport(matched, surviving, matched.Sum(item => item.WindowsPosted), outcomes);
+    }
+}
+
+internal sealed class WindowsWindowClosePlatform : IWindowClosePlatform
+{
+    private const int ErrorInvalidParameter = 87;
+
+    private const uint WaitObject0 = 0;
+
+    private const uint WaitTimeout = 258;
+
+    private const int StartTimePollMilliseconds = 50;
+
+    /// <summary>Exit code returned for a live process. A process can also exit with this code, so it is not proof of life.</summary>
+    internal const uint StillActive = 259;
+
+    public IReadOnlyList<VisibleWindow> EnumerateVisibleWindows()
+    {
+        List<VisibleWindow> windows = [];
+        EnumState state = new(windows);
         GCHandle handle = GCHandle.Alloc(state);
         try
         {
@@ -72,76 +254,198 @@ public static class WindowCloser
             handle.Free();
         }
 
-        Dictionary<int, int> posted = state.Posted;
-        Dictionary<int, string> names = state.Names;
-        List<MatchedProcess> matched = posted
-            .Select(pair => new MatchedProcess(pair.Key, names[pair.Key], pair.Value))
-            .OrderBy(item => item.Pid)
-            .ToList();
-
-        DateTime deadline = DateTime.UtcNow + grace;
-        List<SurvivingProcess> surviving = [];
-        foreach (MatchedProcess item in matched)
-        {
-            try
-            {
-                using Process process = Process.GetProcessById(item.Pid);
-                TimeSpan remaining = deadline - DateTime.UtcNow;
-                if (!process.WaitForExit(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero))
-                {
-                    surviving.Add(new SurvivingProcess(item.Pid, item.Name));
-                }
-            }
-            catch (ArgumentException)
-            {
-                // Exited already.
-            }
-            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-            {
-                // Cannot open the process to wait on it: its state is unknown, so report it as surviving.
-                surviving.Add(new SurvivingProcess(item.Pid, item.Name));
-            }
-        }
-
-        return new CloseReport(matched, surviving, matched.Sum(item => item.WindowsPosted));
+        return windows;
     }
 
-    private sealed class EnumState(CloseSelector selector, Regex? titleRegex, int excludePid)
+    public bool TryPostClose(nint hwnd, out int error)
     {
-        public Dictionary<int, int> Posted { get; } = [];
-
-        public Dictionary<int, string> Names { get; } = [];
-
-        public void Visit(HWND window)
+        error = 0;
+        if (PInvoke.PostMessage((HWND)hwnd, PInvoke.WM_CLOSE, default, default))
         {
-            if (!PInvoke.IsWindowVisible(window))
-            {
-                return;
-            }
+            return true;
+        }
 
-            uint pid;
-            unsafe
-            {
-                PInvoke.GetWindowThreadProcessId(window, &pid);
-            }
+        error = Marshal.GetLastWin32Error();
+        return false;
+    }
 
-            if (pid == 0 || (int)pid == excludePid)
+    public bool StillOwns(nint hwnd, ProcessIdentity identity)
+    {
+        uint ownerPid;
+        unsafe
+        {
+            if (PInvoke.GetWindowThreadProcessId((HWND)hwnd, &ownerPid) == 0 || ownerPid == 0)
             {
-                return;
-            }
-
-            if (!Names.TryGetValue((int)pid, out string? name))
-            {
-                name = WindowInspection.ProcessName((int)pid);
-                Names[(int)pid] = name;
-            }
-
-            if (selector.Matches((int)pid, name, WindowInspection.Title(window), titleRegex)
-                && PInvoke.PostMessage(window, PInvoke.WM_CLOSE, default, default))
-            {
-                Posted[(int)pid] = Posted.GetValueOrDefault((int)pid) + 1;
+                return false;
             }
         }
+
+        if (unchecked((int)ownerPid) != identity.Pid)
+        {
+            return false;
+        }
+
+        if (identity.StartTime is not { } expected)
+        {
+            return true;
+        }
+
+        HANDLE handle = PInvoke.OpenProcess(PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, ownerPid);
+        if (handle.IsNull)
+        {
+            return false;
+        }
+
+        using SafeFileHandle process = new(handle, ownsHandle: true);
+        return ProcessStartTime.TryRead(process, out DateTimeOffset start, out _)
+               && start.UtcDateTime == expected.UtcDateTime;
+    }
+
+    public ProcessIdentity CaptureIdentity(int pid)
+    {
+        HANDLE handle = PInvoke.OpenProcess(
+            PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_ACCESS_RIGHTS.PROCESS_SYNCHRONIZE,
+            false,
+            (uint)pid);
+        if (handle.IsNull)
+        {
+            int error = Marshal.GetLastWin32Error();
+            return error == ErrorInvalidParameter
+                ? new ProcessIdentity(pid, 0, null, error)
+                : CaptureStartTime(pid);
+        }
+
+        nint raw;
+        unsafe
+        {
+            raw = (nint)handle.Value;
+        }
+        return ProcessStartTime.TryRead(raw, out DateTimeOffset start, out int readError)
+            ? new ProcessIdentity(pid, raw, start, 0)
+            : new ProcessIdentity(pid, raw, null, readError);
+    }
+
+    public CloseWaitResult Wait(ProcessIdentity identity, TimeSpan remaining)
+    {
+        if (identity.Handle != 0)
+        {
+            using SafeFileHandle handle = new(identity.Handle, ownsHandle: true);
+            uint timeout = (uint)Math.Clamp(remaining.TotalMilliseconds, 0, int.MaxValue);
+            uint status = unchecked((uint)PInvoke.WaitForSingleObject(handle, timeout));
+            if (status == WaitObject0)
+            {
+                return new CloseWaitResult(CloseWaitKind.Exited, null);
+            }
+
+            if (status == WaitTimeout)
+            {
+                return new CloseWaitResult(CloseWaitKind.StillRunning, null);
+            }
+
+            int error = Marshal.GetLastWin32Error();
+            string detail = error != 0
+                ? error.ToString(CultureInfo.InvariantCulture)
+                : status.ToString(CultureInfo.InvariantCulture);
+            return new CloseWaitResult(CloseWaitKind.Unknown, detail);
+        }
+
+        if (identity.StartTime is { } expected)
+        {
+            return WaitByStartTime(identity.Pid, expected, remaining);
+        }
+
+        return WaitWithoutIdentity(identity);
+    }
+
+    private static ProcessIdentity CaptureStartTime(int pid)
+    {
+        HANDLE handle = PInvoke.OpenProcess(PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)pid);
+        if (handle.IsNull)
+        {
+            return new ProcessIdentity(pid, 0, null, Marshal.GetLastWin32Error());
+        }
+
+        using SafeFileHandle process = new(handle, ownsHandle: true);
+        return ProcessStartTime.TryRead(process, out DateTimeOffset start, out int readError)
+            ? new ProcessIdentity(pid, 0, start, 0)
+            : new ProcessIdentity(pid, 0, null, readError);
+    }
+
+    private static CloseWaitResult WaitByStartTime(int pid, DateTimeOffset expected, TimeSpan remaining)
+    {
+        DateTime deadline = DateTime.UtcNow + (remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+        while (true)
+        {
+            HANDLE handle = PInvoke.OpenProcess(PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)pid);
+            if (handle.IsNull)
+            {
+                int error = Marshal.GetLastWin32Error();
+                return error == ErrorInvalidParameter
+                    ? new CloseWaitResult(CloseWaitKind.Exited, null)
+                    : new CloseWaitResult(CloseWaitKind.Unknown, error.ToString(CultureInfo.InvariantCulture));
+            }
+
+            using SafeFileHandle process = new(handle, ownsHandle: true);
+            if (!ProcessStartTime.TryRead(process, out DateTimeOffset start, out int readError))
+            {
+                return new CloseWaitResult(CloseWaitKind.Unknown, readError.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (start.UtcDateTime != expected.UtcDateTime)
+            {
+                return new CloseWaitResult(CloseWaitKind.Reused, null);
+            }
+
+            if (!PInvoke.GetExitCodeProcess(process, out uint exitCode))
+            {
+                return new CloseWaitResult(
+                    CloseWaitKind.Unknown,
+                    Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (KindForExitCode(true, exitCode) == CloseWaitKind.Exited)
+            {
+                return new CloseWaitResult(CloseWaitKind.Exited, null);
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                return new CloseWaitResult(CloseWaitKind.StillRunning, null);
+            }
+
+            TimeSpan left = deadline - DateTime.UtcNow;
+            if (left <= TimeSpan.Zero)
+            {
+                return new CloseWaitResult(CloseWaitKind.StillRunning, null);
+            }
+
+            Thread.Sleep(left < TimeSpan.FromMilliseconds(StartTimePollMilliseconds) ? left : TimeSpan.FromMilliseconds(StartTimePollMilliseconds));
+        }
+    }
+
+    /// <summary>
+    ///     A non-259 exit code means the process has terminated. 259 is ambiguous, so the caller keeps the creation-time result.
+    ///     A failed read is <see cref="CloseWaitKind.Unknown"/>.
+    /// </summary>
+    internal static CloseWaitKind? KindForExitCode(bool read, uint exitCode) =>
+        !read ? CloseWaitKind.Unknown : exitCode == StillActive ? null : CloseWaitKind.Exited;
+
+    private static CloseWaitResult WaitWithoutIdentity(ProcessIdentity identity)
+    {
+        HANDLE handle = PInvoke.OpenProcess(PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)identity.Pid);
+        if (!handle.IsNull)
+        {
+            using SafeFileHandle process = new(handle, ownsHandle: true);
+            string error = identity.CaptureError == 0
+                ? "identity_unreadable"
+                : identity.CaptureError.ToString(CultureInfo.InvariantCulture);
+            return new CloseWaitResult(CloseWaitKind.Unknown, error);
+        }
+
+        int openError = Marshal.GetLastWin32Error();
+        return openError == ErrorInvalidParameter
+            ? new CloseWaitResult(CloseWaitKind.Exited, null)
+            : new CloseWaitResult(CloseWaitKind.Unknown, openError.ToString(CultureInfo.InvariantCulture));
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
@@ -157,5 +461,32 @@ public static class WindowCloser
         }
 
         return true;
+    }
+
+    private sealed class EnumState(List<VisibleWindow> windows)
+    {
+        public void Visit(HWND window)
+        {
+            if (!PInvoke.IsWindowVisible(window))
+            {
+                return;
+            }
+
+            uint pid;
+            nint hwnd;
+            unsafe
+            {
+                PInvoke.GetWindowThreadProcessId(window, &pid);
+                hwnd = (nint)window.Value;
+            }
+
+            if (pid == 0)
+            {
+                return;
+            }
+
+            int processId = unchecked((int)pid);
+            windows.Add(new VisibleWindow(hwnd, processId, WindowInspection.ProcessName(processId), WindowInspection.Title(window)));
+        }
     }
 }

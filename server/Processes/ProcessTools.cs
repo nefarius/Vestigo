@@ -245,8 +245,10 @@ public sealed class ProcessTools(
     [McpServerTool(Name = "close_app")]
     [Description(
         "Politely closes applications by posting WM_CLOSE to their top-level windows. Select by pid, processName and/or "
-        + "titleRegex (filters combine: pid or name, narrowed by title). Waits gracefulTimeoutSeconds, then reports which "
-        + "processes are still alive; it never kills them. context 'interactive' (default) acts on the console user's desktop.")]
+        + "titleRegex (filters combine: pid or name, narrowed by title). Waits gracefulTimeoutSeconds, then returns per-process "
+        + "outcomes exited, stillRunning, and unknown, with windowsPosted, postError, verificationError, and pidReused. "
+        + "stillRunning lists only processes confirmed still alive. It never kills them. "
+        + "context 'interactive' (default) acts on the console user's desktop.")]
     public async Task<OperationResult<CloseReport>> CloseApp(
         [Description("Process id.")] int? pid = null,
         [Description("Process name, with or without .exe.")] string? processName = null,
