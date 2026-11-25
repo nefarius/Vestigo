@@ -326,8 +326,8 @@ public sealed class InputTools(
             int? consoleSession = ActiveConsoleSession();
             if (inspection is not null
                 && observed.Success
-                && consoleSession is int activeSession
-                && activeSession != evidence.SessionId)
+                && (observed.Value!.Capture.SessionId != evidence.SessionId
+                    || consoleSession is int activeSession && activeSession != evidence.SessionId))
             {
                 summary["response"] = new JsonObject
                 {

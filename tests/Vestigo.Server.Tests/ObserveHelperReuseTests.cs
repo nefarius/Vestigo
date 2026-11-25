@@ -517,7 +517,7 @@ public class ObserveHelperReuseTests : IDisposable
     }
 
     [Fact]
-    public async Task UnchangedConsoleSession_ClassifiesTheCapture()
+    public async Task CaptureFromAnotherSession_IsInconclusive()
     {
         Rig rig = Rig.Factory();
         rig.Tools.ActiveConsoleSessionOverride = () => 7;
@@ -525,8 +525,8 @@ public class ObserveHelperReuseTests : IDisposable
 
         JsonElement result = await rig.Send("pixels", delay: 0, crop: (20, 16, 100, 50));
 
-        Assert.Equal("observed", Response(result).GetProperty("status").GetString());
-        Assert.False(Root(result).TryGetProperty("observeError", out _));
+        Assert.Equal("inconclusive", Response(result).GetProperty("status").GetString());
+        Assert.Equal("session_changed", Root(result).GetProperty("observeError").GetProperty("errorCode").GetString());
         Assert.Equal(1, rig.Launcher.SendCount);
     }
 
@@ -843,7 +843,10 @@ public class ObserveHelperReuseTests : IDisposable
                     ? new DiffResult([], 0)
                     : new DiffResult([new ChangedRegion(new DesktopRect(0, 0, 10, 10))], 4.5)
             };
-            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock);
+            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock)
+            {
+                ActiveConsoleSessionOverride = () => 7
+            };
             Clock.Caller = Caller;
         }
 

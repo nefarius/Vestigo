@@ -501,7 +501,10 @@ public class ObserveModeTests
                     ? new DiffResult([], 0)
                     : new DiffResult([new ChangedRegion(new DesktopRect(0, 0, 10, 10))], 4.5)
             };
-            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock);
+            Tools = new InputTools(helper, Launcher, perception, options, clock: Clock)
+            {
+                ActiveConsoleSessionOverride = () => 7
+            };
             if (reuse)
             {
                 Tools.ReuseHelperVariableOverride = () => null;
