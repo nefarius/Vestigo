@@ -107,6 +107,10 @@ public class HostTests : IDisposable
         Assert.Contains("Save settings", body);
         Assert.Contains("ListenPort", body);
         Assert.Contains("_framework/blazor", body);
+        Assert.Contains("class=\"vestigo-theme-pending\"", body, StringComparison.Ordinal);
+        Assert.Contains("html.vestigo-theme-pending body { display: none; }", body, StringComparison.Ordinal);
+        Assert.Contains("html.vestigo-theme-pending body { display: block; }", body, StringComparison.Ordinal);
+        Assert.Contains("window.setTimeout(function () { window.vestigoTheme.reveal(); }, 2000);", body, StringComparison.Ordinal);
     }
 
     private sealed class LocalPeerStartupFilter : Microsoft.AspNetCore.Hosting.IStartupFilter

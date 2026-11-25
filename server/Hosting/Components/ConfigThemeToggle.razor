@@ -8,6 +8,8 @@
     private bool _dark;
     private bool _followSystem;
     private bool _userChose;
+    private bool _preferenceResolved;
+    private bool _revealed;
 
     private async Task OnProviderChanged(bool dark)
     {
@@ -24,8 +26,30 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _userChose) return;
-        string? stored = null;
+        if (_revealed)
+            return;
+
+        if (!_preferenceResolved)
+        {
+            if (!firstRender)
+                return;
+
+            await ResolvePreferenceAsync();
+            _preferenceResolved = true;
+            // This callback belongs to the render that still has the previous palette.
+            StateHasChanged();
+            return;
+        }
+
+        await RevealAsync();
+    }
+
+    private async Task ResolvePreferenceAsync()
+    {
+        if (_userChose)
+            return;
+
+        string? stored;
         try
         {
             stored = await Js.InvokeAsync<string?>("vestigoTheme.read");
@@ -35,30 +59,46 @@
             return;
         }
 
-        if (_userChose) return;
+        if (_userChose)
+            return;
+
         if (ConfigThemePreference.Parse(stored) is bool dark)
         {
             _followSystem = false;
             _dark = dark;
+            return;
         }
-        else
+
+        bool systemDark = false;
+        try
         {
-            bool systemDark = false;
-            try
-            {
-                systemDark = await Js.InvokeAsync<bool>("vestigoTheme.systemDark");
-            }
-            catch (JSException)
-            {
-                systemDark = false;
-            }
-
-            if (_userChose) return;
-            _followSystem = true;
-            _dark = systemDark;
+            systemDark = await Js.InvokeAsync<bool>("vestigoTheme.systemDark");
+        }
+        catch (JSException)
+        {
+            systemDark = false;
         }
 
-        StateHasChanged();
+        if (_userChose)
+            return;
+
+        _followSystem = true;
+        _dark = systemDark;
+    }
+
+    private async Task RevealAsync()
+    {
+        if (_revealed)
+            return;
+
+        _revealed = true;
+        try
+        {
+            await Js.InvokeVoidAsync("vestigoTheme.reveal");
+        }
+        catch (JSException)
+        {
+        }
     }
 
     private async Task SetDarkModeAsync(bool dark)
