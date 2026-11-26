@@ -461,6 +461,53 @@ NET_FW_IP_PROTOCOL
 NET_FW_MODIFY_STATE
 NET_FW_EDGE_TRAVERSAL_TYPE
 
+// Performance module: locale-safe PDH sampling (English counter paths).
+PdhOpenQuery
+PdhAddEnglishCounter
+PdhExpandWildCardPath
+PdhCollectQueryData
+PdhGetFormattedCounterValue
+PdhCloseQuery
+PdhRemoveCounter
+PDH_FMT
+PDH_FMT_COUNTERVALUE
+
+// Performance module: filesystem minifilter inventory (fltlib.dll).
+FilterFindFirst
+FilterFindNext
+FilterFindClose
+FilterInstanceFindFirst
+FilterInstanceFindNext
+FilterInstanceFindClose
+FILTER_INFORMATION_CLASS
+FILTER_FULL_INFORMATION
+INSTANCE_INFORMATION_CLASS
+INSTANCE_FULL_INFORMATION
+
+// Performance module: CPU/NUMA topology, process I/O, memory, EcoQoS, wait chains.
+GetLogicalProcessorInformationEx
+LOGICAL_PROCESSOR_RELATIONSHIP
+SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX
+GetProcessIoCounters
+IO_COUNTERS
+GetProcessHandleCount
+GetGuiResources
+GlobalMemoryStatusEx
+MEMORYSTATUSEX
+PROCESS_POWER_THROTTLING_STATE
+PROCESS_POWER_THROTTLING_CURRENT_VERSION
+PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+OpenThreadWaitChainSession
+GetThreadWaitChain
+CloseThreadWaitChainSession
+OpenThread
+WAITCHAIN_NODE_INFO
+WCT_OBJECT_TYPE
+WCT_OBJECT_STATUS
+WAIT_CHAIN_THREAD_OPTIONS
+OPEN_THREAD_WAIT_CHAIN_SESSION_FLAGS
+THREAD_ACCESS_RIGHTS
+
 // HID capabilities. Read-only: no report reads or feature writes.
 HidD_GetHidGuid
 HidD_GetPreparsedData

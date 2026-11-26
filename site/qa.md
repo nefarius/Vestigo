@@ -88,6 +88,14 @@ The Security channel follows Windows ACLs for the service account.
 
 The service context does not see user-session audio. Per-app overrides in Settings are not changed.
 
+## Diagnose a slow VM or stuttering I/O
+
+1. Enable Performance. It needs Jobs.
+2. `get_vm_environment` and `get_storage_topology` to see hypervisor vendor, paravirt versus emulated disks, and 512e versus 4K native.
+3. `list_filesystem_minifilters` to see AV/EDR/sync filters. `sample_performance_counters` with preset `storage` or `overview` for queue length and disk service times.
+4. `probe_scheduler_jitter` for steal/preemption spikes while utilization looks idle.
+5. `capture_kernel_latency_summary` stays off until `Performance:AllowKernelTrace` is true. `record_wpr_trace` stays off until `Performance:AllowRawEtlCapture` is true. `probe_storage_latency` stays off until `Performance:AllowStorageProbes` is true and the directory is in a write root.
+
 ## List kernel dumps
 
 1. Enable Diagnostics. It needs Jobs.

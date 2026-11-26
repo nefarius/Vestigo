@@ -52,6 +52,14 @@ public class ModuleSelectionTests
         Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsProcessDumps)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.DiagnosticsKernelDumpStaging]);
         Assert.Equal("Diagnostics", ModuleSelection.Find(ModuleSelection.DiagnosticsKernelDumpStaging)?.Parent);
+        Assert.False(ModuleSelection.Defaults()["Performance"]);
+        Assert.Equal("Jobs", ModuleSelection.Find("Performance")?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.PerformanceKernelTrace]);
+        Assert.Equal("Performance", ModuleSelection.Find(ModuleSelection.PerformanceKernelTrace)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.PerformanceRawEtlCapture]);
+        Assert.Equal("Performance", ModuleSelection.Find(ModuleSelection.PerformanceRawEtlCapture)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.PerformanceStorageProbes]);
+        Assert.Equal("Performance", ModuleSelection.Find(ModuleSelection.PerformanceStorageProbes)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SelfUpdate]);
         Assert.Equal("Updates", ModuleSelection.Find(ModuleSelection.SelfUpdate)?.Parent);
         Assert.True(ModuleSelection.Defaults()["Updates"]);

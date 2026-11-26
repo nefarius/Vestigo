@@ -40,6 +40,10 @@ public static class VestigoPaths
 
     public static string OwnedDesktopsPath => Path.Combine(SettingsDirectory, "owned-desktops.json");
 
+    public static string OwnedPerformanceEtwPath => Path.Combine(SettingsDirectory, "owned-performance-etw.json");
+
+    public static string OwnedWprPath => Path.Combine(SettingsDirectory, "owned-wpr.json");
+
     public static string DefaultSymbolCache => Path.Combine(SettingsDirectory, "symcache");
 
     /// <summary>Default folder for ETL, PDB, TMF, and conversion-output paths when no trace roots are configured.</summary>
