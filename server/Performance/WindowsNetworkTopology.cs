@@ -19,7 +19,7 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
 
         try
         {
-            Dictionary<string, WmiObject> adapters = Index(WmiQuery.Query(Scope, "SELECT Name, InterfaceDescription, InterfaceIndex, InterfaceGuid, MacAddress, Speed, ReceiveLinkSpeed, TransmitLinkSpeed, FullDuplex, MtuSize, VlanID, DriverName, DriverVersionString, DriverDescription, DeviceID FROM MSFT_NetAdapter"), "Name", "InterfaceDescription");
+            Dictionary<string, WmiObject> adapters = Index(WmiQuery.Query(Scope, "SELECT Name, InterfaceDescription, InterfaceIndex, InterfaceGuid, PermanentAddress, Speed, ReceiveLinkSpeed, TransmitLinkSpeed, FullDuplex, MtuSize, VlanID, DriverName, DriverVersionString, DriverDescription, DeviceID FROM MSFT_NetAdapter"), "Name", "InterfaceDescription");
             Dictionary<string, WmiObject> rss = Index(WmiQuery.Query(Scope, "SELECT Name, Enabled, NumberOfReceiveQueues, BaseProcessorNumber, MaxProcessorNumber, Profile FROM MSFT_NetAdapterRssSettingData"), "Name");
             Dictionary<string, WmiObject> rsc = Index(WmiQuery.Query(Scope, "SELECT Name, IPv4Enabled, IPv6Enabled FROM MSFT_NetAdapterRscSettingData"), "Name");
             Dictionary<string, WmiObject> lso = Index(WmiQuery.Query(Scope, "SELECT Name, V2IPv4Enabled, V2IPv6Enabled FROM MSFT_NetAdapterLsoSettingData"), "Name");
@@ -130,7 +130,7 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
             row is null ? null : WmiQuery.Int32(row, "VlanID"),
             WmiQuery.Boolean(row, "FullDuplex"),
             v4?.IsDhcpEnabled,
-            FormatMac(nic.GetPhysicalAddress()) ?? WmiQuery.String(row, "MacAddress"),
+            FormatMac(nic.GetPhysicalAddress()) ?? WmiQuery.String(row, "PermanentAddress"),
             WmiQuery.String(row, "DriverDescription") ?? WmiQuery.String(row, "DriverName"),
             WmiQuery.String(row, "DriverVersionString"),
             WmiQuery.String(row, "DriverName"),

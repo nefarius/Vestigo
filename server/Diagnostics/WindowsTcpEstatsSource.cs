@@ -81,6 +81,7 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
         }
 
         List<(ConnectionRecord Row, TCP_ESTATS_TYPE Type)> restore = [];
+        Dictionary<ConnectionRecord, List<string>> enableErrors = [];
         try
         {
             foreach (ConnectionRecord row in selected)
@@ -92,10 +93,24 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
 
                 foreach (TCP_ESTATS_TYPE type in Categories)
                 {
-                    if (TryReadEnabled(row, type, out bool enabled) && !enabled && TrySetEnabled(row, type, true))
+                    if (!TryReadEnabled(row, type, out bool enabled))
                     {
-                        restore.Add((row, type));
+                        Note(enableErrors, row, $"{CategoryName(type)} enable query failed");
+                        continue;
                     }
+
+                    if (enabled)
+                    {
+                        continue;
+                    }
+
+                    if (!TrySetEnabled(row, type, true))
+                    {
+                        Note(enableErrors, row, $"{CategoryName(type)} enable failed");
+                        continue;
+                    }
+
+                    restore.Add((row, type));
                 }
             }
 
@@ -105,11 +120,12 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
             }
 
             List<TcpConnectionStats> results = [];
-            bool partial = table.Partial;
+            bool partial = table.Partial || enableErrors.Count > 0;
             foreach (ConnectionRecord row in selected)
             {
                 names.TryGetValue(row.OwningPid, out string? name);
-                results.Add(Read(row, name));
+                enableErrors.TryGetValue(row, out List<string>? notes);
+                results.Add(Read(row, name, notes));
             }
 
             return OperationResult<TcpConnectionStatsList>.Ok(new TcpConnectionStatsList(
@@ -142,9 +158,29 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
         TCP_ESTATS_TYPE.TcpConnectionEstatsRec
     ];
 
-    private static TcpConnectionStats Read(ConnectionRecord row, string? name)
+    private static string CategoryName(TCP_ESTATS_TYPE type) => type switch
     {
-        TcpEstatsSnapshot snapshot = Query(row);
+        TCP_ESTATS_TYPE.TcpConnectionEstatsData => "data",
+        TCP_ESTATS_TYPE.TcpConnectionEstatsPath => "path",
+        TCP_ESTATS_TYPE.TcpConnectionEstatsSndCong => "sndCong",
+        TCP_ESTATS_TYPE.TcpConnectionEstatsRec => "rec",
+        _ => type.ToString()
+    };
+
+    private static void Note(Dictionary<ConnectionRecord, List<string>> map, ConnectionRecord row, string message)
+    {
+        if (!map.TryGetValue(row, out List<string>? notes))
+        {
+            notes = [];
+            map[row] = notes;
+        }
+
+        notes.Add(message);
+    }
+
+    private static TcpConnectionStats Read(ConnectionRecord row, string? name, IReadOnlyList<string>? enableErrors)
+    {
+        TcpEstatsSnapshot snapshot = Query(row, enableErrors);
         return new TcpConnectionStats(
             row.Family,
             row.LocalAddress ?? "",
@@ -189,13 +225,13 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
         }
     }
 
-    private static TcpEstatsSnapshot Query(ConnectionRecord row)
+    private static TcpEstatsSnapshot Query(ConnectionRecord row, IReadOnlyList<string>? enableErrors)
     {
         (bool dataOn, uint dataStatus, TCP_ESTATS_DATA_ROD_v0 data) = ReadData(row);
         (bool pathOn, uint pathStatus, TCP_ESTATS_PATH_ROD_v0 path) = ReadPath(row);
         (bool congOn, uint congStatus, TCP_ESTATS_SND_CONG_ROD_v0 cong) = ReadCong(row);
         (bool recOn, uint recStatus, TCP_ESTATS_REC_ROD_v0 rec) = ReadRec(row);
-        List<string> errors = [];
+        List<string> errors = enableErrors is { Count: > 0 } ? [.. enableErrors] : [];
         if (dataStatus != 0) errors.Add($"data={dataStatus}");
         if (pathStatus != 0) errors.Add($"path={pathStatus}");
         if (congStatus != 0) errors.Add($"sndCong={congStatus}");

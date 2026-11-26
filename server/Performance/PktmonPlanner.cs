@@ -78,13 +78,16 @@ public static class PktmonPlanner
         foreach (string raw in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
             string line = raw.Trim();
-            Match match = Regex.Match(line, @"^DropReason\s*:\s*(.+)$", RegexOptions.IgnoreCase);
+            Match match = Regex.Match(
+                line,
+                @"DropReason\s*:?\s*(.+?)(?=\s*,\s*DropLocation\b|$)",
+                RegexOptions.IgnoreCase);
             if (!match.Success)
             {
                 continue;
             }
 
-            string reason = match.Groups[1].Value.Trim();
+            string reason = match.Groups[1].Value.Trim().TrimEnd(',');
             if (reason.Length == 0)
             {
                 continue;

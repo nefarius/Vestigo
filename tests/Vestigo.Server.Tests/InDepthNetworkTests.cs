@@ -139,9 +139,12 @@ public sealed class InDepthNetworkTests : IDisposable
               DropReason      : INGEST_DISCARD
             Packet 3
               DropReason      : FILTER_DROP
+            [30]0000.0000::<DateTime> [Microsoft-Windows-PktMon] Drop: PktGroupId 1, PktNumber 1, Appearance 0, Direction Rx , Type IP , Component 49, Filter 1, DropReason INET: transport endpoint was not found , DropLocation 0xE000460A, OriginalSize 402, LoggedSize 148
+                   Drop: ip: 192.0.2.1.50005 > 192.0.2.2.50005: UDP, length 374
             """);
         Assert.Contains(reasons, item => item.DropReason == "INGEST_DISCARD" && item.Dropped == 2);
         Assert.Contains(reasons, item => item.DropReason == "FILTER_DROP" && item.Dropped == 1);
+        Assert.Contains(reasons, item => item.DropReason == "INET: transport endpoint was not found" && item.Dropped == 1);
         PacketDropResult combined = PktmonPlanner.Combine(15000, counters, reasons, truncated: false, partial: true, "format failed");
         Assert.Equal(11, combined.TotalDropped);
         Assert.True(combined.Partial);
