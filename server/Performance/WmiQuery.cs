@@ -13,7 +13,7 @@ internal static class WmiQuery
         {
             using WmiConnection connection = new(scope);
             List<WmiObject> rows = [];
-            foreach (WmiObject row in connection.CreateQuery(wql))
+            foreach (WmiObject row in connection.CreateQuery(wql, TimeSpan.FromSeconds(15)))
             {
                 rows.Add(row);
                 if (rows.Count >= 256)
@@ -92,6 +92,28 @@ internal static class WmiQuery
         }
 
         return (int)value.Value;
+    }
+
+    public static bool ContainsInt(WmiObject row, string name, int expected)
+    {
+        try
+        {
+            object? value = row[name];
+            return value switch
+            {
+                null => false,
+                int number => number == expected,
+                uint number => number == expected,
+                int[] numbers => numbers.Contains(expected),
+                uint[] numbers => numbers.Contains((uint)expected),
+                object[] items => items.Any(item => item is int i && i == expected || item is uint u && u == expected),
+                _ => false
+            };
+        }
+        catch (Exception ex) when (ex is WmiException or InvalidCastException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     public static bool? Boolean(WmiObject? row, string name)

@@ -464,7 +464,6 @@ NET_FW_EDGE_TRAVERSAL_TYPE
 // Performance module: locale-safe PDH sampling (English counter paths).
 PdhOpenQuery
 PdhAddEnglishCounter
-PdhExpandWildCardPath
 PdhCollectQueryData
 PdhGetFormattedCounterValue
 PdhCloseQuery

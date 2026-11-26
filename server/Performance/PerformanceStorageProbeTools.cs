@@ -40,11 +40,11 @@ public sealed class PerformanceStorageProbeTools(
         }
 
         TimeSpan duration = TimeSpan.FromSeconds(durationSeconds);
-        if (duration < TimeSpan.FromMilliseconds(100) || duration > options.Performance.MaxStorageProbeDuration)
+        if (durationSeconds < 1 || duration > options.Performance.MaxStorageProbeDuration)
         {
             return Task.FromResult(OperationResult<StorageProbeResult>.Fail(
                 "invalid_request",
-                $"durationSeconds must be greater than zero and no more than {(int)options.Performance.MaxStorageProbeDuration.TotalSeconds}."));
+                $"durationSeconds must be at least 1 and no more than {(int)options.Performance.MaxStorageProbeDuration.TotalSeconds}."));
         }
 
         PathCheck located = roots.ResolveExisting(directory, RootAccess.Write);

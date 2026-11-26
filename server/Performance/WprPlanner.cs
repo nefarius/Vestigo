@@ -26,7 +26,7 @@ public static class WprPlanner
             : $"Unknown WPR profile '{profile}'. Allowed: {string.Join(", ", AllowedProfiles)}.";
     }
 
-    public static IReadOnlyList<string> StartArguments(string profile) => ["-start", Canonical(profile), "-filemode"];
+    public static IReadOnlyList<string> StartArguments(string profile) => ["-start", Canonical(profile)];
 
     public static IReadOnlyList<string> StopArguments(string output) => ["-stop", output];
 

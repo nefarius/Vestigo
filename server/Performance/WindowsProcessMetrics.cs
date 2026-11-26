@@ -28,14 +28,18 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
         }
 
         List<Snapshot> first = Capture(pid, nameFilter);
+        long started = TimeProvider.System.GetTimestamp();
         await Task.Delay(duration, cancellationToken).ConfigureAwait(false);
         List<Snapshot> second = Capture(pid, nameFilter);
         Dictionary<int, Snapshot> later = second.ToDictionary(item => item.Pid);
-        double elapsedSec = Math.Max(duration.TotalSeconds, 0.001);
+        double elapsedSec = Math.Max(TimeProvider.System.GetElapsedTime(started).TotalSeconds, 0.001);
         List<ProcessMetricSample> samples = [];
         foreach (Snapshot before in first)
         {
-            if (!later.TryGetValue(before.Pid, out Snapshot? after) || after.StartTime != before.StartTime)
+            if (before.Error is not null
+                || !later.TryGetValue(before.Pid, out Snapshot? after)
+                || after.Error is not null
+                || after.StartTime != before.StartTime)
             {
                 continue;
             }
@@ -135,8 +139,10 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
             GC.KeepAlive(handle);
             uint handles = 0;
             _ = PInvoke.GetProcessHandleCount(handle, out handles);
-            ProcessStartTime.TryRead(handle, out DateTimeOffset nativeStart, out _);
-            start ??= nativeStart == default ? null : nativeStart;
+            if (ProcessStartTime.TryRead(handle, out DateTimeOffset nativeStart, out _) && nativeStart != default)
+            {
+                start = nativeStart;
+            }
             TryTimes(handle, out long kernel, out long user);
             return new Snapshot
             {
@@ -241,6 +247,7 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
         PROCESS_POWER_THROTTLING_STATE state = default;
         state.Version = PInvoke.PROCESS_POWER_THROTTLING_CURRENT_VERSION;
         byte[] buffer = new byte[Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>()];
+        MemoryMarshal.Write(buffer, in state);
         if (!PInvoke.GetProcessInformation(
                 handle,
                 PROCESS_INFORMATION_CLASS.ProcessPowerThrottling,

@@ -74,7 +74,7 @@ This is local administration without an API token, including when `/mcp` require
 | `Performance:MaxRawEtlBytes` | `536870912` | Maximum size of a recorded or analyzed `.etl` file. Minimum `16777216`, maximum `4294967296`. |
 | `Performance:MinFreeDiskBytes` | `2147483648` | Free bytes that must remain on the output volume after reserving `MaxRawEtlBytes`. Minimum `67108864`, maximum `17179869184`. |
 | `Performance:MaxStorageProbeBytes` | `67108864` | Maximum temporary file size for `probe_storage_latency`. Minimum `4096`, maximum `536870912`. |
-| `Performance:MaxStorageProbeDuration` | `00:00:30` | Upper bound for one storage latency probe. Minimum `00:00:00.100`, maximum `00:02:00`. |
+| `Performance:MaxStorageProbeDuration` | `00:00:30` | Upper bound for one storage latency probe. Minimum `00:00:01`, maximum `00:02:00`. |
 | `Diagnostics:MaxInspectBytes` | `268435456` | Maximum file size accepted by `inspect_binary`. Minimum `1048576`, maximum `2147483648`. |
 | `Services:ProtectedNames` | `Vestigo`, `RpcSs`, `DcomLaunch`, `PlugPlay`, `Power`, `LSM`, `SamSs` | Service names that mutating tools refuse. Entries you configure are added to the defaults; the defaults cannot be removed. |
 | `Desktop:AllowScreenshots` | `false` | Enables `take_screenshot`, `inspect_screen` and `find_on_screen`. Window and display listing remains available when the Desktop module is enabled. |

@@ -48,7 +48,7 @@ for WUA inventory/history, bounded failure evidence, log access and job limits.
 3. Loop on `read_capture` with `waitSeconds` greater than zero. Pass the returned `NextSequence` each time. Stop when `Completed` is true.
 4. `stop_capture` cancels the reader and disposes the Vestigo-owned session.
 
-There is no server push. Vestigo decodes into a spool; it does not record a raw ETL. `convert_etl` is the offline path when you already have a file. A remote agent can resolve PDBs from an installed binary, the local symbol cache, a configured symbol server, or a file uploaded into the built-in `traces` folder.
+There is no server push. The Trace module decodes into a spool; it does not record a raw ETL. `convert_etl` is the offline path when you already have a file. The opt-in Performance module can write a gated WPR `.etl`. A remote agent can resolve PDBs from an installed binary, the local symbol cache, a configured symbol server, or a file uploaded into the built-in `traces` folder.
 
 ## Read debug output
 

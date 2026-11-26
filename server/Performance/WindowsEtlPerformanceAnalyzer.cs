@@ -32,22 +32,28 @@ public sealed class WindowsEtlPerformanceAnalyzer(RootPolicy roots, VestigoOptio
             return OperationResult<KernelLatencySummary>.Fail("invalid_request", "The file must be a .etl trace.");
         }
 
-        FileInfo info;
+        long length;
         try
         {
-            info = new FileInfo(located.FullPath);
+            FileInfo info = new(located.FullPath);
+            if (!info.Exists)
+            {
+                return OperationResult<KernelLatencySummary>.Fail("etl_unreadable", "The ETL file could not be read.");
+            }
+
+            length = info.Length;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return OperationResult<KernelLatencySummary>.Fail("etl_unreadable", ex.Message);
         }
 
-        if (info.Length > options.Performance.MaxRawEtlBytes)
+        if (length > options.Performance.MaxRawEtlBytes)
         {
             return OperationResult<KernelLatencySummary>.Fail("etl_too_large", "The ETL file is larger than Vestigo:Performance:MaxRawEtlBytes.");
         }
 
-        KernelLatencyAggregator aggregator = new();
+        KernelLatencyAggregator aggregator = new(maxEvents);
         try
         {
             using ETWTraceEventSource source = new(located.FullPath);

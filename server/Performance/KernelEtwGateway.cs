@@ -79,6 +79,7 @@ public sealed class KernelEtwGateway : IKernelLatencyCapture, IHostedService
 
             string output = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            StopSession(sessionName);
             Forget(sessionName);
             if (string.IsNullOrWhiteSpace(output))
             {

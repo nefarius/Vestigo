@@ -20,9 +20,11 @@ using Vestigo.Security;
 
 namespace Vestigo.Server.Tests;
 
+[Collection("VestigoHost")]
 public sealed class PerformanceTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("vestigo-perf-").FullName;
+    private readonly string _probeRoot = Directory.CreateTempSubdirectory("vestigo-perf-out-").FullName;
     private readonly string? _previous = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
 
     public PerformanceTests() => Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _root);
@@ -33,6 +35,14 @@ public sealed class PerformanceTests : IDisposable
         try
         {
             Directory.Delete(_root, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+
+        try
+        {
+            Directory.Delete(_probeRoot, recursive: true);
         }
         catch (IOException)
         {
@@ -70,6 +80,8 @@ public sealed class PerformanceTests : IDisposable
         options.Validate();
         options.MaxSampleDuration = TimeSpan.FromMilliseconds(1);
         Assert.Throws<InvalidOperationException>(options.Validate);
+        options = new() { MaxStorageProbeDuration = TimeSpan.FromMilliseconds(500) };
+        Assert.Throws<InvalidOperationException>(options.Validate);
         options = new() { MaxCounterPaths = 0 };
         Assert.Throws<InvalidOperationException>(options.Validate);
         options = new() { MaxRawEtlBytes = 1 };
@@ -95,16 +107,16 @@ public sealed class PerformanceTests : IDisposable
         aggregator.AddDiskIo("0", 100, "app", "write", @"C:\data.bin", 4096, 4096, 40);
         aggregator.AddFileIo(@"C:\data.bin", "create", 100, "app", 0, 0, 8);
         aggregator.AddDpc(0x1000, 1.5);
-        aggregator.NoteImage(0x1000, @"C:\Windows\System32\drivers\disk.sys");
+        aggregator.NoteImage(0x1000, 0x1000, @"C:\Windows\System32\drivers\disk.sys");
         aggregator.AddDpc(0x1000, 3);
         aggregator.AddCSwitch(100, 4, "app", "System", "WrFilterContext", 20, 5);
         aggregator.AddReadyDelay(7);
         aggregator.AddHardFault(100, "app", @"C:\page.sys");
-        aggregator.Truncate(1);
         KernelLatencySummary summary = aggregator.Build("Vestigo-Perf-abc", 1000, KernelTraceGroups.All, null);
-        Assert.True(summary.Truncated);
+        Assert.False(summary.Truncated);
         Assert.Equal(12.5, summary.DiskIo[0].ServiceMs.Min);
         Assert.Equal(40, summary.SlowestDiskIo[0].ElapsedMs);
+        Assert.Equal("0", summary.SlowestDiskIo[0].Disk);
         Assert.Contains(summary.FileIo, item => item.Kind == "create");
         Assert.Equal("disk.sys", summary.Dpc[0].Image);
         Assert.Contains(summary.Scheduler[0].WaitReasons, item => item.Reason == "WrFilterContext");
@@ -113,11 +125,31 @@ public sealed class PerformanceTests : IDisposable
     }
 
     [Fact]
+    public void Aggregator_StopsAtTheEventLimitAndKeepsImageBounds()
+    {
+        KernelLatencyAggregator limited = new(1);
+        limited.AddDiskIo("0", 1, "a", "read", @"C:\a", 1, 0, 1);
+        limited.AddDiskIo("0", 1, "a", "read", @"C:\a", 1, 0, 9);
+        KernelLatencySummary truncated = limited.Build("s", 1, KernelTraceGroups.All, null);
+        Assert.True(truncated.Truncated);
+        Assert.Equal(1, truncated.EventCount);
+        Assert.Equal(1, truncated.DiskIo[0].ServiceMs.Max);
+
+        KernelLatencyAggregator images = new();
+        images.NoteImage(0x1000, 0x100, @"C:\Windows\System32\drivers\disk.sys");
+        images.AddDpc(0x2000, 5);
+        images.AddDpc(0x1050, 2);
+        KernelLatencySummary named = images.Build("s", 1, KernelTraceGroups.All, null);
+        Assert.Contains(named.Dpc, item => item.Image == "disk.sys" && item.MaxMs == 2);
+        Assert.Contains(named.Dpc, item => item.Image == "unknown" && item.MaxMs == 5);
+    }
+
+    [Fact]
     public void WprPlanner_AllowsOnlyBuiltInProfilesAndFixedArguments()
     {
         Assert.Null(WprPlanner.ValidateProfile("DiskIO"));
         Assert.NotNull(WprPlanner.ValidateProfile("Custom"));
-        Assert.Equal(["-start", "GeneralProfile", "-filemode"], WprPlanner.StartArguments("generalprofile"));
+        Assert.Equal(["-start", "GeneralProfile"], WprPlanner.StartArguments("generalprofile"));
         Assert.Equal(["-stop", @"C:\out.etl"], WprPlanner.StopArguments(@"C:\out.etl"));
         Assert.Equal(["-cancel"], WprPlanner.CancelArguments());
     }
@@ -177,6 +209,9 @@ public sealed class PerformanceTests : IDisposable
 
         PerformanceWprTools wpr = new(new FakeWpr(), roots, new JobManager(options, Path.Combine(_root, "jobs")), options, NullLogger<PerformanceWprTools>.Instance);
         Assert.Equal("raw_etl_disabled", (await wpr.RecordWprTrace("out:trace.etl")).ErrorCode);
+        WindowsWprRecorder recorder = new(options, new FakeVolumeSpace(1L << 40), NullLogger<WindowsWprRecorder>.Instance);
+        Assert.Equal("raw_etl_disabled", recorder.PlanStart("GeneralProfile", Path.Combine(_probeRoot, "trace.etl"), TimeSpan.FromSeconds(1)).ErrorCode);
+        Assert.Equal("wpr_not_running", (await recorder.CancelRecordingAsync(CancellationToken.None)).ErrorCode);
 
         PerformanceStorageProbeTools storage = new(new FakeStorageProbe(), roots, options);
         Assert.Equal("storage_probes_disabled", (await storage.ProbeStorageLatency("out:")).ErrorCode);
@@ -231,7 +266,7 @@ public sealed class PerformanceTests : IDisposable
 
         VestigoOptions options = new()
         {
-            Roots = [new RootDefinition { Name = "out", Path = _root, Access = RootAccess.Write }],
+            Roots = [new RootDefinition { Name = "out", Path = _probeRoot, Access = RootAccess.Write }],
             Performance = { AllowStorageProbes = true, MaxStorageProbeDuration = TimeSpan.FromSeconds(5) }
         };
         PerformanceStorageProbeTools tools = new(new WindowsStorageLatencyProbe(), new RootPolicy(options), options);
@@ -240,7 +275,12 @@ public sealed class PerformanceTests : IDisposable
         Assert.True(result.Value!.CleanedUp);
         Assert.Contains(result.Value.Modes, mode => mode.Mode == "buffered");
         Assert.Contains(result.Value.Modes, mode => mode.Mode == "create-close");
-        Assert.Empty(Directory.GetFiles(_root, "vestigo-*.tmp"));
+        Assert.Empty(Directory.GetFiles(_probeRoot, "vestigo-*.tmp"));
+    }
+
+    private sealed class FakeVolumeSpace(long? free) : IVolumeSpace
+    {
+        public long? FreeBytes(string directory) => free;
     }
 
     private sealed class FakeKernelCapture : IKernelLatencyCapture

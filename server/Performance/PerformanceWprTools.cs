@@ -76,7 +76,14 @@ public sealed class PerformanceWprTools(
             return OperationResult<WprTraceResult>.Ok(new WprTraceResult(started.Value!, output, null, null, null, null, true));
         }
 
-        JobInfo info = (await jobs.WaitAsync(started.Value!.Id, TimeSpan.FromSeconds(seconds), cancellationToken).ConfigureAwait(false)).Value!;
+        OperationResult<JobInfo> waited = await jobs.WaitAsync(started.Value!.Id, TimeSpan.FromSeconds(seconds), cancellationToken)
+            .ConfigureAwait(false);
+        if (!waited.Success)
+        {
+            return waited.FailAs<WprTraceResult>();
+        }
+
+        JobInfo info = waited.Value!;
         long offset = Math.Max(0, info.OutputBytes - TailBytes);
         OperationResult<JobOutputPage> page = jobs.ReadOutput(info.Id, offset, TailBytes);
         FileLink? download = info.State == JobState.Succeeded ? links?.TryCreateDownload(full) : null;
@@ -129,6 +136,15 @@ public sealed class PerformanceWprTools(
         outcome.Sha256 = recorded.Value.Sha256;
         output.WriteLine("bytes " + recorded.Value.Bytes);
         output.WriteLine("sha256 " + recorded.Value.Sha256);
+        if (links?.TryCreateDownload(destination) is { } ticket)
+        {
+            output.WriteLine("download " + ticket.Url);
+            if (ticket.ExpiresUtc is { } expires)
+            {
+                output.WriteLine("downloadExpires " + expires.ToString("O"));
+            }
+        }
+
         return 0;
     }
 

@@ -87,7 +87,7 @@ Gates, root flags, and plugin trust are in [security](docs/security.md) and [con
 
 ## Limitations
 
-- Windows only. Vestigo decodes trace events and does not record a raw ETL file. The NT Kernel Logger is not supported.
+- Windows only. The Trace module decodes events and does not record a raw ETL file or use the NT Kernel Logger. The opt-in Performance module can capture a bounded kernel-latency summary (`AllowKernelTrace`) and a gated WPR `.etl` (`AllowRawEtlCapture`).
 - The MCP endpoint is stateless. There is no server push; live output is a long-poll.
 - External plugins are off until an administrator opts in. They run in-process with the service, and loading one requires a restart.
 - Per-tool bounds, session requirements, and refusal cases are in [limitations](docs/limitations.md).

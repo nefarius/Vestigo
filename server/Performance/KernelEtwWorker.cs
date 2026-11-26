@@ -68,7 +68,7 @@ public static class KernelEtwWorker
             return 2;
         }
 
-        KernelLatencyAggregator aggregator = new();
+        KernelLatencyAggregator aggregator = new(maxEvents);
         try
         {
             using TraceEventSession session = new(sessionName);

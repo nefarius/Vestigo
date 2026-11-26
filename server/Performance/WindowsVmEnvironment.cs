@@ -33,7 +33,7 @@ public sealed class WindowsVmEnvironment : IVmEnvironmentSource
                 "SELECT Name, Service, PNPClass, Manufacturer FROM Win32_PnPEntity");
             IReadOnlyList<WmiObject> guard = WmiQuery.Query(
                 @"root\Microsoft\Windows\DeviceGuard",
-                "SELECT VirtualizationBasedSecurityStatus, HypervisorEnforcedCodeIntegrityStatus FROM Win32_DeviceGuard");
+                "SELECT VirtualizationBasedSecurityStatus, SecurityServicesRunning FROM Win32_DeviceGuard");
 
             WmiObject? computer = computers.FirstOrDefault();
             WmiObject? biosRow = bios.FirstOrDefault();
@@ -62,7 +62,7 @@ public sealed class WindowsVmEnvironment : IVmEnvironmentSource
             if (guard.Count > 0)
             {
                 vbs = WmiQuery.Int32(guard[0], "VirtualizationBasedSecurityStatus") is > 0;
-                hvci = WmiQuery.Int32(guard[0], "HypervisorEnforcedCodeIntegrityStatus") is > 0;
+                hvci = WmiQuery.ContainsInt(guard[0], "SecurityServicesRunning", 2);
             }
 
             List<string> notes = [];

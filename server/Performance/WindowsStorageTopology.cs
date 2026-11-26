@@ -22,7 +22,7 @@ public sealed class WindowsStorageTopology : IStorageTopologySource
         {
             IReadOnlyList<WmiObject> physical = WmiQuery.Query(
                 @"\\.\ROOT\Microsoft\Windows\Storage",
-                "SELECT ObjectId, FriendlyName, SerialNumber, MediaType, BusType, HealthStatus, OperationalStatus, Size, LogicalSectorSize, PhysicalSectorSize FROM MSFT_PhysicalDisk");
+                "SELECT ObjectId, DeviceId, FriendlyName, SerialNumber, MediaType, BusType, HealthStatus, OperationalStatus, Size, LogicalSectorSize, PhysicalSectorSize FROM MSFT_PhysicalDisk");
             IReadOnlyList<WmiObject> reliability = WmiQuery.Query(
                 @"\\.\ROOT\Microsoft\Windows\Storage",
                 "SELECT DeviceId, ReadErrorsUncorrected, WriteErrorsUncorrected, Temperature FROM MSFT_StorageReliabilityCounter");
@@ -31,16 +31,10 @@ public sealed class WindowsStorageTopology : IStorageTopologySource
                 "SELECT ObjectId, Number, PartitionStyle, IsBoot, IsSystem, FriendlyName, Path FROM MSFT_Disk");
             IReadOnlyList<WmiObject> partitions = WmiQuery.Query(
                 @"\\.\ROOT\Microsoft\Windows\Storage",
-                "SELECT DiskNumber, ObjectId FROM MSFT_Partition");
+                "SELECT DiskNumber, ObjectId, DriveLetter, AccessPaths FROM MSFT_Partition");
             IReadOnlyList<WmiObject> volumes = WmiQuery.Query(
                 @"\\.\ROOT\Microsoft\Windows\Storage",
                 "SELECT ObjectId, Path, FileSystem, Size, SizeRemaining, HealthStatus FROM MSFT_Volume");
-            IReadOnlyList<WmiObject> controllers = WmiQuery.Query(
-                @"root\CIMV2",
-                "SELECT Name, Service, Manufacturer, PNPDeviceID FROM Win32_SCSIController");
-            IReadOnlyList<WmiObject> ide = WmiQuery.Query(
-                @"root\CIMV2",
-                "SELECT Name, Service, Manufacturer, PNPDeviceID FROM Win32_IDEController");
 
             Dictionary<string, StorageReliability> reliabilityById = new(StringComparer.OrdinalIgnoreCase);
             foreach (WmiObject row in reliability)
@@ -64,7 +58,8 @@ public sealed class WindowsStorageTopology : IStorageTopologySource
                 int? logical = WmiQuery.Int32(row, "LogicalSectorSize");
                 int? physicalSector = WmiQuery.Int32(row, "PhysicalSectorSize");
                 string? objectId = WmiQuery.String(row, "ObjectId");
-                reliabilityById.TryGetValue(objectId ?? string.Empty, out StorageReliability? rel);
+                string? deviceId = WmiQuery.String(row, "DeviceId");
+                reliabilityById.TryGetValue(deviceId ?? objectId ?? string.Empty, out StorageReliability? rel);
                 physicalDisks.Add(new PhysicalDiskInfo(
                     objectId,
                     WmiQuery.String(row, "FriendlyName"),
@@ -81,6 +76,13 @@ public sealed class WindowsStorageTopology : IStorageTopologySource
                     rel));
             }
 
+            List<DiskVolumeInfo> volumeList = volumes.Select(row => new DiskVolumeInfo(
+                WmiQuery.String(row, "ObjectId"),
+                WmiQuery.String(row, "Path"),
+                WmiQuery.String(row, "FileSystem"),
+                WmiQuery.Int64(row, "Size"),
+                WmiQuery.Int64(row, "SizeRemaining"),
+                StatusName(WmiQuery.Int32(row, "HealthStatus")))).ToList();
             Dictionary<int, List<DiskVolumeInfo>> volumesByDisk = new();
             foreach (WmiObject partition in partitions)
             {
@@ -95,17 +97,14 @@ public sealed class WindowsStorageTopology : IStorageTopologySource
                     list = [];
                     volumesByDisk[diskNumber.Value] = list;
                 }
+
+                DiskVolumeInfo? match = MatchVolume(partition, volumeList);
+                if (match is not null && list.All(item => item.ObjectId != match.ObjectId || item.Path != match.Path))
+                {
+                    list.Add(match);
+                }
             }
 
-            List<DiskVolumeInfo> volumeList = volumes.Select(row => new DiskVolumeInfo(
-                WmiQuery.String(row, "ObjectId"),
-                WmiQuery.String(row, "Path"),
-                WmiQuery.String(row, "FileSystem"),
-                WmiQuery.Int64(row, "Size"),
-                WmiQuery.Int64(row, "SizeRemaining"),
-                StatusName(WmiQuery.Int32(row, "HealthStatus")))).ToList();
-
-            string? adapter = FirstDriver(controllers) ?? FirstDriver(ide);
             List<DiskInfo> diskInfos = [];
             foreach (WmiObject row in disks)
             {
@@ -118,8 +117,8 @@ public sealed class WindowsStorageTopology : IStorageTopologySource
                     WmiQuery.Boolean(row, "IsBoot"),
                     WmiQuery.Boolean(row, "IsSystem"),
                     WmiQuery.String(row, "FriendlyName"),
-                    adapter,
-                    attached is { Count: > 0 } ? attached : volumeList));
+                    null,
+                    attached ?? []));
             }
 
             return OperationResult<StorageTopology>.Ok(new StorageTopology(physicalDisks, diskInfos, null));
@@ -130,15 +129,24 @@ public sealed class WindowsStorageTopology : IStorageTopologySource
         }
     }
 
-    private static string? FirstDriver(IReadOnlyList<WmiObject> rows)
+    private static DiskVolumeInfo? MatchVolume(WmiObject partition, IReadOnlyList<DiskVolumeInfo> volumes)
     {
-        foreach (WmiObject row in rows)
+        string? letter = WmiQuery.String(partition, "DriveLetter");
+        string? access = WmiQuery.String(partition, "AccessPaths");
+        foreach (DiskVolumeInfo volume in volumes)
         {
-            string? service = WmiQuery.String(row, "Service");
-            string? name = WmiQuery.String(row, "Name");
-            if (service is not null || name is not null)
+            if (!string.IsNullOrWhiteSpace(volume.Path)
+                && access is not null
+                && access.Contains(volume.Path, StringComparison.OrdinalIgnoreCase))
             {
-                return service is null ? name : name is null ? service : $"{name} ({service})";
+                return volume;
+            }
+
+            if (!string.IsNullOrWhiteSpace(letter)
+                && volume.Path is not null
+                && volume.Path.StartsWith(letter, StringComparison.OrdinalIgnoreCase))
+            {
+                return volume;
             }
         }
 

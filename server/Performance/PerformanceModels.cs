@@ -61,11 +61,11 @@ public sealed record StorageTopology(
     IReadOnlyList<DiskInfo> Disks,
     string? Error);
 
-public sealed record MinifilterInstance(string Name, string VolumeName, uint Altitude);
+public sealed record MinifilterInstance(string Name, string VolumeName, string Altitude);
 
 public sealed record MinifilterInfo(
     string Name,
-    uint Altitude,
+    string? Altitude,
     uint FrameId,
     IReadOnlyList<MinifilterInstance> Instances);
 
@@ -130,7 +130,7 @@ public sealed record WaitChainNode(string ObjectType, string? Name, int? Process
 
 public sealed record ThreadSample(
     int ThreadId,
-    double CpuPercent,
+    double CpuMilliseconds,
     int Priority,
     string? WaitReason,
     string? State,
@@ -169,6 +169,7 @@ public sealed record SlowIo(
     int Pid,
     string? ProcessName,
     string? Path,
+    string? Disk,
     long Bytes,
     long Offset,
     double ElapsedMs);

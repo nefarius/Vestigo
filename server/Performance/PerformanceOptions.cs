@@ -91,9 +91,9 @@ public sealed class PerformanceOptions
             throw new InvalidOperationException("Vestigo:Performance:MaxStorageProbeBytes must be between 4096 and 536870912.");
         }
 
-        if (MaxStorageProbeDuration < TimeSpan.FromMilliseconds(100) || MaxStorageProbeDuration > TimeSpan.FromMinutes(2))
+        if (MaxStorageProbeDuration < TimeSpan.FromSeconds(1) || MaxStorageProbeDuration > TimeSpan.FromMinutes(2))
         {
-            throw new InvalidOperationException("Vestigo:Performance:MaxStorageProbeDuration must be between 00:00:00.100 and 00:02:00.");
+            throw new InvalidOperationException("Vestigo:Performance:MaxStorageProbeDuration must be between 00:00:01 and 00:02:00.");
         }
     }
 }

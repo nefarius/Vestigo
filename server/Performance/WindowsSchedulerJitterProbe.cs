@@ -19,12 +19,12 @@ public sealed class WindowsSchedulerJitterProbe : ISchedulerJitterProbe
 
         List<double> wake = [];
         List<double> spin = [];
-        DateTimeOffset deadline = DateTimeOffset.UtcNow + duration;
-        while (DateTimeOffset.UtcNow < deadline)
+        long started = TimeProvider.System.GetTimestamp();
+        while (TimeProvider.System.GetElapsedTime(started) < duration)
         {
             cancellationToken.ThrowIfCancellationRequested();
             wake.Add(await MeasureSleepDriftAsync(frequency, TimeSpan.FromMilliseconds(15), cancellationToken).ConfigureAwait(false));
-            if (DateTimeOffset.UtcNow >= deadline)
+            if (TimeProvider.System.GetElapsedTime(started) >= duration)
             {
                 break;
             }
@@ -64,11 +64,6 @@ public sealed class WindowsSchedulerJitterProbe : ISchedulerJitterProbe
         {
             cancellationToken.ThrowIfCancellationRequested();
             PInvoke.QueryPerformanceCounter(out long now);
-            if (now >= until)
-            {
-                break;
-            }
-
             double gapMs = (now - previous) * 1000.0 / frequency;
             if (gapMs > 0.05)
             {
@@ -76,6 +71,10 @@ public sealed class WindowsSchedulerJitterProbe : ISchedulerJitterProbe
             }
 
             previous = now;
+            if (now >= until)
+            {
+                break;
+            }
         }
 
         return gaps;

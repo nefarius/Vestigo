@@ -9,6 +9,12 @@ namespace Vestigo.Performance;
 /// <summary>Enumerates filesystem minifilters through CsWin32 fltlib.dll APIs.</summary>
 public sealed class WindowsMinifilterSource : IMinifilterSource
 {
+    private const int FilterHeader = 14;
+    private const int InstanceHeader = 20;
+    private const int HresultNoMoreItems = unchecked((int)0x80070103);
+    private const int HresultPathNotFound = unchecked((int)0x80070003);
+    private const int HresultNoMoreFiles = unchecked((int)0x80070012);
+
     public OperationResult<MinifilterList> List()
     {
         if (!OperatingSystem.IsWindows())
@@ -27,7 +33,8 @@ public sealed class WindowsMinifilterSource : IMinifilterSource
                     instances.Add(new MinifilterInstance(instance.Name, instance.Volume, instance.Altitude));
                 }
 
-                filters.Add(new MinifilterInfo(filter.Name, filter.Altitude, filter.FrameId, instances));
+                string? altitude = instances.Count == 0 ? null : instances[0].Altitude;
+                filters.Add(new MinifilterInfo(filter.Name, altitude, filter.FrameId, instances));
             }
 
             return OperationResult<MinifilterList>.Ok(new MinifilterList(filters));
@@ -131,7 +138,7 @@ public sealed class WindowsMinifilterSource : IMinifilterSource
 
         using (find)
         {
-            if (first.Failed)
+            if (IsEmpty(first) || first.Failed)
             {
                 yield break;
             }
@@ -149,7 +156,7 @@ public sealed class WindowsMinifilterSource : IMinifilterSource
                     INSTANCE_INFORMATION_CLASS.InstanceFullInformation,
                     buffer,
                     out needed);
-                if (next.Failed)
+                if (IsEmpty(next) || next.Failed)
                 {
                     yield break;
                 }
@@ -163,22 +170,21 @@ public sealed class WindowsMinifilterSource : IMinifilterSource
     }
 
     private static bool IsEmpty(HRESULT status) =>
-        status.Value is unchecked((int)0x80070003) or unchecked((int)0x80070012) or 259;
+        status.Value is HresultPathNotFound or HresultNoMoreFiles or HresultNoMoreItems or 259;
 
     private static IEnumerable<FilterRecord> ReadFilters(byte[] buffer, uint length)
     {
         int offset = 0;
-        while (offset + 16 <= length && offset < buffer.Length)
+        while (offset + FilterHeader <= length && offset < buffer.Length)
         {
             uint next = BitConverter.ToUInt32(buffer, offset);
             uint frame = BitConverter.ToUInt32(buffer, offset + 4);
-            ushort nameBytes = BitConverter.ToUInt16(buffer, offset + 10);
-            int nameOffset = offset + 12;
+            ushort nameBytes = BitConverter.ToUInt16(buffer, offset + 12);
+            int nameOffset = offset + 14;
             string name = nameBytes == 0 || nameOffset + nameBytes > buffer.Length
                 ? string.Empty
                 : Encoding.Unicode.GetString(buffer, nameOffset, nameBytes).TrimEnd('\0');
-            uint altitude = ParseAltitude(name);
-            yield return new FilterRecord(name, altitude, frame);
+            yield return new FilterRecord(name, frame);
             if (next == 0)
             {
                 yield break;
@@ -191,17 +197,12 @@ public sealed class WindowsMinifilterSource : IMinifilterSource
     private static IEnumerable<InstanceRecord> ReadInstances(byte[] buffer, uint length)
     {
         int offset = 0;
-        while (offset + 20 <= length && offset < buffer.Length)
+        while (offset + InstanceHeader <= length && offset < buffer.Length)
         {
             uint next = BitConverter.ToUInt32(buffer, offset);
-            ushort nameBytes = BitConverter.ToUInt16(buffer, offset + 8);
-            ushort volumeBytes = BitConverter.ToUInt16(buffer, offset + 12);
-            ushort altitudeBytes = BitConverter.ToUInt16(buffer, offset + 16);
-            int cursor = offset + 20;
-            string name = ReadUnicode(buffer, ref cursor, nameBytes);
-            string volume = ReadUnicode(buffer, ref cursor, volumeBytes);
-            string altitudeText = ReadUnicode(buffer, ref cursor, altitudeBytes);
-            uint.TryParse(altitudeText, out uint altitude);
+            string name = ReadAt(buffer, offset, offset + 4, offset + 6, length);
+            string altitude = ReadAt(buffer, offset, offset + 8, offset + 10, length);
+            string volume = ReadAt(buffer, offset, offset + 12, offset + 14, length);
             yield return new InstanceRecord(name, volume, altitude);
             if (next == 0)
             {
@@ -212,30 +213,20 @@ public sealed class WindowsMinifilterSource : IMinifilterSource
         }
     }
 
-    private static string ReadUnicode(byte[] buffer, ref int cursor, int bytes)
+    private static string ReadAt(byte[] buffer, int record, int lengthOffset, int pointerOffset, uint length)
     {
-        if (bytes <= 0 || cursor + bytes > buffer.Length)
+        ushort bytes = BitConverter.ToUInt16(buffer, lengthOffset);
+        ushort relative = BitConverter.ToUInt16(buffer, pointerOffset);
+        int start = record + relative;
+        if (bytes == 0 || start < record || start + bytes > buffer.Length || start + bytes > length)
         {
             return string.Empty;
         }
 
-        string text = Encoding.Unicode.GetString(buffer, cursor, bytes).TrimEnd('\0');
-        cursor += bytes;
-        return text;
+        return Encoding.Unicode.GetString(buffer, start, bytes).TrimEnd('\0');
     }
 
-    private static uint ParseAltitude(string name)
-    {
-        int dash = name.LastIndexOf('_');
-        if (dash > 0 && uint.TryParse(name[(dash + 1)..], out uint altitude))
-        {
-            return altitude;
-        }
+    private readonly record struct FilterRecord(string Name, uint FrameId);
 
-        return 0;
-    }
-
-    private readonly record struct FilterRecord(string Name, uint Altitude, uint FrameId);
-
-    private readonly record struct InstanceRecord(string Name, string Volume, uint Altitude);
+    private readonly record struct InstanceRecord(string Name, string Volume, string Altitude);
 }

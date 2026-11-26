@@ -10,6 +10,7 @@ public sealed class KernelLatencyAggregator
     private readonly Dictionary<int, string> _processNames = [];
     private readonly List<SlowIo> _slowDisk = [];
     private readonly Dictionary<(string Path, string Kind), List<double>> _fileIo = [];
+    private readonly Dictionary<(string Path, string Kind), int> _fileIoCounts = [];
     private readonly List<SlowIo> _slowFile = [];
     private readonly Dictionary<string, List<double>> _dpc = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<double>> _isr = new(StringComparer.OrdinalIgnoreCase);
@@ -17,7 +18,11 @@ public sealed class KernelLatencyAggregator
     private readonly Dictionary<int, string> _waitReasons = [];
     private readonly List<double> _readyDelay = [];
     private readonly Dictionary<(int Pid, string File), int> _hardFaults = [];
-    private readonly Dictionary<ulong, string> _images = [];
+    private readonly Dictionary<ulong, (string Name, ulong Size)> _images = [];
+    private readonly int _maxEvents;
+
+    public KernelLatencyAggregator(int maxEvents = int.MaxValue) =>
+        _maxEvents = maxEvents < 1 ? 1 : maxEvents;
 
     public int EventCount { get; private set; }
     public bool Truncated { get; private set; }
@@ -32,11 +37,11 @@ public sealed class KernelLatencyAggregator
         }
     }
 
-    public void NoteImage(ulong address, string? file)
+    public void NoteImage(ulong address, ulong size, string? file)
     {
         if (!string.IsNullOrWhiteSpace(file))
         {
-            _images[address] = ImageName(file);
+            _images[address] = (ImageName(file), size == 0 ? 1 : size);
         }
     }
 
@@ -50,10 +55,10 @@ public sealed class KernelLatencyAggregator
         NoteProcess(pid, process);
         Add(_diskByName, disk, elapsedMs);
         Add(_diskByPid, pid, elapsedMs);
-        ConsiderSlow(_slowDisk, new SlowIo(kind, pid, NameOf(pid), path, bytes, offset, elapsedMs));
+        ConsiderSlow(_slowDisk, new SlowIo(kind, pid, NameOf(pid), path, disk, bytes, offset, elapsedMs));
     }
 
-    public void AddFileIo(string path, string kind, int pid, string? process, long bytes, long offset, double elapsedMs)
+    public void AddFileIo(string path, string kind, int pid, string? process, long bytes, long offset, double? elapsedMs)
     {
         if (!Accept())
         {
@@ -62,8 +67,16 @@ public sealed class KernelLatencyAggregator
 
         NoteProcess(pid, process);
         string key = string.IsNullOrWhiteSpace(path) ? "(unknown)" : path;
-        Add(_fileIo, (key, kind), elapsedMs);
-        ConsiderSlow(_slowFile, new SlowIo(kind, pid, NameOf(pid), key, bytes, offset, elapsedMs));
+        (string Path, string Kind) fileKey = (key, kind);
+        _fileIoCounts.TryGetValue(fileKey, out int count);
+        _fileIoCounts[fileKey] = count + 1;
+        if (elapsedMs is not { } measured)
+        {
+            return;
+        }
+
+        Add(_fileIo, fileKey, measured);
+        ConsiderSlow(_slowFile, new SlowIo(kind, pid, NameOf(pid), key, null, bytes, offset, measured));
     }
 
     public void AddDpc(ulong routine, double elapsedMs) => AddTimed(_dpc, ResolveImage(routine), elapsedMs);
@@ -122,10 +135,14 @@ public sealed class KernelLatencyAggregator
             .Take(TopN)
             .Select(pair => new ProcessIoSummary(pair.Key, NameOf(pair.Key), pair.Value.Count, PercentileStats.From(pair.Value)))
             .ToList();
-        List<FileIoSummary> files = _fileIo
-            .OrderByDescending(pair => pair.Value.Count == 0 ? 0 : pair.Value.Max())
+        List<FileIoSummary> files = _fileIoCounts
+            .OrderByDescending(pair => pair.Value)
             .Take(TopN)
-            .Select(pair => new FileIoSummary(pair.Key.Path, pair.Key.Kind, pair.Value.Count, PercentileStats.From(pair.Value)))
+            .Select(pair => new FileIoSummary(
+                pair.Key.Path,
+                pair.Key.Kind,
+                pair.Value,
+                PercentileStats.From(_fileIo.GetValueOrDefault(pair.Key) ?? [])))
             .ToList();
         List<SchedulerProcessSummary> scheduler = _scheduler
             .Select(pair => new SchedulerProcessSummary(
@@ -171,6 +188,12 @@ public sealed class KernelLatencyAggregator
 
     private bool Accept()
     {
+        if (EventCount >= _maxEvents)
+        {
+            Truncated = true;
+            return false;
+        }
+
         EventCount++;
         return true;
     }
@@ -221,8 +244,7 @@ public sealed class KernelLatencyAggregator
     }
 
     private List<SlowIo> TakeSlow(IEnumerable<SlowIo> source, string disk) =>
-        source.Where(item => string.Equals(item.Path, disk, StringComparison.OrdinalIgnoreCase)
-                             || disk.Contains(item.Path ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+        source.Where(item => string.Equals(item.Disk, disk, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(item => item.ElapsedMs)
             .Take(5)
             .ToList();
@@ -244,9 +266,9 @@ public sealed class KernelLatencyAggregator
     {
         ulong best = 0;
         string name = "unknown";
-        foreach ((ulong address, string file) in _images)
+        foreach ((ulong address, (string file, ulong size)) in _images)
         {
-            if (address <= routine && address >= best)
+            if (address <= routine && routine < address + size && address >= best)
             {
                 best = address;
                 name = file;

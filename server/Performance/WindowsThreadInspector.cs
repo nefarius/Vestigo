@@ -222,11 +222,11 @@ public unsafe sealed class WindowsThreadInspector : IThreadInspector
             int uniquePid = (int)Marshal.ReadIntPtr(buffer, offset + 80);
             if (uniquePid == pid)
             {
-                int threadOffset = offset + 336;
-                for (int i = 0; i < threadCount && threadOffset + 80 < length; i++)
+                int threadOffset = offset + 256;
+                for (int i = 0; i < threadCount && threadOffset + 80 <= length; i++)
                 {
-                    int waitReason = Marshal.ReadByte(buffer, threadOffset + 73);
-                    int tid = (int)Marshal.ReadIntPtr(buffer, threadOffset + 80);
+                    int waitReason = Marshal.ReadInt32(buffer, threadOffset + 72);
+                    int tid = (int)Marshal.ReadIntPtr(buffer, threadOffset + 48);
                     result[tid] = WaitReasonName(waitReason);
                     threadOffset += 80;
                 }
@@ -249,11 +249,14 @@ public unsafe sealed class WindowsThreadInspector : IThreadInspector
         1 => "FreePage",
         2 => "PageIn",
         3 => "PoolAllocation",
+        4 => "DelayExecution",
         5 => "Suspended",
         6 => "UserRequest",
         7 => "WrExecutive",
         8 => "WrFreePage",
         9 => "WrPageIn",
+        10 => "WrPoolAllocation",
+        11 => "WrDelayExecution",
         12 => "WrSuspended",
         13 => "WrUserRequest",
         14 => "WrEventPair",
@@ -262,18 +265,29 @@ public unsafe sealed class WindowsThreadInspector : IThreadInspector
         17 => "WrLpcReply",
         18 => "WrVirtualMemory",
         19 => "WrPageOut",
-        24 => "WrResource",
-        33 => "WrDispatchInt",
-        36 => "WrFastMutex",
-        37 => "WrGuardedMutex",
-        38 => "WrRundown",
-        39 => "WrAlertByThreadId",
-        40 => "WrDeferredPreempt",
-        41 => "WrPhysicalFault",
-        42 => "WrIoRing",
-        43 => "WrMdl",
-        44 => "WrTimeout",
-        45 => "WrFilterContext",
+        20 => "WrRendezvous",
+        21 => "WrKeyedEvent",
+        22 => "WrTerminated",
+        23 => "WrProcessInSwap",
+        24 => "WrCpuRateControl",
+        25 => "WrCalloutStack",
+        26 => "WrKernel",
+        27 => "WrResource",
+        28 => "WrPushLock",
+        29 => "WrMutex",
+        30 => "WrQuantumEnd",
+        31 => "WrDispatchInt",
+        32 => "WrPreempted",
+        33 => "WrYieldExecution",
+        34 => "WrFastMutex",
+        35 => "WrGuardedMutex",
+        36 => "WrRundown",
+        37 => "WrAlertByThreadId",
+        38 => "WrDeferredPreempt",
+        39 => "WrPhysicalFault",
+        40 => "WrIoRing",
+        41 => "WrMdl",
+        42 => "WrTimeout",
         _ => $"WaitReason({value})"
     };
 }

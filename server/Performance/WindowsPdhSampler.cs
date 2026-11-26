@@ -1,13 +1,13 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 
 using Windows.Win32;
-using Windows.Win32.Foundation;
 using Windows.Win32.System.Performance;
 
 namespace Vestigo.Performance;
 
 /// <summary>Samples English PDH counters through CsWin32. Paths stay locale-independent.</summary>
-public sealed class WindowsPdhSampler : ICounterSampler
+public sealed partial class WindowsPdhSampler : ICounterSampler
 {
     private const uint PdhMoreData = 0x800007D2;
     private const uint PdhFmtNoCap100 = 0x00008000;
@@ -50,7 +50,7 @@ public sealed class WindowsPdhSampler : ICounterSampler
                 return OperationResult<CounterSampleResult>.Fail("counter_not_found", "No counters matched the requested English PDH paths.");
             }
 
-            Dictionary<string, List<double>> series = expanded.ToDictionary(path => path, _ => new List<double>(), StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, List<double>> series = new(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, string?> errors = new(StringComparer.OrdinalIgnoreCase);
             using PdhQuery query = PdhQuery.Open();
             List<PdhCounter> counters = [];
@@ -74,11 +74,11 @@ public sealed class WindowsPdhSampler : ICounterSampler
                 }
 
                 query.Collect();
-                DateTimeOffset deadline = DateTimeOffset.UtcNow + duration;
-                while (DateTimeOffset.UtcNow < deadline)
+                long started = TimeProvider.System.GetTimestamp();
+                while (TimeProvider.System.GetElapsedTime(started) < duration)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    TimeSpan remaining = deadline - DateTimeOffset.UtcNow;
+                    TimeSpan remaining = duration - TimeProvider.System.GetElapsedTime(started);
                     TimeSpan wait = remaining < interval ? remaining : interval;
                     if (wait > TimeSpan.Zero)
                     {
@@ -88,13 +88,27 @@ public sealed class WindowsPdhSampler : ICounterSampler
                     query.Collect();
                     foreach (PdhCounter counter in counters)
                     {
-                        if (counter.TryRead(out double value, out string? error))
+                        foreach ((string path, double value, string? error) in counter.ReadSamples())
                         {
-                            series[counter.Path].Add(value);
-                        }
-                        else
-                        {
-                            errors[counter.Path] = error;
+                            if (!series.TryGetValue(path, out List<double>? values))
+                            {
+                                if (series.Count >= maxPaths && !series.ContainsKey(path))
+                                {
+                                    truncated = true;
+                                    continue;
+                                }
+
+                                values = [];
+                                series[path] = values;
+                            }
+
+                            if (error is not null)
+                            {
+                                errors[path] = error;
+                                continue;
+                            }
+
+                            values.Add(value);
                         }
                     }
                 }
@@ -107,8 +121,13 @@ public sealed class WindowsPdhSampler : ICounterSampler
                 }
             }
 
+            foreach (string path in errors.Keys)
+            {
+                series.TryAdd(path, []);
+            }
+
             List<CounterSample> samples = [];
-            foreach (string path in expanded)
+            foreach (string path in series.Keys.OrderBy(item => item, StringComparer.OrdinalIgnoreCase))
             {
                 series.TryGetValue(path, out List<double>? values);
                 errors.TryGetValue(path, out string? error);
@@ -144,9 +163,7 @@ public sealed class WindowsPdhSampler : ICounterSampler
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
         foreach (string path in paths)
         {
-            IReadOnlyList<string> expanded = path.Contains('*', StringComparison.Ordinal)
-                ? ExpandWildcard(path)
-                : [path];
+            IReadOnlyList<string> expanded = [path];
             foreach (string item in expanded)
             {
                 if (!seen.Add(item))
@@ -162,54 +179,6 @@ public sealed class WindowsPdhSampler : ICounterSampler
 
                 result.Add(item);
             }
-        }
-
-        return result;
-    }
-
-    private static IReadOnlyList<string> ExpandWildcard(string path)
-    {
-        uint size = 0;
-        uint first = PInvoke.PdhExpandWildCardPath(null, path, ref size, 0);
-        if (first != PdhMoreData && first != 0)
-        {
-            return [];
-        }
-
-        if (size < 2)
-        {
-            return [];
-        }
-
-        char[] buffer = new char[size];
-        unsafe
-        {
-            fixed (char* pointer = buffer)
-            {
-                uint status = PInvoke.PdhExpandWildCardPath(null, path, new PZZWSTR(pointer), ref size, 0);
-                if (status != 0)
-                {
-                    return [];
-                }
-            }
-        }
-
-        List<string> result = [];
-        int start = 0;
-        for (int i = 0; i < buffer.Length; i++)
-        {
-            if (buffer[i] != '\0')
-            {
-                continue;
-            }
-
-            if (i == start)
-            {
-                break;
-            }
-
-            result.Add(new string(buffer, start, i - start));
-            start = i + 1;
         }
 
         return result;
@@ -271,24 +240,91 @@ public sealed class WindowsPdhSampler : ICounterSampler
     {
         public string Path { get; } = path;
 
-        public bool TryRead(out double value, out string? error)
+        public IReadOnlyList<(string Path, double Value, string? Error)> ReadSamples()
         {
-            value = 0;
-            error = null;
-            uint status = PInvoke.PdhGetFormattedCounterValue(
-                handle,
-                PDH_FMT.PDH_FMT_DOUBLE | (PDH_FMT)PdhFmtNoCap100,
-                out PDH_FMT_COUNTERVALUE formatted);
-            if (status != 0)
+            if (!Path.Contains('*', StringComparison.Ordinal))
             {
-                error = $"PDH status 0x{status:X8}";
-                return false;
+                uint status = PInvoke.PdhGetFormattedCounterValue(
+                    handle,
+                    PDH_FMT.PDH_FMT_DOUBLE | (PDH_FMT)PdhFmtNoCap100,
+                    out PDH_FMT_COUNTERVALUE formatted);
+                if (status != 0)
+                {
+                    return [(Path, 0, $"PDH status 0x{status:X8}")];
+                }
+
+                return double.IsFinite(formatted.doubleValue)
+                    ? [(Path, formatted.doubleValue, null)]
+                    : [(Path, 0, "PDH returned a non-finite value")];
             }
 
-            value = formatted.doubleValue;
-            return double.IsFinite(value);
+            return ReadWildcardSamples();
+        }
+
+        private IReadOnlyList<(string Path, double Value, string? Error)> ReadWildcardSamples()
+        {
+            uint size = 0;
+            uint count = 0;
+            uint format = (uint)(PDH_FMT.PDH_FMT_DOUBLE | (PDH_FMT)PdhFmtNoCap100);
+            uint status = NativePdh.PdhGetFormattedCounterArray(handle, format, ref size, out count, 0);
+            if (status != PdhMoreData && status != 0)
+            {
+                return [(Path, 0, $"PDH status 0x{status:X8}")];
+            }
+
+            nint buffer = Marshal.AllocHGlobal((int)size);
+            try
+            {
+                status = NativePdh.PdhGetFormattedCounterArray(handle, format, ref size, out count, buffer);
+                if (status != 0)
+                {
+                    return [(Path, 0, $"PDH status 0x{status:X8}")];
+                }
+
+                List<(string Path, double Value, string? Error)> result = [];
+                int stride = nint.Size + Marshal.SizeOf<PDH_FMT_COUNTERVALUE>();
+                for (uint i = 0; i < count; i++)
+                {
+                    nint item = buffer + (int)(i * stride);
+                    nint namePtr = Marshal.ReadIntPtr(item);
+                    string instance = namePtr == 0 ? "*" : Marshal.PtrToStringUni(namePtr) ?? "*";
+                    PDH_FMT_COUNTERVALUE formatted = Marshal.PtrToStructure<PDH_FMT_COUNTERVALUE>(item + nint.Size);
+                    string english = Path.Contains("(*)", StringComparison.Ordinal)
+                        ? Path.Replace("(*)", "(" + instance + ")", StringComparison.Ordinal)
+                        : Path;
+                    if (formatted.CStatus != 0 || !double.IsFinite(formatted.doubleValue))
+                    {
+                        result.Add((english, 0, $"PDH status 0x{formatted.CStatus:X8}"));
+                        continue;
+                    }
+
+                    result.Add((english, formatted.doubleValue, null));
+                }
+
+                return result;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
         }
 
         public void Dispose() => _ = PInvoke.PdhRemoveCounter(handle);
+    }
+
+    /// <summary>
+    ///     CsWin32 does not emit a usable <c>PDH_FMT_COUNTERVALUE_ITEM_W</c> layout with
+    ///     NativeMethods.json <c>allowMarshaling: false</c>.
+    /// </summary>
+    private static partial class NativePdh
+    {
+        [LibraryImport("pdh.dll", EntryPoint = "PdhGetFormattedCounterArrayW")]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        public static partial uint PdhGetFormattedCounterArray(
+            nint counter,
+            uint format,
+            ref uint bufferSize,
+            out uint itemCount,
+            nint buffer);
     }
 }

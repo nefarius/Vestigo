@@ -28,7 +28,7 @@ public sealed class WindowsMemoryPressure : IMemoryPressureSource
 
             NativePsapi.PerformanceInformation performance = default;
             performance.cb = (uint)Marshal.SizeOf<NativePsapi.PerformanceInformation>();
-            _ = NativePsapi.GetPerformanceInfo(ref performance, performance.cb);
+            bool havePerformance = NativePsapi.GetPerformanceInfo(ref performance, performance.cb);
 
             List<PagefileInfo> pagefiles = [];
             foreach (WmiObject row in WmiQuery.Query(@"root\CIMV2", "SELECT Name, AllocatedBaseSize, CurrentUsage, PeakUsage FROM Win32_PageFileUsage"))
@@ -47,27 +47,34 @@ public sealed class WindowsMemoryPressure : IMemoryPressureSource
             }
 
             long? balloon = null;
-            foreach (WmiObject row in WmiQuery.Query(@"root\CIMV2", "SELECT WorkingSetSize, Name FROM Win32_Process"))
+            foreach (WmiObject row in WmiQuery.Query(
+                         @"root\CIMV2",
+                         "SELECT WorkingSetSize, Name FROM Win32_Process WHERE Name = 'blnsvr.exe' OR Name = 'vmtoolsd.exe' OR Name LIKE '%balloon%'"))
             {
-                string? name = WmiQuery.String(row, "Name");
-                if (name is not null
-                    && (name.Contains("blnsvr", StringComparison.OrdinalIgnoreCase)
-                        || name.Contains("balloon", StringComparison.OrdinalIgnoreCase)
-                        || name.Contains("vmtoolsd", StringComparison.OrdinalIgnoreCase)))
-                {
-                    balloon = (balloon ?? 0) + (WmiQuery.Int64(row, "WorkingSetSize") ?? 0);
-                }
+                balloon = (balloon ?? 0) + (WmiQuery.Int64(row, "WorkingSetSize") ?? 0);
             }
 
             IReadOnlyList<PoolTagInfo>? tags = includePoolTags ? ReadPoolTags(poolTagLimit) : null;
-            long pageSize = (long)performance.PageSize;
+            long commit = (long)status.ullTotalPageFile - (long)status.ullAvailPageFile;
+            long commitLimit = (long)status.ullTotalPageFile;
+            long kernelPaged = 0;
+            long kernelNonpaged = 0;
+            if (havePerformance && performance.PageSize > 0)
+            {
+                long pageSize = (long)performance.PageSize;
+                commit = (long)performance.CommitTotal * pageSize;
+                commitLimit = (long)performance.CommitLimit * pageSize;
+                kernelPaged = (long)performance.KernelPaged * pageSize;
+                kernelNonpaged = (long)performance.KernelNonpaged * pageSize;
+            }
+
             return OperationResult<MemoryPressure>.Ok(new MemoryPressure(
                 (long)status.ullTotalPhys,
                 (long)status.ullAvailPhys,
-                (long)status.ullTotalPageFile - (long)status.ullAvailPageFile,
-                (long)status.ullTotalPageFile,
-                (long)performance.KernelPaged * pageSize,
-                (long)performance.KernelNonpaged * pageSize,
+                commit,
+                commitLimit,
+                kernelPaged,
+                kernelNonpaged,
                 compression,
                 balloon,
                 pagefiles,
