@@ -472,7 +472,7 @@ The `Performance` module is disabled by default (`Vestigo:Modules:Performance:En
 
 `list_filesystem_minifilters` lists Filter Manager minifilters, altitudes, frame IDs, and attached volume instances.
 
-`get_network_topology` returns per-adapter interface index, link speed, duplex, media state, MTU, VLAN, MAC, IPv4/IPv6, gateways, DNS, DHCP, driver name/version, 64-bit octet/packet/discard/error counters, RSS/RSC/LSO/checksum offloads, selected advanced properties, and global TCP template tuning. Adapter CIM metadata is matched by GUID first, then name, then description. TCP `Timestamps` is `disabled`, `enabled`, or `allowed`. `partial` is true when a StandardCimv2 adapter, TCP, offload, or advanced-property query fails or advanced properties hit the query cap.
+`get_network_topology` returns per-adapter interface index, link speed, duplex, media state, MTU, VLAN, MAC, IPv4/IPv6, gateways, DNS, DHCP, driver name/version, 64-bit octet/packet/discard/error counters, RSS/RSC/LSO/checksum offloads, selected advanced properties, and global TCP template tuning. Adapter CIM metadata is matched by GUID first, then name, then description. TCP `Timestamps` is `disabled`, `enabled`, or `allowed`. `partial` is true when a StandardCimv2 adapter, TCP, offload, or advanced-property query fails or an adapter has more than 32 advanced properties.
 
 `list_network_filters` lists NDIS Lightweight Filter bindings per adapter and WFP callouts, sublayers, and providers. Use it to identify AV, EDR, or VPN drivers in the network path, parallel to `list_filesystem_minifilters`. `partial` is true when WFP returns `ACCESS_DENIED`. No filter configuration is changed.
 

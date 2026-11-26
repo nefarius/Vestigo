@@ -26,7 +26,8 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         PktmonCheckpoint? recorded = Load();
-        if (recorded is { NativeStarted: true })
+        if (recorded is { NativeStarted: true }
+            && PktmonPlanner.ShouldRecoverStop(true, recorded.EtlPath, CaptureExists(recorded.EtlPath)))
         {
             if (!await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -92,15 +93,19 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             PktmonCheckpoint? previous = Load();
             if (previous is { NativeStarted: true })
             {
-                if (!await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
+                if (PktmonPlanner.ShouldRecoverStop(true, previous.EtlPath, CaptureExists(previous.EtlPath)))
                 {
-                    return OperationResult<PacketDropResult>.Fail(
-                        "pktmon_busy",
-                        "A previous Vestigo-owned pktmon capture could not be stopped.");
+                    if (!await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        return OperationResult<PacketDropResult>.Fail(
+                            "pktmon_busy",
+                            "A previous Vestigo-owned pktmon capture could not be stopped.");
+                    }
+
+                    TryDeleteCapture(previous.EtlPath);
                 }
 
-                TryDeleteCapture(previous.EtlPath);
-                if (!TrySave(null))
+                if (!TrySave(null) && !TrySave(new PktmonCheckpoint(false, null)))
                 {
                     return OperationResult<PacketDropResult>.Fail(
                         "pktmon_checkpoint_failed",
@@ -345,6 +350,9 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             return false;
         }
     }
+
+    private static bool CaptureExists(string? etl) =>
+        !string.IsNullOrWhiteSpace(etl) && File.Exists(etl);
 
     private static void TryDeleteCapture(string? etl)
     {

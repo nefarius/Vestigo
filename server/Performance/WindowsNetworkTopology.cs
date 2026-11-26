@@ -38,7 +38,26 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
             Dictionary<string, WmiObject> checksum = Index(
                 WmiQuery.Query(Scope, "SELECT Name, IpIPv4Enabled, TcpIPv4Enabled, TcpIPv6Enabled, UdpIPv4Enabled, UdpIPv6Enabled FROM MSFT_NetAdapterChecksumOffloadSettingData", 256, out bool checksumFailed, out _),
                 "Name");
-            Dictionary<string, List<AdapterAdvancedProperty>> advanced = AdvancedByName(out bool advancedFailed, out bool advancedTruncated);
+            NetworkInterface[] nics = NetworkInterface.GetAllNetworkInterfaces();
+            HashSet<string> advancedNames = new(StringComparer.OrdinalIgnoreCase);
+            foreach (NetworkInterface nic in nics)
+            {
+                if (!string.IsNullOrWhiteSpace(nic.Name))
+                {
+                    advancedNames.Add(nic.Name);
+                }
+            }
+
+            foreach (WmiObject row in adapterRows)
+            {
+                string? adapterName = WmiQuery.String(row, "Name");
+                if (adapterName is not null)
+                {
+                    advancedNames.Add(adapterName);
+                }
+            }
+
+            Dictionary<string, List<AdapterAdvancedProperty>> advanced = AdvancedByName(advancedNames, out bool advancedFailed, out bool advancedTruncated);
             List<TcpStackTuning> tcp = TcpSettings(out bool tcpFailed);
             List<NetworkAdapter> list = [];
             List<string> reasons = [];
@@ -71,7 +90,7 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
             }
 
             bool partial = reasons.Count > 0;
-            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+            foreach (NetworkInterface nic in nics)
             {
                 list.Add(Map(nic, adapters, rss, rsc, lso, checksum, advanced));
             }
@@ -235,42 +254,55 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
         return list;
     }
 
-    private static Dictionary<string, List<AdapterAdvancedProperty>> AdvancedByName(out bool failed, out bool truncated)
+    private static Dictionary<string, List<AdapterAdvancedProperty>> AdvancedByName(
+        IReadOnlyCollection<string> names,
+        out bool failed,
+        out bool truncated)
     {
         Dictionary<string, List<AdapterAdvancedProperty>> map = new(StringComparer.OrdinalIgnoreCase);
-        const int queryLimit = 2048;
-        foreach (WmiObject row in WmiQuery.Query(
-                     Scope,
-                     "SELECT Name, DisplayName, DisplayValue, RegistryKeyword FROM MSFT_NetAdapterAdvancedPropertySettingData",
-                     queryLimit,
-                     out failed,
-                     out truncated))
+        failed = false;
+        truncated = false;
+        const int perAdapterCap = 32;
+        foreach (string name in names)
         {
-            string? name = WmiQuery.String(row, "Name");
-            if (name is null)
+            string wql =
+                "SELECT Name, DisplayName, DisplayValue, RegistryKeyword FROM MSFT_NetAdapterAdvancedPropertySettingData WHERE Name = '"
+                + NetworkTopologyPlanner.EscapeWqlString(name)
+                + "'";
+            IReadOnlyList<WmiObject> rows = WmiQuery.Query(Scope, wql, perAdapterCap + 1, out bool queryFailed, out bool queryTruncated);
+            if (queryFailed)
             {
+                failed = true;
                 continue;
             }
 
-            if (!map.TryGetValue(name, out List<AdapterAdvancedProperty>? list))
+            if (queryTruncated || rows.Count > perAdapterCap)
             {
-                list = [];
+                truncated = true;
+            }
+
+            List<AdapterAdvancedProperty> list = [];
+            foreach (WmiObject row in rows)
+            {
+                if (list.Count >= perAdapterCap)
+                {
+                    break;
+                }
+
+                string? display = WmiQuery.String(row, "DisplayName");
+                string? keyword = WmiQuery.String(row, "RegistryKeyword");
+                if (display is null && keyword is null)
+                {
+                    continue;
+                }
+
+                list.Add(new AdapterAdvancedProperty(display, WmiQuery.String(row, "DisplayValue"), keyword));
+            }
+
+            if (list.Count > 0)
+            {
                 map[name] = list;
             }
-
-            if (list.Count >= 32)
-            {
-                continue;
-            }
-
-            string? display = WmiQuery.String(row, "DisplayName");
-            string? keyword = WmiQuery.String(row, "RegistryKeyword");
-            if (display is null && keyword is null)
-            {
-                continue;
-            }
-
-            list.Add(new AdapterAdvancedProperty(display, WmiQuery.String(row, "DisplayValue"), keyword));
         }
 
         return map;

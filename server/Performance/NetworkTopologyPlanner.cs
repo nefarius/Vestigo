@@ -49,4 +49,7 @@ public static class NetworkTopologyPlanner
 
         return null;
     }
+
+    public static string EscapeWqlString(string value) =>
+        value.Replace("'", "''", StringComparison.Ordinal);
 }

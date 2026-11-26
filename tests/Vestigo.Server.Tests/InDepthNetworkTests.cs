@@ -129,6 +129,10 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.False(PktmonPlanner.IndicatesActive("Packet Monitor is not running."));
         Assert.True(PktmonPlanner.IndicatesSessionInUse("Packet Monitor is already running."));
         Assert.False(PktmonPlanner.IndicatesSessionInUse("Failed to open log file."));
+        Assert.True(PktmonPlanner.ShouldRecoverStop(true, @"C:\state\drop.etl", true));
+        Assert.False(PktmonPlanner.ShouldRecoverStop(true, @"C:\state\drop.etl", false));
+        Assert.False(PktmonPlanner.ShouldRecoverStop(false, @"C:\state\drop.etl", true));
+        Assert.Equal("O''Reilly", NetworkTopologyPlanner.EscapeWqlString("O'Reilly"));
         Assert.Equal("disabled", NetworkTopologyPlanner.TimestampPolicy(0, null));
         Assert.Equal("enabled", NetworkTopologyPlanner.TimestampPolicy(1, "1"));
         Assert.Equal("allowed", NetworkTopologyPlanner.TimestampPolicy(2, null));
