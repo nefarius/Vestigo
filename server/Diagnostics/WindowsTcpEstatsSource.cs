@@ -32,6 +32,14 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
             return OperationResult<TcpConnectionStatsList>.Fail(table.ErrorCode!, table.Error!);
         }
 
+        if (!NetworkConnectionProjection.TryParseAddress(localAddress, out IPAddress? localSelector)
+            || !NetworkConnectionProjection.TryParseAddress(remoteAddress, out IPAddress? remoteSelector))
+        {
+            return OperationResult<TcpConnectionStatsList>.Fail(
+                "invalid_request",
+                "localAddress and remoteAddress must be IP addresses.");
+        }
+
         IReadOnlyDictionary<int, string> names = ProcessNameLookup.Snapshot();
         List<ConnectionRecord> selected = [];
         foreach (ConnectionRecord row in table.Rows)
@@ -56,14 +64,8 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
                 continue;
             }
 
-            if (!string.IsNullOrWhiteSpace(localAddress) &&
-                !string.Equals(row.LocalAddress, localAddress, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!string.IsNullOrWhiteSpace(remoteAddress) &&
-                !string.Equals(row.RemoteAddress, remoteAddress, StringComparison.OrdinalIgnoreCase))
+            if (!NetworkConnectionProjection.AddressMatches(row.LocalAddress, localSelector)
+                || !NetworkConnectionProjection.AddressMatches(row.RemoteAddress, remoteSelector))
             {
                 continue;
             }

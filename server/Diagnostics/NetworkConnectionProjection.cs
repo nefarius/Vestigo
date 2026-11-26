@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Vestigo.Diagnostics;
 
 /// <summary>Pure connection filtering, TCP state histograms, and ephemeral-port utilization.</summary>
@@ -37,6 +39,27 @@ internal static class NetworkConnectionProjection
         }
 
         return pid is null || row.OwningPid == pid;
+    }
+
+    public static bool TryParseAddress(string? text, out IPAddress? address)
+    {
+        address = null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(text, out address);
+    }
+
+    public static bool AddressMatches(string? stored, IPAddress? selector)
+    {
+        if (selector is null)
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(stored, out IPAddress? parsed) && parsed.Equals(selector);
     }
 
     public static IReadOnlyList<TcpStateCount> Histogram(IEnumerable<ConnectionRecord> rows)

@@ -33,7 +33,7 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
                 WmiQuery.Query(Scope, "SELECT Name, IPv4Enabled, IPv6Enabled FROM MSFT_NetAdapterRscSettingData", 256, out bool rscFailed, out _),
                 "Name");
             Dictionary<string, WmiObject> lso = Index(
-                WmiQuery.Query(Scope, "SELECT Name, V2IPv4Enabled, V2IPv6Enabled FROM MSFT_NetAdapterLsoSettingData", 256, out bool lsoFailed, out _),
+                WmiQuery.Query(Scope, "SELECT Name, IPv4Enabled, IPv6Enabled FROM MSFT_NetAdapterLsoSettingData", 256, out bool lsoFailed, out _),
                 "Name");
             Dictionary<string, WmiObject> checksum = Index(
                 WmiQuery.Query(Scope, "SELECT Name, IpIPv4Enabled, TcpIPv4Enabled, TcpIPv6Enabled, UdpIPv4Enabled, UdpIPv6Enabled FROM MSFT_NetAdapterChecksumOffloadSettingData", 256, out bool checksumFailed, out _),
@@ -157,8 +157,8 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
             WmiQuery.String(rssRow, "Profile"),
             WmiQuery.Boolean(rscRow, "IPv4Enabled"),
             WmiQuery.Boolean(rscRow, "IPv6Enabled"),
-            WmiQuery.Boolean(lsoRow, "V2IPv4Enabled"),
-            WmiQuery.Boolean(lsoRow, "V2IPv6Enabled"),
+            WmiQuery.Boolean(lsoRow, "IPv4Enabled"),
+            WmiQuery.Boolean(lsoRow, "IPv6Enabled"),
             Enabled(checksumRow, "IpIPv4Enabled"),
             Enabled(checksumRow, "TcpIPv4Enabled"),
             Enabled(checksumRow, "TcpIPv6Enabled"),

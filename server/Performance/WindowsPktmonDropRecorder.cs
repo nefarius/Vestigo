@@ -118,11 +118,6 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             NativeResult started = await Run(start, cancellationToken).ConfigureAwait(false);
             if (!started.Succeeded)
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    throw new OperationCanceledException(cancellationToken);
-                }
-
                 if (PktmonPlanner.IndicatesSessionInUse(started.Output))
                 {
                     nativeStarted = false;
@@ -136,6 +131,11 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                     return FailNative<PacketDropResult>(started);
                 }
 
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
                 stopped = await StopOwnedAsync().ConfigureAwait(false);
                 if (stopped)
                 {
@@ -145,17 +145,19 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
 
                 return FailNative<PacketDropResult>(started);
             }
+
+            NativeResult counters = NativeResult.Missing();
+            IReadOnlyList<PacketDropCounter> parsed = [];
             try
             {
                 await Task.Delay(duration, cancellationToken).ConfigureAwait(false);
+                counters = await Run(PktmonPlanner.CountersArguments(), cancellationToken).ConfigureAwait(false);
+                parsed = PktmonPlanner.ParseCounters(counters.Output);
             }
             finally
             {
                 stopped = await StopOwnedAsync().ConfigureAwait(false);
             }
-
-            NativeResult counters = await Run(PktmonPlanner.CountersArguments(), cancellationToken).ConfigureAwait(false);
-            IReadOnlyList<PacketDropCounter> parsed = PktmonPlanner.ParseCounters(counters.Output);
             IReadOnlyList<PacketDropCounter> reasons = [];
             bool partial = !counters.Succeeded || !stopped;
             if (File.Exists(etl))
