@@ -171,7 +171,7 @@ public sealed partial class WindowsPdhSampler : ICounterSampler
 
                             if (sample.Issue is not null)
                             {
-                                issues[sample.Path] = sample.Issue;
+                                RecordIssue(issues, sample.Path, sample.Issue);
                                 continue;
                             }
 
@@ -231,11 +231,12 @@ public sealed partial class WindowsPdhSampler : ICounterSampler
             series.TryGetValue(path, out List<double>? values);
             issues.TryGetValue(path, out CounterIssue? issue);
             bool hasValues = values is { Count: > 0 };
+            bool hasError = string.Equals(issue?.Status, "error", StringComparison.Ordinal);
             samples.Add(new CounterSample(
                 path,
                 PercentileStats.From(values ?? []),
-                hasValues ? "ok" : issue?.Status ?? "no_data",
-                hasValues ? null : issue?.Error ?? "No counter samples were collected."));
+                hasError ? "error" : hasValues ? "ok" : issue?.Status ?? "no_data",
+                hasError ? issue!.Error : hasValues ? null : issue?.Error ?? "No counter samples were collected."));
         }
 
         return OperationResult<CounterSampleResult>.Ok(new CounterSampleResult(
@@ -245,6 +246,18 @@ public sealed partial class WindowsPdhSampler : ICounterSampler
             samples.Count,
             truncated,
             samples));
+    }
+
+    private static void RecordIssue(Dictionary<string, CounterIssue> issues, string path, CounterIssue issue)
+    {
+        if (issues.TryGetValue(path, out CounterIssue? existing)
+            && string.Equals(existing.Status, "error", StringComparison.Ordinal)
+            && !string.Equals(issue.Status, "error", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        issues[path] = issue;
     }
 
     internal static CounterIssue ClassifyStatus(uint status, string context) => status switch

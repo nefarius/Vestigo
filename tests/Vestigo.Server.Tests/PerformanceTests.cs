@@ -358,6 +358,50 @@ public sealed class PerformanceTests : IDisposable
     }
 
     [Fact]
+    public async Task PdhSampler_PreservesUnexpectedReadErrorsWhenValuesOrNoDataAlsoOccur()
+    {
+        const string flakyErrorPath = @"\Processor(_Total)\% Processor Time";
+        const string transientNoDataPath = @"\PhysicalDisk(_Total)\Current Disk Queue Length";
+
+        FakePdhQueryFactory factory = new(path => path switch
+        {
+            flakyErrorPath => (new SequencePdhCounter(path, [
+                [new WindowsPdhSampler.PdhSampleReading(path, 15.0, null)],
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(0xC0000BBC, "PdhGetFormattedCounterValue failed"))],
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhNoData, "PdhGetFormattedCounterValue failed"))]
+            ]), 0),
+            _ => (new SequencePdhCounter(path, [
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhNoData, "PdhGetFormattedCounterValue failed"))],
+                [new WindowsPdhSampler.PdhSampleReading(path, 3.0, null)],
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhCstatusNoInstance, "PdhGetFormattedCounterValue failed"))]
+            ]), 0)
+        });
+        WindowsPdhSampler sampler = new(factory, new InstantTimeProvider());
+
+        OperationResult<CounterSampleResult> result = await sampler.SampleAsync(
+            [flakyErrorPath, transientNoDataPath],
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(1),
+            64,
+            "overview",
+            Xunit.TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+
+        CounterSample errored = Assert.Single(result.Value!.Counters, item => item.Path == flakyErrorPath);
+        Assert.Equal("error", errored.Status);
+        Assert.Contains("C0000BBC", errored.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, errored.Values.Count);
+        Assert.Equal(15.0, errored.Values.Max);
+
+        CounterSample recovered = Assert.Single(result.Value.Counters, item => item.Path == transientNoDataPath);
+        Assert.Equal("ok", recovered.Status);
+        Assert.Null(recovered.Error);
+        Assert.Equal(1, recovered.Values.Count);
+        Assert.Equal(3.0, recovered.Values.Max);
+    }
+
+    [Fact]
     public void WprPlanner_AllowsOnlyBuiltInProfilesAndFixedArguments()
     {
         const string instance = "Vestigo-Wpr-abc123def456";
@@ -608,6 +652,25 @@ public sealed class PerformanceTests : IDisposable
         public string Path { get; } = path;
 
         public IReadOnlyList<WindowsPdhSampler.PdhSampleReading> ReadSamples() => readings;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class SequencePdhCounter(string path, IReadOnlyList<IReadOnlyList<WindowsPdhSampler.PdhSampleReading>> sequence)
+        : WindowsPdhSampler.IPdhCounter
+    {
+        private int _index;
+
+        public string Path { get; } = path;
+
+        public IReadOnlyList<WindowsPdhSampler.PdhSampleReading> ReadSamples()
+        {
+            int current = Math.Min(_index, sequence.Count - 1);
+            _index++;
+            return sequence[current];
+        }
 
         public void Dispose()
         {
