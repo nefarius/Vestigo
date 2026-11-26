@@ -60,7 +60,7 @@ public sealed record TcpStackTuning(
     string? AutoTuningLevel,
     string? CongestionProvider,
     string? EcnCapability,
-    bool? Timestamps,
+    string? Timestamps,
     int? InitialCongestionWindow,
     int? DelayedAckTimeoutMs,
     int? MinRtoMs);

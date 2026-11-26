@@ -15,8 +15,9 @@ public sealed class NetworkTopologyTools(
     [Description(
         "Returns per-adapter interface index, link speed, duplex, media state, MTU, VLAN, MAC, IPv4/IPv6, gateways, DNS, DHCP, "
         + "driver name/version, 64-bit octet/packet/discard/error counters, RSS/RSC/LSO/checksum offloads, selected advanced "
-        + "properties, and global TCP template tuning. Combines System.Net.NetworkInformation with ROOT\\StandardCimv2. "
-        + "No packet payloads are captured.")]
+        + "properties, and global TCP template tuning. TCP Timestamps is disabled, enabled, or allowed. partial is true when a "
+        + "StandardCimv2 query fails or advanced properties are truncated. Combines System.Net.NetworkInformation with "
+        + "ROOT\\StandardCimv2. No packet payloads are captured.")]
     public OperationResult<NetworkTopology> GetNetworkTopology() => topology.Read();
 
     [McpServerTool(Name = "list_network_filters", ReadOnly = true)]

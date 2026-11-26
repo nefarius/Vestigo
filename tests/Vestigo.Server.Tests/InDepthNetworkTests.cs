@@ -116,6 +116,19 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.False(PktmonPlanner.IndicatesActive("Packet Monitor is not running."));
         Assert.True(PktmonPlanner.IndicatesSessionInUse("Packet Monitor is already running."));
         Assert.False(PktmonPlanner.IndicatesSessionInUse("Failed to open log file."));
+        Assert.Equal("disabled", NetworkTopologyPlanner.TimestampPolicy(0, null));
+        Assert.Equal("enabled", NetworkTopologyPlanner.TimestampPolicy(1, "1"));
+        Assert.Equal("allowed", NetworkTopologyPlanner.TimestampPolicy(2, null));
+        Assert.Equal("Enabled", NetworkTopologyPlanner.TimestampPolicy(null, "Enabled"));
+        Dictionary<string, string> byGuid = new(StringComparer.OrdinalIgnoreCase) { ["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"] = "A" };
+        Dictionary<string, string> byName = new(StringComparer.OrdinalIgnoreCase) { ["Ethernet"] = "A" };
+        Dictionary<string, string> byDescription = new(StringComparer.OrdinalIgnoreCase) { ["Ethernet"] = "B" };
+        Assert.Equal(
+            "A",
+            NetworkTopologyPlanner.MatchAdapter("{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}", "Ethernet", "Intel", byGuid, byName, byDescription));
+        Assert.Equal(
+            "B",
+            NetworkTopologyPlanner.MatchAdapter("missing", "Other", "Ethernet", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), byName, byDescription));
 
         IReadOnlyList<PacketDropCounter> counters = PktmonPlanner.ParseCounters(
             """

@@ -180,7 +180,7 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
         catch (OperationCanceledException)
         {
-            if (!stopped)
+            if (nativeStarted && !stopped)
             {
                 stopped = await StopOwnedAsync().ConfigureAwait(false);
             }
@@ -194,7 +194,7 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (!stopped)
+            if (nativeStarted && !stopped)
             {
                 stopped = await StopOwnedAsync().ConfigureAwait(false);
             }

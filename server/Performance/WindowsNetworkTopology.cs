@@ -19,21 +19,68 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
 
         try
         {
-            Dictionary<string, WmiObject> adapters = Index(WmiQuery.Query(Scope, "SELECT Name, InterfaceDescription, InterfaceIndex, InterfaceGuid, PermanentAddress, Speed, ReceiveLinkSpeed, TransmitLinkSpeed, FullDuplex, MtuSize, VlanID, DriverName, DriverVersionString, DriverDescription, DeviceID FROM MSFT_NetAdapter"), "Name", "InterfaceDescription");
-            Dictionary<string, WmiObject> rss = Index(WmiQuery.Query(Scope, "SELECT Name, Enabled, NumberOfReceiveQueues, BaseProcessorNumber, MaxProcessorNumber, Profile FROM MSFT_NetAdapterRssSettingData"), "Name");
-            Dictionary<string, WmiObject> rsc = Index(WmiQuery.Query(Scope, "SELECT Name, IPv4Enabled, IPv6Enabled FROM MSFT_NetAdapterRscSettingData"), "Name");
-            Dictionary<string, WmiObject> lso = Index(WmiQuery.Query(Scope, "SELECT Name, V2IPv4Enabled, V2IPv6Enabled FROM MSFT_NetAdapterLsoSettingData"), "Name");
-            Dictionary<string, WmiObject> checksum = Index(WmiQuery.Query(Scope, "SELECT Name, IpIPv4Enabled, TcpIPv4Enabled, TcpIPv6Enabled, UdpIPv4Enabled, UdpIPv6Enabled FROM MSFT_NetAdapterChecksumOffloadSettingData"), "Name");
-            Dictionary<string, List<AdapterAdvancedProperty>> advanced = AdvancedByName();
-            List<TcpStackTuning> tcp = TcpSettings();
+            IReadOnlyList<WmiObject> adapterRows = WmiQuery.Query(
+                Scope,
+                "SELECT Name, InterfaceDescription, InterfaceIndex, InterfaceGuid, PermanentAddress, Speed, ReceiveLinkSpeed, TransmitLinkSpeed, FullDuplex, MtuSize, VlanID, DriverName, DriverVersionString, DriverDescription, DeviceID FROM MSFT_NetAdapter",
+                256,
+                out bool adapterFailed,
+                out _);
+            AdapterLookup adapters = IndexAdapters(adapterRows);
+            Dictionary<string, WmiObject> rss = Index(
+                WmiQuery.Query(Scope, "SELECT Name, Enabled, NumberOfReceiveQueues, BaseProcessorNumber, MaxProcessorNumber, Profile FROM MSFT_NetAdapterRssSettingData", 256, out bool rssFailed, out _),
+                "Name");
+            Dictionary<string, WmiObject> rsc = Index(
+                WmiQuery.Query(Scope, "SELECT Name, IPv4Enabled, IPv6Enabled FROM MSFT_NetAdapterRscSettingData", 256, out bool rscFailed, out _),
+                "Name");
+            Dictionary<string, WmiObject> lso = Index(
+                WmiQuery.Query(Scope, "SELECT Name, V2IPv4Enabled, V2IPv6Enabled FROM MSFT_NetAdapterLsoSettingData", 256, out bool lsoFailed, out _),
+                "Name");
+            Dictionary<string, WmiObject> checksum = Index(
+                WmiQuery.Query(Scope, "SELECT Name, IpIPv4Enabled, TcpIPv4Enabled, TcpIPv6Enabled, UdpIPv4Enabled, UdpIPv6Enabled FROM MSFT_NetAdapterChecksumOffloadSettingData", 256, out bool checksumFailed, out _),
+                "Name");
+            Dictionary<string, List<AdapterAdvancedProperty>> advanced = AdvancedByName(out bool advancedFailed, out bool advancedTruncated);
+            List<TcpStackTuning> tcp = TcpSettings(out bool tcpFailed);
             List<NetworkAdapter> list = [];
-            bool partial = adapters.Count == 0;
+            List<string> reasons = [];
+            if (adapterFailed)
+            {
+                reasons.Add("adapter query failed");
+            }
+            else if (adapters.Count == 0)
+            {
+                reasons.Add("adapter metadata was unavailable");
+            }
+
+            if (tcpFailed)
+            {
+                reasons.Add("TCP settings query failed");
+            }
+
+            if (rssFailed || rscFailed || lsoFailed || checksumFailed)
+            {
+                reasons.Add("offload query failed");
+            }
+
+            if (advancedFailed)
+            {
+                reasons.Add("advanced property query failed");
+            }
+            else if (advancedTruncated)
+            {
+                reasons.Add("advanced properties truncated");
+            }
+
+            bool partial = reasons.Count > 0;
             foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
             {
                 list.Add(Map(nic, adapters, rss, rsc, lso, checksum, advanced));
             }
 
-            return OperationResult<NetworkTopology>.Ok(new NetworkTopology(list, tcp, partial, partial ? "StandardCimv2 adapter metadata was unavailable." : null));
+            return OperationResult<NetworkTopology>.Ok(new NetworkTopology(
+                list,
+                tcp,
+                partial,
+                partial ? "StandardCimv2 " + string.Join("; ", reasons) + "." : null));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -43,7 +90,7 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
 
     private static NetworkAdapter Map(
         NetworkInterface nic,
-        IReadOnlyDictionary<string, WmiObject> adapters,
+        AdapterLookup adapters,
         IReadOnlyDictionary<string, WmiObject> rss,
         IReadOnlyDictionary<string, WmiObject> rsc,
         IReadOnlyDictionary<string, WmiObject> lso,
@@ -90,7 +137,7 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
             error = ex.Message;
         }
 
-        WmiObject? row = Match(nic, adapters);
+        WmiObject? row = adapters.Match(nic);
         string? name = nic.Name;
         rss.TryGetValue(name, out WmiObject? rssRow);
         if (rssRow is null && row is not null)
@@ -164,17 +211,22 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
         return list;
     }
 
-    private static List<TcpStackTuning> TcpSettings()
+    private static List<TcpStackTuning> TcpSettings(out bool failed)
     {
         List<TcpStackTuning> list = [];
-        foreach (WmiObject row in WmiQuery.Query(Scope, "SELECT SettingName, AutoTuningLevelLocal, CongestionProvider, EcnCapability, Timestamps, InitialCongestionWindow, DelayedAckTimeout, MinRto FROM MSFT_NetTCPSetting"))
+        foreach (WmiObject row in WmiQuery.Query(
+                     Scope,
+                     "SELECT SettingName, AutoTuningLevelLocal, CongestionProvider, EcnCapability, Timestamps, InitialCongestionWindow, DelayedAckTimeout, MinRto FROM MSFT_NetTCPSetting",
+                     256,
+                     out failed,
+                     out _))
         {
             list.Add(new TcpStackTuning(
                 WmiQuery.String(row, "SettingName"),
                 WmiQuery.String(row, "AutoTuningLevelLocal"),
                 WmiQuery.String(row, "CongestionProvider"),
                 WmiQuery.String(row, "EcnCapability"),
-                WmiQuery.Boolean(row, "Timestamps"),
+                NetworkTopologyPlanner.TimestampPolicy(WmiQuery.Int32(row, "Timestamps"), WmiQuery.String(row, "Timestamps")),
                 WmiQuery.Int32(row, "InitialCongestionWindow"),
                 WmiQuery.Int32(row, "DelayedAckTimeout"),
                 WmiQuery.Int32(row, "MinRto")));
@@ -183,10 +235,16 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
         return list;
     }
 
-    private static Dictionary<string, List<AdapterAdvancedProperty>> AdvancedByName()
+    private static Dictionary<string, List<AdapterAdvancedProperty>> AdvancedByName(out bool failed, out bool truncated)
     {
         Dictionary<string, List<AdapterAdvancedProperty>> map = new(StringComparer.OrdinalIgnoreCase);
-        foreach (WmiObject row in WmiQuery.Query(Scope, "SELECT Name, DisplayName, DisplayValue, RegistryKeyword FROM MSFT_NetAdapterAdvancedPropertySettingData"))
+        const int queryLimit = 2048;
+        foreach (WmiObject row in WmiQuery.Query(
+                     Scope,
+                     "SELECT Name, DisplayName, DisplayValue, RegistryKeyword FROM MSFT_NetAdapterAdvancedPropertySettingData",
+                     queryLimit,
+                     out failed,
+                     out truncated))
         {
             string? name = WmiQuery.String(row, "Name");
             if (name is null)
@@ -236,24 +294,45 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
         return map;
     }
 
-    private static WmiObject? Match(NetworkInterface nic, IReadOnlyDictionary<string, WmiObject> adapters)
+    private static AdapterLookup IndexAdapters(IReadOnlyList<WmiObject> rows)
     {
-        if (adapters.TryGetValue(nic.Name, out WmiObject? row) || adapters.TryGetValue(nic.Description, out row))
+        Dictionary<string, WmiObject> byGuid = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, WmiObject> byName = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, WmiObject> byDescription = new(StringComparer.OrdinalIgnoreCase);
+        foreach (WmiObject row in rows)
         {
-            return row;
-        }
-
-        string id = nic.Id.Trim('{', '}');
-        foreach (WmiObject candidate in adapters.Values)
-        {
-            string? guid = WmiQuery.String(candidate, "InterfaceGuid")?.Trim('{', '}');
-            if (guid is not null && guid.Equals(id, StringComparison.OrdinalIgnoreCase))
+            string guid = NetworkTopologyPlanner.NormalizeGuid(WmiQuery.String(row, "InterfaceGuid"));
+            if (guid.Length > 0)
             {
-                return candidate;
+                byGuid[guid] = row;
+            }
+
+            string? name = WmiQuery.String(row, "Name");
+            if (name is not null)
+            {
+                byName[name] = row;
+            }
+
+            string? description = WmiQuery.String(row, "InterfaceDescription");
+            if (description is not null)
+            {
+                byDescription[description] = row;
             }
         }
 
-        return null;
+        return new AdapterLookup(rows.Count, byGuid, byName, byDescription);
+    }
+
+    private sealed class AdapterLookup(
+        int count,
+        IReadOnlyDictionary<string, WmiObject> byGuid,
+        IReadOnlyDictionary<string, WmiObject> byName,
+        IReadOnlyDictionary<string, WmiObject> byDescription)
+    {
+        public int Count { get; } = count;
+
+        public WmiObject? Match(NetworkInterface nic) =>
+            NetworkTopologyPlanner.MatchAdapter(nic.Id, nic.Name, nic.Description, byGuid, byName, byDescription);
     }
 
     private static bool? Enabled(WmiObject? row, string name)
