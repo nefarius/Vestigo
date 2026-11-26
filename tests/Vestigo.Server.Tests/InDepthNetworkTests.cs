@@ -306,16 +306,11 @@ public sealed class InDepthNetworkTests : IDisposable
         await using BunitContext context = new();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
-        JsonObject values = new()
-        {
-            ["AllowNetworkProbes"] = false,
-            ["MaxNetworkConnections"] = 500,
-            ["MaxNetworkProbeSamples"] = 20,
-            ["MaxLatencyProbeDuration"] = "00:00:15",
-            ["MaxPathProbeHops"] = 30
-        };
+        ConfigurationEditor editor = new(new VestigoOptions(), ModuleRegistry.All);
+        ConfigurationSnapshot snapshot = editor.Load();
+        JsonObject diagnostics = snapshot.Values["Diagnostics"]!.AsObject();
         IRenderedComponent<ConfigFields> cut = context.Render<ConfigFields>(parameters => parameters
-            .Add(field => field.Values, values)
+            .Add(field => field.Values, diagnostics)
             .Add(field => field.Prefix, "Diagnostics"));
         Assert.Contains("Diagnostics:AllowNetworkProbes", cut.Markup, StringComparison.Ordinal);
         Assert.Contains("Diagnostics:MaxNetworkConnections", cut.Markup, StringComparison.Ordinal);
@@ -325,39 +320,27 @@ public sealed class InDepthNetworkTests : IDisposable
 
         IRenderedComponent<MudSwitch<bool>> probes = cut.FindComponents<MudSwitch<bool>>()
             .First(item => item.Instance.Label == "Diagnostics:AllowNetworkProbes");
-        await cut.InvokeAsync(() => probes.Instance.ValueChanged.InvokeAsync(true));
+        probes.Find("input[type=checkbox]").Change(true);
         IRenderedComponent<MudTextField<string>> connections = cut.FindComponents<MudTextField<string>>()
             .First(item => item.Instance.Label == "Diagnostics:MaxNetworkConnections");
-        await cut.InvokeAsync(() => connections.Instance.ValueChanged.InvokeAsync("750"));
+        connections.Find("input").Input("750");
         IRenderedComponent<MudTextField<string>> samples = cut.FindComponents<MudTextField<string>>()
             .First(item => item.Instance.Label == "Diagnostics:MaxNetworkProbeSamples");
-        await cut.InvokeAsync(() => samples.Instance.ValueChanged.InvokeAsync("40"));
+        samples.Find("input").Input("40");
         IRenderedComponent<ConfigDurationField> duration = cut.FindComponents<ConfigDurationField>()
             .First(item => item.Instance.Label == "Diagnostics:MaxLatencyProbeDuration");
-        await cut.InvokeAsync(() => duration.Instance.ValueChanged.InvokeAsync("00:00:20"));
+        duration.Find("input").Input("20");
         IRenderedComponent<MudTextField<string>> hops = cut.FindComponents<MudTextField<string>>()
             .First(item => item.Instance.Label == "Diagnostics:MaxPathProbeHops");
-        await cut.InvokeAsync(() => hops.Instance.ValueChanged.InvokeAsync("40"));
+        hops.Find("input").Input("40");
 
-        Assert.True(values["AllowNetworkProbes"]!.GetValue<bool>());
-        Assert.Equal(750, values["MaxNetworkConnections"]!.GetValue<int>());
-        Assert.Equal(40, values["MaxNetworkProbeSamples"]!.GetValue<int>());
-        Assert.Equal("00:00:20", values["MaxLatencyProbeDuration"]!.GetValue<string>());
-        Assert.Equal(40, values["MaxPathProbeHops"]!.GetValue<int>());
-
-        ConfigurationEditor editor = new(new VestigoOptions(), ModuleRegistry.All);
-        ConfigurationSnapshot snapshot = editor.Load();
-        foreach (KeyValuePair<string, JsonNode?> pair in values)
-        {
-            snapshot.Values["Diagnostics"]![pair.Key] = pair.Value?.DeepClone();
-        }
-
-        ConfigurationSnapshot saved = editor.Save(snapshot);
-        Assert.True(saved.Values["Diagnostics"]!["AllowNetworkProbes"]!.GetValue<bool>());
-        Assert.Equal(750, saved.Values["Diagnostics"]!["MaxNetworkConnections"]!.GetValue<int>());
-        Assert.Equal(40, saved.Values["Diagnostics"]!["MaxNetworkProbeSamples"]!.GetValue<int>());
-        Assert.Equal("00:00:20", saved.Values["Diagnostics"]!["MaxLatencyProbeDuration"]!.GetValue<string>());
-        Assert.Equal(40, saved.Values["Diagnostics"]!["MaxPathProbeHops"]!.GetValue<int>());
+        editor.Save(snapshot);
+        ConfigurationSnapshot reloaded = editor.Load();
+        Assert.True(reloaded.Values["Diagnostics"]!["AllowNetworkProbes"]!.GetValue<bool>());
+        Assert.Equal(750, reloaded.Values["Diagnostics"]!["MaxNetworkConnections"]!.GetValue<int>());
+        Assert.Equal(40, reloaded.Values["Diagnostics"]!["MaxNetworkProbeSamples"]!.GetValue<int>());
+        Assert.Equal("00:00:20", reloaded.Values["Diagnostics"]!["MaxLatencyProbeDuration"]!.GetValue<string>());
+        Assert.Equal(40, reloaded.Values["Diagnostics"]!["MaxPathProbeHops"]!.GetValue<int>());
     }
 
     private static bool KernelTraceEventParserKeywordsContainsNetwork() =>
