@@ -148,7 +148,7 @@ public sealed class WindowsNetworkPathProbe : INetworkPathProbe
                     tooBig = true;
                 }
 
-                (low, high, _, bool done) = NetworkProbeMath.NextPmtuSearch(low, mid, tooBig || reply.Status is not IPStatus.Success);
+                (low, high, _, bool done) = NetworkProbeMath.NextPmtuSearch(low, high, mid, tooBig || reply.Status is not IPStatus.Success);
                 if (done)
                 {
                     break;

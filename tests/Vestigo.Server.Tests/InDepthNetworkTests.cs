@@ -17,8 +17,29 @@ using Vestigo.Performance;
 
 namespace Vestigo.Server.Tests;
 
-public class InDepthNetworkTests
+[Collection("VestigoHost")]
+public sealed class InDepthNetworkTests : IDisposable
 {
+    private readonly string _settings = Directory.CreateTempSubdirectory("vestigo-network-settings").FullName;
+    private readonly string? _previous = Environment.GetEnvironmentVariable("VESTIGO_SETTINGS_DIR");
+
+    public InDepthNetworkTests()
+    {
+        Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _settings);
+    }
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _previous);
+        try
+        {
+            Directory.Delete(_settings, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
     [Fact]
     public void ConnectionProjection_FiltersHistogramAndEphemeralUse()
     {
@@ -61,11 +82,16 @@ public class InDepthNetworkTests
         Assert.Equal(50, NetworkProbeMath.LossPercent(4, 2));
         Assert.Equal(1472, NetworkProbeMath.PayloadBytesForMtu(1500));
         Assert.Equal(1500, NetworkProbeMath.MtuForPayload(1472));
-        (int low, int high, int mid, bool done) = NetworkProbeMath.NextPmtuSearch(68, 1500, tooBig: true);
+        (int low, int high, int mid, bool done) = NetworkProbeMath.NextPmtuSearch(68, 1500, 784, tooBig: false);
         Assert.False(done);
+        Assert.Equal(784, low);
+        Assert.Equal(1500, high);
         Assert.True(mid > low);
-        Assert.True(high < 1500);
-        (low, high, mid, done) = NetworkProbeMath.NextPmtuSearch(1400, 1400, tooBig: false);
+        (low, high, mid, done) = NetworkProbeMath.NextPmtuSearch(784, 1500, 1143, tooBig: true);
+        Assert.False(done);
+        Assert.Equal(784, low);
+        Assert.Equal(1142, high);
+        (low, high, mid, done) = NetworkProbeMath.NextPmtuSearch(1400, 1400, 1400, tooBig: false);
         Assert.True(done);
         Assert.Equal("packetTooBig", NetworkProbeMath.StatusName(System.Net.NetworkInformation.IPStatus.PacketTooBig));
         Assert.Equal("ttlExpired", NetworkProbeMath.StatusName(System.Net.NetworkInformation.IPStatus.TtlExpired));
@@ -76,28 +102,42 @@ public class InDepthNetworkTests
     {
         IReadOnlyList<string> start = PktmonPlanner.StartArguments(@"C:\state\drop.etl");
         Assert.True(PktmonPlanner.IsDropOnlyStart(start));
-        Assert.Contains("--drop-only", start);
-        Assert.Equal("0", start[start.ToList().IndexOf("--pkt-size") + 1]);
+        Assert.Equal("drop", start[start.ToList().IndexOf("--type") + 1]);
+        Assert.Equal(PktmonPlanner.MetadataFlags, start[start.ToList().IndexOf("--flags") + 1]);
+        Assert.DoesNotContain("--drop-only", start);
+        Assert.DoesNotContain("--pkt-size", start);
+        Assert.False(PktmonPlanner.IsDropOnlyStart(["start", "--capture", "--pkt-size", "0", "--drop-only", "--comp", "all"]));
         Assert.Equal(["stop"], PktmonPlanner.StopArguments());
+        Assert.Equal(["counters", "--type", "drop", "--json"], PktmonPlanner.CountersArguments());
 
         IReadOnlyList<PacketDropCounter> counters = PktmonPlanner.ParseCounters(
             """
-            Component        Id  Packets  Drops
-            NDIS             1   100      4
-            WFP              2   12       7
+            [
+              {"Id":31,"Name":"Windows Filtering Platform","Drop":{"In":{"Packets":4,"Bytes":320,"Reason":"WFP drop"},"Out":{"Packets":0,"Bytes":0}}},
+              {"Id":12,"Name":"Intel Ethernet","Drop":{"In":{"Packets":7,"Bytes":518,"Reason":"FILTER_DROP"},"Out":{"Packets":0,"Bytes":0}}}
+            ]
             """);
         Assert.Equal(2, counters.Count);
         Assert.Equal(4, counters[0].Dropped);
-        Assert.Equal(100, counters[0].Received);
+        Assert.Equal("WFP drop", counters[0].DropReason);
+
+        IReadOnlyList<PacketDropCounter> table = PktmonPlanner.ParseCounters(
+            """
+            Id Name                        Dir Packets Drop reason
+            31 Windows Filtering Platform  Rx  42      WFP drop
+            """);
+        Assert.Equal("Windows Filtering Platform", Assert.Single(table).Component);
+        Assert.Equal(42, table[0].Dropped);
 
         IReadOnlyList<PacketDropCounter> reasons = PktmonPlanner.ParseDropReasons(
             """
             Packet 1
-              Drop Reason: INGEST_DISCARD
+              DropReason      : INGEST_DISCARD
+              Drop: TCP 192.0.2.1:1 > 192.0.2.2:2
             Packet 2
-              Drop Reason: INGEST_DISCARD
+              DropReason      : INGEST_DISCARD
             Packet 3
-              Drop: FILTER_DROP
+              DropReason      : FILTER_DROP
             """);
         Assert.Contains(reasons, item => item.DropReason == "INGEST_DISCARD" && item.Dropped == 2);
         Assert.Contains(reasons, item => item.DropReason == "FILTER_DROP" && item.Dropped == 1);

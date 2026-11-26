@@ -80,16 +80,22 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
             return OperationResult<TcpConnectionStatsList>.Fail("not_found", "No established TCP connection matched the selection.");
         }
 
-        List<(ConnectionRecord Row, bool Enable)> restore = [];
+        List<(ConnectionRecord Row, TCP_ESTATS_TYPE Type)> restore = [];
         try
         {
             foreach (ConnectionRecord row in selected)
             {
-                bool already = CollectionEnabled(row);
-                if (!already && observe > TimeSpan.Zero)
+                if (observe <= TimeSpan.Zero)
                 {
-                    SetCollection(row, true);
-                    restore.Add((row, false));
+                    continue;
+                }
+
+                foreach (TCP_ESTATS_TYPE type in Categories)
+                {
+                    if (TryReadEnabled(row, type, out bool enabled) && !enabled && TrySetEnabled(row, type, true))
+                    {
+                        restore.Add((row, type));
+                    }
                 }
             }
 
@@ -103,7 +109,7 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
             foreach (ConnectionRecord row in selected)
             {
                 names.TryGetValue(row.OwningPid, out string? name);
-                results.Add(Read(row, name, CollectionEnabled(row)));
+                results.Add(Read(row, name));
             }
 
             return OperationResult<TcpConnectionStatsList>.Ok(new TcpConnectionStatsList(
@@ -121,20 +127,22 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
         }
         finally
         {
-            foreach ((ConnectionRecord row, bool enable) in restore)
+            foreach ((ConnectionRecord row, TCP_ESTATS_TYPE type) in restore)
             {
-                try
-                {
-                    SetCollection(row, enable);
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                }
+                _ = TrySetEnabled(row, type, false);
             }
         }
     }
 
-    private static TcpConnectionStats Read(ConnectionRecord row, string? name, bool enabled)
+    private static readonly TCP_ESTATS_TYPE[] Categories =
+    [
+        TCP_ESTATS_TYPE.TcpConnectionEstatsData,
+        TCP_ESTATS_TYPE.TcpConnectionEstatsPath,
+        TCP_ESTATS_TYPE.TcpConnectionEstatsSndCong,
+        TCP_ESTATS_TYPE.TcpConnectionEstatsRec
+    ];
+
+    private static TcpConnectionStats Read(ConnectionRecord row, string? name)
     {
         TcpEstatsSnapshot snapshot = Query(row);
         return new TcpConnectionStats(
@@ -156,59 +164,113 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
             snapshot.Sacks,
             snapshot.ZeroWindow,
             snapshot.BytesAcked,
-            enabled,
+            snapshot.CollectionEnabled,
             snapshot.Error);
     }
 
-    private static bool CollectionEnabled(ConnectionRecord row)
+    private static bool TryReadEnabled(ConnectionRecord row, TCP_ESTATS_TYPE type, out bool enabled)
     {
         TCP_ESTATS_DATA_RW_v0 rw = default;
-        uint status = Get(row, TCP_ESTATS_TYPE.TcpConnectionEstatsData, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)), [], []);
-        return status == 0 && rw.EnableCollection;
+        uint status = Get(row, type, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)), [], []);
+        enabled = status == 0 && rw.EnableCollection;
+        return status == 0;
     }
 
-    private static void SetCollection(ConnectionRecord row, bool enable)
+    private static bool TrySetEnabled(ConnectionRecord row, TCP_ESTATS_TYPE type, bool enable)
     {
-        TCP_ESTATS_DATA_RW_v0 rw = new() { EnableCollection = enable };
-        uint data = Set(row, TCP_ESTATS_TYPE.TcpConnectionEstatsData, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)));
-        TCP_ESTATS_DATA_RW_v0 path = new() { EnableCollection = enable };
-        _ = Set(row, TCP_ESTATS_TYPE.TcpConnectionEstatsPath, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref path)));
-        TCP_ESTATS_DATA_RW_v0 cong = new() { EnableCollection = enable };
-        _ = Set(row, TCP_ESTATS_TYPE.TcpConnectionEstatsSndCong, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref cong)));
-        TCP_ESTATS_DATA_RW_v0 rec = new() { EnableCollection = enable };
-        _ = Set(row, TCP_ESTATS_TYPE.TcpConnectionEstatsRec, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rec)));
-        _ = data;
+        try
+        {
+            TCP_ESTATS_DATA_RW_v0 rw = new() { EnableCollection = enable };
+            return Set(row, type, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw))) == 0;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return false;
+        }
     }
 
     private static TcpEstatsSnapshot Query(ConnectionRecord row)
     {
-        TCP_ESTATS_DATA_ROD_v0 data = default;
-        TCP_ESTATS_PATH_ROD_v0 path = default;
-        TCP_ESTATS_SND_CONG_ROD_v0 cong = default;
-        TCP_ESTATS_REC_ROD_v0 rec = default;
-        uint dataStatus = Get(row, TCP_ESTATS_TYPE.TcpConnectionEstatsData, [], [], MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_ROD_v0>(ref data)));
-        uint pathStatus = Get(row, TCP_ESTATS_TYPE.TcpConnectionEstatsPath, [], [], MemoryMarshal.AsBytes(new Span<TCP_ESTATS_PATH_ROD_v0>(ref path)));
-        uint congStatus = Get(row, TCP_ESTATS_TYPE.TcpConnectionEstatsSndCong, [], [], MemoryMarshal.AsBytes(new Span<TCP_ESTATS_SND_CONG_ROD_v0>(ref cong)));
-        uint recStatus = Get(row, TCP_ESTATS_TYPE.TcpConnectionEstatsRec, [], [], MemoryMarshal.AsBytes(new Span<TCP_ESTATS_REC_ROD_v0>(ref rec)));
-        string? error = null;
-        if (dataStatus != 0 || pathStatus != 0 || congStatus != 0 || recStatus != 0)
-        {
-            error = $"EStats query status data={dataStatus} path={pathStatus} sndCong={congStatus} rec={recStatus}.";
-        }
-
+        (bool dataOn, uint dataStatus, TCP_ESTATS_DATA_ROD_v0 data) = ReadData(row);
+        (bool pathOn, uint pathStatus, TCP_ESTATS_PATH_ROD_v0 path) = ReadPath(row);
+        (bool congOn, uint congStatus, TCP_ESTATS_SND_CONG_ROD_v0 cong) = ReadCong(row);
+        (bool recOn, uint recStatus, TCP_ESTATS_REC_ROD_v0 rec) = ReadRec(row);
+        List<string> errors = [];
+        if (dataStatus != 0) errors.Add($"data={dataStatus}");
+        if (pathStatus != 0) errors.Add($"path={pathStatus}");
+        if (congStatus != 0) errors.Add($"sndCong={congStatus}");
+        if (recStatus != 0) errors.Add($"rec={recStatus}");
+        if (!dataOn && dataStatus == 0) errors.Add("data collection disabled");
+        if (!pathOn && pathStatus == 0) errors.Add("path collection disabled");
+        if (!congOn && congStatus == 0) errors.Add("sndCong collection disabled");
+        if (!recOn && recStatus == 0) errors.Add("rec collection disabled");
+        bool enabled = dataOn || pathOn || congOn || recOn;
         return new TcpEstatsSnapshot(
-            Milliseconds(path.SmoothedRtt),
-            Milliseconds(path.RttVar),
-            Milliseconds(path.MinRtt),
-            Milliseconds(path.MaxRtt),
-            cong.CurCwnd,
-            cong.CurSsthresh,
-            path.PktsRetrans,
-            path.DupAcksIn,
-            path.SacksRcvd,
-            rec.CurRwinSent == 0 ? 1 : 0,
-            (long)data.ThruBytesAcked,
-            error);
+            pathOn ? Milliseconds(path.SmoothedRtt) : null,
+            pathOn ? Milliseconds(path.RttVar) : null,
+            pathOn ? Milliseconds(path.MinRtt) : null,
+            pathOn ? Milliseconds(path.MaxRtt) : null,
+            congOn ? cong.CurCwnd : null,
+            congOn ? cong.CurSsthresh : null,
+            pathOn ? path.PktsRetrans : null,
+            pathOn ? path.DupAcksIn : null,
+            pathOn ? path.SacksRcvd : null,
+            recOn ? rec.CurRwinSent == 0 ? 1 : 0 : null,
+            dataOn ? (long)data.ThruBytesAcked : null,
+            enabled,
+            errors.Count == 0 ? null : "EStats " + string.Join("; ", errors) + ".");
+    }
+
+    private static (bool Enabled, uint Status, TCP_ESTATS_DATA_ROD_v0 Rod) ReadData(ConnectionRecord row)
+    {
+        TCP_ESTATS_DATA_RW_v0 rw = default;
+        TCP_ESTATS_DATA_ROD_v0 rod = default;
+        uint status = Get(
+            row,
+            TCP_ESTATS_TYPE.TcpConnectionEstatsData,
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)),
+            [],
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_ROD_v0>(ref rod)));
+        return (status == 0 && rw.EnableCollection, status, rod);
+    }
+
+    private static (bool Enabled, uint Status, TCP_ESTATS_PATH_ROD_v0 Rod) ReadPath(ConnectionRecord row)
+    {
+        TCP_ESTATS_DATA_RW_v0 rw = default;
+        TCP_ESTATS_PATH_ROD_v0 rod = default;
+        uint status = Get(
+            row,
+            TCP_ESTATS_TYPE.TcpConnectionEstatsPath,
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)),
+            [],
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_PATH_ROD_v0>(ref rod)));
+        return (status == 0 && rw.EnableCollection, status, rod);
+    }
+
+    private static (bool Enabled, uint Status, TCP_ESTATS_SND_CONG_ROD_v0 Rod) ReadCong(ConnectionRecord row)
+    {
+        TCP_ESTATS_DATA_RW_v0 rw = default;
+        TCP_ESTATS_SND_CONG_ROD_v0 rod = default;
+        uint status = Get(
+            row,
+            TCP_ESTATS_TYPE.TcpConnectionEstatsSndCong,
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)),
+            [],
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_SND_CONG_ROD_v0>(ref rod)));
+        return (status == 0 && rw.EnableCollection, status, rod);
+    }
+
+    private static (bool Enabled, uint Status, TCP_ESTATS_REC_ROD_v0 Rod) ReadRec(ConnectionRecord row)
+    {
+        TCP_ESTATS_DATA_RW_v0 rw = default;
+        TCP_ESTATS_REC_ROD_v0 rod = default;
+        uint status = Get(
+            row,
+            TCP_ESTATS_TYPE.TcpConnectionEstatsRec,
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)),
+            [],
+            MemoryMarshal.AsBytes(new Span<TCP_ESTATS_REC_ROD_v0>(ref rod)));
+        return (status == 0 && rw.EnableCollection, status, rod);
     }
 
     private static double? Milliseconds(uint hundredNsOrMs)
@@ -308,5 +370,6 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
         long? Sacks,
         long? ZeroWindow,
         long? BytesAcked,
+        bool CollectionEnabled,
         string? Error);
 }

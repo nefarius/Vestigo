@@ -43,15 +43,15 @@ internal static class NetworkProbeMath
     public static int MtuForPayload(int payloadBytes) =>
         Math.Clamp(payloadBytes + Ipv4HeaderPlusIcmp, MinIpv4Mtu, MaxIpv4ProbeMtu);
 
-    public static (int Low, int High, int Mid, bool Done) NextPmtuSearch(int low, int high, bool tooBig)
+    public static (int Low, int High, int Mid, bool Done) NextPmtuSearch(int low, int high, int trial, bool tooBig)
     {
         if (tooBig)
         {
-            high = Math.Max(low, high - 1);
+            high = Math.Max(low, trial - 1);
         }
         else
         {
-            low = high;
+            low = Math.Clamp(trial, low, high);
         }
 
         if (low >= high)

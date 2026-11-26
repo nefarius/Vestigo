@@ -152,15 +152,14 @@ public sealed unsafe class WindowsNetworkConfiguration : INetworkConfigurationSo
     {
         List<string> servers = [];
         List<string> suffixes = [];
-        foreach (WmiObject row in Wmi.Query(Scope, "SELECT ServerAddresses, ConnectionSpecificSuffix FROM MSFT_DNSClientServerAddress"))
+        foreach (WmiObject row in Wmi.Query(Scope, "SELECT ServerAddresses FROM MSFT_DNSClientServerAddress"))
         {
             AddAll(servers, Wmi.String(row, "ServerAddresses"));
         }
 
-        foreach (WmiObject row in Wmi.Query(Scope, "SELECT SuffixSearchList, ConnectionSpecificSuffix FROM MSFT_DNSClientGlobalSetting"))
+        foreach (WmiObject row in Wmi.Query(Scope, "SELECT SuffixSearchList FROM MSFT_DNSClientGlobalSetting"))
         {
             AddAll(suffixes, Wmi.String(row, "SuffixSearchList"));
-            AddAll(suffixes, Wmi.String(row, "ConnectionSpecificSuffix"));
         }
 
         foreach (WmiObject row in Wmi.Query(Scope, "SELECT ConnectionSpecificSuffix FROM MSFT_DNSClient"))

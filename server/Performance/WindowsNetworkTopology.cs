@@ -19,7 +19,7 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
 
         try
         {
-            Dictionary<string, WmiObject> adapters = Index(WmiQuery.Query(Scope, "SELECT Name, InterfaceDescription, InterfaceIndex, InterfaceGuid, MacAddress, LinkSpeed, FullDuplex, MtuSize, VlanID, DriverName, DriverVersion, DriverFileName, DeviceID FROM MSFT_NetAdapter"), "Name", "InterfaceDescription");
+            Dictionary<string, WmiObject> adapters = Index(WmiQuery.Query(Scope, "SELECT Name, InterfaceDescription, InterfaceIndex, InterfaceGuid, MacAddress, Speed, ReceiveLinkSpeed, TransmitLinkSpeed, FullDuplex, MtuSize, VlanID, DriverName, DriverVersionString, DriverDescription, DeviceID FROM MSFT_NetAdapter"), "Name", "InterfaceDescription");
             Dictionary<string, WmiObject> rss = Index(WmiQuery.Query(Scope, "SELECT Name, Enabled, NumberOfReceiveQueues, BaseProcessorNumber, MaxProcessorNumber, Profile FROM MSFT_NetAdapterRssSettingData"), "Name");
             Dictionary<string, WmiObject> rsc = Index(WmiQuery.Query(Scope, "SELECT Name, IPv4Enabled, IPv6Enabled FROM MSFT_NetAdapterRscSettingData"), "Name");
             Dictionary<string, WmiObject> lso = Index(WmiQuery.Query(Scope, "SELECT Name, V2IPv4Enabled, V2IPv6Enabled FROM MSFT_NetAdapterLsoSettingData"), "Name");
@@ -125,15 +125,15 @@ public sealed class WindowsNetworkTopology : INetworkTopologySource
             nic.Description,
             nic.NetworkInterfaceType.ToString(),
             nic.OperationalStatus.ToString(),
-            nic.Speed >= 0 ? nic.Speed : row is null ? null : WmiQuery.Int64(row, "LinkSpeed"),
+            nic.Speed >= 0 ? nic.Speed : row is null ? null : WmiQuery.Int64(row, "ReceiveLinkSpeed") ?? WmiQuery.Int64(row, "TransmitLinkSpeed") ?? WmiQuery.Int64(row, "Speed"),
             v4?.Mtu ?? v6?.Mtu ?? (row is null ? null : WmiQuery.Int32(row, "MtuSize")),
             row is null ? null : WmiQuery.Int32(row, "VlanID"),
             WmiQuery.Boolean(row, "FullDuplex"),
             v4?.IsDhcpEnabled,
             FormatMac(nic.GetPhysicalAddress()) ?? WmiQuery.String(row, "MacAddress"),
+            WmiQuery.String(row, "DriverDescription") ?? WmiQuery.String(row, "DriverName"),
+            WmiQuery.String(row, "DriverVersionString"),
             WmiQuery.String(row, "DriverName"),
-            WmiQuery.String(row, "DriverVersion"),
-            WmiQuery.String(row, "DriverFileName"),
             Addresses(properties),
             properties.GatewayAddresses.Select(item => item.Address.ToString()).Where(item => item.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             properties.DnsAddresses.Select(item => item.ToString()).ToList(),

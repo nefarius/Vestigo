@@ -27,14 +27,13 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         if (recorded is { NativeStarted: true })
         {
             NativeResult stopped = await Run(PktmonPlanner.StopArguments(), cancellationToken).ConfigureAwait(false);
-            if (stopped.Succeeded || IndicatesIdle(stopped))
-            {
-                _logger.LogInformation("Stopped orphan pktmon drop capture");
-            }
-            else
+            if (!Stopped(stopped))
             {
                 _logger.LogWarning("Could not stop orphan pktmon drop capture: {Output}", stopped.Output);
+                return;
             }
+
+            _logger.LogInformation("Stopped orphan pktmon drop capture");
         }
 
         _ = TrySave(null);
@@ -78,6 +77,15 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         string directory = VestigoPaths.PacketDropDirectory;
         string etl = Path.Combine(directory, $"vestigo-drop-{Guid.NewGuid():N}.etl");
         string text = Path.ChangeExtension(etl, ".txt");
+        IReadOnlyList<string> start = PktmonPlanner.StartArguments(etl);
+        if (!PktmonPlanner.IsDropOnlyStart(start))
+        {
+            _gate.Release();
+            return OperationResult<PacketDropResult>.Fail("pktmon_failed", "The pktmon start argument list was not drop-only metadata.");
+        }
+
+        bool nativeStarted = false;
+        bool stopped = false;
         try
         {
             Directory.CreateDirectory(directory);
@@ -86,30 +94,27 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                 return OperationResult<PacketDropResult>.Fail("pktmon_checkpoint_failed", "The pktmon ownership checkpoint could not be saved.");
             }
 
-            NativeResult started = await Run(PktmonPlanner.StartArguments(etl), cancellationToken).ConfigureAwait(false);
+            NativeResult started = await Run(start, cancellationToken).ConfigureAwait(false);
             if (!started.Succeeded)
             {
                 _ = TrySave(null);
                 return FailNative<PacketDropResult>(started);
             }
 
+            nativeStarted = true;
             try
             {
                 await Task.Delay(duration, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
-                NativeResult stopped = await Run(PktmonPlanner.StopArguments(), CancellationToken.None).ConfigureAwait(false);
-                if (!stopped.Succeeded && !IndicatesIdle(stopped))
-                {
-                    _logger.LogWarning("pktmon stop returned {Exit}: {Output}", stopped.ExitCode, stopped.Output);
-                }
+                stopped = await StopOwnedAsync().ConfigureAwait(false);
             }
 
             NativeResult counters = await Run(PktmonPlanner.CountersArguments(), cancellationToken).ConfigureAwait(false);
             IReadOnlyList<PacketDropCounter> parsed = PktmonPlanner.ParseCounters(counters.Output);
             IReadOnlyList<PacketDropCounter> reasons = [];
-            bool partial = !counters.Succeeded;
+            bool partial = !counters.Succeeded || !stopped;
             if (File.Exists(etl))
             {
                 NativeResult formatted = await Run(PktmonPlanner.FormatArguments(etl, text), cancellationToken).ConfigureAwait(false);
@@ -123,33 +128,61 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                 }
             }
 
-            _ = TrySave(null);
+            if (stopped)
+            {
+                _ = TrySave(null);
+            }
+
             return OperationResult<PacketDropResult>.Ok(PktmonPlanner.Combine(
                 (int)duration.TotalMilliseconds,
                 parsed,
                 reasons,
                 truncated: false,
                 partial,
-                partial ? "pktmon counters or format returned a non-zero exit." : null));
+                partial ? "pktmon counters, format, or stop returned a non-zero exit." : null));
         }
         catch (OperationCanceledException)
         {
-            _ = await Run(PktmonPlanner.StopArguments(), CancellationToken.None).ConfigureAwait(false);
-            _ = TrySave(null);
+            stopped = await StopOwnedAsync().ConfigureAwait(false);
+            if (stopped)
+            {
+                _ = TrySave(null);
+            }
+
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            _ = await Run(PktmonPlanner.StopArguments(), CancellationToken.None).ConfigureAwait(false);
-            _ = TrySave(null);
+            stopped = await StopOwnedAsync().ConfigureAwait(false);
+            if (stopped)
+            {
+                _ = TrySave(null);
+            }
+
             return OperationResult<PacketDropResult>.Fail("pktmon_failed", $"{ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
-            TryDelete(etl);
-            TryDelete(text);
+            if (stopped || !nativeStarted)
+            {
+                TryDelete(etl);
+                TryDelete(text);
+            }
+
             _gate.Release();
         }
+    }
+
+    private async Task<bool> StopOwnedAsync()
+    {
+        NativeResult result = await Run(PktmonPlanner.StopArguments(), CancellationToken.None).ConfigureAwait(false);
+        if (Stopped(result))
+        {
+            return true;
+        }
+
+        _logger.LogWarning("pktmon stop returned {Exit}: {Output}", result.ExitCode, result.Output);
+        return false;
     }
 
     private static async Task<NativeResult> Run(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
@@ -177,8 +210,9 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
     }
 
-    private static bool IndicatesIdle(NativeResult result) =>
-        result.Output.Contains("not running", StringComparison.OrdinalIgnoreCase)
+    private static bool Stopped(NativeResult result) =>
+        result.Succeeded
+        || result.Output.Contains("not running", StringComparison.OrdinalIgnoreCase)
         || result.Output.Contains("is not started", StringComparison.OrdinalIgnoreCase)
         || result.Output.Contains("No packet monitor", StringComparison.OrdinalIgnoreCase);
 

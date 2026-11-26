@@ -12,7 +12,7 @@ public sealed class PacketDropTools(IPacketDropCapture capture, VestigoOptions o
 {
     [McpServerTool(Name = "capture_packet_drops")]
     [Description(
-        "Runs a bounded drop-only pktmon capture (zero packet payload) and returns per-component and per-drop-reason counts. "
+        "Runs a bounded drop-only pktmon capture (metadata flags, no raw packets) and returns per-component and per-drop-reason counts. "
         + "Requires Vestigo:Performance:AllowPacketDropCapture. durationSeconds is clamped to 1..MaxPacketDropDuration. "
         + "A machine-global pktmon session is started; Vestigo stops orphan sessions it owns on startup. "
         + "ETL metadata is parsed and deleted. Packet payloads are never returned or persisted.")]
