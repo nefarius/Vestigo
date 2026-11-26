@@ -26,13 +26,13 @@ A fresh MSI install binds every interface and writes a generated bearer token. A
 
 The opt-in Registry module reads allow-listed registry values. `HKCU` is the console user, the 32-bit and 64-bit views are explicit, and there is no write tool. See [the features](features.md).
 
-The opt-in Performance module samples counters, storage, minifilters, VM environment, jitter, process I/O, wait chains, and memory pressure. Kernel ETW summaries, raw WPR `.etl` recording, and storage probes stay off until their own gates are on. See [the features](features.md).
+The opt-in Performance module samples counters, storage, minifilters, network adapters and NDIS/WFP filters, VM environment, jitter, process I/O, wait chains, and memory pressure. Kernel ETW summaries, raw WPR `.etl` recording, storage probes, and drop-only pktmon stay off until their own gates are on. See [the features](features.md).
 
 The opt-in WindowsServicing module adds read-only reboot signals, queued file operations, Windows Update inventory and history, CBS package state, bounded failure evidence, storage metadata, and file-locker inspection. It requires Jobs and is separate from Vestigo's own Updates module. See [the features](features.md) and [the QA walkthrough](qa.md#investigate-windows-update-and-servicing). It does not install or repair Windows updates, clear queues, or reboot the PC. Use `reboot_machine` when `System:AllowReboot` is true.
 
 Power is on by default and read-only. `get_power_state` reports AC, battery, the active scheme, and approximate last sleep and wake times. `get_sleep_configuration` reports lid and timeout policy. `get_last_wake_source` reports the newest Power-Troubleshooter resume event. See [the features](features.md) and [the QA walkthrough](qa.md#see-whether-the-machine-slept).
 
-`test_endpoint` can send one UDP datagram, or one STUN binding request, to an allow-listed host. A sent datagram does not prove the peer is reachable, and a missing STUN response is not a firewall block. See [the features](features.md) and [the QA walkthrough](qa.md#check-a-lab-endpoint).
+`test_endpoint` can send one UDP datagram, or one STUN binding request, to an allow-listed host. `probe_network_latency` and `probe_network_path` send ICMP or TCP samples to the same allow-list. A sent datagram does not prove the peer is reachable, and a missing STUN response is not a firewall block. See [the features](features.md) and [the QA walkthrough](qa.md#check-a-lab-endpoint).
 
 ## Quick start
 

@@ -34,7 +34,7 @@ The default MSI listen mode is any address with a token (`[::]:5098`, dual-stack
 - **Services, tasks, software, and jobs.** Service and driver control, scheduled tasks, software inventory with gated silent uninstall, and background jobs.
 - **Processes, devices, and debugging.** Process launch, device and driver management, HID inspection, Win32 debug output, and the Visual Studio remote debugger.
 - **Desktop, perception, input, and audio.** Windows, displays, and gated screenshots; screen description with UI Automation, Windows OCR, and [OpenCV](https://opencv.org/); gated mouse and keyboard input; default audio switching.
-- **System, diagnostics, performance, and servicing.** Boot security, UAC, reboot, AutoLogon, interactive logon, power, allow-listed registry reads, PE and signature inspection, probes and dumps, opt-in machine and VM performance analysis (PDH counters, storage topology, minifilters, kernel ETW summaries, WPR `.etl`, and storage probes), and read-only Windows Update diagnostics.
+- **System, diagnostics, performance, and servicing.** Boot security, UAC, reboot, AutoLogon, interactive logon, power, allow-listed registry reads, PE and signature inspection, probes and dumps, machine-wide sockets and TCP EStats, opt-in machine and VM performance analysis (PDH counters, storage topology, minifilters, network adapters and NDIS/WFP filters, kernel ETW summaries including a network group, WPR `.etl`, storage probes, and drop-only pktmon), and read-only Windows Update diagnostics.
 - **Configuration and updates.** The localhost settings page, and a signed self-update through the packaged updater.
 - **External plugins.** Opt-in .NET modules, MCP tools, and authenticated HTTP routes. See [plugins](docs/plugins.md).
 
@@ -87,7 +87,7 @@ Gates, root flags, and plugin trust are in [security](docs/security.md) and [con
 
 ## Limitations
 
-- Windows only. The Trace module decodes events and does not record a raw ETL file or use the NT Kernel Logger. The opt-in Performance module can capture a bounded kernel-latency summary (`AllowKernelTrace`) and a gated WPR `.etl` (`AllowRawEtlCapture`).
+- Windows only. The Trace module decodes events and does not record a raw ETL file or use the NT Kernel Logger. The opt-in Performance module can capture a bounded kernel-latency summary (`AllowKernelTrace`), a gated WPR `.etl` (`AllowRawEtlCapture`), and a gated drop-only pktmon session (`AllowPacketDropCapture`).
 - The MCP endpoint is stateless. There is no server push; live output is a long-poll.
 - External plugins are off until an administrator opts in. They run in-process with the service, and loading one requires a restart.
 - Per-tool bounds, session requirements, and refusal cases are in [limitations](docs/limitations.md).

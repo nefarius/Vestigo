@@ -66,6 +66,7 @@ internal static class ConfigurationFieldMetadata
         "System:AllowAutoLogonChanges" => "Allows request_autologon_enable and disable_autologon. The Windows password is collected through a one-time consent link and stored as an LSA secret.",
         "System:AllowInteractiveLogon" => "Allows request_interactive_logon, lock_workstation, and request_unlock_workstation. request_interactive_logon and request_unlock_workstation also require the MSI Interactive logon feature so the Credential Provider DLL is registered.",
         "System:LogonConsentLifetime" => "How long a one-time consent URL stays valid. The user opens it to enter a Windows password; MCP tools never receive the password.",
+        "Performance:AllowPacketDropCapture" => "Allows capture_packet_drops to run a bounded drop-only pktmon session. Packet payloads are never returned. Machine-global: only one pktmon capture can run at a time.",
         _ => null
     };
 

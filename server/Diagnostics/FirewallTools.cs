@@ -40,9 +40,17 @@ public sealed class FirewallTools(IFirewallInventory inventory, VestigoOptions o
         + "Address, port, ICMP, interface, package, and user fields are the raw Windows expressions, capped at 512 characters. "
         + "profiles is the stored profile bitmask. action is the stored action and is not a verdict about a connection. "
         + "limit is clamped to 1..Vestigo:Diagnostics:MaxFirewallRules. "
+        + "Optional filters (enabledOnly, direction, action, profile, nameContains, programContains, port) are applied before the cap. "
         + "Interface SAFEARRAYs are omitted. This does not change rules and does not report whether traffic was blocked.")]
     public OperationResult<FirewallRuleList> ListFirewallRules(
-        [Description("Maximum rules. Clamped to 1..Vestigo:Diagnostics:MaxFirewallRules.")] int limit = 50)
+        [Description("Maximum rules. Clamped to 1..Vestigo:Diagnostics:MaxFirewallRules.")] int limit = 50,
+        [Description("Return only enabled rules.")] bool enabledOnly = false,
+        [Description("in or out.")] string? direction = null,
+        [Description("allow or block.")] string? action = null,
+        [Description("domain, private, or public.")] string? profile = null,
+        [Description("Case-insensitive substring of the rule name, description, or group.")] string? nameContains = null,
+        [Description("Case-insensitive substring of the application, service, or package.")] string? programContains = null,
+        [Description("Match a local or remote port expression.")] string? port = null)
     {
         if (!options.Diagnostics.AllowFirewallInventory)
         {
@@ -52,7 +60,11 @@ public sealed class FirewallTools(IFirewallInventory inventory, VestigoOptions o
         }
 
         int bounded = Math.Clamp(limit, 1, options.Diagnostics.MaxFirewallRules);
-        OperationResult<FirewallRuleList> result = inventory.ListRules(bounded);
+        FirewallRuleFilter? filter = enabledOnly || direction is not null || action is not null || profile is not null
+            || nameContains is not null || programContains is not null || port is not null
+            ? new FirewallRuleFilter(enabledOnly, direction, action, profile, nameContains, programContains, port)
+            : null;
+        OperationResult<FirewallRuleList> result = inventory.ListRules(bounded, filter);
         logger.LogInformation(
             "list_firewall_rules success {Success} code {Code} returned {Returned}",
             result.Success,

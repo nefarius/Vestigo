@@ -41,4 +41,8 @@ public sealed record EndpointProbeResult(
     IReadOnlyList<DnsObservation> Answers,
     IReadOnlyList<TcpObservation> Tcp,
     TlsObservation? Tls,
-    UdpObservation? Udp = null);
+    UdpObservation? Udp = null,
+    double? DnsDurationMs = null,
+    double? ConnectDurationMs = null,
+    double? TlsHandshakeDurationMs = null,
+    double? StunRttMs = null);

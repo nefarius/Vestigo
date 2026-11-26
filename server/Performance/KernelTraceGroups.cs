@@ -8,8 +8,9 @@ public static class KernelTraceGroups
     public const string DpcIsr = "dpc_isr";
     public const string Scheduler = "scheduler";
     public const string HardFaults = "hard_faults";
+    public const string Network = "network";
 
-    public static readonly IReadOnlyList<string> All = [DiskIo, FileIo, DpcIsr, Scheduler, HardFaults];
+    public static readonly IReadOnlyList<string> All = [DiskIo, FileIo, DpcIsr, Scheduler, HardFaults, Network];
 
     public static OperationResult<IReadOnlyList<string>> Parse(IReadOnlyList<string>? groups)
     {
@@ -33,7 +34,7 @@ public static class KernelTraceGroups
             {
                 return OperationResult<IReadOnlyList<string>>.Fail(
                     "invalid_request",
-                    $"Unknown kernel trace group '{group}'. Use disk_io, file_io, dpc_isr, scheduler, or hard_faults.");
+                    $"Unknown kernel trace group '{group}'. Use disk_io, file_io, dpc_isr, scheduler, hard_faults, or network.");
             }
 
             if (seen.Add(match))

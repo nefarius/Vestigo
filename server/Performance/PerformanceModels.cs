@@ -210,6 +210,7 @@ public sealed record KernelLatencySummary(
     IReadOnlyList<SchedulerProcessSummary> Scheduler,
     ReadyDelaySummary? ReadyDelay,
     IReadOnlyList<HardFaultSummary> HardFaults,
+    IReadOnlyList<ProcessNetworkSummary> Network,
     string? Error);
 
 public sealed record WprTraceResult(

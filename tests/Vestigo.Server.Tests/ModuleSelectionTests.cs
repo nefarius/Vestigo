@@ -60,6 +60,8 @@ public class ModuleSelectionTests
         Assert.Equal("Performance", ModuleSelection.Find(ModuleSelection.PerformanceRawEtlCapture)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.PerformanceStorageProbes]);
         Assert.Equal("Performance", ModuleSelection.Find(ModuleSelection.PerformanceStorageProbes)?.Parent);
+        Assert.False(ModuleSelection.Defaults()[ModuleSelection.PerformancePacketDropCapture]);
+        Assert.Equal("Performance", ModuleSelection.Find(ModuleSelection.PerformancePacketDropCapture)?.Parent);
         Assert.False(ModuleSelection.Defaults()[ModuleSelection.SelfUpdate]);
         Assert.Equal("Updates", ModuleSelection.Find(ModuleSelection.SelfUpdate)?.Parent);
         Assert.True(ModuleSelection.Defaults()["Updates"]);
@@ -205,6 +207,7 @@ public class ModuleSelectionTests
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.SystemReboot));
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.SystemAutoLogon));
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.SystemInteractiveLogon));
+        Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.PerformancePacketDropCapture));
         Assert.False(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.AudioSetDefault));
         Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopWindowPlacement, requestIsExplicit: false, currentlyInstalled: false));
         Assert.False(ModuleSelection.ShouldWriteFeatureState(ModuleSelection.DesktopDisplayLayout, requestIsExplicit: false, currentlyInstalled: false));
@@ -268,6 +271,22 @@ public class ModuleSelectionTests
 
         Assert.True(ModuleSelection.ReadExisting(merged)["DesktopScreenshots"]);
         Assert.DoesNotContain("DesktopScreenshots=", ModuleSelection.Serialize(new Dictionary<string, bool> { ["Desktop"] = true }));
+    }
+
+    [Fact]
+    public void Merge_WithoutPacketDrop_KeepsExistingAllowPacketDropCapture()
+    {
+        const string existing = """
+            { "Vestigo": { "Performance": { "AllowPacketDropCapture": true }, "Modules": { "Jobs": { "Enabled": true }, "Performance": { "Enabled": true } } } }
+            """;
+
+        string merged = ListenSettings.Merge(
+            existing,
+            Open(),
+            new Dictionary<string, bool> { ["Jobs"] = true, ["Performance"] = true });
+
+        Assert.True(ModuleSelection.ReadExisting(merged)["PerformancePacketDropCapture"]);
+        Assert.DoesNotContain("PerformancePacketDropCapture=", ModuleSelection.Serialize(new Dictionary<string, bool> { ["Performance"] = true }));
     }
 
     [Fact]

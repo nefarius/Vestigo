@@ -83,6 +83,24 @@ internal static class KernelTraceEventSink
                 () => aggregator.AddHardFault(data.ProcessID, data.ProcessName, data.FileName));
         }
 
+        if (KernelTraceGroups.Includes(groups, KernelTraceGroups.Network))
+        {
+            kernel.TcpIpSend += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, data.size, 0, 1, 0, 0, 0, 0));
+            kernel.TcpIpRecv += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, data.size, 0, 1, 0, 0, 0));
+            kernel.TcpIpRetransmit += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, 0, 0, 0, 1, 0, 0));
+            kernel.TcpIpReconnect += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, 0, 0, 0, 0, 0, 0));
+            kernel.TcpIpDisconnect += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, 0, 0, 0, 0, 1, 0));
+            kernel.TcpIpFail += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, 0, 0, 0, 0, 0, 1));
+            kernel.UdpIpSend += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, data.size, 0, 1, 0, 0, 0, 0));
+            kernel.UdpIpRecv += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, data.size, 0, 1, 0, 0, 0));
+            kernel.TcpIpSendIPV6 += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, data.size, 0, 1, 0, 0, 0, 0));
+            kernel.TcpIpRecvIPV6 += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, data.size, 0, 1, 0, 0, 0));
+            kernel.TcpIpRetransmitIPV6 += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, 0, 0, 0, 1, 0, 0));
+            kernel.TcpIpReconnectIPV6 += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, 0, 0, 0, 0, 0, 0));
+            kernel.TcpIpDisconnectIPV6 += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, 0, 0, 0, 0, 1, 0));
+            kernel.UdpIpSendIPV6 += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, data.size, 0, 1, 0, 0, 0, 0));
+            kernel.UdpIpRecvIPV6 += data => Bound(source, aggregator, () => aggregator.AddNetwork(data.ProcessID, data.ProcessName, 0, data.size, 0, 1, 0, 0, 0));
+        }
     }
 
     private static void BoundSource(ETWTraceEventSource source, KernelLatencyAggregator aggregator, Action action) =>

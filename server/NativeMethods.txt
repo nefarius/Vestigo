@@ -276,6 +276,58 @@ TCP_TABLE_CLASS
 UDP_TABLE_CLASS
 MIB_TCP_STATE
 
+// Diagnostics: routing, neighbor, TCP EStats, and WinHTTP proxy (APIs not in System.Net.NetworkInformation).
+GetIpForwardTable2
+GetIpNetTable2
+FreeMibTable
+MIB_IPFORWARD_TABLE2
+MIB_IPFORWARD_ROW2
+MIB_IPNET_TABLE2
+MIB_IPNET_ROW2
+IP_ADDRESS_PREFIX
+SOCKADDR_INET
+ADDRESS_FAMILY
+NL_ROUTE_PROTOCOL
+NL_ROUTE_ORIGIN
+MIB_IPNET_TYPE
+GetPerTcpConnectionEStats
+GetPerTcp6ConnectionEStats
+SetPerTcpConnectionEStats
+SetPerTcp6ConnectionEStats
+TCP_ESTATS_TYPE
+TCP_ESTATS_DATA_RW_v0
+TCP_ESTATS_DATA_ROD_v0
+TCP_ESTATS_PATH_ROD_v0
+TCP_ESTATS_SND_CONG_ROD_v0
+TCP_ESTATS_REC_ROD_v0
+MIB_TCPROW_LH
+MIB_TCP6ROW
+WinHttpGetDefaultProxyConfiguration
+WinHttpGetIEProxyConfigForCurrentUser
+WINHTTP_PROXY_INFO
+WINHTTP_CURRENT_USER_IE_PROXY_CONFIG
+GlobalFree
+
+// Performance: WFP callout, sublayer, and provider inventory (not in the BCL).
+// Win32 vs WDK share these names; pin the user-mode Win32 metadata.
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmEngineOpen0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmEngineClose0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmCalloutCreateEnumHandle0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmCalloutEnum0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmCalloutDestroyEnumHandle0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmSubLayerCreateEnumHandle0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmSubLayerEnum0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmSubLayerDestroyEnumHandle0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderCreateEnumHandle0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderEnum0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderDestroyEnumHandle0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmFreeMemory0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FWPM_SESSION0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FWPM_CALLOUT0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FWPM_SUBLAYER0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FWPM_PROVIDER0
+Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FWPM_DISPLAY_DATA0
+
 // Diagnostics: process protection query. MiniDumpWriteDump is declared locally because CsWin32 will not generate it for AnyCPU.
 // GetProcessTimes is declared in Processes/ProcessStartTime.cs because the generated FILETIME is not public.
 GetProcessInformation

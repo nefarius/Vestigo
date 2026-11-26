@@ -18,6 +18,7 @@ public sealed class KernelLatencyAggregator
     private readonly Dictionary<int, string> _waitReasons = [];
     private readonly List<double> _readyDelay = [];
     private readonly Dictionary<(int Pid, string File), int> _hardFaults = [];
+    private readonly Dictionary<int, NetworkAcc> _network = [];
     private readonly Dictionary<ulong, (string Name, ulong Size)> _images = [];
     private readonly int _maxEvents;
 
@@ -121,6 +122,24 @@ public sealed class KernelLatencyAggregator
         _hardFaults[key] = count + 1;
     }
 
+    public void AddNetwork(int pid, string? process, long bytesSent, long bytesReceived, int sends, int receives, int retransmits, int disconnects, int failures)
+    {
+        if (!Accept())
+        {
+            return;
+        }
+
+        NoteProcess(pid, process);
+        NetworkAcc acc = Network(pid);
+        acc.BytesSent += Math.Max(0, bytesSent);
+        acc.BytesReceived += Math.Max(0, bytesReceived);
+        acc.SendCount += sends;
+        acc.ReceiveCount += receives;
+        acc.Retransmits += retransmits;
+        acc.Disconnects += disconnects;
+        acc.Failures += failures;
+    }
+
     public KernelLatencySummary Build(string sessionName, int durationMs, IReadOnlyList<string> groups, string? error)
     {
         List<DiskIoSummary> disks = _diskByName
@@ -157,6 +176,20 @@ public sealed class KernelLatencyAggregator
             .OrderByDescending(item => item.WaitRatio)
             .Take(TopN)
             .ToList();
+        List<ProcessNetworkSummary> network = _network
+            .Select(pair => new ProcessNetworkSummary(
+                pair.Key,
+                NameOf(pair.Key),
+                pair.Value.BytesSent,
+                pair.Value.BytesReceived,
+                pair.Value.SendCount,
+                pair.Value.ReceiveCount,
+                pair.Value.Retransmits,
+                pair.Value.Disconnects,
+                pair.Value.Failures))
+            .OrderByDescending(item => item.BytesSent + item.BytesReceived)
+            .Take(TopN)
+            .ToList();
         List<HardFaultSummary> faults = _hardFaults
             .OrderByDescending(pair => pair.Value)
             .Take(TopN)
@@ -181,6 +214,7 @@ public sealed class KernelLatencyAggregator
             scheduler,
             _readyDelay.Count == 0 ? null : new ReadyDelaySummary(PercentileStats.From(_readyDelay)),
             faults,
+            network,
             error);
     }
 
@@ -298,10 +332,32 @@ public sealed class KernelLatencyAggregator
         return acc;
     }
 
+    private NetworkAcc Network(int pid)
+    {
+        if (!_network.TryGetValue(pid, out NetworkAcc? acc))
+        {
+            acc = new NetworkAcc();
+            _network[pid] = acc;
+        }
+
+        return acc;
+    }
+
     private sealed class SchedulerAcc
     {
         public double CpuMs;
         public double BlockedMs;
         public Dictionary<string, (int Count, double Ms)> WaitReasons { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class NetworkAcc
+    {
+        public long BytesSent;
+        public long BytesReceived;
+        public int SendCount;
+        public int ReceiveCount;
+        public int Retransmits;
+        public int Disconnects;
+        public int Failures;
     }
 }

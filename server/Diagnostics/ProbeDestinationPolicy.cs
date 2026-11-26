@@ -21,6 +21,19 @@ internal static class ProbeDestinationPolicy
         return false;
     }
 
+    public static bool AllowsHost(string host, IReadOnlyList<string> entries)
+    {
+        foreach (string entry in entries)
+        {
+            if (TryParse(entry, out string entryHost, out _) && HostEquals(host, entryHost))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool IsValidEntry(string? entry) =>
         entry is not null &&
         entry.Length is > 0 and <= 262 &&
