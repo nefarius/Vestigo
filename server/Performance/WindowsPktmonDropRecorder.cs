@@ -11,6 +11,8 @@ namespace Vestigo.Performance;
 /// <summary>Runs allow-listed drop-only <c>pktmon.exe</c> captures with orphan stop on startup.</summary>
 public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedService
 {
+    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(30);
+
     private readonly VestigoOptions _options;
     private readonly ILogger<WindowsPktmonDropRecorder> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -26,10 +28,9 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         PktmonCheckpoint? recorded = Load();
         if (recorded is { NativeStarted: true })
         {
-            NativeResult stopped = await Run(PktmonPlanner.StopArguments(), cancellationToken).ConfigureAwait(false);
-            if (!Stopped(stopped))
+            if (!await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
             {
-                _logger.LogWarning("Could not stop orphan pktmon drop capture: {Output}", stopped.Output);
+                _logger.LogWarning("Could not stop orphan pktmon drop capture");
                 return;
             }
 
@@ -88,6 +89,13 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         bool stopped = false;
         try
         {
+            if (Load() is { NativeStarted: true } && !await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return OperationResult<PacketDropResult>.Fail(
+                    "pktmon_busy",
+                    "A previous Vestigo-owned pktmon capture could not be stopped.");
+            }
+
             Directory.CreateDirectory(directory);
             if (!TrySave(new PktmonCheckpoint(true, etl)))
             {
@@ -143,7 +151,11 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
         catch (OperationCanceledException)
         {
-            stopped = await StopOwnedAsync().ConfigureAwait(false);
+            if (!stopped)
+            {
+                stopped = await StopOwnedAsync().ConfigureAwait(false);
+            }
+
             if (stopped)
             {
                 _ = TrySave(null);
@@ -153,7 +165,11 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            stopped = await StopOwnedAsync().ConfigureAwait(false);
+            if (!stopped)
+            {
+                stopped = await StopOwnedAsync().ConfigureAwait(false);
+            }
+
             if (stopped)
             {
                 _ = TrySave(null);
@@ -173,9 +189,21 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
     }
 
-    private async Task<bool> StopOwnedAsync()
+    private async Task<bool> StopOwnedAsync(CancellationToken cancellationToken = default)
     {
-        NativeResult result = await Run(PktmonPlanner.StopArguments(), CancellationToken.None).ConfigureAwait(false);
+        using CancellationTokenSource cleanup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cleanup.CancelAfter(CleanupTimeout);
+        NativeResult result;
+        try
+        {
+            result = await Run(PktmonPlanner.StopArguments(), cleanup.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("pktmon stop timed out after {Timeout}", CleanupTimeout);
+            return false;
+        }
+
         if (Stopped(result))
         {
             return true;
