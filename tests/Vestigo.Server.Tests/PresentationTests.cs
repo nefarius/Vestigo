@@ -245,6 +245,76 @@ public class PresentationTests : IDisposable
     }
 
     [Fact]
+    public async Task Observe_StreamsPastOldEventLimitWithoutTruncating()
+    {
+        Assert.Equal(250_000, PresentationObserver.MaxEvents);
+        string noise = Event(42, "Other", 999);
+        string[] events = new string[5_001];
+        Array.Fill(events, noise);
+        events[^1] = Event(266, "IndependentFlip", 42);
+        ScriptedFactory factory = new() { Events = events };
+
+        OperationResult<PresentationObservation> result = await Observer(factory).ObserveAsync(
+            42,
+            null,
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("independent-flip", result.Value!.Mode);
+        Assert.Null(result.Value.Reason);
+        Assert.Equal(5_001, result.Value.SeenEvents);
+        Assert.Equal(1, result.Value.CorrelatedEvents);
+    }
+
+    [Fact]
+    public async Task Observe_TruncatesOnlyWhenEventCountExceedsBound()
+    {
+        string noise = Event(42, "Other", 999);
+        string match = Event(266, "IndependentFlip", 42);
+
+        ScriptedFactory exactFactory = new() { Events = [noise, noise, noise, noise, match] };
+        PresentationObserver exactObserver = new(exactFactory, new VestigoOptions(), TimeProvider.System, NullLogger<PresentationObserver>.Instance, maxEvents: 5);
+        OperationResult<PresentationObservation> exact = await exactObserver.ObserveAsync(
+            42,
+            null,
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("independent-flip", exact.Value!.Mode);
+        Assert.Null(exact.Value.Reason);
+        Assert.Equal(5, exact.Value.SeenEvents);
+        Assert.Equal(1, exact.Value.CorrelatedEvents);
+
+        ScriptedFactory overFactory = new() { Events = [noise, noise, noise, noise, match, noise] };
+        PresentationObserver overObserver = new(overFactory, new VestigoOptions(), TimeProvider.System, NullLogger<PresentationObserver>.Instance, maxEvents: 5);
+        OperationResult<PresentationObservation> truncated = await overObserver.ObserveAsync(
+            42,
+            null,
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("unknown", truncated.Value!.Mode);
+        Assert.Equal("events_truncated", truncated.Value.Reason);
+        Assert.Equal(5, truncated.Value.SeenEvents);
+    }
+
+    [Fact]
+    public void EventParser_TryParseMemory_HandlesSlicedUtf8AndRejectsMalformedJson()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("  " + Event(266, "IndependentFlip", 42) + "  ");
+        ReadOnlyMemory<byte> slice = payload.AsMemory(2, payload.Length - 4);
+
+        Assert.True(PresentationEventParser.TryParse(slice, out PresentationSample sample));
+        Assert.Equal(42, sample.ProcessId);
+        Assert.Equal(266, sample.EventId);
+        Assert.Equal("IndependentFlip", sample.Task);
+
+        ReadOnlyMemory<byte> malformed = Encoding.UTF8.GetBytes("{not-json");
+        Assert.False(PresentationEventParser.TryParse(malformed, out _));
+    }
+
+    [Fact]
     public async Task Cancellation_StopsTheSessionWithoutAMode()
     {
         ScriptedFactory factory = new() { Hold = true };

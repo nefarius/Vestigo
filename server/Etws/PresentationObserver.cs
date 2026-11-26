@@ -14,7 +14,7 @@ namespace Vestigo.Etws;
 /// </summary>
 public sealed class PresentationObserver : IHostedService
 {
-    public const int MaxEvents = 2000;
+    public const int MaxEvents = 250_000;
 
     public static readonly TimeSpan DefaultDuration = TimeSpan.FromSeconds(5);
 
@@ -24,6 +24,7 @@ public sealed class PresentationObserver : IHostedService
     private readonly VestigoOptions _options;
     private readonly TimeProvider _time;
     private readonly ILogger<PresentationObserver> _logger;
+    private readonly int _maxEvents;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public PresentationObserver(
@@ -31,11 +32,22 @@ public sealed class PresentationObserver : IHostedService
         VestigoOptions options,
         TimeProvider time,
         ILogger<PresentationObserver> logger)
+        : this(sessions, options, time, logger, MaxEvents)
+    {
+    }
+
+    internal PresentationObserver(
+        IRealtimeTraceSessionFactory sessions,
+        VestigoOptions options,
+        TimeProvider time,
+        ILogger<PresentationObserver> logger,
+        int maxEvents)
     {
         _sessions = sessions;
         _options = options;
         _time = time;
         _logger = logger;
+        _maxEvents = maxEvents < 1 ? 1 : maxEvents;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -133,8 +145,7 @@ public sealed class PresentationObserver : IHostedService
         bool sessionReleased = false;
         List<string> enabled = [];
         List<string> failed = [];
-        List<PresentationSample> samples = [];
-        int undecoded = 0;
+        PresentationAccumulator accumulator = new(processId, windowHandle);
         bool truncated = false;
         bool cancelled = false;
         bool eventsLost = false;
@@ -177,19 +188,19 @@ public sealed class PresentationObserver : IHostedService
             {
                 await foreach (ReadOnlyMemory<byte> item in session.ReadEventsAsync(null, false, static () => { }, linked.Token))
                 {
-                    if (PresentationEventParser.TryParse(item.Span, out PresentationSample sample))
-                    {
-                        samples.Add(sample);
-                    }
-                    else
-                    {
-                        undecoded++;
-                    }
-
-                    if (samples.Count + undecoded >= MaxEvents)
+                    if (accumulator.SeenEvents >= _maxEvents)
                     {
                         truncated = true;
                         break;
+                    }
+
+                    if (PresentationEventParser.TryParse(item, out PresentationSample sample))
+                    {
+                        accumulator.Add(sample);
+                    }
+                    else
+                    {
+                        accumulator.AddUndecoded();
                     }
                 }
             }
@@ -251,10 +262,7 @@ public sealed class PresentationObserver : IHostedService
             return Unknown(processId, windowHandle, sessionName, started, "decode_failed", readerFailure);
         }
 
-        return OperationResult<PresentationObservation>.Ok(PresentationClassifier.Classify(
-            samples,
-            processId,
-            windowHandle,
+        return OperationResult<PresentationObservation>.Ok(accumulator.Build(
             enabled,
             failed,
             started,
@@ -262,7 +270,6 @@ public sealed class PresentationObserver : IHostedService
             sessionName,
             cancelled,
             truncated,
-            undecoded,
             eventsLost));
     }
 

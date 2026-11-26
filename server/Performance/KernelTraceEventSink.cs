@@ -164,9 +164,9 @@ internal static class KernelTraceEventSink
                 incomingWait,
                 blockedMs,
                 cpuMs);
-            if (_lastReady.TryGetValue(incoming, out double readyAt))
+            if (data.ProcessID != 0 && _lastReady.TryGetValue(incoming, out double readyAt))
             {
-                aggregator.AddReadyDelay(Math.Max(0, now - readyAt));
+                aggregator.AddReadyDelay(data.ProcessID, data.ProcessName, Math.Max(0, now - readyAt));
                 _lastReady.Remove(incoming);
             }
 
@@ -174,7 +174,12 @@ internal static class KernelTraceEventSink
             _lastSwitch[incoming] = now;
         }
 
-        public void OnReady(DispatcherReadyThreadTraceData data) =>
-            _lastReady[(data.AwakenedProcessID, data.AwakenedThreadID)] = data.TimeStampRelativeMSec;
+        public void OnReady(DispatcherReadyThreadTraceData data)
+        {
+            if (data.AwakenedProcessID != 0)
+            {
+                _lastReady[(data.AwakenedProcessID, data.AwakenedThreadID)] = data.TimeStampRelativeMSec;
+            }
+        }
     }
 }

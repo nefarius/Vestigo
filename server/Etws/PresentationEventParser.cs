@@ -17,12 +17,15 @@ public static class PresentationEventParser
         "exclusive", "exclusive-fullscreen", "exclusive_fullscreen", "hardware_legacy_flip"
     };
 
-    public static bool TryParse(ReadOnlySpan<byte> utf8, out PresentationSample sample)
+    public static bool TryParse(ReadOnlySpan<byte> utf8, out PresentationSample sample) =>
+        TryParse(utf8.ToArray().AsMemory(), out sample);
+
+    public static bool TryParse(ReadOnlyMemory<byte> utf8, out PresentationSample sample)
     {
         sample = null!;
         try
         {
-            using JsonDocument document = JsonDocument.Parse(utf8.ToArray());
+            using JsonDocument document = JsonDocument.Parse(utf8);
             Collected collected = new();
             Walk(document.RootElement, collected, insideProperties: false);
             sample = new PresentationSample(

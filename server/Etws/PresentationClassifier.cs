@@ -20,18 +20,55 @@ public static class PresentationClassifier
         int undecodedEvents,
         bool eventsLost = false)
     {
-        bool dropped = samples.Any(sample => sample.Dropped);
-        List<PresentationSample> correlated = samples.Where(sample => Correlates(sample, processId, windowHandle)).ToList();
-        HashSet<string> modes = [];
-        foreach (PresentationSample sample in correlated)
+        PresentationAccumulator accumulator = new(processId, windowHandle);
+        foreach (PresentationSample sample in samples)
         {
-            if (ModeOf(sample) is string mode)
-            {
-                modes.Add(mode);
-            }
+            accumulator.Add(sample);
         }
 
-        string? reason = Reason(providersEnabled, providersFailed, dropped || eventsLost, cancelled, truncated, undecodedEvents, samples, correlated, modes);
+        for (int i = 0; i < undecodedEvents; i++)
+        {
+            accumulator.AddUndecoded();
+        }
+
+        return accumulator.Build(
+            providersEnabled,
+            providersFailed,
+            startedAt,
+            endedAt,
+            sessionName,
+            cancelled,
+            truncated,
+            eventsLost);
+    }
+
+    internal static PresentationObservation Build(
+        int processId,
+        long? windowHandle,
+        int decodedEvents,
+        int correlatedEvents,
+        int undecodedEvents,
+        bool dropped,
+        IReadOnlySet<string> modes,
+        IReadOnlyList<string> providersEnabled,
+        IReadOnlyList<string> providersFailed,
+        DateTimeOffset startedAt,
+        DateTimeOffset endedAt,
+        string? sessionName,
+        bool cancelled,
+        bool truncated,
+        bool eventsLost)
+    {
+        string? reason = Reason(
+            providersEnabled,
+            providersFailed,
+            dropped || eventsLost,
+            cancelled,
+            truncated,
+            undecodedEvents,
+            decodedEvents,
+            correlatedEvents,
+            modes);
         return new PresentationObservation(
             reason is null ? modes.Single() : PresentationProviders.Unknown,
             reason,
@@ -40,8 +77,8 @@ public static class PresentationClassifier
             endedAt,
             processId,
             windowHandle,
-            correlated.Count,
-            samples.Count + undecodedEvents,
+            correlatedEvents,
+            decodedEvents + undecodedEvents,
             providersEnabled,
             providersFailed,
             sessionName,
@@ -55,9 +92,9 @@ public static class PresentationClassifier
         bool cancelled,
         bool truncated,
         int undecodedEvents,
-        IReadOnlyList<PresentationSample> samples,
-        IReadOnlyList<PresentationSample> correlated,
-        HashSet<string> modes)
+        int decodedEvents,
+        int correlatedEvents,
+        IReadOnlySet<string> modes)
     {
         if (cancelled)
         {
@@ -84,12 +121,12 @@ public static class PresentationClassifier
             return "decode_failed";
         }
 
-        if (samples.Count == 0)
+        if (decodedEvents == 0)
         {
             return "no_events";
         }
 
-        if (correlated.Count == 0)
+        if (correlatedEvents == 0)
         {
             return "no_correlation";
         }
@@ -107,7 +144,7 @@ public static class PresentationClassifier
         return null;
     }
 
-    private static bool Correlates(PresentationSample sample, int processId, long? windowHandle)
+    internal static bool Correlates(PresentationSample sample, int processId, long? windowHandle)
     {
         if (!IsSupported(sample.Provider))
         {
@@ -154,4 +191,60 @@ public static class PresentationClassifier
         provider is not null
         && (provider.Contains(name, StringComparison.OrdinalIgnoreCase)
             || (Guid.TryParse(provider.Trim('{', '}'), out Guid parsed) && parsed == id));
+}
+
+/// <summary>Streaming O(1)-memory accumulator for presentation ETW events.</summary>
+internal sealed class PresentationAccumulator(int processId, long? windowHandle)
+{
+    private readonly HashSet<string> _modes = [];
+    private int _decodedEvents;
+    private int _correlatedEvents;
+    private int _undecodedEvents;
+    private bool _dropped;
+
+    public int SeenEvents => _decodedEvents + _undecodedEvents;
+
+    public void Add(PresentationSample sample)
+    {
+        _decodedEvents++;
+        _dropped |= sample.Dropped;
+        if (!PresentationClassifier.Correlates(sample, processId, windowHandle))
+        {
+            return;
+        }
+
+        _correlatedEvents++;
+        if (PresentationClassifier.ModeOf(sample) is string mode)
+        {
+            _modes.Add(mode);
+        }
+    }
+
+    public void AddUndecoded() => _undecodedEvents++;
+
+    public PresentationObservation Build(
+        IReadOnlyList<string> providersEnabled,
+        IReadOnlyList<string> providersFailed,
+        DateTimeOffset startedAt,
+        DateTimeOffset endedAt,
+        string? sessionName,
+        bool cancelled,
+        bool truncated,
+        bool eventsLost) =>
+        PresentationClassifier.Build(
+            processId,
+            windowHandle,
+            _decodedEvents,
+            _correlatedEvents,
+            _undecodedEvents,
+            _dropped,
+            _modes,
+            providersEnabled,
+            providersFailed,
+            startedAt,
+            endedAt,
+            sessionName,
+            cancelled,
+            truncated,
+            eventsLost);
 }
