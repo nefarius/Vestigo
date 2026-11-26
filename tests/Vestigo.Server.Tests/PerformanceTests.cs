@@ -179,6 +179,14 @@ public sealed class PerformanceTests : IDisposable
         Assert.Equal(["-start", "GeneralProfile", "-instancename", instance], WprPlanner.StartArguments("generalprofile", instance));
         Assert.Equal(["-stop", @"C:\out.etl", "-instancename", instance], WprPlanner.StopArguments(@"C:\out.etl", instance));
         Assert.Equal(["-cancel", "-instancename", instance], WprPlanner.CancelArguments(instance));
+        Assert.Equal(["-status", "-instancename", instance], WprPlanner.StatusArguments(instance));
+        Assert.True(WprPlanner.IndicatesNoRecording(unchecked((int)WprPlanner.NoRecordingHresult), ""));
+        Assert.True(WprPlanner.IndicatesNoRecording(
+            1,
+            "        There are no trace profiles running.\n        Error code: 0xc5583000"));
+        Assert.True(WprPlanner.IndicatesNoRecording(1, "WPR is not recording"));
+        Assert.True(WprPlanner.IndicatesActiveRecording("WPR recording is in progress..."));
+        Assert.False(WprPlanner.IndicatesNoRecording(1, "WPR recording is in progress..."));
     }
 
     [Fact]

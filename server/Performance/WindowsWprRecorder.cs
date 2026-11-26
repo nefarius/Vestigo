@@ -42,23 +42,16 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                     "Ignoring nameless WPR checkpoint {Profile}; will not run unqualified wpr -cancel",
                     recorded.Profile);
             }
+            else if (!await CancelAndReleaseAsync(recorded.InstanceName!).ConfigureAwait(false))
+            {
+                _logger.LogWarning(
+                    "Could not cancel orphan WPR recording {Profile} ({Instance})",
+                    recorded.Profile,
+                    recorded.InstanceName);
+                return;
+            }
             else
             {
-                OperationResult<int> cancelled = await Run(
-                        WprPlanner.CancelArguments(recorded.InstanceName!),
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-                if (!cancelled.Success)
-                {
-                    _unresolvedInstance = recorded.InstanceName;
-                    _logger.LogWarning(
-                        "Could not cancel orphan WPR recording {Profile} ({Instance}): {Error}",
-                        recorded.Profile,
-                        recorded.InstanceName,
-                        cancelled.Error);
-                    return;
-                }
-
                 _logger.LogInformation(
                     "Cancelled orphan WPR recording {Profile} ({Instance})",
                     recorded.Profile,
@@ -131,21 +124,11 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
         TaskCompletionSource<bool> finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
-            if (_unresolvedInstance is { } orphan)
+            if (_unresolvedInstance is { } orphan && !await CancelAndReleaseAsync(orphan).ConfigureAwait(false))
             {
-                OperationResult<int> cleared = await Run(
-                        WprPlanner.CancelArguments(orphan),
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-                if (!cleared.Success)
-                {
-                    return OperationResult<WprCopyOutcome>.Fail(
-                        "wpr_orphan",
-                        "A previous Vestigo-owned WPR recording could not be cancelled.");
-                }
-
-                _unresolvedInstance = null;
-                _ = TrySave(null);
+                return OperationResult<WprCopyOutcome>.Fail(
+                    "wpr_orphan",
+                    "A previous Vestigo-owned WPR recording could not be cancelled.");
             }
 
             lock (_commandLock)
@@ -156,30 +139,23 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
 
             _status = new WprStatus("running", planned.Value, outputPath, null);
             string instance = WprPlanner.NewInstanceName();
-            OperationResult<int> started = await Run(
+            NativeResult started = await Run(
                     WprPlanner.StartArguments(planned.Value!, instance),
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (!started.Success)
+            if (!started.Succeeded)
             {
                 _status = new WprStatus("failed", planned.Value, outputPath, started.Error);
-                return started.FailAs<WprCopyOutcome>();
+                return FailNative<WprCopyOutcome>(started);
             }
 
             if (!TrySave(new WprCheckpoint(planned.Value!, true, instance)))
             {
-                OperationResult<int> rolledBack = await Run(
-                        WprPlanner.CancelArguments(instance),
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
+                bool rolledBack = await CancelAndReleaseAsync(instance).ConfigureAwait(false);
                 _status = new WprStatus("failed", planned.Value, outputPath, "WPR checkpoint save failed.");
-                if (!rolledBack.Success)
+                if (!rolledBack)
                 {
-                    _unresolvedInstance = instance;
-                    _logger.LogWarning(
-                        "WPR checkpoint save failed and cancel of {Instance} returned {Error}",
-                        instance,
-                        rolledBack.Error);
+                    _logger.LogWarning("WPR checkpoint save failed and {Instance} is still active", instance);
                 }
 
                 return OperationResult<WprCopyOutcome>.Fail(
@@ -210,20 +186,8 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                 stop = false;
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    OperationResult<int> cancelled = await Run(
-                            WprPlanner.CancelArguments(instance),
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
-                    _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled.Error);
-                    if (cancelled.Success)
-                    {
-                        _ = TrySave(null);
-                    }
-                    else
-                    {
-                        _unresolvedInstance = instance;
-                    }
-
+                    bool cancelled = await CancelAndReleaseAsync(instance).ConfigureAwait(false);
+                    _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled ? null : "cancel failed");
                     throw;
                 }
             }
@@ -235,24 +199,12 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
 
             if (!stop)
             {
-                OperationResult<int> cancelled = await Run(
-                        WprPlanner.CancelArguments(instance),
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-                _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled.Error);
-                if (cancelled.Success)
-                {
-                    _ = TrySave(null);
-                }
-                else
-                {
-                    _unresolvedInstance = instance;
-                }
-
+                bool cancelled = await CancelAndReleaseAsync(instance).ConfigureAwait(false);
+                _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled ? null : "cancel failed");
                 return OperationResult<WprCopyOutcome>.Fail("wpr_cancelled", "The WPR recording was cancelled.");
             }
 
-            OperationResult<int> stopped;
+            NativeResult stopped;
             try
             {
                 stopped = await Run(
@@ -262,31 +214,28 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
             }
             catch (OperationCanceledException)
             {
-                OperationResult<int> cancelled = await Run(
-                        WprPlanner.CancelArguments(instance),
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-                _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled.Error);
-                if (cancelled.Success)
-                {
-                    _ = TrySave(null);
-                }
-                else
-                {
-                    _unresolvedInstance = instance;
-                }
-
+                bool cancelled = await CancelAndReleaseAsync(instance).ConfigureAwait(false);
+                _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled ? null : "cancel failed");
                 throw;
             }
 
-            if (!stopped.Success)
+            if (IsCleared(stopped))
             {
-                _unresolvedInstance = instance;
+                ReleaseOwnership();
+            }
+            else
+            {
+                MarkUnresolved(instance);
                 _status = new WprStatus("failed", planned.Value, outputPath, stopped.Error);
-                return stopped.FailAs<WprCopyOutcome>();
+                return FailNative<WprCopyOutcome>(stopped);
             }
 
-            _ = TrySave(null);
+            if (!stopped.Succeeded)
+            {
+                _status = new WprStatus("failed", planned.Value, outputPath, stopped.Error);
+                return FailNative<WprCopyOutcome>(stopped);
+            }
+
             if (!File.Exists(outputPath))
             {
                 _status = new WprStatus("failed", planned.Value, outputPath, "WPR did not write an ETL file.");
@@ -391,17 +340,13 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                 return OperationResult<WprStatus>.Fail("wpr_not_running", "No Vestigo-owned WPR recording is running.");
             }
 
-            OperationResult<int> cancelled = await Run(WprPlanner.CancelArguments(orphan), CancellationToken.None)
-                .ConfigureAwait(false);
-            if (!cancelled.Success)
+            if (!await CancelAndReleaseAsync(orphan).ConfigureAwait(false))
             {
                 return OperationResult<WprStatus>.Fail(
                     "wpr_orphan",
                     "A previous Vestigo-owned WPR recording could not be cancelled.");
             }
 
-            _unresolvedInstance = null;
-            _ = TrySave(null);
             _status = new WprStatus("idle", null, null, null);
             return OperationResult<WprStatus>.Ok(_status);
         }
@@ -411,12 +356,54 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
         }
     }
 
-    private static async Task<OperationResult<int>> Run(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    private async Task<bool> CancelAndReleaseAsync(string instance)
+    {
+        NativeResult cancelled = await Run(WprPlanner.CancelArguments(instance), CancellationToken.None)
+            .ConfigureAwait(false);
+        if (IsCleared(cancelled))
+        {
+            ReleaseOwnership();
+            return true;
+        }
+
+        NativeResult status = await Run(WprPlanner.StatusArguments(instance), CancellationToken.None)
+            .ConfigureAwait(false);
+        if (WprPlanner.IndicatesActiveRecording(status.Output))
+        {
+            MarkUnresolved(instance);
+            return false;
+        }
+
+        if (IsCleared(status))
+        {
+            ReleaseOwnership();
+            return true;
+        }
+
+        MarkUnresolved(instance);
+        return false;
+    }
+
+    private void ReleaseOwnership()
+    {
+        _unresolvedInstance = null;
+        _ = TrySave(null);
+    }
+
+    private void MarkUnresolved(string instance) => _unresolvedInstance = instance;
+
+    private static bool IsCleared(NativeResult result) =>
+        result.Succeeded || WprPlanner.IndicatesNoRecording(result.ExitCode, result.Output);
+
+    private static OperationResult<T> FailNative<T>(NativeResult result) =>
+        OperationResult<T>.Fail(result.ErrorCode, result.Error);
+
+    private static async Task<NativeResult> Run(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         string path = Path.Combine(Environment.SystemDirectory, "wpr.exe");
         if (!File.Exists(path))
         {
-            return OperationResult<int>.Fail("wpr_not_found", "wpr.exe was not found in the Windows system directory.");
+            return NativeResult.Missing();
         }
 
         try
@@ -426,13 +413,13 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteBufferedAsync(cancellationToken)
                 .ConfigureAwait(false);
-            return result.ExitCode == 0
-                ? OperationResult<int>.Ok(0)
-                : OperationResult<int>.Fail("wpr_failed", $"wpr.exe exited {result.ExitCode}.");
+            string output = string.Join('\n', new[] { result.StandardOutput, result.StandardError }
+                .Where(item => !string.IsNullOrWhiteSpace(item)));
+            return new NativeResult(result.ExitCode, output, "wpr_failed");
         }
         catch (Win32Exception)
         {
-            return OperationResult<int>.Fail("wpr_failed", "wpr.exe did not start.");
+            return new NativeResult(-1, "wpr.exe did not start.", "wpr_failed");
         }
         catch (OperationCanceledException)
         {
@@ -491,6 +478,18 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
             _logger.LogWarning(ex, "Could not update the WPR ownership checkpoint");
             return false;
         }
+    }
+
+    private readonly record struct NativeResult(int ExitCode, string Output, string ErrorCode)
+    {
+        public bool Succeeded => ExitCode == 0;
+
+        public string Error => string.IsNullOrWhiteSpace(Output)
+            ? $"wpr.exe exited {ExitCode}."
+            : Output.Trim();
+
+        public static NativeResult Missing() =>
+            new(-1, "wpr.exe was not found in the Windows system directory.", "wpr_not_found");
     }
 
     private sealed record WprCheckpoint(string Profile, bool NativeStarted, string? InstanceName);

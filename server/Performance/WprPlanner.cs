@@ -65,6 +65,32 @@ public static class WprPlanner
     public static IReadOnlyList<string> CancelArguments(string instance) =>
         ["-cancel", "-instancename", instance];
 
+    public static IReadOnlyList<string> StatusArguments(string instance) =>
+        ["-status", "-instancename", instance];
+
+    /// <summary>WPR HRESULT when no matching named recording is active (<c>0xC5583000</c>).</summary>
+    public const uint NoRecordingHresult = 0xC5583000;
+
+    public static bool IndicatesActiveRecording(string output) =>
+        output.Contains("recording is in progress", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IndicatesNoRecording(int exitCode, string output)
+    {
+        if (IndicatesActiveRecording(output))
+        {
+            return false;
+        }
+
+        if ((uint)exitCode == NoRecordingHresult)
+        {
+            return true;
+        }
+
+        return output.Contains("0xc5583000", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("no trace profiles running", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("is not recording", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string Canonical(string profile) =>
         AllowedProfiles.First(item => string.Equals(item, profile.Trim(), StringComparison.OrdinalIgnoreCase));
 }
