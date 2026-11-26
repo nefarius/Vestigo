@@ -16,6 +16,8 @@ public static class PktmonPlanner
 
     public static IReadOnlyList<string> StopArguments() => ["stop"];
 
+    public static IReadOnlyList<string> StatusArguments() => ["status"];
+
     public static IReadOnlyList<string> CountersArguments() => ["counters", "--type", "drop", "--json"];
 
     public static IReadOnlyList<string> FormatArguments(string etlPath, string textPath) =>

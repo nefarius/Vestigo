@@ -108,6 +108,7 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.DoesNotContain("--pkt-size", start);
         Assert.False(PktmonPlanner.IsDropOnlyStart(["start", "--capture", "--pkt-size", "0", "--drop-only", "--comp", "all"]));
         Assert.Equal(["stop"], PktmonPlanner.StopArguments());
+        Assert.Equal(["status"], PktmonPlanner.StatusArguments());
         Assert.Equal(["counters", "--type", "drop", "--json"], PktmonPlanner.CountersArguments());
 
         IReadOnlyList<PacketDropCounter> counters = PktmonPlanner.ParseCounters(

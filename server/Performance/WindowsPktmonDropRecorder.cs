@@ -89,11 +89,22 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         bool stopped = false;
         try
         {
-            if (Load() is { NativeStarted: true } && !await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
+            PktmonCheckpoint? previous = Load();
+            if (previous is { NativeStarted: true })
             {
-                return OperationResult<PacketDropResult>.Fail(
-                    "pktmon_busy",
-                    "A previous Vestigo-owned pktmon capture could not be stopped.");
+                if (!await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return OperationResult<PacketDropResult>.Fail(
+                        "pktmon_busy",
+                        "A previous Vestigo-owned pktmon capture could not be stopped.");
+                }
+
+                if (!TrySave(null))
+                {
+                    return OperationResult<PacketDropResult>.Fail(
+                        "pktmon_checkpoint_failed",
+                        "The previous pktmon ownership checkpoint could not be cleared.");
+                }
             }
 
             Directory.CreateDirectory(directory);
@@ -102,14 +113,24 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                 return OperationResult<PacketDropResult>.Fail("pktmon_checkpoint_failed", "The pktmon ownership checkpoint could not be saved.");
             }
 
+            nativeStarted = true;
             NativeResult started = await Run(start, cancellationToken).ConfigureAwait(false);
             if (!started.Succeeded)
             {
-                _ = TrySave(null);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                stopped = await StopOwnedAsync().ConfigureAwait(false);
+                if (stopped)
+                {
+                    _ = TrySave(null);
+                    nativeStarted = false;
+                }
+
                 return FailNative<PacketDropResult>(started);
             }
-
-            nativeStarted = true;
             try
             {
                 await Task.Delay(duration, cancellationToken).ConfigureAwait(false);
@@ -204,13 +225,30 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             return false;
         }
 
-        if (Stopped(result))
+        if (!Stopped(result))
         {
-            return true;
+            _logger.LogWarning("pktmon stop returned {Exit}: {Output}", result.ExitCode, result.Output);
+            return false;
         }
 
-        _logger.LogWarning("pktmon stop returned {Exit}: {Output}", result.ExitCode, result.Output);
-        return false;
+        NativeResult status;
+        try
+        {
+            status = await Run(PktmonPlanner.StatusArguments(), cleanup.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("pktmon status timed out after stop");
+            return false;
+        }
+
+        if (IndicatesActive(status))
+        {
+            _logger.LogWarning("pktmon is still active after stop: {Output}", status.Output);
+            return false;
+        }
+
+        return true;
     }
 
     private static async Task<NativeResult> Run(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
@@ -243,6 +281,10 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         || result.Output.Contains("not running", StringComparison.OrdinalIgnoreCase)
         || result.Output.Contains("is not started", StringComparison.OrdinalIgnoreCase)
         || result.Output.Contains("No packet monitor", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IndicatesActive(NativeResult result) =>
+        result.Output.Contains("running", StringComparison.OrdinalIgnoreCase)
+        && !result.Output.Contains("not running", StringComparison.OrdinalIgnoreCase);
 
     private static OperationResult<T> FailNative<T>(NativeResult result) =>
         OperationResult<T>.Fail(result.ErrorCode, string.IsNullOrWhiteSpace(result.Output) ? $"pktmon.exe exited {result.ExitCode}." : result.Output.Trim());
