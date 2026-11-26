@@ -41,4 +41,19 @@ internal static partial class ProcessStartTime
             return false;
         }
     }
+
+    public static bool TryReadTimes(SafeFileHandle process, out long kernel, out long user)
+    {
+        kernel = 0;
+        user = 0;
+        nint handle = process.DangerousGetHandle();
+        if (handle == 0 || GetProcessTimes(handle, out _, out _, out kernel, out user) == 0)
+        {
+            GC.KeepAlive(process);
+            return false;
+        }
+
+        GC.KeepAlive(process);
+        return true;
+    }
 }

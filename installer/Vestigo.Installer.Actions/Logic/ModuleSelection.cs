@@ -24,7 +24,7 @@ namespace Vestigo.Installer.Actions.Logic
 
         public string Description { get; }
 
-        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Input, InputInjection, Audio, DebugOutput, Diagnostics, Registry, and gated extras are off.</summary>
+        /// <summary>Matches the server default: Processes, Devices, RemoteDebugger, Desktop, DesktopScreenshots, Input, InputInjection, Audio, DebugOutput, Diagnostics, Performance, Registry, and gated extras are off.</summary>
         public bool DefaultOn { get; }
 
         /// <summary>Parent feature name, or null for a direct child of the Server feature. Nesting enforces dependencies.</summary>
@@ -125,6 +125,15 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Updates:AllowSelfUpdate</c>.</summary>
         public const string SelfUpdate = "SelfUpdate";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Performance:AllowKernelTrace</c>.</summary>
+        public const string PerformanceKernelTrace = "PerformanceKernelTrace";
+
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Performance:AllowRawEtlCapture</c>.</summary>
+        public const string PerformanceRawEtlCapture = "PerformanceRawEtlCapture";
+
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Performance:AllowStorageProbes</c>.</summary>
+        public const string PerformanceStorageProbes = "PerformanceStorageProbes";
+
         public static readonly IReadOnlyList<OptionToggle> OptionToggles = new List<OptionToggle>
         {
             new OptionToggle(SoftwareUninstall, "Software", "AllowUninstall"),
@@ -147,7 +156,10 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(DiagnosticsKernelDumpStaging, "Diagnostics", "AllowKernelDumpStaging"),
             new OptionToggle(DiagnosticsFirewallInventory, "Diagnostics", "AllowFirewallInventory"),
             new OptionToggle(DiagnosticsDriverVerifier, "Diagnostics", "AllowDriverVerifier"),
-            new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate")
+            new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate"),
+            new OptionToggle(PerformanceKernelTrace, "Performance", "AllowKernelTrace"),
+            new OptionToggle(PerformanceRawEtlCapture, "Performance", "AllowRawEtlCapture"),
+            new OptionToggle(PerformanceStorageProbes, "Performance", "AllowStorageProbes")
         };
 
         public static readonly IReadOnlyList<ModuleDefinition> All = new List<ModuleDefinition>
@@ -184,6 +196,10 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition(DiagnosticsKernelDumpStaging, "Kernel dump staging", "Allow stage_kernel_dump to copy a dump selected by list_kernel_dumps into a Write root and issue a one-time download ticket (Vestigo:Diagnostics:AllowKernelDumpStaging). The tool result does not contain dump bytes.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsFirewallInventory, "Firewall inventory", "Allow get_firewall_profiles and list_firewall_rules (Vestigo:Diagnostics:AllowFirewallInventory). Reads stored policy and rule expressions, including application paths. Does not change rules and does not decide whether traffic was blocked.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsDriverVerifier, "Driver Verifier changes", "Allow set_driver_verifier (Vestigo:Diagnostics:AllowDriverVerifier). reset_driver_verifier stays available. Those tools do not reboot.", false, "Diagnostics"),
+            new ModuleDefinition("Performance", "Performance", "Sample counters, storage topology, minifilters, VM environment, scheduler jitter, process metrics, wait chains, and memory pressure. Needs Jobs. Kernel ETW, raw WPR ETL, and storage probes are separate child features.", false, "Jobs"),
+            new ModuleDefinition(PerformanceKernelTrace, "Kernel ETW capture", "Allow capture_kernel_latency_summary (Vestigo:Performance:AllowKernelTrace). Starts a bounded Vestigo-Perf-* kernel session in an isolated worker and returns structured latency summaries, not raw events.", false, "Performance"),
+            new ModuleDefinition(PerformanceRawEtlCapture, "Raw WPR ETL", "Allow record_wpr_trace (Vestigo:Performance:AllowRawEtlCapture). Runs allow-listed System32 wpr.exe profiles into a Write root and can issue a one-time download ticket.", false, "Performance"),
+            new ModuleDefinition(PerformanceStorageProbes, "Storage latency probes", "Allow probe_storage_latency (Vestigo:Performance:AllowStorageProbes). Writes a temporary probe file inside a Write root and compares buffered, unbuffered, flush, and metadata latency.", false, "Performance"),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
@@ -311,7 +327,10 @@ namespace Vestigo.Installer.Actions.Logic
                    || string.Equals(name, InputInjection, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, SystemReboot, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, SystemAutoLogon, StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(name, SystemInteractiveLogon, StringComparison.OrdinalIgnoreCase);
+                   || string.Equals(name, SystemInteractiveLogon, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, PerformanceKernelTrace, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, PerformanceRawEtlCapture, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, PerformanceStorageProbes, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

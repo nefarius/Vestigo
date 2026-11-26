@@ -35,6 +35,8 @@
     <PackageReference Include="OpenCvSharp4" />
     <PackageReference Include="OpenCvSharp4.runtime.win" />
     <PackageReference Include="PeNet" />
+    <PackageReference Include="WmiLight" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="minisign-net" />
     <PackageReference Include="Nefarius.Utilities.DeviceManagement" />

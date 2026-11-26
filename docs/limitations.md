@@ -4,8 +4,8 @@ Vestigo is a Windows lab server. The notes below are the bounds of each tool and
 
 ## Platform and transport
 
-- Windows only. The NT Kernel Logger and kernel-mode realtime providers are not supported.
-- Vestigo decodes events. It does not record a raw ETL file.
+- Windows only. The Trace module does not enable the NT Kernel Logger or kernel-mode realtime providers.
+- Trace tools decode events and do not record a raw ETL file. The opt-in Performance module can capture a bounded kernel-latency summary (`AllowKernelTrace`) and, separately, a raw WPR `.etl` (`AllowRawEtlCapture`).
 - There is no server push. Follow a live capture by long-polling `read_capture` or `read_debug_output` with `waitSeconds`. An external session can be read with `attach_etw_session` once `Vestigo:AttachableSessions` lists it.
 - `/` explains MCP connection setup. `/health` is always anonymous. `/mcp` and `/files` are anonymous only while `ApiTokens` is empty.
 - Traffic is plain HTTP. Use a trusted network or a TLS-terminating proxy for remote MCP traffic. Binding beyond loopback without tokens logs a startup warning.
@@ -64,6 +64,18 @@ PE metadata uses [PeNet](https://github.com/secana/PeNet). The Diagnostics modul
 - `list_video_encoders` is a Media Foundation `MFTEnumEx` enumeration, not a vendor-SDK inventory and not proof that an encoder can process a frame. `list_camera_formats` does not read camera samples. `probe_audio_format` does not emit sound unless `Diagnostics:AllowAudioPlayback` is true.
 - `get_firewall_profiles` and `list_firewall_rules` stay off until `Diagnostics:AllowFirewallInventory` is true. They return stored profile flags and raw rule expressions. A stored action is not a verdict that traffic was blocked.
 - `get_driver_verifier_state` reads `verifier /query` and `verifier /querysettings`. An active statistics dump is returned as text and is not parsed into flags. `set_driver_verifier` stays off until `Diagnostics:AllowDriverVerifier` is true and names only standard flags for specific `.sys` files. `reset_driver_verifier` stays available. Those tools do not reboot; use `reboot_machine` when `System:AllowReboot` is true.
+
+## Performance
+
+The Performance module is opt-in, requires Jobs, and is Windows-only. PDH paths are English (`PdhAddEnglishCounterW`). WMI inventory uses WmiLight against `ROOT\Microsoft\Windows\Storage` and `ROOT\CIMV2`; a missing namespace returns an empty list rather than a hard failure.
+
+- `sample_performance_counters` expands wildcards up to `MaxCounterPaths` and reports truncated when that cap is hit. Hyper-V and VM counter presets are empty on machines that do not expose those objects.
+- `list_filesystem_minifilters` is Filter Manager inventory, not a verdict that a filter caused a stall.
+- `probe_scheduler_jitter` is a user-mode QPC probe. It can expose steal/preemption gaps; it does not attribute them to a hypervisor or a DPC.
+- `sample_process_metrics` and `inspect_process_threads` skip or refuse PID 0, PID 4, the Vestigo service, and other protected processes. Wait-chain graphs and `KWAIT_REASON` values come from WCT and `NtQuerySystemInformation` (a documented ntdll fallback). They are a snapshot, not a complete deadlock proof.
+- `capture_kernel_latency_summary` stays off until `Performance:AllowKernelTrace` is true. Capture runs in `Vestigo.exe --perf-etw-worker` and only starts `Vestigo-Perf-*` sessions recorded in `owned-performance-etw.json`. On Windows 10 a busy `NT Kernel Logger` returns `kernel_logger_in_use`. Summaries include event-loss, buffer-loss, and truncation flags. DiskIO and DPC/ISR include elapsed times; FileIO counts and sizes come from TraceEvent 4.0.2 start events, which do not expose elapsed milliseconds, so FileIO latency percentiles stay empty. The tool does not return raw events.
+- `record_wpr_trace` stays off until `Performance:AllowRawEtlCapture` is true. Arguments are a fixed allow-list (`GeneralProfile`, `CPU`, `DiskIO`, `FileIO`, `Minifilter`, `Network`, `Heap`); callers cannot pass free-form `wpr.exe` flags. Recordings start in WPR's in-memory session (not `-filemode`) so disk growth is deferred until `-stop`. Start, stop, and cancel always pass `-instancename` with a Vestigo-generated `Vestigo-Wpr-*` name persisted in `owned-wpr.json` after native start succeeds. A failed checkpoint write attempts a named cancel before the recording gate is released. If that cancel also fails while `wpr -status -instancename` still reports a recording in progress, including after a cancelled native start, the instance name is kept in memory and logged, and `record_wpr_trace` returns `wpr_orphan` until the same instance is cancelled. Named cancel and status during cleanup are bounded; a timeout leaves the instance unresolved. A service restart cannot recover that name if the checkpoint was never written or is unreadable; use the instance name from the warning log with `wpr -status -instancename <name>` and `wpr -cancel -instancename <name>` only, never unqualified `wpr -cancel`. A cancel or stop result of `0xC5583000` (`There are no trace profiles running`) releases ownership. Startup recovery of a nameless checkpoint from an older build logs and clears the file; it does not run unqualified `wpr -cancel`. The Heap profile records heaps visible to WPR and still rejects a merged `.etl` above `MaxRawEtlBytes`. One recording runs at a time. `analyze_etl_performance` reads an existing `.etl` in a Read root with TraceEvent; it does not require the raw-ETL gate.
+- `probe_storage_latency` stays off until `Performance:AllowStorageProbes` is true and the directory is in a Write root. Unbuffered I/O needs 4K alignment. The probe file and metadata temps are deleted afterwards; `cleanedUp: false` means a leftover file remains.
 
 ## Devices and HID
 

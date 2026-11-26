@@ -18,7 +18,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>WPP and ETW tracing</h2>
     <p>Inspect a WPP PDB, validate PDB or TMF sources, scan ETL metadata, and convert an ETL file to JSON or NDJSON. <code>start_capture</code> creates a <code>Vestigo-</code> realtime session from provider GUIDs or PDB paths. Follow it with long-polling <code>read_capture</code>. <code>attach_etw_session</code> can read an existing session once you list it in <code>AttachableSessions</code>. <code>observe_presentation</code> reports composed, independent-flip, or exclusive only when a DXGI, DWM, or DxgKrnl event says so, decodes that trace in a child process, and returns unknown otherwise.</p>
-    <p>Vestigo decodes events; it does not write a raw ETL file. The NT Kernel Logger is not supported.</p>
+    <p>Trace tools decode events and do not write a raw ETL file. The NT Kernel Logger is not used by Trace. The opt-in Performance module can capture a bounded kernel-latency summary and, separately, a raw WPR <code>.etl</code>.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
@@ -177,6 +177,12 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <h2>Remote debugger</h2>
     <p>Install Visual Studio Remote Debugging Tools for 2022 or 2026, prepare the firewall, start <code>msvsmon.exe</code>, and stop it. Status reports every discovered monitor and whether Vestigo started it.</p>
     <p>The module needs Processes and Jobs. A running monitor lets a remote debugger execute code on the machine; treat the token as administrator-equivalent.</p>
+  </article>
+  <article class="card">
+    <p class="pills"><span class="pill optin">Performance opt-in</span> <span class="pill gated">Kernel ETW gated</span> <span class="pill gated">WPR ETL gated</span> <span class="pill gated">Storage probes gated</span></p>
+    <h2>Performance</h2>
+    <p>Sample English PDH counters, storage topology, filesystem minifilters, VM environment, scheduler jitter, process I/O and EcoQoS, wait chains, and memory pressure. Needs Jobs. Use this when CPU, RAM, and disk utilization look normal while I/O or UI still stalls.</p>
+    <p><code>capture_kernel_latency_summary</code> stays off until <code>Performance:AllowKernelTrace</code> is true. It runs in an isolated worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, and hard-fault summaries, not raw events. <code>record_wpr_trace</code> stays off until <code>Performance:AllowRawEtlCapture</code> is true and writes an allow-listed <code>wpr.exe</code> <code>.etl</code> into a Write root. <code>probe_storage_latency</code> stays off until <code>Performance:AllowStorageProbes</code> is true and writes a temporary file in a Write root.</p>
   </article>
 </div>
 

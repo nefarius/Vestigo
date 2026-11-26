@@ -31,6 +31,7 @@ public static class ModuleRegistry
         new AudioModule(),
         new DebugOutputModule(),
         new DiagnosticsModule(),
+        new PerformanceModule(),
         new WindowsServicingModule(),
         new UpdatesModule()
     ];
@@ -171,6 +172,10 @@ public static class ModuleRegistry
         bool servicing = enabled.Any(module => module.Name == "WindowsServicing");
         bool registry = enabled.Any(module => module.Name == "Registry");
 
+        bool performance = enabled.Any(module => module.Name == "Performance");
+        bool performanceKernel = performance && options.Performance.AllowKernelTrace;
+        bool performanceRawEtl = performance && options.Performance.AllowRawEtlCapture;
+        bool performanceStorage = performance && options.Performance.AllowStorageProbes;
         bool diagnostics = enabled.Any(module => module.Name == "Diagnostics");
         bool diagnosticsOnline = diagnostics && options.Diagnostics.AllowOnlineRevocation;
         bool diagnosticsProbes = diagnostics && options.Diagnostics.AllowCaptureProbes;
@@ -180,7 +185,7 @@ public static class ModuleRegistry
         bool diagnosticsKernelDumps = diagnostics && options.Diagnostics.AllowKernelDumpStaging;
         bool diagnosticsFirewall = diagnostics && options.Diagnostics.AllowFirewallInventory;
         bool diagnosticsVerifier = diagnostics && options.Diagnostics.AllowDriverVerifier;
-        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics && !servicing && !registry)
+        if (capabilities.Count == 0 && !debugOutput && !desktop && !audio && !diagnostics && !performance && !servicing && !registry)
         {
             return null;
         }
@@ -244,6 +249,12 @@ public static class ModuleRegistry
                 clauses.Add(DiagnosticsClause(reach, diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps, diagnosticsFirewall, diagnosticsVerifier, diagnosticsKernelDumps));
             }
 
+            if (performance)
+            {
+                names.Add("Performance");
+                clauses.Add(PerformanceClause(reach, performanceKernel, performanceRawEtl, performanceStorage));
+            }
+
             string named = names.Count == 1
                 ? $"the {names[0]} module is enabled"
                 : $"the {string.Join(" and ", names)} modules are enabled";
@@ -298,6 +309,11 @@ public static class ModuleRegistry
             extras += "The Diagnostics module is also enabled, so the same clients can " + DiagnosticsDetail(diagnosticsOnline, diagnosticsProbes, diagnosticsNetwork, diagnosticsPlayback, diagnosticsDumps, diagnosticsFirewall, diagnosticsVerifier, diagnosticsKernelDumps) + " ";
         }
 
+        if (performance)
+        {
+            extras += "The Performance module is also enabled, so the same clients can " + PerformanceDetail(performanceKernel, performanceRawEtl, performanceStorage) + " ";
+        }
+
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
         {
             extras += "The Updates module can also install the latest signed Vestigo release and restart the service. ";
@@ -350,6 +366,30 @@ public static class ModuleRegistry
         if (verifier)
         {
             text += " Driver Verifier changes may bugcheck after the next boot.";
+        }
+
+        return text;
+    }
+
+    private static string PerformanceClause(string reach, bool kernel, bool rawEtl, bool storage) =>
+        $"{reach} can {PerformanceDetail(kernel, rawEtl, storage)}";
+
+    private static string PerformanceDetail(bool kernel, bool rawEtl, bool storage)
+    {
+        string text = "sample performance counters, inspect storage topology and filesystem minifilters, inspect VM and hypervisor environment, probe scheduler jitter, sample process I/O and EcoQoS, inspect wait chains, and read memory and kernel-pool pressure.";
+        if (kernel)
+        {
+            text += " Kernel ETW capture may record a bounded Vestigo-Perf-* session and return latency summaries.";
+        }
+
+        if (rawEtl)
+        {
+            text += " WPR recording may write a raw .etl file into a Write root and issue a one-time download ticket.";
+        }
+
+        if (storage)
+        {
+            text += " Storage latency probes may write a temporary file in a Write root.";
         }
 
         return text;

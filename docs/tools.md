@@ -451,6 +451,35 @@ waiting, and the slot remains held until Windows returns. See
 [Windows servicing diagnostics](windows-servicing.md) for exact sources, caps,
 job semantics, data disclosure and limitations. No install, repair, online scan,
 queue cancellation, cache reset or reboot operations are exposed.
+
+## Performance
+
+The `Performance` module is disabled by default (`Vestigo:Modules:Performance:Enabled`) and needs Jobs. It is for diagnosing stalls and stutter when CPU, RAM, and disk utilization look normal. Kernel ETW, raw WPR `.etl` recording, and storage probes stay off until their own gates are on. Read [security.md](security.md#performance) first.
+
+`sample_performance_counters` samples English PDH paths from a preset (`overview`, `storage`, `cpu`, `memory`, `network`, `hypervisor`) or extra caller paths over a bounded window. Each counter returns min, average, p50, p95, p99, max, sample count, and status. Wildcards expand up to `Vestigo:Performance:MaxCounterPaths`.
+
+`get_storage_topology` reports physical disks (bus type, media, 512e versus 4K native, health, reliability counters) and disks/volumes from `ROOT\Microsoft\Windows\Storage`, plus CIMV2 adapter/driver names.
+
+`list_filesystem_minifilters` lists Filter Manager minifilters, altitudes, frame IDs, and attached volume instances.
+
+`get_vm_environment` reports hypervisor presence and vendor, vCPU/NUMA topology, paravirt versus emulated storage/NIC/balloon devices, system timer resolution, and VBS/HVCI.
+
+`probe_scheduler_jitter` measures timer wake-drift and tight-spin preemption gaps with `QueryPerformanceCounter` and returns percentiles plus spike counts over 2 ms, 10 ms, and 50 ms.
+
+`sample_process_metrics` takes a bounded delta snapshot of CPU, I/O bytes and ops, page faults, working set, private bytes, handle/thread/GDI/USER counts, priority class, and EcoQoS. PID 0 and 4 are omitted.
+
+`inspect_process_threads` returns per-thread lifetime CPU milliseconds, priority, state, kernel wait reason, and Wait Chain Traversal nodes for one pid. Protected processes are refused.
+
+`get_memory_pressure` returns physical/available RAM, commit charge versus limit, pagefiles, Memory Compression working set, balloon footprint when present, kernel pools, and optional top pool tags.
+
+`capture_kernel_latency_summary` stays off until `Vestigo:Performance:AllowKernelTrace` is true. It starts a bounded `Vestigo-Perf-*` kernel session in an isolated worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, and hard-fault summaries with loss and truncation flags. It does not return raw events.
+
+`record_wpr_trace` stays off until `Vestigo:Performance:AllowRawEtlCapture` is true. It runs an allow-listed `wpr.exe` profile into a new `.etl` in a Write root as a job. When finished, the result includes size, SHA-256, and a download link (a one-time ticket when `ApiTokens` is set) when that root also has Read access. With `wait=0`, the job output later includes those fields and the download URL. `stop_wpr_trace` flushes the file; `cancel_wpr_trace` discards a Vestigo-owned session and returns `wpr_not_running` when none exists.
+
+`analyze_etl_performance` runs the same kernel aggregator against an existing `.etl` in a Read root. The file must be no larger than `MaxRawEtlBytes`.
+
+`probe_storage_latency` stays off until `Vestigo:Performance:AllowStorageProbes` is true. It writes a temporary file in a Write-root directory and compares buffered, unbuffered write-through, `FlushFileBuffers`, and create/close metadata latency.
+
 ## External plugin tools
 
 Trusted external modules can contribute MCP tool classes to the existing /mcp endpoint. The separately published example exposes example_plugin_echo through an injected private service. It is absent from clean installations and the built-in generated catalog. Module activation, resolved tool-name collision checks and authentication use the host pipeline. See [plugins](plugins.md).

@@ -20,6 +20,15 @@ Adds an existing driver service to a device class's upper or lower filter list.
 | `serviceName` | `string` | yes |  | Filter driver service name. |
 | `position` | `string` | yes |  | upper or lower. |
 
+## `analyze_etl_performance`
+
+Analyzes an existing .etl file inside a root with Read access using TraceEvent and returns the same structured kernel latency summary as capture_kernel_latency_summary. The file must be no larger than MaxRawEtlBytes.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | `string` | yes |  | Path of a .etl file in a root with Read access. |
+| `groups` | `string[]` | no | `null` | Focus groups: disk_io, file_io, dpc_isr, scheduler, hard_faults. Empty selects all. |
+
 ## `attach_etw_session`
 
 Attaches read-only to an existing realtime ETW session (not Vestigo-owned) allowed by Vestigo:AttachableSessions and decodes its events live. Read with read_capture; stop_capture only detaches and never stops the session. See get_trace_settings for allowed roots.
@@ -52,6 +61,21 @@ Cancels a pending AutoLogon, interactive-logon, or unlock consent request so the
 Aborts a pending reboot countdown started by reboot_machine or another InitiateShutdown caller. Requires Vestigo:System:AllowReboot. Fails with no_reboot_in_progress when nothing is pending. An immediate reboot that has already started cannot be cancelled. Local machine only.
 
 No parameters.
+
+## `cancel_wpr_trace`
+
+Cancels an active Vestigo-owned WPR recording without keeping a usable .etl file.
+
+No parameters.
+
+## `capture_kernel_latency_summary`
+
+Runs a bounded kernel ETW capture in an isolated Vestigo-Perf-* worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, and hard-fault summaries. Requires Vestigo:Performance:AllowKernelTrace. Does not return raw events.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `groups` | `string[]` | no | `null` | Focus groups: disk_io, file_io, dpc_isr, scheduler, hard_faults. Empty selects all. |
+| `durationSeconds` | `int` | no | `10` | Capture window in seconds. |
 
 ## `capture_process_dump`
 
@@ -501,6 +525,15 @@ Returns one Windows logon session, including token elevation, local Administrato
 | `sessionId` | `int` | yes |  | WTS session id from list_logon_sessions. |
 | `includeClientAddresses` | `bool` | no | `false` | Include client name and address. Default false. These values are not written to the log. |
 
+## `get_memory_pressure`
+
+Returns physical and available RAM, commit charge versus limit, pagefile usage, Memory Compression working set, VM balloon footprint when present, kernel paged/non-paged pool, and optional top kernel pool tags.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `includePoolTags` | `bool` | no | `false` | Include top kernel pool-tag consumers. |
+| `poolTagLimit` | `int` | no | `16` | Maximum pool tags to return (1-64). |
+
 ## `get_power_state`
 
 Returns AC line status (online, offline, or unknown), whether a battery is present, its percent, whether it is charging (separate from AC status), remaining seconds, the active scheme GUID and name, approximate UTC last sleep and wake times, and platform capabilities. A battery that is absent leaves the battery fields null. Charging can be true while AC status is offline. Last sleep and wake are UTC now minus the interrupt-time counters, so a clock change moves them. fastStartupSupported is a capability, not the HiberbootEnabled configuration from get_boot_state. A failed probe is a null field. There is no write.
@@ -576,6 +609,12 @@ Returns the active scheme's AC and DC lid-close action (doNothing, sleep, hibern
 
 No parameters.
 
+## `get_storage_topology`
+
+Returns physical disks, bus type, logical versus physical sector size (512e vs 4K native), partition style, health, and reliability counters from ROOT\Microsoft\Windows\Storage, plus CIMV2 adapter/driver names.
+
+No parameters.
+
 ## `get_system_info`
 
 Returns the host Windows name, edition, display version (for example 24H2), version string, major/minor/build/UBR, whether it is Windows 11 or Server, whether the install was in-place upgraded, OS and processor bitness, ARM64, UAC disabled, and the machine name. One failed probe becomes a null field.
@@ -636,6 +675,12 @@ Reports whether Vestigo can create a temporary virtual display. canCreate false 
 
 No parameters.
 
+## `get_vm_environment`
+
+Reports hypervisor presence and vendor, vCPU/NUMA topology, paravirt versus emulated storage/NIC/balloon devices, system timer resolution, and VBS/HVCI state.
+
+No parameters.
+
 ## `get_window_event_capture`
 
 Returns the state, counts, dropped events, truncation, and whether new windows or child processes are included.
@@ -691,6 +736,15 @@ Reads the foreground window and the cursor position on the input desktop. deskto
 | --- | --- | --- | --- | --- |
 | `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Omit to read the console user's current input desktop from winsta0\default. |
 | `elevated` | `bool` | no | `false` | Use the elevated token. |
+
+## `inspect_process_threads`
+
+Returns per-thread CPU, priority, state, kernel wait reason, and Wait Chain Traversal nodes for one pid. PID 0, PID 4, the Vestigo service, and other protected processes are refused.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `pid` | `int` | yes |  | Target process id. |
+| `expectedStartTime` | `DateTimeOffset?` | no | `null` | Optional process start time used to reject pid reuse. |
 
 ## `inspect_screen`
 
@@ -886,6 +940,12 @@ Lists Windows event log channels with record count and enabled state. Channels t
 | --- | --- | --- | --- | --- |
 | `nameContains` | `string` | no | `null` | Only channels whose name contains this text (case-insensitive). |
 | `includeCounts` | `bool` | no | `true` | Include record counts. Disable for a faster listing. |
+
+## `list_filesystem_minifilters`
+
+Lists attached filesystem minifilters with altitudes, frame IDs, and volume instances. Use this to identify AV, EDR, sync, or cloud-filter drivers such as WdFilter or cldflt.
+
+No parameters.
 
 ## `list_firewall_rules`
 
@@ -1171,6 +1231,24 @@ Observes whether frames arrive for one display in the console user's session. ba
 | `backend` | `string` | no | `dxgi` | 'dxgi' or 'wgc'. Only dxgi is implemented. |
 | `durationMs` | `int` | no | `1000` | How long to wait for frames, in milliseconds. Capped by Vestigo:Diagnostics:MaxProbeDuration. |
 
+## `probe_scheduler_jitter`
+
+Measures timer wake-drift and tight-spin preemption gaps with QueryPerformanceCounter. Returns latency percentiles and spike counts over 2 ms, 10 ms, and 50 ms. Duration is clamped by MaxSampleDuration.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `durationSeconds` | `int` | no | `5` | Probe window in seconds. |
+
+## `probe_storage_latency`
+
+Creates a temporary probe file in a directory with Write access and compares buffered, unbuffered write-through, FlushFileBuffers, and create/close metadata latency. Requires Vestigo:Performance:AllowStorageProbes. The probe file is deleted afterwards.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `directory` | `string` | yes |  | Existing directory in a root with Write access. |
+| `fileBytes` | `long` | no | `4194304` | Temporary file size in bytes. |
+| `durationSeconds` | `int` | no | `3` | Per-mode window in seconds. |
+
 ## `query_event_log`
 
 Queries a Windows event log channel or an .evtx file under a root with Read access. Use the structured filters or a raw XPath, not both. Results are capped by Vestigo:EventLog:MaxEvents. Messages come from the installed publisher and are null when it is missing.
@@ -1281,6 +1359,17 @@ Restarts this machine with InitiateShutdown SHUTDOWN_RESTART. Requires Vestigo:S
 | `message` | `string` | no | `null` | Countdown text shown to logged-on users. At most 512 characters. No control characters. |
 | `planned` | `bool` | no | `true` | Mark the shutdown reason as planned. Default true. |
 | `dryRun` | `bool` | no | `false` | Return the planned reboot without calling Windows. |
+
+## `record_wpr_trace`
+
+Starts a bounded WPR recording job that writes a .etl file into a root with Write access. Requires Vestigo:Performance:AllowRawEtlCapture. Profiles are GeneralProfile, CPU, DiskIO, FileIO, Minifilter, Network, or Heap. When the job has finished, the result includes size, SHA-256, and a download link (a one-time ticket when ApiTokens is set) when the output root also has Read access. wait > 0 waits that many seconds.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `output` | `string` | yes |  | New .etl path in a root with Write access. |
+| `profile` | `string` | no | `GeneralProfile` | Allow-listed WPR profile. |
+| `durationSeconds` | `int` | no | `15` | Recording window in seconds. |
+| `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns the job immediately. |
 
 ## `remove_class_filter`
 
@@ -1423,6 +1512,28 @@ Starts a task now. It runs as the task's own principal (often SYSTEM), not as th
 | `path` | `string` | yes |  | Task path such as \Vendor\Nightly. |
 | `arguments` | `string[]` | no | `null` | Optional parameters passed to the task's actions (replace $(Arg0), $(Arg1), ...). |
 | `wait` | `int` | no | `0` | Seconds to wait (0 to 300) before returning. 0 returns immediately. |
+
+## `sample_performance_counters`
+
+Samples English PDH counters over a bounded window and returns min/avg/p50/p95/p99/max per counter. preset is overview, storage, cpu, memory, network, or hypervisor. paths may add extra English PDH paths. Duration is clamped by Vestigo:Performance:MaxSampleDuration. Interval is at least MinSampleIntervalMilliseconds.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `preset` | `string` | no | `overview` | Curated preset: overview, storage, cpu, memory, network, or hypervisor. |
+| `paths` | `string[]` | no | `null` | Optional extra English PDH paths, for example \\Processor(_Total)\\% DPC Time. |
+| `durationSeconds` | `int` | no | `5` | Sampling window in seconds. |
+| `intervalMs` | `int` | no | `1000` | Sampling interval in milliseconds. |
+
+## `sample_process_metrics`
+
+Takes a bounded delta snapshot of process CPU, disk/I/O bytes and ops, page faults, working set, private bytes, handle/thread/GDI/USER counts, priority class, and EcoQoS/Efficiency Mode. PID 0 and 4 are omitted.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `durationSeconds` | `int` | no | `2` | Sampling window in seconds. |
+| `pid` | `int?` | no | `null` | Optional process id. Omit to rank the busiest processes. |
+| `name` | `string` | no | `null` | Optional case-insensitive process-name substring. |
+| `limit` | `int` | no | `20` | Maximum processes to return. |
 
 ## `scan_etl_metadata`
 
@@ -1719,6 +1830,12 @@ Stops a window-event capture and unhooks its helper. Already-stopped captures re
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `id` | `string` | yes |  | Capture id. |
+
+## `stop_wpr_trace`
+
+Stops an active Vestigo-owned WPR recording and flushes the .etl file.
+
+No parameters.
 
 ## `tail_text_file`
 

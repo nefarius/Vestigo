@@ -7,6 +7,7 @@ using Vestigo.Desktop;
 using Vestigo.Devices;
 using Vestigo.Diagnostics;
 using Vestigo.Input;
+using Vestigo.Performance;
 using Vestigo.RegistryProbe;
 using Vestigo.ScheduledTasks;
 using Vestigo.Services;
@@ -127,6 +128,8 @@ public sealed class VestigoOptions
     public DesktopOptions Desktop { get; set; } = new();
 
     public DiagnosticsOptions Diagnostics { get; set; } = new();
+
+    public PerformanceOptions Performance { get; set; } = new();
 
     public InputOptions Input { get; set; } = new();
 
@@ -339,6 +342,7 @@ public sealed class VestigoOptions
         Audio.Validate();
         Desktop.Validate();
         Diagnostics.Validate();
+        Performance.Validate();
         Input.Validate();
 
         if (MaxReadWait < TimeSpan.Zero || MaxReadWait > TimeSpan.FromMinutes(2))

@@ -31,6 +31,13 @@ if (args.Length > 0 && string.Equals(args[0], Vestigo.Etws.PresentationWorker.Fl
     return;
 }
 
+// Kernel ETW capture runs in this child so a native TraceEvent fault cannot terminate the service.
+if (args.Length > 0 && string.Equals(args[0], Vestigo.Performance.KernelEtwWorker.Flag, StringComparison.Ordinal))
+{
+    Environment.ExitCode = Vestigo.Performance.KernelEtwWorker.Run(args);
+    return;
+}
+
 // Session helper: started by the service inside the console user's session; must not boot the web host.
 if (SessionHelper.IsInvocation(args))
 {

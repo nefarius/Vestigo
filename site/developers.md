@@ -7,7 +7,7 @@ description: Driver and application workflows on a Vestigo lab PC.
 
 Use the local `/config` page on the service machine to edit modules, roots and gates, save, and restart the Windows service. For `dotnet run`, restart the process manually. This page exposes credentials and privileged settings to local users without a token; never proxy it or its Blazor transport.
 
-Point an MCP client at a lab PC and let the agent do the install, capture, and attach loop. Enable [Devices](features.md), [Diagnostics](features.md), [Debug output](features.md), [Processes](features.md), and [Remote debugger](features.md) on that machine, and keep a token on `/mcp`. The [security model](security.md) is the other half of this page.
+Point an MCP client at a lab PC and let the agent do the install, capture, and attach loop. Enable [Devices](features.md), [Diagnostics](features.md), [Performance](features.md), [Debug output](features.md), [Processes](features.md), and [Remote debugger](features.md) on that machine, and keep a token on `/mcp`. The [security model](security.md) is the other half of this page.
 
 ## Install a driver
 
@@ -48,7 +48,7 @@ for WUA inventory/history, bounded failure evidence, log access and job limits.
 3. Loop on `read_capture` with `waitSeconds` greater than zero. Pass the returned `NextSequence` each time. Stop when `Completed` is true.
 4. `stop_capture` cancels the reader and disposes the Vestigo-owned session.
 
-There is no server push. Vestigo decodes into a spool; it does not record a raw ETL. `convert_etl` is the offline path when you already have a file. A remote agent can resolve PDBs from an installed binary, the local symbol cache, a configured symbol server, or a file uploaded into the built-in `traces` folder.
+There is no server push. The Trace module decodes into a spool; it does not record a raw ETL. `convert_etl` is the offline path when you already have a file. The opt-in Performance module can write a gated WPR `.etl`. A remote agent can resolve PDBs from an installed binary, the local symbol cache, a configured symbol server, or a file uploaded into the built-in `traces` folder.
 
 ## Read debug output
 
