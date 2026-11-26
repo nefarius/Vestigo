@@ -118,7 +118,7 @@ public class InstallerHandoffTests
         AssertRule(port.Firewall, 7000);
         AssertKept(explicitDefaultPort, "0.0.0.0", 5098, Token);
         AssertRule(explicitDefaultPort.Firewall, 5098);
-        AssertKept(widen, "0.0.0.0", 6000, Token);
+        AssertKept(widen, "::", 6000, Token);
         AssertRule(widen.Firewall, 6000);
         AssertKept(keepLan, "192.168.1.5", 6000, Token);
         AssertRule(keepLan.Firewall, 6000);
@@ -231,7 +231,7 @@ public class InstallerHandoffTests
     {
         Handoff run = Execute(null, isUpgrade: false, isInstalled: false, interactive: true, settingsProtected: false);
 
-        Assert.Equal("0.0.0.0", ListenSettings.ReadExisting(run.Merged)!.Address);
+        Assert.Equal("::", ListenSettings.ReadExisting(run.Merged)!.Address);
         Assert.Equal(5098, run.Resolved.Port);
         Assert.Equal(ListenSettings.AuthToken, run.Resolved.AuthMode);
         Assert.Equal(43, run.Resolved.Token.Length);

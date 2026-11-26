@@ -46,7 +46,7 @@ Power is on by default and read-only. `get_power_state` reports AC, battery, the
 3. Open `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. After a default MSI install this file contains a generated `ApiTokens` entry; copy that token. `dotnet run` stays anonymous until you add tokens.
 4. Point an MCP client at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is non-empty, send `Authorization: Bearer <token>`. Opening `http://127.0.0.1:5098/` in a browser shows the same connection instructions.
 
-The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopback still works on the same machine. Binding beyond loopback without tokens logs a startup warning. Traffic is plain HTTP; use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine.
+The default MSI listen mode is any address with a token (`[::]:5098`, dual-stack IPv4 and IPv6). Loopback still works on the same machine. Binding beyond loopback without tokens logs a startup warning. Traffic is plain HTTP; use a trusted network or a TLS-terminating proxy when the server is reachable beyond the machine.
 
 Installed MSI needs Windows 10 or later (x64; Windows 11 ARM64 through x64 emulation), the x64 .NET Runtime 10.0 and the x64 ASP.NET Core Runtime 10.0 (compatible 10.0.x patches; the highest Microsoft.NETCore.App patch must be at least the highest Microsoft.AspNetCore.App patch; the ASP.NET Core 10.0 Hosting Bundle also satisfies this; on ARM64 these are the x64 runtimes under `%ProgramFiles%\dotnet\x64`), and an elevated service account for realtime ETW sessions and most mutating tools. When either runtime is missing, the installer stops and names that requirement.
 

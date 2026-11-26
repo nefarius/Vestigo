@@ -24,7 +24,7 @@ File, log, event-log, process, and device paths, and `take_screenshot`'s `saveTo
 
 ## Network exposure
 
-`ListenAddress` accepts any IP address, including `0.0.0.0` and `::`. Vestigo does not require a token, because a localhost-only install without one is a supported setup. The risk grows when the address is not loopback and `ApiTokens` is empty: anyone who can reach the port can use every enabled module, including captures, files, services, environment changes, and any opt-in administrator-equivalent tools. For that reason:
+`ListenAddress` accepts any IP address, including `0.0.0.0` (IPv4 only) and `::` (dual-stack IPv4 and IPv6, falling back to `0.0.0.0` with a startup warning when IPv6 is disabled on the host). Fresh MSI installs in any-address mode write `::`, while upgrades keep an existing `0.0.0.0`. Vestigo does not require a token, because a localhost-only install without one is a supported setup. The risk grows when the address is not loopback and `ApiTokens` is empty: anyone who can reach the port can use every enabled module, including captures, files, services, environment changes, and any opt-in administrator-equivalent tools. For that reason:
 
 - Configure `ApiTokens` (strongly recommended) whenever `ListenAddress` is not loopback. Use long random values, for example 32 random bytes encoded as base64url.
 - At startup Vestigo logs a prominent `SECURITY WARNING` when the address is non-loopback and `ApiTokens` is empty. The warning never contains token values.

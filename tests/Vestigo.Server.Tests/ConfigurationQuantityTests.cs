@@ -25,8 +25,18 @@ public class ConfigurationQuantityTests
     }
 
     [Fact]
+    public void ListenAddressExplainsDualStackAndLoopbackValues()
+    {
+        string? hint = ConfigurationFieldMetadata.BundledExecutableHint("ListenAddress");
+        Assert.Contains("::", hint);
+        Assert.Contains("0.0.0.0", hint);
+        Assert.Contains("127.0.0.1", hint);
+        Assert.Contains("::1", hint);
+    }
+
+    [Fact]
     public void OtherFieldsDoNotUseTheBundledToolHint() =>
-        Assert.Null(ConfigurationFieldMetadata.BundledExecutableHint("ListenAddress"));
+        Assert.Null(ConfigurationFieldMetadata.BundledExecutableHint("ListenPort"));
 
     [Theory]
     [InlineData("None", "None")]

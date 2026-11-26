@@ -186,7 +186,7 @@ public static class ModuleRegistry
         }
 
         string reach = options.IsBoundBeyondLoopback
-            ? $"The server listens on {options.ListenAddress}:{options.ListenPort}, so anyone who can reach this port on the network"
+            ? $"The server listens on {options.FormattedListenEndpoint}, so anyone who can reach this port on the network"
             : "Any local client";
         if (capabilities.Count == 0)
         {

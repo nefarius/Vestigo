@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 
 using Vestigo.Configuration;
@@ -39,12 +41,13 @@ public class SecurityAndOptionsTests
     }
 
     [Theory]
-    [InlineData("0.0.0.0", false, true)]
-    [InlineData("::", false, true)]
-    [InlineData("0.0.0.0", true, false)]
-    [InlineData("127.0.0.1", false, false)]
-    [InlineData("::1", false, false)]
-    public void Options_WarnOnlyWhenExposedWithoutTokens(string address, bool withToken, bool expectWarning)
+    [InlineData("0.0.0.0", false, true, "0.0.0.0:5098")]
+    [InlineData("::", false, true, "[::]:5098")]
+    [InlineData("0.0.0.0", true, false, "")]
+    [InlineData("::", true, false, "")]
+    [InlineData("127.0.0.1", false, false, "")]
+    [InlineData("::1", false, false, "")]
+    public void Options_WarnOnlyWhenExposedWithoutTokens(string address, bool withToken, bool expectWarning, string expectedEndpoint)
     {
         VestigoOptions options = new() { ListenAddress = address };
         if (withToken)
@@ -57,15 +60,17 @@ public class SecurityAndOptionsTests
         Assert.Equal(expectWarning, warning is not null);
         if (warning is not null)
         {
-            Assert.Contains(address, warning);
+            Assert.Contains(expectedEndpoint, warning);
             Assert.DoesNotContain("secret-value", warning);
         }
     }
 
     [Theory]
-    [InlineData("0.0.0.0", false, true, "anyone who can reach")]
+    [InlineData("0.0.0.0", false, true, "0.0.0.0:5098")]
+    [InlineData("::", false, true, "[::]:5098")]
     [InlineData("127.0.0.1", false, true, "Any local client")]
     [InlineData("0.0.0.0", true, false, "")]
+    [InlineData("::", true, false, "")]
     public void PrivilegedModules_WarnOnlyWithoutTokens(string address, bool withToken, bool expectWarning, string fragment)
     {
         VestigoOptions options = new()
@@ -165,8 +170,65 @@ public class SecurityAndOptionsTests
     [Fact]
     public void ListenUrl_BracketsIpv6AndKeepsIpv4()
     {
+        Assert.Equal("http://[::]:5098", ListenEndpoint.Url("::", 5098));
         Assert.Equal("http://[::1]:5098", ListenEndpoint.Url("::1", 5098));
         Assert.Equal("http://127.0.0.1:5098", ListenEndpoint.Url("127.0.0.1", 5098));
+        Assert.Equal("http://0.0.0.0:5098", ListenEndpoint.Url("0.0.0.0", 5098));
+    }
+
+    [Fact]
+    public void ListenEndpoint_ResolveFallsBackOnlyForWildcardIpv6WhenIpv6IsUnavailable()
+    {
+        ListenBinding dualStack = ListenEndpoint.Resolve("::", 5098, osSupportsIPv6: true);
+        Assert.Equal("http://[::]:5098", dualStack.Url);
+        Assert.Null(dualStack.Warning);
+
+        ListenBinding fallback = ListenEndpoint.Resolve("::", 5098, osSupportsIPv6: false);
+        Assert.Equal("http://0.0.0.0:5098", fallback.Url);
+        Assert.NotNull(fallback.Warning);
+        Assert.Contains("IPv6", fallback.Warning, StringComparison.Ordinal);
+        Assert.Contains("0.0.0.0:5098", fallback.Warning, StringComparison.Ordinal);
+
+        ListenBinding ipv4Only = ListenEndpoint.Resolve("0.0.0.0", 5098, osSupportsIPv6: false);
+        Assert.Equal("http://0.0.0.0:5098", ipv4Only.Url);
+        Assert.Null(ipv4Only.Warning);
+
+        ListenBinding explicitIpv6 = ListenEndpoint.Resolve("::1", 5098, osSupportsIPv6: false);
+        Assert.Equal("http://[::1]:5098", explicitIpv6.Url);
+        Assert.Null(explicitIpv6.Warning);
+    }
+
+    [Fact]
+    public async Task Kestrel_WildcardIpv6AcceptsBothIpv4AndIpv6LoopbackAndLocalConfigAccess()
+    {
+        if (!System.Net.Sockets.Socket.OSSupportsIPv6)
+        {
+            return;
+        }
+
+        Microsoft.AspNetCore.Builder.WebApplicationBuilder builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls(ListenEndpoint.Resolve("::", 0, osSupportsIPv6: true).Url);
+        await using Microsoft.AspNetCore.Builder.WebApplication app = builder.Build();
+        app.UseMiddleware<Vestigo.Hosting.LocalConfigurationAccess>();
+        app.MapGet("/ping", () => "pong");
+        app.MapGet("/config", () => "ok");
+        await app.StartAsync(TestContext.Current.CancellationToken);
+
+        try
+        {
+            string address = Assert.Single(app.Urls);
+            int port = new Uri(address).Port;
+            using HttpClient client = new();
+
+            Assert.Equal("pong", await client.GetStringAsync($"http://127.0.0.1:{port}/ping", TestContext.Current.CancellationToken));
+            Assert.Equal("pong", await client.GetStringAsync($"http://[::1]:{port}/ping", TestContext.Current.CancellationToken));
+            Assert.Equal("ok", await client.GetStringAsync($"http://127.0.0.1:{port}/config", TestContext.Current.CancellationToken));
+            Assert.Equal("ok", await client.GetStringAsync($"http://[::1]:{port}/config", TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await app.StopAsync(TestContext.Current.CancellationToken);
+        }
     }
 
     [Fact]

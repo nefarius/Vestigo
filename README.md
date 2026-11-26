@@ -25,7 +25,7 @@ A remote agent uses Vestigo to convert WPP traces, capture ETW, move files, and 
 3. After a default MSI install, copy the generated `ApiTokens` entry from `%ProgramData%\Nefarius Software Solutions\Vestigo\appsettings.json`. The same settings can be edited at `http://localhost:5098/config`. `dotnet run` stays anonymous until you add tokens.
 4. Point an MCP client at `http://127.0.0.1:5098/mcp`. When `ApiTokens` is non-empty, send `Authorization: Bearer <token>`. Opening `http://127.0.0.1:5098/` shows the same connection instructions.
 
-The default MSI listen mode is any address with a token (`0.0.0.0:5098`). Loopback still works on the same machine. `/health` is always anonymous. Binding beyond loopback without tokens logs a startup warning. File-transfer tools return short-lived `/files` URLs, and `take_screenshot` with `share: true` returns its own preview URL. Endpoint and ticket details are in [server/README.md](server/README.md). Listen modes, the firewall rule, and silent install are in [Windows service](docs/windows-service.md).
+The default MSI listen mode is any address with a token (`[::]:5098`, dual-stack IPv4 and IPv6). Loopback still works on the same machine. `/health` is always anonymous. Binding beyond loopback without tokens logs a startup warning. File-transfer tools return short-lived `/files` URLs, and `take_screenshot` with `share: true` returns its own preview URL. Endpoint and ticket details are in [server/README.md](server/README.md). Listen modes, the firewall rule, and silent install are in [Windows service](docs/windows-service.md).
 
 ## Features
 

@@ -69,7 +69,8 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 }
 
 ListenEndpoint.RejectConflictingKestrelEndpoints(builder.Configuration);
-builder.WebHost.UseUrls(ListenEndpoint.Url(vestigo.ListenAddress, vestigo.ListenPort));
+ListenBinding listenBinding = ListenEndpoint.Resolve(vestigo.ListenAddress, vestigo.ListenPort, System.Net.Sockets.Socket.OSSupportsIPv6);
+builder.WebHost.UseUrls(listenBinding.Url);
 builder.Services.AddSingleton(vestigo);
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddMudServices();
@@ -172,6 +173,11 @@ if (volumeRoots.Count > 0)
         string.Join(", ", volumeRoots.Select(root => $"{root.Name}={root.Path}")));
 }
 
+if (listenBinding.Warning is { } listenWarning)
+{
+    app.Logger.LogWarning("{ListenBindingWarning}", listenWarning);
+}
+
 if (vestigo.GetExposureWarning() is { } exposureWarning)
 {
     app.Logger.LogWarning("{ExposureWarning}", exposureWarning);
@@ -223,6 +229,8 @@ await app.RunAsync();
 /// <summary>Entry point marker used by the test host.</summary>
 public partial class Program;
 
+internal readonly record struct ListenBinding(string Url, string? Warning);
+
 internal static class ListenEndpoint
 {
     public static string Url(string address, int port)
@@ -232,6 +240,24 @@ internal static class ListenEndpoint
             ? $"[{ip}]"
             : ip.ToString();
         return $"http://{host}:{port}";
+    }
+
+    /// <summary>
+    ///     Resolves the Kestrel bind URL. Binding <c>::</c> uses dual-stack IPv6+IPv4 on Kestrel and falls back to
+    ///     <c>0.0.0.0</c> with a warning when the host has IPv6 disabled. Explicit IPv6 addresses such as <c>::1</c>
+    ///     keep their configured address without falling back.
+    /// </summary>
+    public static ListenBinding Resolve(string address, int port, bool osSupportsIPv6)
+    {
+        System.Net.IPAddress ip = System.Net.IPAddress.Parse(address);
+        if (ip.Equals(System.Net.IPAddress.IPv6Any) && !osSupportsIPv6)
+        {
+            return new ListenBinding(
+                $"http://0.0.0.0:{port}",
+                $"Vestigo:ListenAddress is '::', but IPv6 is not available on this host; falling back to 0.0.0.0:{port} (IPv4 only).");
+        }
+
+        return new ListenBinding(Url(address, port), null);
     }
 
     public static void RejectConflictingKestrelEndpoints(Microsoft.Extensions.Configuration.IConfiguration configuration)

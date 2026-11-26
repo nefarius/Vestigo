@@ -288,7 +288,7 @@ public class InstallerSettingsTests
 
         ExistingSettings? roundTrip = ListenSettings.ReadExisting(json);
         Assert.NotNull(roundTrip);
-        Assert.Equal("0.0.0.0", roundTrip.Address);
+        Assert.Equal("::", roundTrip.Address);
         Assert.Equal(5099, roundTrip.Port);
         Assert.Equal([LongToken], roundTrip.Tokens);
     }
@@ -323,7 +323,7 @@ public class InstallerSettingsTests
             Flatten(merged, ["Vestigo:ListenAddress", "Vestigo:ListenPort", "Vestigo:ApiTokens"]));
         ExistingSettings? read = ListenSettings.ReadExisting(merged);
         Assert.NotNull(read);
-        Assert.Equal("0.0.0.0", read.Address);
+        Assert.Equal("::", read.Address);
         Assert.Equal(6000, read.Port);
         Assert.Equal([LongToken], read.Tokens);
         Assert.Contains("1.5e3", merged);
@@ -387,7 +387,7 @@ public class InstallerSettingsTests
         string merged = ListenSettings.Merge(existing, settings);
 
         Assert.Contains("\"vestigo\"", merged);
-        Assert.Contains("\"listenaddress\": \"0.0.0.0\"", merged);
+        Assert.Contains("\"listenaddress\": \"::\"", merged);
         Assert.Contains("\"listenport\": 6000", merged);
         Assert.Contains("\"apitokens\"", merged);
         Assert.DoesNotContain("\"Vestigo\"", merged);
@@ -395,7 +395,7 @@ public class InstallerSettingsTests
         Assert.DoesNotContain("\"ListenPort\"", merged);
         Assert.DoesNotContain("\"ApiTokens\"", merged);
         ExistingSettings read = ListenSettings.ReadExisting(merged)!;
-        Assert.Equal("0.0.0.0", read.Address);
+        Assert.Equal("::", read.Address);
         Assert.Equal(6000, read.Port);
         Assert.Equal(["replacement-token-xx"], read.Tokens);
     }
@@ -437,7 +437,7 @@ public class InstallerSettingsTests
         Assert.StartsWith("{\n  \"Vestigo\": {", merged);
         Assert.Equal(merged, Encoding.UTF8.GetString(new UTF8Encoding(false).GetBytes(merged)));
         using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(merged);
-        Assert.Equal("0.0.0.0", document.RootElement.GetProperty("Vestigo").GetProperty("ListenAddress").GetString());
+        Assert.Equal("::", document.RootElement.GetProperty("Vestigo").GetProperty("ListenAddress").GetString());
         Assert.Equal(0, document.RootElement.GetProperty("Vestigo").GetProperty("ApiTokens").GetArrayLength());
     }
 
