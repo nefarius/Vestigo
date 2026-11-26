@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -414,6 +415,89 @@ public class RepositoryBoundaryTests
         Assert.Contains("Benjamin H\\u246?glinger-Stelzer", rtf, StringComparison.Ordinal);
         Assert.Contains("THE SOFTWARE IS PROVIDED \"AS IS\"", license, StringComparison.Ordinal);
         Assert.Contains("THE SOFTWARE IS PROVIDED \"AS IS\"", rtf, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InstallerBrandingAssets_HaveExpectedWiXFormatsAndWiring()
+    {
+        string root = FindRepositoryRoot();
+        string assetsDir = Path.Combine(root, "installer", "Assets");
+
+        AssertUncompressed24BitBmp(Path.Combine(assetsDir, "banner.bmp"), expectedWidth: 493, expectedHeight: 58);
+        AssertUncompressed24BitBmp(Path.Combine(assetsDir, "dialog.bmp"), expectedWidth: 493, expectedHeight: 312);
+        AssertValidMultiSizeIco(Path.Combine(assetsDir, "vestigo.ico"), [16, 32, 48, 256]);
+
+        string program = File.ReadAllText(Path.Combine(root, "installer", "Program.cs"));
+        Assert.Contains("BannerImage = bannerPath", program, StringComparison.Ordinal);
+        Assert.Contains("BackgroundImage = dialogPath", program, StringComparison.Ordinal);
+        Assert.Contains("ControlPanelInfo.ProductIcon = productIconPath", program, StringComparison.Ordinal);
+        Assert.Contains("banner.bmp", program, StringComparison.Ordinal);
+        Assert.Contains("dialog.bmp", program, StringComparison.Ordinal);
+        Assert.Contains("vestigo.ico", program, StringComparison.Ordinal);
+
+        string csproj = File.ReadAllText(Path.Combine(root, "installer", "Vestigo.Installer.csproj"));
+        Assert.Contains(@"Assets\banner.bmp", csproj, StringComparison.Ordinal);
+        Assert.Contains(@"Assets\dialog.bmp", csproj, StringComparison.Ordinal);
+        Assert.Contains(@"Assets\vestigo.ico", csproj, StringComparison.Ordinal);
+    }
+
+    private static void AssertUncompressed24BitBmp(string path, int expectedWidth, int expectedHeight)
+    {
+        Assert.True(File.Exists(path), $"Expected BMP asset at '{path}'.");
+        byte[] bytes = File.ReadAllBytes(path);
+        Assert.True(bytes.Length >= 54, $"BMP '{path}' is truncated ({bytes.Length} bytes).");
+        Assert.Equal((byte)'B', bytes[0]);
+        Assert.Equal((byte)'M', bytes[1]);
+
+        int dibHeaderSize = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(14, 4));
+        int width = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(18, 4));
+        int height = Math.Abs(BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(22, 4)));
+        ushort planes = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(26, 2));
+        ushort bitsPerPixel = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(28, 2));
+        uint compression = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(30, 4));
+
+        Assert.True(dibHeaderSize >= 40, $"Unexpected DIB header size {dibHeaderSize} in '{path}'.");
+        Assert.Equal(expectedWidth, width);
+        Assert.Equal(expectedHeight, height);
+        Assert.Equal((ushort)1, planes);
+        Assert.Equal((ushort)24, bitsPerPixel);
+        Assert.Equal(0u, compression);
+    }
+
+    private static void AssertValidMultiSizeIco(string path, int[] requiredSizes)
+    {
+        Assert.True(File.Exists(path), $"Expected ICO asset at '{path}'.");
+        byte[] bytes = File.ReadAllBytes(path);
+        Assert.True(bytes.Length >= 6, $"ICO '{path}' is truncated ({bytes.Length} bytes).");
+
+        ushort reserved = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(0, 2));
+        ushort type = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(2, 2));
+        ushort count = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(4, 2));
+
+        Assert.Equal((ushort)0, reserved);
+        Assert.Equal((ushort)1, type);
+        Assert.True(count >= requiredSizes.Length, $"ICO '{path}' has only {count} image entries.");
+        Assert.True(bytes.Length >= 6 + count * 16, $"ICO '{path}' directory is truncated.");
+
+        HashSet<int> foundSizes = [];
+        for (int i = 0; i < count; i++)
+        {
+            int entryOffset = 6 + i * 16;
+            int width = bytes[entryOffset] == 0 ? 256 : bytes[entryOffset];
+            int height = bytes[entryOffset + 1] == 0 ? 256 : bytes[entryOffset + 1];
+            uint imageBytes = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(entryOffset + 8, 4));
+            uint imageOffset = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(entryOffset + 12, 4));
+
+            Assert.Equal(width, height);
+            Assert.True(imageBytes > 0, $"ICO entry {i} has zero payload length.");
+            Assert.True(imageOffset + imageBytes <= (ulong)bytes.Length, $"ICO entry {i} payload exceeds file bounds.");
+            Assert.True(foundSizes.Add(width), $"ICO '{path}' contains duplicate {width}x{width} entry.");
+        }
+
+        foreach (int size in requiredSizes)
+        {
+            Assert.Contains(size, foundSizes);
+        }
     }
 
     private static string ServerRuntimeConfigPath()
