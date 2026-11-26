@@ -36,6 +36,10 @@ static class Program
     const string UpdaterConfigurationName = "Nefarius_Vestigo_Updater.json";
     const string NoticesName = "THIRD-PARTY-NOTICES.txt";
     const string ActionsPackageName = "Vestigo.Installer.Actions.CA.dll";
+    const string AssetsDirectoryName = "Assets";
+    const string BannerImageName = "banner.bmp";
+    const string DialogImageName = "dialog.bmp";
+    const string ProductIconName = "vestigo.ico";
 
     static int Main(string[] args)
     {
@@ -47,9 +51,27 @@ static class Program
             string licensePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "License.rtf"));
             string updaterConfigurationPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, UpdaterConfigurationName));
             string noticesPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, NoticesName));
+            string bannerPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, AssetsDirectoryName, BannerImageName));
+            string dialogPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, AssetsDirectoryName, DialogImageName));
+            string productIconPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, AssetsDirectoryName, ProductIconName));
             if (!System.IO.File.Exists(licensePath))
             {
                 throw new FileNotFoundException($"License file not found: {licensePath}");
+            }
+
+            if (!System.IO.File.Exists(bannerPath))
+            {
+                throw new FileNotFoundException($"Installer banner bitmap not found: {bannerPath}");
+            }
+
+            if (!System.IO.File.Exists(dialogPath))
+            {
+                throw new FileNotFoundException($"Installer dialog bitmap not found: {dialogPath}");
+            }
+
+            if (!System.IO.File.Exists(productIconPath))
+            {
+                throw new FileNotFoundException($"Installer product icon not found: {productIconPath}");
             }
 
             if (!System.IO.File.Exists(updaterConfigurationPath))
@@ -215,11 +237,14 @@ static class Program
                 Scope = InstallScope.perMachine,
                 UI = WUI.WixUI_FeatureTree,
                 LicenceFile = licensePath,
+                BannerImage = bannerPath,
+                BackgroundImage = dialogPath,
                 Version = version,
                 OutDir = options.OutputDir,
                 OutFileName = "Vestigo-v" + version
             };
             project.ControlPanelInfo.Manufacturer = Manufacturer;
+            project.ControlPanelInfo.ProductIcon = productIconPath;
             project.MajorUpgrade = MajorUpgrade.Default;
             WixExtension.UI.PreferredVersion = "5.0.2";
             AspNetRuntimeCheck.Apply(project);
