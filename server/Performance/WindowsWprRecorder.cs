@@ -139,10 +139,20 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
 
             _status = new WprStatus("running", planned.Value, outputPath, null);
             string instance = WprPlanner.NewInstanceName();
-            NativeResult started = await Run(
-                    WprPlanner.StartArguments(planned.Value!, instance),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            NativeResult started;
+            try
+            {
+                started = await Run(
+                        WprPlanner.StartArguments(planned.Value!, instance),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _ = await CancelAndReleaseAsync(instance).ConfigureAwait(false);
+                throw;
+            }
+
             if (!started.Succeeded)
             {
                 _status = new WprStatus("failed", planned.Value, outputPath, started.Error);
