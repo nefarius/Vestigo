@@ -226,6 +226,16 @@ static class Program
                 {
                     Win64 = true
                 },
+                // Windows Installer keeps ARPPRODUCTICON under Installer\Products only; Settings > Apps and
+                // third-party inventories read DisplayIcon, so point it at the installed executable's icon.
+                new RegKey(
+                    feature,
+                    RegistryHive.LocalMachine,
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\[ProductCode]",
+                    new RegValue("DisplayIcon", "[INSTALLDIR]Vestigo.exe,0") { Win64 = true })
+                {
+                    Win64 = true
+                },
                 .. moduleRegistry
             ];
 

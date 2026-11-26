@@ -14,6 +14,7 @@
     <RollForward>Minor</RollForward>
     <TargetLatestRuntimePatch>false</TargetLatestRuntimePatch>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <ApplicationIcon>..\installer\Assets\vestigo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -58,6 +59,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Hosting\LandingPage.html" />
     <Content Remove="Hosting\LandingPage.html" />
+    <EmbeddedResource Include="..\installer\Assets\vestigo.ico" LogicalName="Vestigo.Hosting.favicon.ico" Link="Hosting\favicon.ico" />
   </ItemGroup>
 
   <!-- MinVer defaults AssemblyVersion to {major}.0.0.0. Stamp the full release so MCP clients see 2.1.0.0, not 2.0.0.0. -->
