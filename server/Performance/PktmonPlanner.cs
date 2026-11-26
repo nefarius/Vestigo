@@ -122,9 +122,9 @@ public static class PktmonPlanner
     public static PacketDropResult Combine(int durationMs, IReadOnlyList<PacketDropCounter> counters, IReadOnlyList<PacketDropCounter> reasons, bool truncated, bool partial, string? error)
     {
         List<PacketDropCounter> all = [.. counters, .. reasons];
-        long dropped = counters.Count > 0
-            ? counters.Sum(item => item.Dropped)
-            : reasons.Sum(item => item.Dropped);
+        long dropped = reasons.Count > 0
+            ? reasons.Sum(item => item.Dropped)
+            : counters.Sum(item => item.Dropped);
         return new PacketDropResult(durationMs, all, dropped, truncated, partial, error);
     }
 

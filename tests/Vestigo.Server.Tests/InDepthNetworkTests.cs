@@ -182,7 +182,8 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.Contains(reasons, item => item.DropReason == "FILTER_DROP" && item.Dropped == 1);
         Assert.Contains(reasons, item => item.DropReason == "INET: transport endpoint was not found" && item.Dropped == 1);
         PacketDropResult combined = PktmonPlanner.Combine(15000, counters, reasons, truncated: false, partial: true, "format failed");
-        Assert.Equal(11, combined.TotalDropped);
+        Assert.Equal(4, combined.TotalDropped);
+        Assert.Equal(11, PktmonPlanner.Combine(15000, counters, [], truncated: false, partial: true, "format failed").TotalDropped);
         Assert.True(combined.Partial);
     }
 
