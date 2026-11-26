@@ -136,7 +136,26 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.True(PktmonPlanner.ShouldConfirmIdle(true, false));
         Assert.False(PktmonPlanner.ShouldConfirmIdle(true, true));
         Assert.False(PktmonPlanner.ShouldConfirmIdle(false, false));
-        Assert.Equal("O''Reilly", NetworkTopologyPlanner.EscapeWqlString("O'Reilly"));
+        Assert.Equal(@"O\'Reilly", NetworkTopologyPlanner.EscapeWqlString("O'Reilly"));
+        Assert.Equal(@"one\\two\'three", NetworkTopologyPlanner.EscapeWqlString(@"one\two'three"));
+        Assert.Equal("Ethernet", NetworkTopologyPlanner.EscapeWqlString("Ethernet"));
+        Assert.Equal(
+            @"C:\state\drop.etl",
+            PktmonPlanner.ParseLogFile(
+                """
+                Logger Parameters:
+                    Logger name:        pktmon
+                    Log file:           C:\state\drop.etl
+                """));
+        Assert.Null(PktmonPlanner.ParseLogFile("Packet Monitor is not running."));
+        Assert.True(PktmonPlanner.ShouldStopOwnedCapture(
+            true,
+            false,
+            PktmonPlanner.ParseLogFile("    Log file name:     C:\\state\\drop.etl"),
+            @"C:\state\drop.etl"));
+        Assert.False(PktmonPlanner.ShouldStopOwnedCapture(true, true, null, @"C:\state\drop.etl"));
+        Assert.False(PktmonPlanner.ShouldStopOwnedCapture(true, false, @"C:\other.etl", @"C:\state\drop.etl"));
+        Assert.False(PktmonPlanner.ShouldStopOwnedCapture(true, false, null, @"C:\state\drop.etl"));
         Assert.Equal("disabled", NetworkTopologyPlanner.TimestampPolicy(0, null));
         Assert.Equal("enabled", NetworkTopologyPlanner.TimestampPolicy(1, "1"));
         Assert.Equal("allowed", NetworkTopologyPlanner.TimestampPolicy(2, null));

@@ -31,13 +31,13 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             bool captureExists = CaptureExists(recorded.EtlPath);
             if (PktmonPlanner.ShouldRecoverStop(true, recorded.EtlPath, captureExists))
             {
-                if (!await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
+                if (!await TryRecoverOwnedCaptureAsync(recorded.EtlPath, cancellationToken).ConfigureAwait(false))
                 {
-                    _logger.LogWarning("Could not stop orphan pktmon drop capture");
+                    _logger.LogWarning("Leaving pktmon checkpoint in place; the active capture is not the saved ETL");
                     return;
                 }
 
-                _logger.LogInformation("Stopped orphan pktmon drop capture");
+                _logger.LogInformation("Recovered leftover pktmon drop capture");
             }
             else if (PktmonPlanner.ShouldConfirmIdle(true, captureExists)
                 && !await ConfirmIdleAsync(cancellationToken).ConfigureAwait(false))
@@ -105,11 +105,11 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                 bool captureExists = CaptureExists(previous.EtlPath);
                 if (PktmonPlanner.ShouldRecoverStop(true, previous.EtlPath, captureExists))
                 {
-                    if (!await StopOwnedAsync(cancellationToken).ConfigureAwait(false))
+                    if (!await TryRecoverOwnedCaptureAsync(previous.EtlPath, cancellationToken).ConfigureAwait(false))
                     {
                         return OperationResult<PacketDropResult>.Fail(
                             "pktmon_busy",
-                            "A previous Vestigo-owned pktmon capture could not be stopped.");
+                            "A previous pktmon session is still active and does not match the saved capture.");
                     }
 
                     TryDeleteCapture(previous.EtlPath);
@@ -258,21 +258,30 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
     }
 
-    private async Task<bool> ConfirmIdleAsync(CancellationToken cancellationToken = default)
+    private async Task<bool> TryRecoverOwnedCaptureAsync(string? etlPath, CancellationToken cancellationToken)
     {
-        using CancellationTokenSource cleanup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cleanup.CancelAfter(CleanupTimeout);
-        NativeResult status;
-        try
+        NativeResult status = await QueryStatusAsync(cancellationToken).ConfigureAwait(false);
+        if (PktmonPlanner.ConfirmsIdle(status.Succeeded, status.Output))
         {
-            status = await Run(PktmonPlanner.StatusArguments(), cleanup.Token).ConfigureAwait(false);
+            return true;
         }
-        catch (OperationCanceledException)
+
+        if (!PktmonPlanner.ShouldStopOwnedCapture(
+                captureExists: true,
+                idle: false,
+                NormalizeCapturePath(PktmonPlanner.ParseLogFile(status.Output)),
+                NormalizeCapturePath(etlPath)))
         {
-            _logger.LogWarning("pktmon status timed out while confirming idle");
+            _logger.LogWarning("pktmon is active with a different capture file: {Output}", status.Output);
             return false;
         }
 
+        return await StopOwnedAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ConfirmIdleAsync(CancellationToken cancellationToken = default)
+    {
+        NativeResult status = await QueryStatusAsync(cancellationToken).ConfigureAwait(false);
         if (PktmonPlanner.IndicatesActive(status.Output))
         {
             _logger.LogWarning("pktmon is active with no owned capture file: {Output}", status.Output);
@@ -280,6 +289,21 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
         }
 
         return PktmonPlanner.ConfirmsIdle(status.Succeeded, status.Output);
+    }
+
+    private async Task<NativeResult> QueryStatusAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource cleanup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cleanup.CancelAfter(CleanupTimeout);
+        try
+        {
+            return await Run(PktmonPlanner.StatusArguments(), cleanup.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("pktmon status timed out");
+            return new NativeResult(-1, string.Empty, "pktmon_failed");
+        }
     }
 
     private async Task<bool> StopOwnedAsync(CancellationToken cancellationToken = default)
@@ -404,6 +428,23 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
 
     private static bool CaptureExists(string? etl) =>
         !string.IsNullOrWhiteSpace(etl) && File.Exists(etl);
+
+    private static string? NormalizeCapturePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path.Trim());
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path.Trim();
+        }
+    }
 
     private static void TryDeleteCapture(string? etl)
     {

@@ -51,5 +51,7 @@ public static class NetworkTopologyPlanner
     }
 
     public static string EscapeWqlString(string value) =>
-        value.Replace("'", "''", StringComparison.Ordinal);
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal);
 }

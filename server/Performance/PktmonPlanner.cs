@@ -69,6 +69,45 @@ public static class PktmonPlanner
     public static bool ShouldConfirmIdle(bool nativeStarted, bool captureExists) =>
         nativeStarted && !captureExists;
 
+    public static bool ShouldStopOwnedCapture(bool captureExists, bool idle, string? statusLogFile, string? etlPath) =>
+        captureExists && !idle && CapturePathMatches(statusLogFile, etlPath);
+
+    public static string? ParseLogFile(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output) || IndicatesIdle(output))
+        {
+            return null;
+        }
+
+        foreach (string raw in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            Match match = Regex.Match(raw.Trim(), @"^Log file(?: name)?\s*:\s*(.+)$", RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            string path = match.Groups[1].Value.Trim().Trim('"');
+            int extra = path.IndexOf(" (", StringComparison.Ordinal);
+            if (extra > 0)
+            {
+                path = path[..extra].Trim();
+            }
+
+            if (path.Length > 0)
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    public static bool CapturePathMatches(string? left, string? right) =>
+        !string.IsNullOrWhiteSpace(left)
+        && !string.IsNullOrWhiteSpace(right)
+        && string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
+
     public static IReadOnlyList<PacketDropCounter> ParseCounters(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
