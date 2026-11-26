@@ -99,6 +99,7 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                         "A previous Vestigo-owned pktmon capture could not be stopped.");
                 }
 
+                TryDeleteCapture(previous.EtlPath);
                 if (!TrySave(null))
                 {
                     return OperationResult<PacketDropResult>.Fail(
@@ -329,6 +330,17 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             _logger.LogWarning(ex, "Could not update the pktmon ownership checkpoint");
             return false;
         }
+    }
+
+    private static void TryDeleteCapture(string? etl)
+    {
+        if (string.IsNullOrWhiteSpace(etl))
+        {
+            return;
+        }
+
+        TryDelete(etl);
+        TryDelete(Path.ChangeExtension(etl, ".txt"));
     }
 
     private static void TryDelete(string path)
