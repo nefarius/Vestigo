@@ -15,8 +15,8 @@ public sealed class KernelLatencyAggregator
     private readonly Dictionary<string, List<double>> _dpc = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<double>> _isr = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, SchedulerAcc> _scheduler = [];
-    private readonly Dictionary<int, string> _waitReasons = [];
     private readonly List<double> _readyDelay = [];
+    private readonly Dictionary<int, List<double>> _readyDelayByPid = [];
     private readonly Dictionary<(int Pid, string File), int> _hardFaults = [];
     private readonly Dictionary<int, NetworkAcc> _network = [];
     private readonly Dictionary<ulong, (string Name, ulong Size)> _images = [];
@@ -97,17 +97,36 @@ public sealed class KernelLatencyAggregator
             return;
         }
 
-        NoteProcess(oldPid, oldName);
-        NoteProcess(newPid, newName);
-        Acc(oldPid).CpuMs += Math.Max(0, cpuMs);
-        SchedulerAcc incoming = Acc(newPid);
-        incoming.BlockedMs += Math.Max(0, blockedMs);
-        incoming.WaitReasons.TryGetValue(waitReason, out (int Count, double Ms) wait);
-        incoming.WaitReasons[waitReason] = (wait.Count + 1, wait.Ms + Math.Max(0, blockedMs));
-        _waitReasons[newPid] = waitReason;
+        if (oldPid != 0)
+        {
+            NoteProcess(oldPid, oldName);
+            Acc(oldPid).CpuMs += Math.Max(0, cpuMs);
+        }
+
+        if (newPid != 0)
+        {
+            NoteProcess(newPid, newName);
+            SchedulerAcc incoming = Acc(newPid);
+            incoming.BlockedMs += Math.Max(0, blockedMs);
+            incoming.WaitReasons.TryGetValue(waitReason, out (int Count, double Ms) wait);
+            incoming.WaitReasons[waitReason] = (wait.Count + 1, wait.Ms + Math.Max(0, blockedMs));
+        }
     }
 
     public void AddReadyDelay(double delayMs) => _readyDelay.Add(Math.Max(0, delayMs));
+
+    public void AddReadyDelay(int pid, string? process, double delayMs)
+    {
+        if (pid == 0)
+        {
+            return;
+        }
+
+        double clamped = Math.Max(0, delayMs);
+        NoteProcess(pid, process);
+        _readyDelay.Add(clamped);
+        Add(_readyDelayByPid, pid, clamped);
+    }
 
     public void AddHardFault(int pid, string? process, string? file)
     {
@@ -162,6 +181,7 @@ public sealed class KernelLatencyAggregator
                 PercentileStats.From(_fileIo.GetValueOrDefault(pair.Key) ?? [])))
             .ToList();
         List<SchedulerProcessSummary> scheduler = _scheduler
+            .Where(pair => pair.Key != 0)
             .Select(pair => new SchedulerProcessSummary(
                 pair.Key,
                 NameOf(pair.Key),
@@ -172,8 +192,24 @@ public sealed class KernelLatencyAggregator
                     .OrderByDescending(wait => wait.Value.Ms)
                     .Take(5)
                     .Select(wait => new WaitReasonCount(wait.Key, wait.Value.Count, wait.Value.Ms))
-                    .ToList()))
-            .OrderByDescending(item => item.WaitRatio)
+                    .ToList(),
+                _readyDelayByPid.TryGetValue(pair.Key, out List<double>? delays) && delays.Count > 0
+                    ? PercentileStats.From(delays)
+                    : null))
+            .OrderByDescending(item => item.CpuMs)
+            .ThenByDescending(item => item.ReadyDelayMs?.Max ?? 0)
+            .ThenByDescending(item => item.BlockedMs)
+            .Take(TopN)
+            .ToList();
+        List<ProcessReadyDelaySummary> readyByProcess = _readyDelayByPid
+            .Where(pair => pair.Key != 0 && pair.Value.Count > 0)
+            .Select(pair => new ProcessReadyDelaySummary(
+                pair.Key,
+                NameOf(pair.Key),
+                PercentileStats.From(pair.Value)))
+            .OrderByDescending(item => item.DelayMs.Max)
+            .ThenByDescending(item => item.DelayMs.P99)
+            .ThenByDescending(item => item.DelayMs.Count)
             .Take(TopN)
             .ToList();
         List<ProcessNetworkSummary> network = _network
@@ -212,7 +248,7 @@ public sealed class KernelLatencyAggregator
             SummarizeDrivers(_dpc),
             SummarizeDrivers(_isr),
             scheduler,
-            _readyDelay.Count == 0 ? null : new ReadyDelaySummary(PercentileStats.From(_readyDelay)),
+            _readyDelay.Count == 0 ? null : new ReadyDelaySummary(PercentileStats.From(_readyDelay), readyByProcess),
             faults,
             network,
             error);

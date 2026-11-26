@@ -168,6 +168,240 @@ public sealed class PerformanceTests : IDisposable
     }
 
     [Fact]
+    public void Aggregator_ExcludesIdleRanksSchedulerByCpuAndTracksPerProcessReadyDelay()
+    {
+        KernelLatencyAggregator aggregator = new();
+        aggregator.AddCSwitch(0, 10, "Idle", "busy", "Executive", 5, 9000);
+        aggregator.AddCSwitch(10, 0, "busy", "Idle", "Executive", 9000, 500);
+        aggregator.AddReadyDelay(0, "Idle", 500);
+        aggregator.AddReadyDelay(10, "busy", 1);
+        aggregator.AddReadyDelay(10, "busy", 3);
+
+        aggregator.AddCSwitch(20, 30, "tied-high-ready", "tied-low-ready", "UserRequest", 5000, 100);
+        aggregator.AddCSwitch(30, 20, "tied-low-ready", "tied-high-ready", "UserRequest", 10, 100);
+        aggregator.AddReadyDelay(20, "tied-high-ready", 2);
+        aggregator.AddReadyDelay(20, "tied-high-ready", 25);
+        aggregator.AddReadyDelay(30, "tied-low-ready", 2);
+        aggregator.AddReadyDelay(30, "tied-low-ready", 4);
+
+        aggregator.AddCSwitch(40, 50, "tied-no-ready-high-blocked", "tied-no-ready-low-blocked", "DelayExecution", 50, 100);
+        aggregator.AddCSwitch(50, 40, "tied-no-ready-low-blocked", "tied-no-ready-high-blocked", "DelayExecution", 9000, 100);
+
+        aggregator.AddCSwitch(60, 10, "starved", "busy", "Executive", 0, 1);
+        aggregator.AddCSwitch(10, 60, "busy", "starved", "WrQueue", 2000, 0);
+        aggregator.AddReadyDelay(60, "starved", 10);
+        aggregator.AddReadyDelay(60, "starved", 120);
+
+        KernelLatencySummary summary = aggregator.Build("Vestigo-Perf-rank", 1000, KernelTraceGroups.All, null);
+
+        Assert.DoesNotContain(summary.Scheduler, item => item.Pid == 0);
+        Assert.Equal([10, 20, 30, 40, 50, 60], summary.Scheduler.Select(item => item.Pid).ToArray());
+
+        SchedulerProcessSummary busy = summary.Scheduler[0];
+        Assert.Equal(500, busy.CpuMs);
+        Assert.NotNull(busy.ReadyDelayMs);
+        Assert.Equal(2, busy.ReadyDelayMs!.Count);
+        Assert.Equal(3, busy.ReadyDelayMs.Max);
+
+        SchedulerProcessSummary highReady = summary.Scheduler[1];
+        Assert.Equal(25, highReady.ReadyDelayMs!.Max);
+
+        SchedulerProcessSummary noReady = summary.Scheduler[3];
+        Assert.Null(noReady.ReadyDelayMs);
+
+        Assert.NotNull(summary.ReadyDelay);
+        Assert.Equal(120, summary.ReadyDelay!.DelayMs.Max);
+        Assert.DoesNotContain(summary.ReadyDelay.ByProcess, item => item.Pid == 0);
+        Assert.Equal([60, 20, 30, 10], summary.ReadyDelay.ByProcess.Select(item => item.Pid).ToArray());
+        Assert.Equal("starved", summary.ReadyDelay.ByProcess[0].Name);
+        Assert.Equal(120, summary.ReadyDelay.ByProcess[0].DelayMs.Max);
+        Assert.Equal(25, summary.ReadyDelay.ByProcess[1].DelayMs.Max);
+    }
+
+    [Fact]
+    public void PdhSampler_ClassifyStatus_MapsUnsupportedNoDataAndError()
+    {
+        Assert.Equal("unsupported", WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhCstatusNoObject, "add").Status);
+        Assert.Equal("unsupported", WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhCstatusNoCounter, "add").Status);
+        Assert.Equal("no_data", WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhNoData, "collect").Status);
+        Assert.Equal("no_data", WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhCstatusNoInstance, "read").Status);
+        Assert.Equal("error", WindowsPdhSampler.ClassifyStatus(0xC0000BBC, "collect").Status);
+    }
+
+    [Fact]
+    public async Task PdhSampler_MissingHypervisorCounters_ReturnsOkWithUnsupportedStatuses()
+    {
+        IReadOnlyList<string> paths = CounterPresets.Paths["hypervisor"];
+        FakePdhQueryFactory factory = new(path =>
+            path.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase)
+                ? (null, WindowsPdhSampler.PdhCstatusNoObject)
+                : (null, WindowsPdhSampler.PdhCstatusNoCounter));
+        WindowsPdhSampler sampler = new(factory, new InstantTimeProvider());
+
+        OperationResult<CounterSampleResult> result = await sampler.SampleAsync(
+            paths,
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(1),
+            64,
+            "hypervisor",
+            Xunit.TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("hypervisor", result.Value!.Preset);
+        Assert.Equal(0, result.Value.DurationMilliseconds);
+        Assert.Equal(paths.Count, result.Value.CounterCount);
+        Assert.All(result.Value.Counters, counter =>
+        {
+            Assert.Equal("unsupported", counter.Status);
+            Assert.Equal(0, counter.Values.Count);
+            Assert.False(string.IsNullOrWhiteSpace(counter.Error));
+        });
+    }
+
+    [Fact]
+    public async Task PdhSampler_MixedUnsupportedNoDataAndValidCounters_ReturnsPerCounterStatuses()
+    {
+        const string validPath = @"\Processor(_Total)\% Processor Time";
+        const string noDataPath = @"\Hyper-V Dynamic Memory VM(*)\Current Pressure";
+        const string noInstancePath = @"\VM Processor(*)\% Processor Time";
+        const string noObjectPath = @"\Hyper-V Hypervisor Logical Processor(_Total)\% Total Run Time";
+
+        FakePdhQueryFactory factory = new(path => path switch
+        {
+            validPath => (new FakePdhCounter(path, [new WindowsPdhSampler.PdhSampleReading(path, 42.5, null)]), 0),
+            noDataPath => (new FakePdhCounter(path, [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhNoData, "read"))]), 0),
+            noInstancePath => (null, WindowsPdhSampler.PdhCstatusNoInstance),
+            _ => (null, WindowsPdhSampler.PdhCstatusNoObject)
+        });
+        WindowsPdhSampler sampler = new(factory, new InstantTimeProvider());
+
+        OperationResult<CounterSampleResult> result = await sampler.SampleAsync(
+            [validPath, noDataPath, noInstancePath, noObjectPath],
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(1),
+            64,
+            "hypervisor",
+            Xunit.TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+        CounterSample ok = Assert.Single(result.Value!.Counters, item => item.Path == validPath);
+        Assert.Equal("ok", ok.Status);
+        Assert.Null(ok.Error);
+        Assert.Equal(42.5, ok.Values.Max);
+
+        CounterSample noData = Assert.Single(result.Value.Counters, item => item.Path == noDataPath);
+        Assert.Equal("no_data", noData.Status);
+        Assert.Equal(0, noData.Values.Count);
+
+        CounterSample noInstance = Assert.Single(result.Value.Counters, item => item.Path == noInstancePath);
+        Assert.Equal("no_data", noInstance.Status);
+        Assert.Equal(0, noInstance.Values.Count);
+
+        CounterSample unsupported = Assert.Single(result.Value.Counters, item => item.Path == noObjectPath);
+        Assert.Equal("unsupported", unsupported.Status);
+        Assert.Equal(0, unsupported.Values.Count);
+    }
+
+    [Fact]
+    public async Task PdhSampler_InitialCollectNoData_ReturnsOkWithNoDataStatuses()
+    {
+        const string path = @"\Hyper-V Hypervisor Virtual Processor(*)\% Guest Run Time";
+        FakePdhQueryFactory factory = new(
+            p => (new FakePdhCounter(p, []), 0),
+            collectStatuses: [WindowsPdhSampler.PdhNoData]);
+        WindowsPdhSampler sampler = new(factory, new InstantTimeProvider());
+
+        OperationResult<CounterSampleResult> result = await sampler.SampleAsync(
+            [path],
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(1),
+            64,
+            "hypervisor",
+            Xunit.TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(0, result.Value!.DurationMilliseconds);
+        CounterSample sample = Assert.Single(result.Value.Counters);
+        Assert.Equal("no_data", sample.Status);
+        Assert.Contains("800007D5", sample.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PdhSampler_UnexpectedErrorsStillFail()
+    {
+        const string path = @"\Processor(_Total)\% Processor Time";
+        WindowsPdhSampler badAdd = new(
+            new FakePdhQueryFactory(_ => (null, 0xC0000BC0)),
+            new InstantTimeProvider());
+        OperationResult<CounterSampleResult> addFailure = await badAdd.SampleAsync(
+            [path],
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            64,
+            "overview",
+            Xunit.TestContext.Current.CancellationToken);
+        Assert.False(addFailure.Success);
+        Assert.Equal("counter_not_found", addFailure.ErrorCode);
+
+        WindowsPdhSampler badCollect = new(
+            new FakePdhQueryFactory(p => (new FakePdhCounter(p, []), 0), collectStatuses: [0xC0000BBC]),
+            new InstantTimeProvider());
+        OperationResult<CounterSampleResult> collectFailure = await badCollect.SampleAsync(
+            [path],
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            64,
+            "overview",
+            Xunit.TestContext.Current.CancellationToken);
+        Assert.False(collectFailure.Success);
+        Assert.Equal("pdh_failed", collectFailure.ErrorCode);
+    }
+
+    [Fact]
+    public async Task PdhSampler_PreservesUnexpectedReadErrorsWhenValuesOrNoDataAlsoOccur()
+    {
+        const string flakyErrorPath = @"\Processor(_Total)\% Processor Time";
+        const string transientNoDataPath = @"\PhysicalDisk(_Total)\Current Disk Queue Length";
+
+        FakePdhQueryFactory factory = new(path => path switch
+        {
+            flakyErrorPath => (new SequencePdhCounter(path, [
+                [new WindowsPdhSampler.PdhSampleReading(path, 15.0, null)],
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(0xC0000BBC, "PdhGetFormattedCounterValue failed"))],
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhNoData, "PdhGetFormattedCounterValue failed"))]
+            ]), 0),
+            _ => (new SequencePdhCounter(path, [
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhNoData, "PdhGetFormattedCounterValue failed"))],
+                [new WindowsPdhSampler.PdhSampleReading(path, 3.0, null)],
+                [new WindowsPdhSampler.PdhSampleReading(path, 0, WindowsPdhSampler.ClassifyStatus(WindowsPdhSampler.PdhCstatusNoInstance, "PdhGetFormattedCounterValue failed"))]
+            ]), 0)
+        });
+        WindowsPdhSampler sampler = new(factory, new InstantTimeProvider());
+
+        OperationResult<CounterSampleResult> result = await sampler.SampleAsync(
+            [flakyErrorPath, transientNoDataPath],
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(1),
+            64,
+            "overview",
+            Xunit.TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+
+        CounterSample errored = Assert.Single(result.Value!.Counters, item => item.Path == flakyErrorPath);
+        Assert.Equal("error", errored.Status);
+        Assert.Contains("C0000BBC", errored.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, errored.Values.Count);
+        Assert.Equal(15.0, errored.Values.Max);
+
+        CounterSample recovered = Assert.Single(result.Value.Counters, item => item.Path == transientNoDataPath);
+        Assert.Equal("ok", recovered.Status);
+        Assert.Null(recovered.Error);
+        Assert.Equal(1, recovered.Values.Count);
+        Assert.Equal(3.0, recovered.Values.Max);
+    }
+
+    [Fact]
     public void WprPlanner_AllowsOnlyBuiltInProfilesAndFixedArguments()
     {
         const string instance = "Vestigo-Wpr-abc123def456";
@@ -383,5 +617,96 @@ public sealed class PerformanceTests : IDisposable
             pid is 0 or 4
                 ? OperationResult<ThreadInspection>.Fail("protected_process", "PID 0 and 4 cannot be inspected.")
                 : OperationResult<ThreadInspection>.Fail("should_not_run", "unexpected pid.");
+    }
+
+    private sealed class FakePdhQueryFactory(
+        Func<string, (WindowsPdhSampler.IPdhCounter? Counter, uint Status)> addCounter,
+        IReadOnlyList<uint>? collectStatuses = null) : WindowsPdhSampler.IPdhQueryFactory
+    {
+        public WindowsPdhSampler.IPdhQuery Open() => new FakePdhQuery(addCounter, collectStatuses ?? [0]);
+    }
+
+    private sealed class FakePdhQuery(
+        Func<string, (WindowsPdhSampler.IPdhCounter? Counter, uint Status)> addCounter,
+        IReadOnlyList<uint> collectStatuses) : WindowsPdhSampler.IPdhQuery
+    {
+        private int _collectIndex;
+
+        public (WindowsPdhSampler.IPdhCounter? Counter, uint Status) TryAdd(string path) => addCounter(path);
+
+        public uint Collect()
+        {
+            int index = Math.Min(_collectIndex, collectStatuses.Count - 1);
+            _collectIndex++;
+            return collectStatuses[index];
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class FakePdhCounter(string path, IReadOnlyList<WindowsPdhSampler.PdhSampleReading> readings)
+        : WindowsPdhSampler.IPdhCounter
+    {
+        public string Path { get; } = path;
+
+        public IReadOnlyList<WindowsPdhSampler.PdhSampleReading> ReadSamples() => readings;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class SequencePdhCounter(string path, IReadOnlyList<IReadOnlyList<WindowsPdhSampler.PdhSampleReading>> sequence)
+        : WindowsPdhSampler.IPdhCounter
+    {
+        private int _index;
+
+        public string Path { get; } = path;
+
+        public IReadOnlyList<WindowsPdhSampler.PdhSampleReading> ReadSamples()
+        {
+            int current = Math.Min(_index, sequence.Count - 1);
+            _index++;
+            return sequence[current];
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class InstantTimeProvider : TimeProvider
+    {
+        private long _ticks;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Volatile.Read(ref _ticks);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            if (dueTime > TimeSpan.Zero)
+            {
+                Interlocked.Add(ref _ticks, dueTime.Ticks);
+            }
+
+            callback(state);
+            return NoopTimer.Instance;
+        }
+
+        private sealed class NoopTimer : ITimer
+        {
+            public static NoopTimer Instance { get; } = new();
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+
+            public void Dispose()
+            {
+            }
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 }

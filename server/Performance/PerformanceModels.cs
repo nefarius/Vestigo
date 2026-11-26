@@ -184,11 +184,16 @@ public sealed record SchedulerProcessSummary(
     double CpuMs,
     double BlockedMs,
     double WaitRatio,
-    IReadOnlyList<WaitReasonCount> WaitReasons);
+    IReadOnlyList<WaitReasonCount> WaitReasons,
+    PercentileStats? ReadyDelayMs = null);
 
 public sealed record WaitReasonCount(string Reason, int Count, double BlockedMs);
 
-public sealed record ReadyDelaySummary(PercentileStats DelayMs);
+public sealed record ProcessReadyDelaySummary(int Pid, string? Name, PercentileStats DelayMs);
+
+public sealed record ReadyDelaySummary(
+    PercentileStats DelayMs,
+    IReadOnlyList<ProcessReadyDelaySummary> ByProcess);
 
 public sealed record HardFaultSummary(int Pid, string? Name, string? File, int Count);
 
