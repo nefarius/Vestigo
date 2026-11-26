@@ -35,4 +35,21 @@ public class ConfigLogonFieldsTests
         Assert.Contains("System:AllowInteractiveLogon", cut.Markup, StringComparison.Ordinal);
         Assert.Contains("System:LogonConsentLifetime", cut.Markup, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task ListenAddressRendersDualStackHintAndEditsToIpv6Wildcard()
+    {
+        await using BunitContext context = new();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+        JsonObject values = new() { ["ListenAddress"] = "0.0.0.0" };
+
+        IRenderedComponent<ConfigFields> cut = context.Render<ConfigFields>(parameters => parameters
+            .Add(field => field.Values, values));
+
+        Assert.Contains("ListenAddress", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("IPv4 and IPv6", cut.Markup, StringComparison.Ordinal);
+        cut.Find("input").Input("::");
+        Assert.Equal("::", values["ListenAddress"]!.GetValue<string>());
+    }
 }

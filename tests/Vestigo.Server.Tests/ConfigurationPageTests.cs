@@ -672,6 +672,26 @@ public class ConfigurationEditorTests : IDisposable
         Assert.DoesNotContain("private-token", exception.ToString());
     }
 
+    [Fact]
+    public void ListenAddressIpv6WildcardRoundTripsAndSurvivesInstallerMerge()
+    {
+        ConfigurationSnapshot snapshot = _editor.Load();
+        snapshot.Values["ListenAddress"] = "::";
+        _editor.Save(snapshot);
+
+        ConfigurationSnapshot loaded = _editor.Load();
+        Assert.Equal("::", loaded.Values["ListenAddress"]!.GetValue<string>());
+
+        string existing = File.ReadAllText(VestigoPaths.SettingsFilePath);
+        ExistingSettings? parsed = ListenSettings.ReadExisting(existing);
+        Assert.NotNull(parsed);
+        Assert.Equal("::", parsed.Address);
+
+        ResolvedSettings resolved = ListenSettings.Resolve(null, null, null, null, parsed, isUpgrade: true);
+        string merged = ListenSettings.Merge(existing, resolved);
+        Assert.Equal("::", ListenSettings.ReadExisting(merged)!.Address);
+    }
+
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("VESTIGO_SETTINGS_DIR", _previous);

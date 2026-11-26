@@ -56,9 +56,10 @@ internal static class ConfigurationFieldMetadata
         return true;
     }
 
-    /// <summary>Explains an empty optional path that falls back to a tool installed next to Vestigo.exe.</summary>
+    /// <summary>Explains an empty optional path that falls back to a tool installed next to Vestigo.exe, or special field semantics.</summary>
     public static string? BundledExecutableHint(string path) => path switch
     {
+        "ListenAddress" => "IP address to bind: :: listens on IPv4 and IPv6 (falls back to 0.0.0.0 when IPv6 is disabled), 0.0.0.0 is IPv4 only, 127.0.0.1 or ::1 is loopback only.",
         "Devices:NefconPath" => @"Leave empty to use tools\nefconc.exe next to Vestigo.exe.",
         "DebugOutput:ExecutablePath" => @"Leave empty to use tools\DebugViewConsole.exe next to Vestigo.exe.",
         "Logs:RipgrepPath" => @"Leave empty to use tools\rg.exe next to Vestigo.exe.",

@@ -124,7 +124,7 @@ namespace Vestigo.Installer.Actions.Logic
         public const int DefaultPort = 5098;
         public const int MinimumTokenLength = 16;
         public const string LoopbackAddress = "127.0.0.1";
-        public const string AnyAddress = "0.0.0.0";
+        public const string AnyAddress = "::";
         public const string SectionName = "Vestigo";
 
         /// <summary>32 random bytes as unpadded base64url (43 characters).</summary>

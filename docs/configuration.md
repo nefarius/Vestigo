@@ -20,7 +20,7 @@ This is local administration without an API token, including when `/mcp` require
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `ListenAddress` | `127.0.0.1` | IP address to bind: loopback (`127.0.0.1`, `::1`) or any other address such as `0.0.0.0` or `::` to accept network clients. Host names are rejected, as is `Kestrel:Endpoints`. Binding beyond loopback without `ApiTokens` logs a startup warning. |
+| `ListenAddress` | `127.0.0.1` | IP address to bind: loopback (`127.0.0.1`, `::1`), IPv4-only wildcard (`0.0.0.0`), dual-stack IPv4 and IPv6 wildcard (`::`, the MSI default on a fresh install; falls back to `0.0.0.0` with a startup warning when IPv6 is disabled on the host), or a specific interface IP. Host names are rejected, as is `Kestrel:Endpoints`. Changing it requires a service restart. Binding beyond loopback without `ApiTokens` logs a startup warning. |
 | `ListenPort` | `5098` | HTTP port. Changing it requires a service restart. |
 | `ApiTokens` | empty | Bearer tokens. Empty means anonymous `/mcp`; strongly recommended whenever `ListenAddress` is not loopback. |
 | `AllowedInputRoots` | empty (uses `<settings>\traces`) | Roots for ETL, PDB, TMF, and uploaded zip paths. Empty means the built-in folder `%ProgramData%\Nefarius Software Solutions\Vestigo\traces` (or `traces` under `VESTIGO_SETTINGS_DIR`). Configured values replace that default; they are not merged with it. Do not put a whole volume here: symbol lookup searches each input root recursively for `*.pdb`. |
@@ -179,7 +179,7 @@ Authenticated remote access with opt-in modules. Retrieve a generated MSI token 
 ```json
 {
   "Vestigo": {
-    "ListenAddress": "0.0.0.0",
+    "ListenAddress": "::",
     "ListenPort": 5098,
     "ApiTokens": [ "<generated-or-chosen-token>" ],
     "AllowedInputRoots": [ "D:\\traces" ],
