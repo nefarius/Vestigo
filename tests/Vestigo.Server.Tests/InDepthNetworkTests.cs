@@ -127,6 +127,7 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.False(PktmonPlanner.ConfirmsIdle(false, "Packet Monitor is not running."));
         Assert.True(PktmonPlanner.IndicatesActive("Packet Monitor is running."));
         Assert.False(PktmonPlanner.IndicatesActive("Packet Monitor is not running."));
+        Assert.True(PktmonPlanner.IndicatesSessionInUse("Packet Monitor is already started."));
         Assert.True(PktmonPlanner.IndicatesSessionInUse("Packet Monitor is already running."));
         Assert.False(PktmonPlanner.IndicatesSessionInUse("Failed to open log file."));
         Assert.True(PktmonPlanner.ShouldRecoverStop(true, @"C:\state\drop.etl", true));
@@ -181,9 +182,36 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.Contains(reasons, item => item.DropReason == "INGEST_DISCARD" && item.Dropped == 2);
         Assert.Contains(reasons, item => item.DropReason == "FILTER_DROP" && item.Dropped == 1);
         Assert.Contains(reasons, item => item.DropReason == "INET: transport endpoint was not found" && item.Dropped == 1);
-        PacketDropResult combined = PktmonPlanner.Combine(15000, counters, reasons, truncated: false, partial: true, "format failed");
+        PacketDropResult combined = PktmonPlanner.Combine(
+            15000,
+            counters,
+            reasons,
+            etlReasonsAvailable: true,
+            truncated: false,
+            partial: true,
+            "pktmon counters or stop returned a non-zero exit.");
         Assert.Equal(4, combined.TotalDropped);
-        Assert.Equal(11, PktmonPlanner.Combine(15000, counters, [], truncated: false, partial: true, "format failed").TotalDropped);
+        PacketDropResult snapshot = PktmonPlanner.Combine(
+            15000,
+            counters,
+            [],
+            etlReasonsAvailable: false,
+            truncated: false,
+            partial: true,
+            PktmonPlanner.SnapshotFallbackError);
+        Assert.Equal(11, snapshot.TotalDropped);
+        Assert.Equal(PktmonPlanner.SnapshotFallbackError, snapshot.Error);
+        PacketDropResult emptyReasons = PktmonPlanner.Combine(
+            15000,
+            counters,
+            [],
+            etlReasonsAvailable: true,
+            truncated: false,
+            partial: false,
+            null);
+        Assert.Equal(0, emptyReasons.TotalDropped);
+        Assert.False(emptyReasons.Partial);
+        Assert.Null(emptyReasons.Error);
         Assert.True(combined.Partial);
     }
 

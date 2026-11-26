@@ -79,7 +79,7 @@ Runs a bounded kernel ETW capture in an isolated Vestigo-Perf-* worker and retur
 
 ## `capture_packet_drops`
 
-Runs a bounded drop-only pktmon capture (metadata flags, no raw packets) and returns per-component and per-drop-reason counts. TotalDropped is the ETL drop-reason count when format succeeds; component counters are a live snapshot immediately before stop. Requires Vestigo:Performance:AllowPacketDropCapture. durationSeconds is clamped to 1..MaxPacketDropDuration. A machine-global pktmon session is started; Vestigo stops orphan sessions it owns on startup. ETL metadata is parsed and deleted. Packet payloads are never returned or persisted.
+Runs a bounded drop-only pktmon capture (metadata flags, no raw packets) and returns per-component and per-drop-reason counts. TotalDropped is the ETL drop-reason count when format succeeds, including zero when that capture has no drop-reason rows; component counters are a live snapshot immediately before stop. When format fails or the ETL is missing, TotalDropped falls back to that snapshot, Partial is true, and Error identifies the fallback. Requires Vestigo:Performance:AllowPacketDropCapture. durationSeconds is clamped to 1..MaxPacketDropDuration. A machine-global pktmon session is started; Vestigo stops orphan sessions it owns on startup. ETL metadata is parsed and deleted. Packet payloads are never returned or persisted.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

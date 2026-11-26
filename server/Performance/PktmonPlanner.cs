@@ -9,6 +9,8 @@ namespace Vestigo.Performance;
 public static class PktmonPlanner
 {
     public const string MetadataFlags = "0x00A";
+    public const string SnapshotFallbackError =
+        "TotalDropped is a live counter snapshot; ETL drop reasons were unavailable.";
     private const uint RawPacketFlag = 0x010;
 
     public static IReadOnlyList<string> StartArguments(string etlPath) =>
@@ -119,10 +121,17 @@ public static class PktmonPlanner
         return counts.Select(pair => new PacketDropCounter("drop-reason", "reason", 0, pair.Value, pair.Key)).ToList();
     }
 
-    public static PacketDropResult Combine(int durationMs, IReadOnlyList<PacketDropCounter> counters, IReadOnlyList<PacketDropCounter> reasons, bool truncated, bool partial, string? error)
+    public static PacketDropResult Combine(
+        int durationMs,
+        IReadOnlyList<PacketDropCounter> counters,
+        IReadOnlyList<PacketDropCounter> reasons,
+        bool etlReasonsAvailable,
+        bool truncated,
+        bool partial,
+        string? error)
     {
         List<PacketDropCounter> all = [.. counters, .. reasons];
-        long dropped = reasons.Count > 0
+        long dropped = etlReasonsAvailable
             ? reasons.Sum(item => item.Dropped)
             : counters.Sum(item => item.Dropped);
         return new PacketDropResult(durationMs, all, dropped, truncated, partial, error);

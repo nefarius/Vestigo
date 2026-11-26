@@ -164,6 +164,7 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                 stopped = await StopOwnedAsync().ConfigureAwait(false);
             }
             IReadOnlyList<PacketDropCounter> reasons = [];
+            bool etlReasonsAvailable = false;
             bool partial = !counters.Succeeded || !stopped;
             if (File.Exists(etl))
             {
@@ -171,11 +172,16 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                 if (formatted.Succeeded && File.Exists(text))
                 {
                     reasons = PktmonPlanner.ParseDropReasons(await File.ReadAllTextAsync(text, cancellationToken).ConfigureAwait(false));
+                    etlReasonsAvailable = true;
                 }
                 else
                 {
                     partial = true;
                 }
+            }
+            else
+            {
+                partial = true;
             }
 
             if (stopped)
@@ -183,13 +189,17 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                 _ = TrySave(null);
             }
 
+            string? error = !etlReasonsAvailable
+                ? PktmonPlanner.SnapshotFallbackError
+                : partial ? "pktmon counters or stop returned a non-zero exit." : null;
             return OperationResult<PacketDropResult>.Ok(PktmonPlanner.Combine(
                 (int)duration.TotalMilliseconds,
                 parsed,
                 reasons,
+                etlReasonsAvailable,
                 truncated: false,
                 partial,
-                partial ? "pktmon counters, format, or stop returned a non-zero exit." : null));
+                error));
         }
         catch (OperationCanceledException)
         {
