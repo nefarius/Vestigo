@@ -112,6 +112,8 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.Equal(["counters", "--type", "drop", "--json"], PktmonPlanner.CountersArguments());
         Assert.True(PktmonPlanner.IndicatesIdle("Packet Monitor is not running."));
         Assert.False(PktmonPlanner.IndicatesIdle("pktmon status failed"));
+        Assert.True(PktmonPlanner.ConfirmsIdle(true, "Packet Monitor is not running."));
+        Assert.False(PktmonPlanner.ConfirmsIdle(false, "Packet Monitor is not running."));
         Assert.True(PktmonPlanner.IndicatesActive("Packet Monitor is running."));
         Assert.False(PktmonPlanner.IndicatesActive("Packet Monitor is not running."));
         Assert.True(PktmonPlanner.IndicatesSessionInUse("Packet Monitor is already running."));

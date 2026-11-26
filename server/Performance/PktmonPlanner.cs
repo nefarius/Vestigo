@@ -50,6 +50,9 @@ public static class PktmonPlanner
         || output.Contains("is not started", StringComparison.OrdinalIgnoreCase)
         || output.Contains("No packet monitor", StringComparison.OrdinalIgnoreCase);
 
+    public static bool ConfirmsIdle(bool succeeded, string output) =>
+        succeeded && IndicatesIdle(output);
+
     public static bool IndicatesActive(string output) =>
         output.Contains("running", StringComparison.OrdinalIgnoreCase)
         && !output.Contains("not running", StringComparison.OrdinalIgnoreCase);

@@ -125,8 +125,14 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
 
                 if (PktmonPlanner.IndicatesSessionInUse(started.Output))
                 {
-                    _ = TrySave(null);
                     nativeStarted = false;
+                    if (!TrySave(null) && !TrySave(new PktmonCheckpoint(false, null)))
+                    {
+                        return OperationResult<PacketDropResult>.Fail(
+                            "pktmon_checkpoint_failed",
+                            "The pktmon ownership checkpoint could not be cleared after a rejected start.");
+                    }
+
                     return FailNative<PacketDropResult>(started);
                 }
 
@@ -256,7 +262,7 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             return false;
         }
 
-        if (!PktmonPlanner.IndicatesIdle(status.Output))
+        if (!PktmonPlanner.ConfirmsIdle(status.Succeeded, status.Output))
         {
             _logger.LogWarning("pktmon status after stop was unconfirmed: {Exit} {Output}", status.ExitCode, status.Output);
             return false;
