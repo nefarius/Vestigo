@@ -14,6 +14,8 @@ namespace Vestigo.Performance;
 /// <summary>Runs allow-listed <c>wpr.exe</c> recordings with orphan cancel on startup.</summary>
 public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
 {
+    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(30);
+
     private readonly VestigoOptions _options;
     private readonly IVolumeSpace _volumes;
     private readonly ILogger<WindowsWprRecorder> _logger;
@@ -204,6 +206,11 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
 
             lock (_commandLock)
             {
+                if (finish.Task.IsCompletedSuccessfully)
+                {
+                    stop = finish.Task.Result;
+                }
+
                 _finalizing = true;
             }
 
@@ -368,16 +375,35 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
 
     private async Task<bool> CancelAndReleaseAsync(string instance)
     {
-        NativeResult cancelled = await Run(WprPlanner.CancelArguments(instance), CancellationToken.None)
-            .ConfigureAwait(false);
+        using CancellationTokenSource cleanup = new(CleanupTimeout);
+        NativeResult cancelled;
+        try
+        {
+            cancelled = await Run(WprPlanner.CancelArguments(instance), cleanup.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            MarkUnresolved(instance);
+            return false;
+        }
+
         if (IsCleared(cancelled))
         {
             ReleaseOwnership();
             return true;
         }
 
-        NativeResult status = await Run(WprPlanner.StatusArguments(instance), CancellationToken.None)
-            .ConfigureAwait(false);
+        NativeResult status;
+        try
+        {
+            status = await Run(WprPlanner.StatusArguments(instance), cleanup.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            MarkUnresolved(instance);
+            return false;
+        }
+
         if (WprPlanner.IndicatesActiveRecording(status.Output))
         {
             MarkUnresolved(instance);
@@ -400,7 +426,11 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
         _ = TrySave(null);
     }
 
-    private void MarkUnresolved(string instance) => _unresolvedInstance = instance;
+    private void MarkUnresolved(string instance)
+    {
+        _unresolvedInstance = instance;
+        _logger.LogWarning("WPR instance {Instance} remains unresolved", instance);
+    }
 
     private static bool IsCleared(NativeResult result) =>
         result.Succeeded || WprPlanner.IndicatesNoRecording(result.ExitCode, result.Output);
