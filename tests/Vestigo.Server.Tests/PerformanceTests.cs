@@ -138,6 +138,25 @@ public sealed class PerformanceTests : IDisposable
         Assert.Equal(1, truncated.EventCount);
         Assert.Equal(1, truncated.DiskIo[0].ServiceMs.Max);
 
+        KernelLatencyAggregator sourceBudget = new(1);
+        Assert.True(sourceBudget.Observe());
+        Assert.True(sourceBudget.Truncated);
+        Assert.False(sourceBudget.Observe());
+        sourceBudget.NoteProcess(2, "dropped");
+        sourceBudget.AddDiskIo("0", 2, "dropped", "read", @"C:\a", 1, 0, 9);
+        KernelLatencySummary observed = sourceBudget.Build("s", 1, KernelTraceGroups.All, null);
+        Assert.True(observed.Truncated);
+        Assert.Equal(1, observed.EventCount);
+        Assert.Empty(observed.DiskIo);
+
+        KernelLatencyAggregator ready = new(1);
+        ready.AddCSwitch(100, 4, "app", "System", "WrFilterContext", 20, 5);
+        ready.AddReadyDelay(7);
+        KernelLatencySummary oneSwitch = ready.Build("s", 1, KernelTraceGroups.All, null);
+        Assert.True(oneSwitch.Truncated);
+        Assert.Equal(1, oneSwitch.EventCount);
+        Assert.Equal(7, oneSwitch.ReadyDelay!.DelayMs.Max);
+
         KernelLatencyAggregator images = new();
         images.NoteImage(0x1000, 0x100, @"C:\Windows\System32\drivers\disk.sys");
         images.AddDpc(0x2000, 5);

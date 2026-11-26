@@ -11,8 +11,11 @@ internal static class KernelTraceEventSink
     {
         KernelTraceEventParser kernel = source.Kernel;
         SchedulerTimes scheduler = new();
-        kernel.ProcessStart += data => Bound(source, aggregator, () => aggregator.NoteProcess(data.ProcessID, data.ProcessName));
-        kernel.ImageLoadGroup += data => Bound(
+        kernel.ProcessStart += data => BoundSource(
+            source,
+            aggregator,
+            () => aggregator.NoteProcess(data.ProcessID, data.ProcessName));
+        kernel.ImageLoadGroup += data => BoundSource(
             source,
             aggregator,
             () => aggregator.NoteImage((ulong)data.ImageBase, (ulong)data.ImageSize, data.FileName));
@@ -69,7 +72,7 @@ internal static class KernelTraceEventSink
         if (KernelTraceGroups.Includes(groups, KernelTraceGroups.Scheduler))
         {
             kernel.ThreadCSwitch += data => Bound(source, aggregator, () => scheduler.OnCSwitch(aggregator, data));
-            kernel.DispatcherReadyThread += data => Bound(source, aggregator, () => scheduler.OnReady(data));
+            kernel.DispatcherReadyThread += data => BoundSource(source, aggregator, () => scheduler.OnReady(data));
         }
 
         if (KernelTraceGroups.Includes(groups, KernelTraceGroups.HardFaults))
@@ -81,6 +84,17 @@ internal static class KernelTraceEventSink
         }
 
     }
+
+    private static void BoundSource(ETWTraceEventSource source, KernelLatencyAggregator aggregator, Action action) =>
+        Bound(source, aggregator, () =>
+        {
+            if (!aggregator.Observe())
+            {
+                return;
+            }
+
+            action();
+        });
 
     private static void Bound(ETWTraceEventSource source, KernelLatencyAggregator aggregator, Action action)
     {

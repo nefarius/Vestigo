@@ -21,6 +21,7 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
     private readonly object _commandLock = new();
     private TaskCompletionSource<bool>? _finish;
     private bool _finalizing;
+    private string? _unresolvedInstance;
     private WprStatus _status = new("idle", null, null, null);
 
     public WindowsWprRecorder(VestigoOptions options, IVolumeSpace volumes, ILogger<WindowsWprRecorder> logger)
@@ -49,6 +50,7 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                     .ConfigureAwait(false);
                 if (!cancelled.Success)
                 {
+                    _unresolvedInstance = recorded.InstanceName;
                     _logger.LogWarning(
                         "Could not cancel orphan WPR recording {Profile} ({Instance}): {Error}",
                         recorded.Profile,
@@ -129,6 +131,23 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
         TaskCompletionSource<bool> finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
+            if (_unresolvedInstance is { } orphan)
+            {
+                OperationResult<int> cleared = await Run(
+                        WprPlanner.CancelArguments(orphan),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!cleared.Success)
+                {
+                    return OperationResult<WprCopyOutcome>.Fail(
+                        "wpr_orphan",
+                        "A previous Vestigo-owned WPR recording could not be cancelled.");
+                }
+
+                _unresolvedInstance = null;
+                _ = TrySave(null);
+            }
+
             lock (_commandLock)
             {
                 _finish = finish;
@@ -156,6 +175,7 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                 _status = new WprStatus("failed", planned.Value, outputPath, "WPR checkpoint save failed.");
                 if (!rolledBack.Success)
                 {
+                    _unresolvedInstance = instance;
                     _logger.LogWarning(
                         "WPR checkpoint save failed and cancel of {Instance} returned {Error}",
                         instance,
@@ -199,6 +219,10 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                     {
                         _ = TrySave(null);
                     }
+                    else
+                    {
+                        _unresolvedInstance = instance;
+                    }
 
                     throw;
                 }
@@ -220,16 +244,44 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                 {
                     _ = TrySave(null);
                 }
+                else
+                {
+                    _unresolvedInstance = instance;
+                }
 
                 return OperationResult<WprCopyOutcome>.Fail("wpr_cancelled", "The WPR recording was cancelled.");
             }
 
-            OperationResult<int> stopped = await Run(
-                    WprPlanner.StopArguments(outputPath, instance),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            OperationResult<int> stopped;
+            try
+            {
+                stopped = await Run(
+                        WprPlanner.StopArguments(outputPath, instance),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                OperationResult<int> cancelled = await Run(
+                        WprPlanner.CancelArguments(instance),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled.Error);
+                if (cancelled.Success)
+                {
+                    _ = TrySave(null);
+                }
+                else
+                {
+                    _unresolvedInstance = instance;
+                }
+
+                throw;
+            }
+
             if (!stopped.Success)
             {
+                _unresolvedInstance = instance;
                 _status = new WprStatus("failed", planned.Value, outputPath, stopped.Error);
                 return stopped.FailAs<WprCopyOutcome>();
             }
@@ -305,20 +357,58 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
         return Task.FromResult(OperationResult<WprStatus>.Ok(_status));
     }
 
-    public Task<OperationResult<WprStatus>> CancelRecordingAsync(CancellationToken cancellationToken)
+    public async Task<OperationResult<WprStatus>> CancelRecordingAsync(CancellationToken cancellationToken)
     {
         lock (_commandLock)
         {
-            if (_finalizing || _finish is null)
+            if (_finish is not null)
             {
-                return Task.FromResult(OperationResult<WprStatus>.Fail("wpr_not_running", "No Vestigo-owned WPR recording is running."));
-            }
+                if (_finalizing)
+                {
+                    return OperationResult<WprStatus>.Fail("wpr_not_running", "No Vestigo-owned WPR recording is running.");
+                }
 
-            _finalizing = true;
-            _finish.TrySetResult(false);
+                _finalizing = true;
+                _finish.TrySetResult(false);
+                return OperationResult<WprStatus>.Ok(_status);
+            }
         }
 
-        return Task.FromResult(OperationResult<WprStatus>.Ok(_status));
+        if (_unresolvedInstance is null)
+        {
+            return OperationResult<WprStatus>.Fail("wpr_not_running", "No Vestigo-owned WPR recording is running.");
+        }
+
+        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            return OperationResult<WprStatus>.Fail("wpr_busy", "A WPR recording is already running.");
+        }
+
+        try
+        {
+            if (_unresolvedInstance is not { } orphan)
+            {
+                return OperationResult<WprStatus>.Fail("wpr_not_running", "No Vestigo-owned WPR recording is running.");
+            }
+
+            OperationResult<int> cancelled = await Run(WprPlanner.CancelArguments(orphan), CancellationToken.None)
+                .ConfigureAwait(false);
+            if (!cancelled.Success)
+            {
+                return OperationResult<WprStatus>.Fail(
+                    "wpr_orphan",
+                    "A previous Vestigo-owned WPR recording could not be cancelled.");
+            }
+
+            _unresolvedInstance = null;
+            _ = TrySave(null);
+            _status = new WprStatus("idle", null, null, null);
+            return OperationResult<WprStatus>.Ok(_status);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private static async Task<OperationResult<int>> Run(IReadOnlyList<string> arguments, CancellationToken cancellationToken)

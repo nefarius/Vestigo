@@ -29,9 +29,11 @@ public sealed class KernelLatencyAggregator
     public bool EventsLost { get; set; }
     public bool BuffersLost { get; set; }
 
+    public bool Observe() => Accept();
+
     public void NoteProcess(int pid, string? name)
     {
-        if (Truncated || string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(name))
         {
             return;
         }
@@ -41,7 +43,7 @@ public sealed class KernelLatencyAggregator
 
     public void NoteImage(ulong address, ulong size, string? file)
     {
-        if (Truncated || string.IsNullOrWhiteSpace(file))
+        if (string.IsNullOrWhiteSpace(file))
         {
             return;
         }
@@ -104,15 +106,7 @@ public sealed class KernelLatencyAggregator
         _waitReasons[newPid] = waitReason;
     }
 
-    public void AddReadyDelay(double delayMs)
-    {
-        if (!Accept())
-        {
-            return;
-        }
-
-        _readyDelay.Add(Math.Max(0, delayMs));
-    }
+    public void AddReadyDelay(double delayMs) => _readyDelay.Add(Math.Max(0, delayMs));
 
     public void AddHardFault(int pid, string? process, string? file)
     {
@@ -192,13 +186,18 @@ public sealed class KernelLatencyAggregator
 
     private bool Accept()
     {
-        if (EventCount >= _maxEvents)
+        if (Truncated || EventCount >= _maxEvents)
         {
             Truncated = true;
             return false;
         }
 
         EventCount++;
+        if (EventCount >= _maxEvents)
+        {
+            Truncated = true;
+        }
+
         return true;
     }
 
