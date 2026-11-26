@@ -44,6 +44,10 @@ public static class VestigoPaths
 
     public static string OwnedWprPath => Path.Combine(SettingsDirectory, "owned-wpr.json");
 
+    public static string OwnedPktmonPath => Path.Combine(SettingsDirectory, "owned-pktmon.json");
+
+    public static string PacketDropDirectory => Path.Combine(SettingsDirectory, "pktmon-drop");
+
     public static string DefaultSymbolCache => Path.Combine(SettingsDirectory, "symcache");
 
     /// <summary>Default folder for ETL, PDB, TMF, and conversion-output paths when no trace roots are configured.</summary>

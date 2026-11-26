@@ -12,7 +12,7 @@ public sealed class PerformanceModule : VestigoModule
     public override string Name => "Performance";
 
     public override string Description =>
-        "Sample performance counters, storage topology, filesystem minifilters, VM environment, scheduler jitter, process metrics, wait chains, and memory pressure. Opt-in. Needs Jobs. Kernel ETW summaries, raw WPR ETL recording, and storage latency probes are separate gates.";
+        "Sample performance counters, storage topology, filesystem minifilters, VM environment, scheduler jitter, process metrics, wait chains, memory pressure, and network stack inventory. Opt-in. Needs Jobs. Kernel ETW summaries, raw WPR ETL recording, storage latency probes, and packet-drop capture are separate gates.";
 
     public override bool EnabledByDefault => false;
 
@@ -25,7 +25,9 @@ public sealed class PerformanceModule : VestigoModule
         typeof(PerformanceProcessTools),
         typeof(PerformanceKernelTools),
         typeof(PerformanceWprTools),
-        typeof(PerformanceStorageProbeTools)
+        typeof(PerformanceStorageProbeTools),
+        typeof(NetworkTopologyTools),
+        typeof(PacketDropTools)
     ];
 
     public override void ConfigureServices(IServiceCollection services, VestigoOptions options)
@@ -47,5 +49,11 @@ public sealed class PerformanceModule : VestigoModule
         services.AddSingleton<IWprRecorder>(provider => provider.GetRequiredService<WindowsWprRecorder>());
         services.AddHostedService(provider => provider.GetRequiredService<WindowsWprRecorder>());
         services.AddSingleton<IStorageLatencyProbe, WindowsStorageLatencyProbe>();
+        services.AddSingleton<INetworkTopologySource, WindowsNetworkTopology>();
+        services.AddSingleton<INetworkFilterSource, WindowsNetworkFilterSource>();
+        services.AddSingleton<INetworkStackStatsSource, WindowsNetworkStackStats>();
+        services.AddSingleton<WindowsPktmonDropRecorder>();
+        services.AddSingleton<IPacketDropCapture>(provider => provider.GetRequiredService<WindowsPktmonDropRecorder>());
+        services.AddHostedService(provider => provider.GetRequiredService<WindowsPktmonDropRecorder>());
     }
 }

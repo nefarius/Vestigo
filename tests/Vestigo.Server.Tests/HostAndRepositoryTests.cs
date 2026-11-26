@@ -57,7 +57,7 @@ public class HostTests : IDisposable
         Assert.Contains("TLS-terminating proxy", body, StringComparison.Ordinal);
         Assert.Contains("https://github.com/nefarius/Vestigo", body, StringComparison.Ordinal);
         Assert.Contains(
-            "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, system diagnostics, opt-in machine and VM performance analysis, opt-in machine reboot, AutoLogon, and interactive logon from the Windows logon or lock screen.",
+            "It covers tracing, devices and drivers, processes and services, files and logs, desktop interaction, system diagnostics, network inventory and gated probes, opt-in machine and VM performance analysis including NDIS/WFP filters and drop-only pktmon, opt-in machine reboot, AutoLogon, and interactive logon from the Windows logon or lock screen.",
             body,
             StringComparison.Ordinal);
         Assert.Contains("Explicit configuration gates many sensitive features.", body, StringComparison.Ordinal);
@@ -270,7 +270,9 @@ public class RepositoryBoundaryTests
                      "Diagnostics:AllowNetworkProbes", "Diagnostics:AllowedProbeDestinations",
                      "Diagnostics:MaxProcessModules", "Diagnostics:MaxInstallHistoryBytes",
                      "Diagnostics:MaxProbeDuration", "Diagnostics:MaxInspectBytes",
-                     "Diagnostics:MaxProcessConnections", "Diagnostics:MaxEndpointProbeDuration",
+                     "Diagnostics:MaxProcessConnections", "Diagnostics:MaxNetworkConnections",
+                     "Diagnostics:MaxNetworkProbeSamples", "Diagnostics:MaxLatencyProbeDuration",
+                     "Diagnostics:MaxPathProbeHops", "Diagnostics:MaxEndpointProbeDuration",
                      "Diagnostics:MaxUdpPayloadBytes", "Diagnostics:MaxUdpProbeDuration",
                      "Diagnostics:AllowAudioPlayback", "Diagnostics:MaxVideoEncoders",
                      "Diagnostics:MaxCameraFormats", "Diagnostics:MaxAudioProbeDuration",
@@ -279,12 +281,14 @@ public class RepositoryBoundaryTests
                      "Diagnostics:MaxCrashReportFileBytes", "Diagnostics:MaxDumpBytes",
                      "Diagnostics:MinDumpFreeBytes",
                      "Performance:AllowKernelTrace", "Performance:AllowRawEtlCapture",
-                     "Performance:AllowStorageProbes", "Performance:MaxSampleDuration",
+                     "Performance:AllowStorageProbes", "Performance:AllowPacketDropCapture",
+                     "Performance:MaxSampleDuration",
                      "Performance:MinSampleIntervalMilliseconds", "Performance:MaxCounterPaths",
                      "Performance:MaxKernelTraceDuration", "Performance:MaxKernelTraceEvents",
                      "Performance:MaxRawEtlDuration", "Performance:MaxRawEtlBytes",
-                     "Performance:MinFreeDiskBytes", "Performance:MaxStorageProbeBytes",
+                     "Performance:MinFreeDiskBytes",                      "Performance:MaxStorageProbeBytes",
                      "Performance:MaxStorageProbeDuration",
+                     "Performance:MaxPacketDropDuration",
                      "Audio:AllowSetDefault", "Audio:MeterSampleMilliseconds",
                      "Desktop:AllowScreenshots", "Desktop:MaxScreenshotBytes",
                      "Desktop:AllowWindowPlacement", "Desktop:AllowDisplayLayoutChanges",

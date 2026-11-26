@@ -27,7 +27,7 @@ Analyzes an existing .etl file inside a root with Read access using TraceEvent a
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `path` | `string` | yes |  | Path of a .etl file in a root with Read access. |
-| `groups` | `string[]` | no | `null` | Focus groups: disk_io, file_io, dpc_isr, scheduler, hard_faults. Empty selects all. |
+| `groups` | `string[]` | no | `null` | Focus groups: disk_io, file_io, dpc_isr, scheduler, hard_faults, network. Empty selects all. |
 
 ## `attach_etw_session`
 
@@ -70,12 +70,20 @@ No parameters.
 
 ## `capture_kernel_latency_summary`
 
-Runs a bounded kernel ETW capture in an isolated Vestigo-Perf-* worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, and hard-fault summaries. Requires Vestigo:Performance:AllowKernelTrace. Does not return raw events.
+Runs a bounded kernel ETW capture in an isolated Vestigo-Perf-* worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, hard-fault, and per-process network summaries. Requires Vestigo:Performance:AllowKernelTrace. Does not return raw events.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `groups` | `string[]` | no | `null` | Focus groups: disk_io, file_io, dpc_isr, scheduler, hard_faults. Empty selects all. |
+| `groups` | `string[]` | no | `null` | Focus groups: disk_io, file_io, dpc_isr, scheduler, hard_faults, network. Empty selects all. |
 | `durationSeconds` | `int` | no | `10` | Capture window in seconds. |
+
+## `capture_packet_drops`
+
+Runs a bounded drop-only pktmon capture (metadata flags, no raw packets) and returns per-component and per-drop-reason counts. TotalDropped is the ETL drop-reason count when format succeeds, including zero when that capture has no drop-reason rows; component counters are a live snapshot immediately before stop. When format fails or the ETL is missing, TotalDropped falls back to that snapshot, Partial is true, and Error identifies the fallback. Requires Vestigo:Performance:AllowPacketDropCapture. durationSeconds is clamped to 1..MaxPacketDropDuration. A machine-global pktmon session is started; Vestigo stops orphan sessions it owns on startup. ETL metadata is parsed and deleted. Packet payloads are never returned or persisted.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `durationSeconds` | `int` | no | `5` | Capture window in seconds. |
 
 ## `capture_process_dump`
 
@@ -534,6 +542,27 @@ Returns physical and available RAM, commit charge versus limit, pagefile usage, 
 | `includePoolTags` | `bool` | no | `false` | Include top kernel pool-tag consumers. |
 | `poolTagLimit` | `int` | no | `16` | Maximum pool tags to return (1-64). |
 
+## `get_network_configuration`
+
+Returns the routing table, a bounded ARP/NDP neighbor table, DNS client servers, search suffixes, NRPT rules, and WinHTTP/IE proxy URLs, PAC, and bypass lists. Proxy credentials are never read. partial is true when a source was denied. truncated is true when a table exceeded the bound.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `maxRoutes` | `int` | no | `512` | Maximum route rows to return (1-4096). |
+| `maxNeighbors` | `int` | no | `512` | Maximum neighbor rows to return (1-4096). |
+
+## `get_network_stack_stats`
+
+Returns 64-bit per-interface octet/packet/error/discard counters plus IPv4/IPv6 TCP, UDP, IP, and ICMP MIB statistics, a TCP state histogram, UDP binding count, and ephemeral-port pool utilization. This is a snapshot, not a capture.
+
+No parameters.
+
+## `get_network_topology`
+
+Returns per-adapter interface index, link speed, duplex, media state, MTU, VLAN, MAC, IPv4/IPv6, gateways, DNS, DHCP, driver name/version, 64-bit octet/packet/discard/error counters, RSS/RSC/LSO/checksum offloads, selected advanced properties, and global TCP template tuning. TCP Timestamps is disabled, enabled, or allowed. partial is true when a StandardCimv2 query fails or advanced properties are truncated. Combines System.Net.NetworkInformation with ROOT\StandardCimv2. No packet payloads are captured.
+
+No parameters.
+
 ## `get_power_state`
 
 Returns AC line status (online, offline, or unknown), whether a battery is present, its percent, whether it is charging (separate from AC status), remaining seconds, the active scheme GUID and name, approximate UTC last sleep and wake times, and platform capabilities. A battery that is absent leaves the battery fields null. Charging can be true while AC status is offline. Last sleep and wake are UTC now minus the interrupt-time counters, so a clock change moves them. fastStartupSupported is a capability, not the HiberbootEnabled configuration from get_boot_state. A failed probe is a null field. There is no write.
@@ -776,6 +805,20 @@ Looks at the console user's screen and describes it for an agent. Returns an ann
 | `elevated` | `bool` | no | `false` | Use the elevated token when capturing as the console user. |
 | `desktopSessionId` | `string` | no | `null` | Managed desktop session id. Desktop, display, and region views need that session to be the input desktop. |
 
+## `inspect_tcp_connection_stats`
+
+Reads TCP EStats (smoothed RTT, variance, min/max RTT, cwnd, ssthresh, retransmits, dup-ACKs, SACKs, zero-window, bytes acked) for a selected established connection or the top established connections of a pid. durationMs, 0..5000, enables collection only when it was off and restores the prior state afterwards. limit is clamped to 1..16. No packet payloads are captured.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `localAddress` | `string` | no | `null` | Local address of the connection. |
+| `localPort` | `int?` | no | `null` | Local port. |
+| `remoteAddress` | `string` | no | `null` | Remote address of the connection. |
+| `remotePort` | `int?` | no | `null` | Remote port. |
+| `pid` | `int?` | no | `null` | Owning process id. When set without a 4-tuple, inspects that process's established connections. |
+| `limit` | `int` | no | `4` | Maximum connections to inspect (1-16). |
+| `durationMs` | `int` | no | `0` | Optional observation window in milliseconds (0-5000) during which EStats collection is enabled. |
+
 ## `inspect_window`
 
 Reads one window in physical virtual-screen pixels. Returns the raw GetWindowRect, the DWM visible frame, and the client rectangle in screen coordinates, plus DPI, frame metrics, styles, visibility, owner relationships, display intersections, and process integrity, elevation, and LocalSystem state when those reads succeed. Each field has its own success or error. A failed read is not reported as a zero rectangle. Geometry is omitted when per-monitor DPI awareness v2 cannot be entered. expectedPid and expectedStartTime reject a reused handle or pid. context 'interactive' (default) reads the console user's desktop. desktopSessionId reads that managed desktop without activating it. Inspection of an inactive desktop is best-effort. This does not change the window.
@@ -949,11 +992,18 @@ No parameters.
 
 ## `list_firewall_rules`
 
-Lists stored Windows Firewall rules in collection order. Requires Vestigo:Diagnostics:AllowFirewallInventory. Address, port, ICMP, interface, package, and user fields are the raw Windows expressions, capped at 512 characters. profiles is the stored profile bitmask. action is the stored action and is not a verdict about a connection. limit is clamped to 1..Vestigo:Diagnostics:MaxFirewallRules. Interface SAFEARRAYs are omitted. This does not change rules and does not report whether traffic was blocked.
+Lists stored Windows Firewall rules in collection order. Requires Vestigo:Diagnostics:AllowFirewallInventory. Address, port, ICMP, interface, package, and user fields are the raw Windows expressions, capped at 512 characters. profiles is the stored profile bitmask. action is the stored action and is not a verdict about a connection. limit is clamped to 1..Vestigo:Diagnostics:MaxFirewallRules. Optional filters (enabledOnly, direction, action, profile, nameContains, programContains, port) are applied before the cap. Interface SAFEARRAYs are omitted. This does not change rules and does not report whether traffic was blocked.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `limit` | `int` | no | `50` | Maximum rules. Clamped to 1..Vestigo:Diagnostics:MaxFirewallRules. |
+| `enabledOnly` | `bool` | no | `false` | Return only enabled rules. |
+| `direction` | `string` | no | `null` | in or out. |
+| `action` | `string` | no | `null` | allow or block. |
+| `profile` | `string` | no | `null` | domain, private, or public. |
+| `nameContains` | `string` | no | `null` | Case-insensitive substring of the rule name, description, or group. |
+| `programContains` | `string` | no | `null` | Case-insensitive substring of the application, service, or package. |
+| `port` | `string` | no | `null` | Match a local or remote port expression. |
 
 ## `list_graphics_adapters`
 
@@ -1005,6 +1055,27 @@ Lists Windows logon sessions. isCurrentInput marks the session interactive tools
 | `includeDisconnected` | `bool` | no | `true` | Include disconnected sessions. Default true. |
 | `includeListeners` | `bool` | no | `false` | Include listener rows such as RDP-Tcp. Default false. |
 | `includeClientAddresses` | `bool` | no | `false` | Include client name and address. Default false. These values are not written to the log. |
+
+## `list_network_connections`
+
+Lists TCP endpoints and UDP bindings for the whole machine. Filter by protocol, family, TCP state, local or remote port, or owning pid. includeRemoteAddresses adds remote address and port; otherwise those fields are null. limit is clamped to 1..Vestigo:Diagnostics:MaxNetworkConnections. The result always includes a TCP state histogram and the total UDP binding count so TIME_WAIT, CLOSE_WAIT, and ephemeral-port pressure can be diagnosed in one call. No packet payloads, headers, or credentials are read.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | `int` | no | `200` | Maximum rows. Clamped to 1..Vestigo:Diagnostics:MaxNetworkConnections. |
+| `protocol` | `string` | no | `null` | tcp or udp. Empty returns both. |
+| `family` | `string` | no | `null` | ipv4 or ipv6. Empty returns both. |
+| `state` | `string` | no | `null` | TCP state name such as established, timeWait, or closeWait. |
+| `localPort` | `int?` | no | `null` | Match this local port. |
+| `remotePort` | `int?` | no | `null` | Match this remote port. |
+| `pid` | `int?` | no | `null` | Owning process id. |
+| `includeRemoteAddresses` | `bool` | no | `false` | Include remote address and port. |
+
+## `list_network_filters`
+
+Lists NDIS Lightweight Filter bindings per adapter and WFP callouts, sublayers, and providers. Use this to identify AV, EDR, or VPN drivers in the network path, parallel to list_filesystem_minifilters. partial is true when WFP returns ACCESS_DENIED. No filter configuration is changed.
+
+No parameters.
 
 ## `list_pending_file_operations`
 
@@ -1230,6 +1301,30 @@ Observes whether frames arrive for one display in the console user's session. ba
 | `target` | `string` | no | `primary` | 'primary' or a GDI device name such as \\.\DISPLAY1. |
 | `backend` | `string` | no | `dxgi` | 'dxgi' or 'wgc'. Only dxgi is implemented. |
 | `durationMs` | `int` | no | `1000` | How long to wait for frames, in milliseconds. Capped by Vestigo:Diagnostics:MaxProbeDuration. |
+
+## `probe_network_latency`
+
+Sends a bounded number of icmp echo or tcp connect samples to one allow-listed destination and returns RTT percentiles, RFC 3550 jitter, sent/received/loss percent, and per-sample status. samples is clamped to 1..Vestigo:Diagnostics:MaxNetworkProbeSamples. The call is capped by MaxLatencyProbeDuration. Requires Vestigo:Diagnostics:AllowNetworkProbes and AllowedProbeDestinations. No packet payloads are captured.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `host` | `string` | yes |  | Host name or IP address. Not a URL. |
+| `port` | `int` | no | `443` | Port for tcp probes, 1-65535. Ignored for icmp except allow-list matching. |
+| `protocol` | `string` | no | `icmp` | icmp or tcp. |
+| `samples` | `int` | no | `10` | Number of samples. Clamped to 1..MaxNetworkProbeSamples. |
+| `includeResolvedAddress` | `bool` | no | `false` | Include the destination in sample errors. Addresses are still omitted unless this is true. |
+
+## `probe_network_path`
+
+Sends ICMP TTL probes from 1 to maxHops and returns per-hop RTT percentiles and loss. Hop addresses are omitted unless includeHopAddresses is true. discoverPmtu performs a bounded don't-fragment binary search for the effective Path MTU and reports a blackhole when timed-out DF probes are seen. maxHops is clamped to 1..Vestigo:Diagnostics:MaxPathProbeHops. Requires Vestigo:Diagnostics:AllowNetworkProbes and AllowedProbeDestinations. No packet payloads are captured.
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `host` | `string` | yes |  | Host name or IP address. Not a URL. |
+| `maxHops` | `int` | no | `30` | Maximum hops. Clamped to 1..MaxPathProbeHops. |
+| `samplesPerHop` | `int` | no | `3` | Samples per hop (1-5). |
+| `includeHopAddresses` | `bool` | no | `false` | Include hop IP addresses. |
+| `discoverPmtu` | `bool` | no | `false` | Also search for the effective Path MTU. |
 
 ## `probe_scheduler_jitter`
 
@@ -1515,11 +1610,11 @@ Starts a task now. It runs as the task's own principal (often SYSTEM), not as th
 
 ## `sample_performance_counters`
 
-Samples English PDH counters over a bounded window and returns min/avg/p50/p95/p99/max per counter. preset is overview, storage, cpu, memory, network, or hypervisor. paths may add extra English PDH paths. Duration is clamped by Vestigo:Performance:MaxSampleDuration. Interval is at least MinSampleIntervalMilliseconds.
+Samples English PDH counters over a bounded window and returns min/avg/p50/p95/p99/max per counter. preset is overview, storage, cpu, memory, network, network_rss, or hypervisor. paths may add extra English PDH paths. Duration is clamped by Vestigo:Performance:MaxSampleDuration. Interval is at least MinSampleIntervalMilliseconds.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `preset` | `string` | no | `overview` | Curated preset: overview, storage, cpu, memory, network, or hypervisor. |
+| `preset` | `string` | no | `overview` | Curated preset: overview, storage, cpu, memory, network, network_rss, or hypervisor. |
 | `paths` | `string[]` | no | `null` | Optional extra English PDH paths, for example \\Processor(_Total)\\% DPC Time. |
 | `durationSeconds` | `int` | no | `5` | Sampling window in seconds. |
 | `intervalMs` | `int` | no | `1000` | Sampling interval in milliseconds. |
@@ -1873,7 +1968,7 @@ Captures a PNG of the console user's desktop. target 'desktop' (default) is the 
 
 ## `test_endpoint`
 
-Observes one destination from Vestigo's own network context, which can differ from an application's routing, proxy, or credentials. protocol 'dns' resolves the host, 'tcp' also connects, 'tls' also performs a TLS handshake with certificate name and chain validation, and 'udp' sends one datagram. udp outcome 'sent' does not prove the peer is reachable: a blocked UDP port can fail silently. stun true, only with udp, sends one STUN binding request and waits for a matching response. A missing response is not a firewall block. The mapped address is unauthenticated. quic returns protocol_unsupported. The direct probe contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. TLS chain building may also contact Authority Information Access issuer servers. Revocation checks may contact revocation servers when Vestigo:Diagnostics:AllowOnlineRevocation is enabled. timeoutMs is capped by Vestigo:Diagnostics:MaxEndpointProbeDuration, and a udp call is also capped by Vestigo:Diagnostics:MaxUdpProbeDuration. A udp datagram is at most Vestigo:Diagnostics:MaxUdpPayloadBytes. includeResolvedAddress reports the addresses used. A TCP result is not a measure of media quality, jitter, or loss. No payloads, headers, or credentials are read. Requires Vestigo:Diagnostics:AllowNetworkProbes.
+Observes one destination from Vestigo's own network context, which can differ from an application's routing, proxy, or credentials. protocol 'dns' resolves the host, 'tcp' also connects, 'tls' also performs a TLS handshake with certificate name and chain validation, and 'udp' sends one datagram. udp outcome 'sent' does not prove the peer is reachable: a blocked UDP port can fail silently. stun true, only with udp, sends one STUN binding request and waits for a matching response. A missing response is not a firewall block. The mapped address is unauthenticated. quic returns protocol_unsupported. The direct probe contacts only the host and port given here, and only when that host, or that host and port, is listed in Vestigo:Diagnostics:AllowedProbeDestinations. TLS chain building may also contact Authority Information Access issuer servers. Revocation checks may contact revocation servers when Vestigo:Diagnostics:AllowOnlineRevocation is enabled. timeoutMs is capped by Vestigo:Diagnostics:MaxEndpointProbeDuration, and a udp call is also capped by Vestigo:Diagnostics:MaxUdpProbeDuration. A udp datagram is at most Vestigo:Diagnostics:MaxUdpPayloadBytes. includeResolvedAddress reports the addresses used. A TCP result is not a measure of media quality, jitter, or loss. No payloads, headers, or credentials are read. Optional timing fields report DNS, TCP connect, TLS handshake, and STUN RTT in milliseconds when those stages ran. Requires Vestigo:Diagnostics:AllowNetworkProbes.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

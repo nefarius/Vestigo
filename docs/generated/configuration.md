@@ -53,6 +53,10 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `Diagnostics:MaxFirewallRules` | `200` |
 | `Diagnostics:MaxInspectBytes` | `268435456` |
 | `Diagnostics:MaxInstallHistoryBytes` | `16777216` |
+| `Diagnostics:MaxLatencyProbeDuration` | `00:00:15` |
+| `Diagnostics:MaxNetworkConnections` | `500` |
+| `Diagnostics:MaxNetworkProbeSamples` | `20` |
+| `Diagnostics:MaxPathProbeHops` | `30` |
 | `Diagnostics:MaxProbeDuration` | `00:00:05` |
 | `Diagnostics:MaxProcessConnections` | `500` |
 | `Diagnostics:MaxProcessModules` | `500` |
@@ -98,11 +102,13 @@ Generated from `VestigoOptions` property defaults. Do not edit by hand.
 | `MaxReadWait` | `00:00:30` |
 | `Modules` | `empty` |
 | `Performance:AllowKernelTrace` | `false` |
+| `Performance:AllowPacketDropCapture` | `false` |
 | `Performance:AllowRawEtlCapture` | `false` |
 | `Performance:AllowStorageProbes` | `false` |
 | `Performance:MaxCounterPaths` | `64` |
 | `Performance:MaxKernelTraceDuration` | `00:00:30` |
 | `Performance:MaxKernelTraceEvents` | `500000` |
+| `Performance:MaxPacketDropDuration` | `00:00:15` |
 | `Performance:MaxRawEtlBytes` | `536870912` |
 | `Performance:MaxRawEtlDuration` | `00:02:00` |
 | `Performance:MaxSampleDuration` | `00:01:00` |

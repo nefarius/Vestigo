@@ -16,10 +16,10 @@ public sealed class PerformanceCounterTools(
     [McpServerTool(Name = "sample_performance_counters", ReadOnly = true)]
     [Description(
         "Samples English PDH counters over a bounded window and returns min/avg/p50/p95/p99/max per counter. "
-        + "preset is overview, storage, cpu, memory, network, or hypervisor. paths may add extra English PDH paths. "
+        + "preset is overview, storage, cpu, memory, network, network_rss, or hypervisor. paths may add extra English PDH paths. "
         + "Duration is clamped by Vestigo:Performance:MaxSampleDuration. Interval is at least MinSampleIntervalMilliseconds.")]
     public Task<OperationResult<CounterSampleResult>> SamplePerformanceCounters(
-        [Description("Curated preset: overview, storage, cpu, memory, network, or hypervisor.")] string preset = "overview",
+        [Description("Curated preset: overview, storage, cpu, memory, network, network_rss, or hypervisor.")] string preset = "overview",
         [Description("Optional extra English PDH paths, for example \\\\Processor(_Total)\\\\% DPC Time.")] string[]? paths = null,
         [Description("Sampling window in seconds.")] int durationSeconds = 5,
         [Description("Sampling interval in milliseconds.")] int intervalMs = 1000,

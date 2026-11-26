@@ -7,8 +7,13 @@ namespace Vestigo.Performance;
 /// <summary>Bounded WmiLight queries. Missing namespaces or classes become empty lists.</summary>
 internal static class WmiQuery
 {
-    public static IReadOnlyList<WmiObject> Query(string scope, string wql)
+    public static IReadOnlyList<WmiObject> Query(string scope, string wql) =>
+        Query(scope, wql, 256, out _, out _);
+
+    public static IReadOnlyList<WmiObject> Query(string scope, string wql, int limit, out bool failed, out bool truncated)
     {
+        failed = false;
+        truncated = false;
         try
         {
             using WmiConnection connection = new(scope);
@@ -16,8 +21,9 @@ internal static class WmiQuery
             foreach (WmiObject row in connection.CreateQuery(wql, TimeSpan.FromSeconds(15)))
             {
                 rows.Add(row);
-                if (rows.Count >= 256)
+                if (rows.Count >= limit)
                 {
+                    truncated = true;
                     break;
                 }
             }
@@ -26,6 +32,7 @@ internal static class WmiQuery
         }
         catch (Exception ex) when (ex is WmiException or InvalidOperationException or COMException or UnauthorizedAccessException)
         {
+            failed = true;
             return [];
         }
     }

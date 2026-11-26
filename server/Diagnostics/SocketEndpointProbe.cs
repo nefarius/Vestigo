@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -27,7 +28,9 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         budget.CancelAfter(timeout);
         CancellationToken token = budget.Token;
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        long dnsStarted = Stopwatch.GetTimestamp();
         (IReadOnlyList<IPAddress> addresses, string? dnsError, bool timedOut) resolved = await Resolve(host, token, cancellationToken).ConfigureAwait(false);
+        double dnsMs = Stopwatch.GetElapsedTime(dnsStarted).TotalMilliseconds;
         List<DnsObservation> answers = [];
         foreach (IPAddress address in resolved.addresses)
         {
@@ -36,17 +39,19 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
 
         if (protocol == "dns" || answers.Count == 0)
         {
-            return new EndpointProbeResult(host, port, protocol, observedAt, resolved.timedOut, resolved.dnsError, answers, [], null);
+            return new EndpointProbeResult(host, port, protocol, observedAt, resolved.timedOut, resolved.dnsError, answers, [], null, null, dnsMs);
         }
 
         if (protocol == "udp")
         {
-            return await SendUdp(host, port, protocol, observedAt, resolved.addresses, resolved.timedOut, resolved.dnsError, answers, stun, token, cancellationToken).ConfigureAwait(false);
+            return await SendUdp(host, port, protocol, observedAt, resolved.addresses, resolved.timedOut, resolved.dnsError, answers, stun, dnsMs, token, cancellationToken).ConfigureAwait(false);
         }
 
         List<TcpObservation> attempts = [];
         TlsObservation? tls = null;
         bool timedOut = resolved.timedOut;
+        double? connectMs = null;
+        double? tlsMs = null;
         foreach (IPAddress address in resolved.addresses)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -56,7 +61,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
                 break;
             }
 
-            (TcpObservation tcp, TlsObservation? handshake, bool attemptTimedOut) = await Connect(
+            (TcpObservation tcp, TlsObservation? handshake, bool attemptTimedOut, double connectDuration, double? handshakeDuration) = await Connect(
                 host,
                 port,
                 protocol,
@@ -67,9 +72,11 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
                 cancellationToken).ConfigureAwait(false);
             attempts.Add(tcp);
             timedOut |= attemptTimedOut;
+            connectMs ??= connectDuration;
             if (handshake is not null)
             {
                 tls = handshake;
+                tlsMs = handshakeDuration;
                 break;
             }
 
@@ -79,7 +86,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
             }
         }
 
-        return new EndpointProbeResult(host, port, protocol, observedAt, timedOut, resolved.dnsError, answers, attempts, tls);
+        return new EndpointProbeResult(host, port, protocol, observedAt, timedOut, resolved.dnsError, answers, attempts, tls, null, dnsMs, connectMs, tlsMs);
     }
 
     private async Task<EndpointProbeResult> SendUdp(
@@ -92,6 +99,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         string? dnsError,
         IReadOnlyList<DnsObservation> answers,
         bool stun,
+        double dnsMs,
         CancellationToken token,
         CancellationToken caller)
     {
@@ -100,7 +108,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         byte[] payload = stun ? StunBinding.CreateRequest(transaction) : [0x00];
         if (payload.Length > options.Diagnostics.MaxUdpPayloadBytes)
         {
-            return Result(host, port, protocol, observedAt, false, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+            return Result(host, port, protocol, observedAt, false, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null), dnsMs);
         }
 
         foreach (IPAddress address in addresses)
@@ -108,12 +116,13 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
             caller.ThrowIfCancellationRequested();
             if (token.IsCancellationRequested)
             {
-                return Result(host, port, protocol, observedAt, true, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+                return Result(host, port, protocol, observedAt, true, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null), dnsMs);
             }
 
             try
             {
                 using Socket socket = new(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+                long sentAt = Stopwatch.GetTimestamp();
                 int sent = await socket.SendToAsync(payload, SocketFlags.None, new IPEndPoint(address, port), token).ConfigureAwait(false);
                 if (sent != payload.Length)
                 {
@@ -122,14 +131,14 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
 
                 if (!stun)
                 {
-                    return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("sent", sent, 0, UdpObservation.SentDoesNotProveReachability, null));
+                    return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("sent", sent, 0, UdpObservation.SentDoesNotProveReachability, null), dnsMs);
                 }
 
-                return await WaitForStun(socket, address, port, host, protocol, observedAt, dnsError, answers, transaction, sent, token, caller).ConfigureAwait(false);
+                return await WaitForStun(socket, address, port, host, protocol, observedAt, dnsError, answers, transaction, sent, dnsMs, sentAt, token, caller).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!caller.IsCancellationRequested)
             {
-                return Result(host, port, protocol, observedAt, true, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+                return Result(host, port, protocol, observedAt, true, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null), dnsMs);
             }
             catch (SocketException)
             {
@@ -137,7 +146,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
             }
         }
 
-        return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null));
+        return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("send_failed", 0, 0, UdpObservation.SentDoesNotProveReachability, null), dnsMs);
     }
 
     private static async Task<EndpointProbeResult> WaitForStun(
@@ -151,6 +160,8 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         IReadOnlyList<DnsObservation> answers,
         byte[] transaction,
         int sent,
+        double dnsMs,
+        long sentAt,
         CancellationToken token,
         CancellationToken caller)
     {
@@ -174,7 +185,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
                 }
 
                 StunObservation stun = new(true, decoded.MappedAddress?.ToString(), decoded.MappedPort, decoded.Reflexive);
-                return Result(host, port, protocol, observedAt, false, dnsError, answers, new UdpObservation("sent", sent, received.ReceivedBytes, UdpObservation.StunAnswered, stun));
+                return Result(host, port, protocol, observedAt, false, dnsError, answers, new UdpObservation("sent", sent, received.ReceivedBytes, UdpObservation.StunAnswered, stun), dnsMs, Stopwatch.GetElapsedTime(sentAt).TotalMilliseconds);
             }
         }
         catch (OperationCanceledException) when (!caller.IsCancellationRequested)
@@ -187,7 +198,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         }
 
         StunObservation silent = new(false, null, null, false);
-        return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("sent", sent, 0, UdpObservation.StunSilent, silent));
+        return Result(host, port, protocol, observedAt, timedOut, dnsError, answers, new UdpObservation("sent", sent, 0, UdpObservation.StunSilent, silent), dnsMs);
     }
 
     private static EndpointProbeResult Result(
@@ -198,8 +209,10 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         bool timedOut,
         string? dnsError,
         IReadOnlyList<DnsObservation> answers,
-        UdpObservation udp) =>
-        new(host, port, protocol, observedAt, timedOut, dnsError, answers, [], null, udp);
+        UdpObservation udp,
+        double dnsMs,
+        double? stunRttMs = null) =>
+        new(host, port, protocol, observedAt, timedOut, dnsError, answers, [], null, udp, dnsMs, null, null, stunRttMs);
 
     private static async Task<(IReadOnlyList<IPAddress> Addresses, string? Error, bool TimedOut)> Resolve(
         string host,
@@ -226,7 +239,7 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
         }
     }
 
-    private static async Task<(TcpObservation Tcp, TlsObservation? Tls, bool TimedOut)> Connect(
+    private static async Task<(TcpObservation Tcp, TlsObservation? Tls, bool TimedOut, double ConnectMs, double? TlsMs)> Connect(
         string host,
         int port,
         string protocol,
@@ -238,29 +251,31 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
     {
         string? shown = includeResolvedAddress ? address.ToString() : null;
         using TcpClient client = new();
+        long connectStarted = Stopwatch.GetTimestamp();
         try
         {
             await client.ConnectAsync(address, port, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!caller.IsCancellationRequested)
         {
-            return (new TcpObservation(shown, false, "timeout"), null, true);
+            return (new TcpObservation(shown, false, "timeout"), null, true, Stopwatch.GetElapsedTime(connectStarted).TotalMilliseconds, null);
         }
         catch (SocketException ex)
         {
-            return (new TcpObservation(shown, false, ex.SocketErrorCode.ToString()), null, false);
+            return (new TcpObservation(shown, false, ex.SocketErrorCode.ToString()), null, false, Stopwatch.GetElapsedTime(connectStarted).TotalMilliseconds, null);
         }
 
+        double connectMs = Stopwatch.GetElapsedTime(connectStarted).TotalMilliseconds;
         if (protocol != "tls")
         {
-            return (new TcpObservation(shown, true, null), null, false);
+            return (new TcpObservation(shown, true, null), null, false, connectMs, null);
         }
 
-        (TlsObservation tls, bool timedOut) = await Handshake(client, host, allowOnlineRevocation, token, caller).ConfigureAwait(false);
-        return (new TcpObservation(shown, true, null), tls, timedOut);
+        (TlsObservation tls, bool timedOut, double handshakeMs) = await Handshake(client, host, allowOnlineRevocation, token, caller).ConfigureAwait(false);
+        return (new TcpObservation(shown, true, null), tls, timedOut, connectMs, handshakeMs);
     }
 
-    private static async Task<(TlsObservation Observation, bool TimedOut)> Handshake(
+    private static async Task<(TlsObservation Observation, bool TimedOut, double HandshakeMs)> Handshake(
         TcpClient client,
         string host,
         bool allowOnlineRevocation,
@@ -291,19 +306,20 @@ public sealed class SocketEndpointProbe(VestigoOptions options) : IEndpointProbe
             }
         };
         await using SslStream stream = new(client.GetStream());
+        long handshakeStarted = Stopwatch.GetTimestamp();
         try
         {
             await stream.AuthenticateAsClientAsync(authentication, token).ConfigureAwait(false);
-            return (new TlsObservation(true, stream.SslProtocol.ToString(), subject, thumbprint, chain), false);
+            return (new TlsObservation(true, stream.SslProtocol.ToString(), subject, thumbprint, chain), false, Stopwatch.GetElapsedTime(handshakeStarted).TotalMilliseconds);
         }
         catch (OperationCanceledException) when (!caller.IsCancellationRequested)
         {
             chain.Add("timeout");
-            return (new TlsObservation(false, null, subject, thumbprint, chain), true);
+            return (new TlsObservation(false, null, subject, thumbprint, chain), true, Stopwatch.GetElapsedTime(handshakeStarted).TotalMilliseconds);
         }
         catch (Exception ex) when (ex is AuthenticationException or IOException)
         {
-            return (new TlsObservation(false, null, subject, thumbprint, chain), false);
+            return (new TlsObservation(false, null, subject, thumbprint, chain), false, Stopwatch.GetElapsedTime(handshakeStarted).TotalMilliseconds);
         }
     }
 

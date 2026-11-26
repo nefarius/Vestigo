@@ -25,7 +25,11 @@ internal static class IpHelperConnections
 
     private const int MaxTableBytes = 32 * 1024 * 1024;
 
-    public static TableRead Read(int pid, int limit)
+    public static TableRead Read(int pid, int limit) => Read((int?)pid, limit);
+
+    public static TableRead ReadAll(int limit) => Read(null, limit);
+
+    private static TableRead Read(int? pid, int limit)
     {
         List<ConnectionRecord> rows = [];
         bool partial = false;
@@ -58,7 +62,7 @@ internal static class IpHelperConnections
         return TableRead.Ok(partial, truncated, rows);
     }
 
-    private static (bool Ok, string? Code, List<ConnectionRecord> Rows, bool Truncated) ReadFamily(int pid, int room, bool tcp, bool ipv6)
+    private static (bool Ok, string? Code, List<ConnectionRecord> Rows, bool Truncated) ReadFamily(int? pid, int room, bool tcp, bool ipv6)
     {
         uint family = ipv6 ? IPv6 : IPv4;
         byte[]? buffer = tcp ? TcpBuffer(family, out string? code) : UdpBuffer(family, out code);
@@ -136,7 +140,7 @@ internal static class IpHelperConnections
         return buffer;
     }
 
-    private static unsafe void ReadTcp4(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
+    private static unsafe void ReadTcp4(byte[] buffer, int? pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
         if (buffer.Length < sizeof(MIB_TCPTABLE_OWNER_PID))
         {
@@ -150,7 +154,7 @@ internal static class IpHelperConnections
             for (int index = 0; index < count; index++)
             {
                 ref MIB_TCPROW_OWNER_PID row = ref table.table[index];
-                if ((int)row.dwOwningPid != pid)
+                if (pid is int required && (int)row.dwOwningPid != required)
                 {
                     continue;
                 }
@@ -169,12 +173,12 @@ internal static class IpHelperConnections
                     Port(row.dwLocalPort),
                     new IPAddress(row.dwRemoteAddr).ToString(),
                     Port(row.dwRemotePort),
-                    pid));
+                    (int)row.dwOwningPid));
             }
         }
     }
 
-    private static unsafe void ReadTcp6(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
+    private static unsafe void ReadTcp6(byte[] buffer, int? pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
         if (buffer.Length < sizeof(MIB_TCP6TABLE_OWNER_PID))
         {
@@ -188,7 +192,7 @@ internal static class IpHelperConnections
             for (int index = 0; index < count; index++)
             {
                 ref MIB_TCP6ROW_OWNER_PID row = ref table.table[index];
-                if ((int)row.dwOwningPid != pid)
+                if (pid is int required && (int)row.dwOwningPid != required)
                 {
                     continue;
                 }
@@ -207,12 +211,12 @@ internal static class IpHelperConnections
                     Port(row.dwLocalPort),
                     Address(row.ucRemoteAddr, row.dwRemoteScopeId),
                     Port(row.dwRemotePort),
-                    pid));
+                    (int)row.dwOwningPid));
             }
         }
     }
 
-    private static unsafe void ReadUdp4(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
+    private static unsafe void ReadUdp4(byte[] buffer, int? pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
         if (buffer.Length < sizeof(MIB_UDPTABLE_OWNER_PID))
         {
@@ -226,7 +230,7 @@ internal static class IpHelperConnections
             for (int index = 0; index < count; index++)
             {
                 ref MIB_UDPROW_OWNER_PID row = ref table.table[index];
-                if ((int)row.dwOwningPid != pid)
+                if (pid is int required && (int)row.dwOwningPid != required)
                 {
                     continue;
                 }
@@ -237,12 +241,12 @@ internal static class IpHelperConnections
                     return;
                 }
 
-                rows.Add(new ConnectionRecord("udp", "ipv4", null, new IPAddress(row.dwLocalAddr).ToString(), Port(row.dwLocalPort), null, null, pid));
+                rows.Add(new ConnectionRecord("udp", "ipv4", null, new IPAddress(row.dwLocalAddr).ToString(), Port(row.dwLocalPort), null, null, (int)row.dwOwningPid));
             }
         }
     }
 
-    private static unsafe void ReadUdp6(byte[] buffer, int pid, int room, List<ConnectionRecord> rows, ref bool truncated)
+    private static unsafe void ReadUdp6(byte[] buffer, int? pid, int room, List<ConnectionRecord> rows, ref bool truncated)
     {
         if (buffer.Length < sizeof(MIB_UDP6TABLE_OWNER_PID))
         {
@@ -256,7 +260,7 @@ internal static class IpHelperConnections
             for (int index = 0; index < count; index++)
             {
                 ref MIB_UDP6ROW_OWNER_PID row = ref table.table[index];
-                if ((int)row.dwOwningPid != pid)
+                if (pid is int required && (int)row.dwOwningPid != required)
                 {
                     continue;
                 }
@@ -267,7 +271,7 @@ internal static class IpHelperConnections
                     return;
                 }
 
-                rows.Add(new ConnectionRecord("udp", "ipv6", null, Address(row.ucLocalAddr, row.dwLocalScopeId), Port(row.dwLocalPort), null, null, pid));
+                rows.Add(new ConnectionRecord("udp", "ipv6", null, Address(row.ucLocalAddr, row.dwLocalScopeId), Port(row.dwLocalPort), null, null, (int)row.dwOwningPid));
             }
         }
     }

@@ -11,7 +11,7 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>probe_capture_support</c>. The tool stays disabled until this is true.</summary>
     public bool AllowCaptureProbes { get; set; }
 
-    /// <summary>Allows <c>test_endpoint</c>. Destinations must also be listed in <see cref="AllowedProbeDestinations"/>.</summary>
+    /// <summary>Allows <c>test_endpoint</c>, <c>probe_network_latency</c>, and <c>probe_network_path</c>. Destinations must also be listed in <see cref="AllowedProbeDestinations"/>.</summary>
     public bool AllowNetworkProbes { get; set; }
 
     /// <summary>Allows <c>probe_audio_format</c> to render a synthetic tone. Format checks stay available without it.</summary>
@@ -29,7 +29,7 @@ public sealed class DiagnosticsOptions
     /// <summary>Allows <c>stage_kernel_dump</c>. The tool stays disabled until this is true.</summary>
     public bool AllowKernelDumpStaging { get; set; }
 
-    /// <summary>Hosts, or <c>host:port</c> entries, that <c>test_endpoint</c> may contact. Empty allows none.</summary>
+    /// <summary>Hosts, or <c>host:port</c> entries, that network probes may contact. Empty allows none.</summary>
     public string[] AllowedProbeDestinations { get; set; } = [];
 
     /// <summary>Upper bound for <c>list_process_modules</c> <c>limit</c>.</summary>
@@ -46,6 +46,18 @@ public sealed class DiagnosticsOptions
 
     /// <summary>Upper bound for <c>list_process_connections</c> <c>limit</c>.</summary>
     public int MaxProcessConnections { get; set; } = 500;
+
+    /// <summary>Upper bound for <c>list_network_connections</c> <c>limit</c>.</summary>
+    public int MaxNetworkConnections { get; set; } = 500;
+
+    /// <summary>Upper bound for samples in one <c>probe_network_latency</c> call.</summary>
+    public int MaxNetworkProbeSamples { get; set; } = 20;
+
+    /// <summary>Upper bound for one <c>probe_network_latency</c> call.</summary>
+    public TimeSpan MaxLatencyProbeDuration { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>Upper bound for hops in one <c>probe_network_path</c> call.</summary>
+    public int MaxPathProbeHops { get; set; } = 30;
 
     /// <summary>Upper bound for one <c>test_endpoint</c> call.</summary>
     public TimeSpan MaxEndpointProbeDuration { get; set; } = TimeSpan.FromSeconds(5);
@@ -105,6 +117,26 @@ public sealed class DiagnosticsOptions
         if (MaxProcessConnections is < 1 or > 5000)
         {
             throw new InvalidOperationException("Vestigo:Diagnostics:MaxProcessConnections must be between 1 and 5000.");
+        }
+
+        if (MaxNetworkConnections is < 1 or > 5000)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxNetworkConnections must be between 1 and 5000.");
+        }
+
+        if (MaxNetworkProbeSamples is < 1 or > 100)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxNetworkProbeSamples must be between 1 and 100.");
+        }
+
+        if (MaxLatencyProbeDuration < TimeSpan.FromSeconds(1) || MaxLatencyProbeDuration > TimeSpan.FromSeconds(30))
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxLatencyProbeDuration must be between 00:00:01 and 00:00:30.");
+        }
+
+        if (MaxPathProbeHops is < 1 or > 64)
+        {
+            throw new InvalidOperationException("Vestigo:Diagnostics:MaxPathProbeHops must be between 1 and 64.");
         }
 
         if (MaxEndpointProbeDuration < TimeSpan.FromMilliseconds(100) || MaxEndpointProbeDuration > TimeSpan.FromSeconds(30))

@@ -18,7 +18,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p class="pills"><span class="pill on">On by default</span></p>
     <h2>WPP and ETW tracing</h2>
     <p>Inspect a WPP PDB, validate PDB or TMF sources, scan ETL metadata, and convert an ETL file to JSON or NDJSON. <code>start_capture</code> creates a <code>Vestigo-</code> realtime session from provider GUIDs or PDB paths. Follow it with long-polling <code>read_capture</code>. <code>attach_etw_session</code> can read an existing session once you list it in <code>AttachableSessions</code>. <code>observe_presentation</code> reports composed, independent-flip, or exclusive only when a DXGI, DWM, or DxgKrnl event says so, decodes that trace in a child process, and returns unknown otherwise.</p>
-    <p>Trace tools decode events and do not write a raw ETL file. The NT Kernel Logger is not used by Trace. The opt-in Performance module can capture a bounded kernel-latency summary and, separately, a raw WPR <code>.etl</code>.</p>
+    <p>Trace tools decode events and do not write a raw ETL file. The NT Kernel Logger is not used by Trace. The opt-in Performance module can capture a bounded kernel-latency summary, a raw WPR <code>.etl</code>, and a drop-only pktmon session.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill on">On by default</span></p>
@@ -121,8 +121,8 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Network probes gated</span></p>
     <h2>Network checks</h2>
-    <p><code>list_process_connections</code> lists the TCP endpoints and UDP bindings owned by one process. Remote addresses stay omitted unless you ask for them. <code>test_endpoint</code> resolves a host, opens TCP, completes a TLS handshake, or sends one UDP datagram from Vestigo's own network context.</p>
-    <p>The probe stays off until <code>Diagnostics:AllowNetworkProbes</code> is true and the host, or host and port, is listed in <code>Diagnostics:AllowedProbeDestinations</code>. A sent datagram does not prove the peer is reachable. <code>stun: true</code> waits for one STUN binding response and does not treat silence as a firewall block. QUIC is not supported. It does not capture packets. Online TLS revocation uses the same revocation gate as signature checks.</p>
+    <p><code>list_process_connections</code> lists the TCP endpoints and UDP bindings owned by one process. <code>list_network_connections</code> does the same for the whole machine and always returns a TCP state histogram. Remote addresses stay omitted unless you ask for them. <code>inspect_tcp_connection_stats</code> reads TCP EStats for a selected connection or a process. <code>get_network_configuration</code> reads routes, neighbors, DNS, and proxy URLs. <code>test_endpoint</code> resolves a host, opens TCP, completes a TLS handshake, or sends one UDP datagram from Vestigo's own network context. <code>probe_network_latency</code> and <code>probe_network_path</code> send ICMP or TCP samples, including an optional Path MTU search.</p>
+    <p>Active probes stay off until <code>Diagnostics:AllowNetworkProbes</code> is true and the host, or host and port, is listed in <code>Diagnostics:AllowedProbeDestinations</code>. A sent datagram does not prove the peer is reachable. <code>stun: true</code> waits for one STUN binding response and does not treat silence as a firewall block. QUIC is not supported. They do not capture packets. Online TLS revocation uses the same revocation gate as signature checks.</p>
   </article>
   <article class="card">
     <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Playback gated</span></p>
@@ -141,7 +141,7 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
   <article class="card">
     <p class="pills"><span class="pill optin">Diagnostics opt-in</span> <span class="pill gated">Firewall inventory gated</span> <span class="pill gated">Driver Verifier gated</span></p>
     <h2>Firewall and Driver Verifier</h2>
-    <p><code>get_firewall_profiles</code> and <code>list_firewall_rules</code> stay off until <code>Diagnostics:AllowFirewallInventory</code> is true. They return stored profile flags and raw rule expressions, including application paths. A stored action is not a verdict that traffic was blocked, and a probe timeout is not reported as a firewall block. The tools do not change policy.</p>
+    <p><code>get_firewall_profiles</code> and <code>list_firewall_rules</code> stay off until <code>Diagnostics:AllowFirewallInventory</code> is true. They return stored profile flags and raw rule expressions, including application paths. Optional rule filters are applied before the cap. A stored action is not a verdict that traffic was blocked, and a probe timeout is not reported as a firewall block. The tools do not change policy.</p>
     <p><code>set_driver_verifier</code> stays off until <code>Diagnostics:AllowDriverVerifier</code> is true. It saves standard flags for named drivers and does not reboot itself. <code>reset_driver_verifier</code> stays available. Use <code>reboot_machine</code> when <code>System:AllowReboot</code> is true.</p>
   </article>
   <article class="card">
@@ -179,10 +179,10 @@ See [Developers](developers.md) and [QA](qa.md) for the workflows that combine t
     <p>The module needs Processes and Jobs. A running monitor lets a remote debugger execute code on the machine; treat the token as administrator-equivalent.</p>
   </article>
   <article class="card">
-    <p class="pills"><span class="pill optin">Performance opt-in</span> <span class="pill gated">Kernel ETW gated</span> <span class="pill gated">WPR ETL gated</span> <span class="pill gated">Storage probes gated</span></p>
+    <p class="pills"><span class="pill optin">Performance opt-in</span> <span class="pill gated">Kernel ETW gated</span> <span class="pill gated">WPR ETL gated</span> <span class="pill gated">Storage probes gated</span> <span class="pill gated">Packet-drop gated</span></p>
     <h2>Performance</h2>
-    <p>Sample English PDH counters, storage topology, filesystem minifilters, VM environment, scheduler jitter, process I/O and EcoQoS, wait chains, and memory pressure. Needs Jobs. Use this when CPU, RAM, and disk utilization look normal while I/O or UI still stalls.</p>
-    <p><code>capture_kernel_latency_summary</code> stays off until <code>Performance:AllowKernelTrace</code> is true. It runs in an isolated worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, and hard-fault summaries, not raw events. <code>record_wpr_trace</code> stays off until <code>Performance:AllowRawEtlCapture</code> is true and writes an allow-listed <code>wpr.exe</code> <code>.etl</code> into a Write root. <code>probe_storage_latency</code> stays off until <code>Performance:AllowStorageProbes</code> is true and writes a temporary file in a Write root.</p>
+    <p>Sample English PDH counters, storage topology, filesystem minifilters, network adapters and NDIS/WFP filters, VM environment, scheduler jitter, process I/O and EcoQoS, wait chains, and memory pressure. Needs Jobs. Use this when CPU, RAM, and disk utilization look normal while I/O or UI still stalls.</p>
+    <p><code>capture_kernel_latency_summary</code> stays off until <code>Performance:AllowKernelTrace</code> is true. It runs in an isolated worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, hard-fault, and per-process network summaries, not raw events. <code>record_wpr_trace</code> stays off until <code>Performance:AllowRawEtlCapture</code> is true and writes an allow-listed <code>wpr.exe</code> <code>.etl</code> into a Write root. <code>probe_storage_latency</code> stays off until <code>Performance:AllowStorageProbes</code> is true and writes a temporary file in a Write root. <code>capture_packet_drops</code> stays off until <code>Performance:AllowPacketDropCapture</code> is true and runs allow-listed drop-only <code>pktmon.exe</code>. Packet payloads are never returned.</p>
   </article>
 </div>
 

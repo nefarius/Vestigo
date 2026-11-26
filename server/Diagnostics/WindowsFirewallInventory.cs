@@ -33,13 +33,13 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
         }
     }
 
-    public OperationResult<FirewallRuleList> ListRules(int limit)
+    public OperationResult<FirewallRuleList> ListRules(int limit, FirewallRuleFilter? filter = null)
     {
         try
         {
             using ComScope com = new();
             INetFwPolicy2* policy = com.CreatePolicy();
-            return OperationResult<FirewallRuleList>.Ok(ReadRules(com, com.Own(policy->Rules), limit));
+            return OperationResult<FirewallRuleList>.Ok(ReadRules(com, com.Own(policy->Rules), limit, filter));
         }
         catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -88,7 +88,7 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
             outbound is int outboundValue ? FirewallProjection.ActionName(outboundValue) : null);
     }
 
-    private static FirewallRuleList ReadRules(ComScope com, INetFwRules* rules, int limit)
+    private static FirewallRuleList ReadRules(ComScope com, INetFwRules* rules, int limit, FirewallRuleFilter? filter)
     {
         int? total = null;
         try
@@ -106,7 +106,9 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
         bool incomplete = false;
         bool exhausted = false;
         int scanned = 0;
-        while (scanned < limit)
+        int matched = 0;
+        bool filtering = filter is not null;
+        while (filtering || scanned < limit)
         {
             VARIANT item = default;
             uint fetched = 0;
@@ -131,16 +133,33 @@ internal sealed unsafe class WindowsFirewallInventory : IFirewallInventory
                     continue;
                 }
 
+                if (!FirewallRuleMatcher.Matches(rule!, filter))
+                {
+                    continue;
+                }
+
+                if (items.Count >= limit)
+                {
+                    matched++;
+                    continue;
+                }
+
                 items.Add(rule!);
+                matched++;
             }
             finally
             {
                 PInvoke.VariantClear(ref item);
             }
+
+            if (!filtering && scanned >= limit)
+            {
+                break;
+            }
         }
 
-        bool truncated = !exhausted && (total is null || scanned < total.Value);
-        return new FirewallRuleList(items, items.Count, total, truncated, incomplete);
+        bool truncated = filtering ? matched > items.Count : !exhausted && (total is null || scanned < total.Value);
+        return new FirewallRuleList(items, items.Count, filtering ? matched : total, truncated, incomplete);
     }
 
     private static bool TryReadRule(ComScope com, VARIANT item, out FirewallRule? rule)

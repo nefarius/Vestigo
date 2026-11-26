@@ -297,6 +297,9 @@ public class DiagnosticsTests : IDisposable
         Assert.Contains("SetupAPI", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("graphics adapters", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("TCP and UDP bindings", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.Contains("whole machine", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.Contains("TCP connection statistics", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
+        Assert.Contains("routing, DNS, and proxy", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("Media Foundation video encoders", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.Contains("Windows Error Reporting", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
         Assert.DoesNotContain("Process dumps", ModuleRegistry.GetPrivilegedModuleWarning(enabled));
@@ -318,6 +321,7 @@ public class DiagnosticsTests : IDisposable
             Diagnostics = { AllowNetworkProbes = true }
         };
         Assert.Contains("Network probes", ModuleRegistry.GetPrivilegedModuleWarning(network));
+        Assert.Contains("latency, and path", ModuleRegistry.GetPrivilegedModuleWarning(network));
         VestigoOptions playback = new()
         {
             Modules = { ["Diagnostics"] = new ModuleSettings { Enabled = true } },

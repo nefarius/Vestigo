@@ -25,6 +25,7 @@ public sealed class EndpointProbeTools(IEndpointProbe probe, VestigoOptions opti
         + "timeoutMs is capped by Vestigo:Diagnostics:MaxEndpointProbeDuration, and a udp call is also capped by Vestigo:Diagnostics:MaxUdpProbeDuration. "
         + "A udp datagram is at most Vestigo:Diagnostics:MaxUdpPayloadBytes. includeResolvedAddress reports the addresses used. "
         + "A TCP result is not a measure of media quality, jitter, or loss. No payloads, headers, or credentials are read. "
+        + "Optional timing fields report DNS, TCP connect, TLS handshake, and STUN RTT in milliseconds when those stages ran. "
         + "Requires Vestigo:Diagnostics:AllowNetworkProbes.")]
     public async Task<OperationResult<EndpointProbeResult>> TestEndpoint(
         [Description("Host name or IP address. Not a URL.")] string host,

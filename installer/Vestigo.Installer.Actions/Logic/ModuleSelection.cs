@@ -134,6 +134,9 @@ namespace Vestigo.Installer.Actions.Logic
         /// <summary>Pseudo module: not a server module but <c>Vestigo:Performance:AllowStorageProbes</c>.</summary>
         public const string PerformanceStorageProbes = "PerformanceStorageProbes";
 
+        /// <summary>Pseudo module: not a server module but <c>Vestigo:Performance:AllowPacketDropCapture</c>.</summary>
+        public const string PerformancePacketDropCapture = "PerformancePacketDropCapture";
+
         public static readonly IReadOnlyList<OptionToggle> OptionToggles = new List<OptionToggle>
         {
             new OptionToggle(SoftwareUninstall, "Software", "AllowUninstall"),
@@ -159,7 +162,8 @@ namespace Vestigo.Installer.Actions.Logic
             new OptionToggle(SelfUpdate, "Updates", "AllowSelfUpdate"),
             new OptionToggle(PerformanceKernelTrace, "Performance", "AllowKernelTrace"),
             new OptionToggle(PerformanceRawEtlCapture, "Performance", "AllowRawEtlCapture"),
-            new OptionToggle(PerformanceStorageProbes, "Performance", "AllowStorageProbes")
+            new OptionToggle(PerformanceStorageProbes, "Performance", "AllowStorageProbes"),
+            new OptionToggle(PerformancePacketDropCapture, "Performance", "AllowPacketDropCapture")
         };
 
         public static readonly IReadOnlyList<ModuleDefinition> All = new List<ModuleDefinition>
@@ -188,18 +192,19 @@ namespace Vestigo.Installer.Actions.Logic
             new ModuleDefinition("Devices", "Devices", "Driver install, device nodes, class filters, device state, and read-only HID capabilities via nefcon. Runs code with kernel privilege.", false, null),
             new ModuleDefinition("Jobs", "Jobs", "Background jobs with paged output, wait, and cancel. Needed by Processes, Software, and Diagnostics.", true, null),
             new ModuleDefinition("WindowsServicing", "Windows servicing", "Read-only Windows Update, reboot queues, CBS packages, servicing logs, storage and file lockers. Needs Jobs. May disclose sensitive paths and logs.", false, "Jobs"),
-            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process connections, list media capabilities, list Windows Error Reporting report metadata, read Windows Firewall profiles and rules, read Driver Verifier state, explain a driver load failure from cited evidence, and list kernel dump metadata. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
+            new ModuleDefinition("Diagnostics", "Diagnostics", "Inspect PE files and signatures, list loaded modules, list graphics adapters, list process and machine-wide connections, inspect TCP EStats, list media capabilities, list Windows Error Reporting report metadata, read Windows Firewall profiles and rules, read routing, DNS, and proxy configuration, read Driver Verifier state, explain a driver load failure from cited evidence, and list kernel dump metadata. Needs Jobs. A valid Authenticode signature is not permission to load a kernel driver.", false, "Jobs"),
             new ModuleDefinition(DiagnosticsCaptureProbes, "Capture probes", "Allow probe_capture_support to observe whether frames arrive (Vestigo:Diagnostics:AllowCaptureProbes). No pixel data is returned.", false, "Diagnostics"),
-            new ModuleDefinition(DiagnosticsNetworkProbes, "Network probes", "Allow test_endpoint to contact destinations listed in Vestigo:Diagnostics:AllowedProbeDestinations (Vestigo:Diagnostics:AllowNetworkProbes). The probe runs as the service and does not capture packets.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsNetworkProbes, "Network probes", "Allow test_endpoint, probe_network_latency, and probe_network_path to contact destinations listed in Vestigo:Diagnostics:AllowedProbeDestinations (Vestigo:Diagnostics:AllowNetworkProbes). The probe runs as the service and does not capture packets.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsAudioPlayback, "Audio playback probes", "Allow probe_audio_format to play a synthetic tone on a render endpoint (Vestigo:Diagnostics:AllowAudioPlayback). Format checks do not emit sound.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsProcessDumps, "Process dumps", "Allow capture_process_dump to write a minidump into a Write root (Vestigo:Diagnostics:AllowProcessDumps). Dumps are not uploaded and no download ticket is created.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsKernelDumpStaging, "Kernel dump staging", "Allow stage_kernel_dump to copy a dump selected by list_kernel_dumps into a Write root and issue a one-time download ticket (Vestigo:Diagnostics:AllowKernelDumpStaging). The tool result does not contain dump bytes.", false, "Diagnostics"),
-            new ModuleDefinition(DiagnosticsFirewallInventory, "Firewall inventory", "Allow get_firewall_profiles and list_firewall_rules (Vestigo:Diagnostics:AllowFirewallInventory). Reads stored policy and rule expressions, including application paths. Does not change rules and does not decide whether traffic was blocked.", false, "Diagnostics"),
+            new ModuleDefinition(DiagnosticsFirewallInventory, "Firewall inventory", "Allow get_firewall_profiles and filtered list_firewall_rules (Vestigo:Diagnostics:AllowFirewallInventory). Reads stored policy and rule expressions, including application paths. Does not change rules and does not decide whether traffic was blocked.", false, "Diagnostics"),
             new ModuleDefinition(DiagnosticsDriverVerifier, "Driver Verifier changes", "Allow set_driver_verifier (Vestigo:Diagnostics:AllowDriverVerifier). reset_driver_verifier stays available. Those tools do not reboot.", false, "Diagnostics"),
-            new ModuleDefinition("Performance", "Performance", "Sample counters, storage topology, minifilters, VM environment, scheduler jitter, process metrics, wait chains, and memory pressure. Needs Jobs. Kernel ETW, raw WPR ETL, and storage probes are separate child features.", false, "Jobs"),
-            new ModuleDefinition(PerformanceKernelTrace, "Kernel ETW capture", "Allow capture_kernel_latency_summary (Vestigo:Performance:AllowKernelTrace). Starts a bounded Vestigo-Perf-* kernel session in an isolated worker and returns structured latency summaries, not raw events.", false, "Performance"),
+            new ModuleDefinition("Performance", "Performance", "Sample counters, storage topology, minifilters, network adapters and NDIS/WFP filters, VM environment, scheduler jitter, process metrics, wait chains, and memory pressure. Needs Jobs. Kernel ETW, raw WPR ETL, storage probes, and packet-drop capture are separate child features.", false, "Jobs"),
+            new ModuleDefinition(PerformanceKernelTrace, "Kernel ETW capture", "Allow capture_kernel_latency_summary (Vestigo:Performance:AllowKernelTrace). Starts a bounded Vestigo-Perf-* kernel session in an isolated worker and returns structured latency and network summaries, not raw events.", false, "Performance"),
             new ModuleDefinition(PerformanceRawEtlCapture, "Raw WPR ETL", "Allow record_wpr_trace (Vestigo:Performance:AllowRawEtlCapture). Runs allow-listed System32 wpr.exe profiles into a Write root and can issue a one-time download ticket.", false, "Performance"),
             new ModuleDefinition(PerformanceStorageProbes, "Storage latency probes", "Allow probe_storage_latency (Vestigo:Performance:AllowStorageProbes). Writes a temporary probe file inside a Write root and compares buffered, unbuffered, flush, and metadata latency.", false, "Performance"),
+            new ModuleDefinition(PerformancePacketDropCapture, "Packet-drop capture", "Allow capture_packet_drops (Vestigo:Performance:AllowPacketDropCapture). Runs allow-listed System32 pktmon.exe in drop-only metadata mode. Never returns or persists packet payloads.", false, "Performance"),
             new ModuleDefinition("Processes", "Processes", "Run, list, close, and kill processes as the service or the console user. Administrator-equivalent.", false, "Jobs"),
             new ModuleDefinition("RemoteDebugger", "Remote debugger", "Install, start, and stop Visual Studio Remote Debugging Tools. Needs Processes.", false, "Processes"),
             new ModuleDefinition("Software", "Software", "List installed software.", true, "Jobs"),
@@ -330,7 +335,8 @@ namespace Vestigo.Installer.Actions.Logic
                    || string.Equals(name, SystemInteractiveLogon, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, PerformanceKernelTrace, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(name, PerformanceRawEtlCapture, StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(name, PerformanceStorageProbes, StringComparison.OrdinalIgnoreCase);
+                   || string.Equals(name, PerformanceStorageProbes, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, PerformancePacketDropCapture, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

@@ -83,6 +83,7 @@ public class FirewallTests
     [Fact]
     public void Windows_ReadsProfilesAndABoundedRulePage()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows Firewall inventory requires Windows.");
         WindowsFirewallInventory inventory = new();
 
         OperationResult<FirewallProfiles> profiles = inventory.ReadProfiles();
@@ -109,10 +110,11 @@ public class FirewallTests
             return OperationResult<FirewallProfiles>.Ok(new FirewallProfiles(0x9, ["domain"], 0x8, 0, "ok", [domain]));
         }
 
-        public OperationResult<FirewallRuleList> ListRules(int limit)
+        public OperationResult<FirewallRuleList> ListRules(int limit, FirewallRuleFilter? filter = null)
         {
             Calls++;
             Assert.Equal(10, limit);
+            _ = filter;
             FirewallRule rule = new(
                 "Contoso",
                 null,

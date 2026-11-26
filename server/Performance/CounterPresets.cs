@@ -54,10 +54,34 @@ public static class CounterPresets
         ["network"] =
         [
             @"\Network Interface(*)\Bytes Total/sec",
+            @"\Network Interface(*)\Bytes Received/sec",
+            @"\Network Interface(*)\Bytes Sent/sec",
+            @"\Network Interface(*)\Current Bandwidth",
             @"\Network Interface(*)\Packets/sec",
             @"\Network Interface(*)\Output Queue Length",
+            @"\Network Interface(*)\Packets Received Discarded",
+            @"\Network Interface(*)\Packets Received Errors",
             @"\Network Interface(*)\Packets Outbound Discarded",
-            @"\TCPv4\Segments Retransmitted/sec"
+            @"\Network Interface(*)\Packets Outbound Errors",
+            @"\TCPv4\Connections Established",
+            @"\TCPv4\Connection Failures",
+            @"\TCPv4\Connections Reset",
+            @"\TCPv4\Segments Retransmitted/sec",
+            @"\TCPv6\Connections Established",
+            @"\TCPv6\Connection Failures",
+            @"\TCPv6\Connections Reset",
+            @"\TCPv6\Segments Retransmitted/sec",
+            @"\UDPv4\Datagrams Received Errors",
+            @"\UDPv4\Datagrams No Port/sec",
+            @"\UDPv6\Datagrams Received Errors",
+            @"\UDPv6\Datagrams No Port/sec"
+        ],
+        ["network_rss"] =
+        [
+            @"\Per Processor Network Interface Card Activity(*)\Received Packets/sec",
+            @"\Per Processor Network Interface Card Activity(*)\Interrupts/sec",
+            @"\Per Processor Network Interface Card Activity(*)\DPCs Queued/sec",
+            @"\Per Processor Network Interface Card Activity(*)\Low Resource Received Packets/sec"
         ],
         ["hypervisor"] =
         [

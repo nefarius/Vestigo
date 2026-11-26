@@ -65,10 +65,20 @@ public sealed record FirewallRuleList(
     bool Truncated,
     bool Incomplete);
 
+/// <summary>Optional server-side filters applied before <c>MaxFirewallRules</c>.</summary>
+public sealed record FirewallRuleFilter(
+    bool EnabledOnly,
+    string? Direction,
+    string? Action,
+    string? Profile,
+    string? NameContains,
+    string? ProgramContains,
+    string? Port);
+
 /// <summary>Read-only Windows Firewall profiles and rules.</summary>
 public interface IFirewallInventory
 {
     OperationResult<FirewallProfiles> ReadProfiles();
 
-    OperationResult<FirewallRuleList> ListRules(int limit);
+    OperationResult<FirewallRuleList> ListRules(int limit, FirewallRuleFilter? filter = null);
 }

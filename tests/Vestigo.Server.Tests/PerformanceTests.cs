@@ -93,6 +93,7 @@ public sealed class PerformanceTests : IDisposable
     {
         Assert.True(CounterPresets.IsKnown("overview"));
         Assert.Contains(@"\PhysicalDisk(_Total)\Avg. Disk sec/Read", CounterPresets.Paths["overview"]);
+        Assert.True(CounterPresets.IsKnown("network_rss"));
         Assert.False(CounterPresets.IsKnown("custom"));
         Assert.Equal("invalid_request", KernelTraceGroups.Parse(["nope"]).ErrorCode);
         Assert.Equal(KernelTraceGroups.All, KernelTraceGroups.Parse([]).Value);
@@ -202,7 +203,7 @@ public sealed class PerformanceTests : IDisposable
         VestigoOptions gated = new()
         {
             Modules = { ["Performance"] = on },
-            Performance = { AllowKernelTrace = true, AllowRawEtlCapture = true, AllowStorageProbes = true }
+            Performance = { AllowKernelTrace = true, AllowRawEtlCapture = true, AllowStorageProbes = true, AllowPacketDropCapture = true }
         };
 
         Assert.DoesNotContain(ModuleRegistry.Enabled(defaults), module => module.Name == "Performance");
@@ -214,6 +215,7 @@ public sealed class PerformanceTests : IDisposable
         Assert.Contains("Kernel ETW", ModuleRegistry.GetPrivilegedModuleWarning(gated));
         Assert.Contains("WPR recording", ModuleRegistry.GetPrivilegedModuleWarning(gated));
         Assert.Contains("Storage latency probes", ModuleRegistry.GetPrivilegedModuleWarning(gated));
+        Assert.Contains("Packet-drop capture", ModuleRegistry.GetPrivilegedModuleWarning(gated));
         Assert.Null(ModuleRegistry.GetPrivilegedModuleWarning(new VestigoOptions
         {
             ApiTokens = ["token-value"],
@@ -223,6 +225,7 @@ public sealed class PerformanceTests : IDisposable
         Assert.False(ModuleSelection.Defaults()["Performance"]);
         Assert.Equal("Performance", ModuleSelection.Find(ModuleSelection.PerformanceKernelTrace)?.Parent);
         Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.PerformanceRawEtlCapture));
+        Assert.True(ModuleSelection.PreservesExistingWhenUnselected(ModuleSelection.PerformancePacketDropCapture));
     }
 
     [Fact]
@@ -271,7 +274,9 @@ public sealed class PerformanceTests : IDisposable
             ["AllowKernelTrace"] = false,
             ["AllowRawEtlCapture"] = false,
             ["AllowStorageProbes"] = false,
+            ["AllowPacketDropCapture"] = false,
             ["MaxSampleDuration"] = "00:01:00",
+            ["MaxPacketDropDuration"] = "00:00:15",
             ["MaxRawEtlBytes"] = 512L * 1024 * 1024
         };
         IRenderedComponent<ConfigFields> cut = context.Render<ConfigFields>(parameters => parameters
@@ -280,14 +285,20 @@ public sealed class PerformanceTests : IDisposable
         Assert.Contains("Performance:AllowKernelTrace", cut.Markup, StringComparison.Ordinal);
         Assert.Contains("Performance:AllowRawEtlCapture", cut.Markup, StringComparison.Ordinal);
         Assert.Contains("Performance:AllowStorageProbes", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("Performance:AllowPacketDropCapture", cut.Markup, StringComparison.Ordinal);
         Assert.Contains("Performance:MaxSampleDuration", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("Performance:MaxPacketDropDuration", cut.Markup, StringComparison.Ordinal);
 
         ConfigurationEditor editor = new(new VestigoOptions(), ModuleRegistry.All);
         ConfigurationSnapshot snapshot = editor.Load();
         snapshot.Values["Performance"]!["AllowKernelTrace"] = true;
+        snapshot.Values["Performance"]!["AllowPacketDropCapture"] = true;
+        snapshot.Values["Performance"]!["MaxPacketDropDuration"] = "00:00:20";
         snapshot.Values["Modules"]!["Performance"]!["Enabled"] = true;
         ConfigurationSnapshot saved = editor.Save(snapshot);
         Assert.True(saved.Values["Performance"]!["AllowKernelTrace"]!.GetValue<bool>());
+        Assert.True(saved.Values["Performance"]!["AllowPacketDropCapture"]!.GetValue<bool>());
+        Assert.Equal("00:00:20", saved.Values["Performance"]!["MaxPacketDropDuration"]!.GetValue<string>());
         Assert.True(saved.Values["Modules"]!["Performance"]!["Enabled"]!.GetValue<bool>());
     }
 

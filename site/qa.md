@@ -92,9 +92,9 @@ The service context does not see user-session audio. Per-app overrides in Settin
 
 1. Enable Performance. It needs Jobs.
 2. `get_vm_environment` and `get_storage_topology` to see hypervisor vendor, paravirt versus emulated disks, and 512e versus 4K native.
-3. `list_filesystem_minifilters` to see AV/EDR/sync filters. `sample_performance_counters` with preset `storage` or `overview` for queue length and disk service times.
+3. `list_filesystem_minifilters` to see AV/EDR/sync filters. `list_network_filters` to see NDIS Lightweight Filters and WFP callouts. `sample_performance_counters` with preset `storage`, `overview`, `network`, or `network_rss` for queue length, disk service times, and NIC RSS imbalance.
 4. `probe_scheduler_jitter` for steal/preemption spikes while utilization looks idle.
-5. `capture_kernel_latency_summary` stays off until `Performance:AllowKernelTrace` is true. `record_wpr_trace` stays off until `Performance:AllowRawEtlCapture` is true. `probe_storage_latency` stays off until `Performance:AllowStorageProbes` is true and the directory is in a write root.
+5. `capture_kernel_latency_summary` stays off until `Performance:AllowKernelTrace` is true. Include group `network` for per-process send/receive/retransmit counts. `record_wpr_trace` stays off until `Performance:AllowRawEtlCapture` is true. `probe_storage_latency` stays off until `Performance:AllowStorageProbes` is true and the directory is in a write root. `capture_packet_drops` stays off until `Performance:AllowPacketDropCapture` is true and returns drop-reason counts, not payloads.
 
 ## List kernel dumps
 
@@ -124,7 +124,7 @@ The service context does not see user-session audio. Per-app overrides in Settin
 
 1. Enable Diagnostics and set `Diagnostics:AllowNetworkProbes` to true.
 2. Add the host, or the host and port, to `Diagnostics:AllowedProbeDestinations`. The installer does not write that list.
-3. `test_endpoint` with `dns`, `tcp`, `tls`, or `udp`. A UDP `sent` result does not prove the peer is reachable. `stun: true` sends one STUN binding request; a missing response is not a firewall block. The probe uses Vestigo's own network context and does not capture packets.
+3. `test_endpoint` with `dns`, `tcp`, `tls`, or `udp`. A UDP `sent` result does not prove the peer is reachable. `stun: true` sends one STUN binding request; a missing response is not a firewall block. `probe_network_latency` and `probe_network_path` send ICMP or TCP samples to the same allow-list; hop addresses stay omitted unless requested. The probe uses Vestigo's own network context and does not capture packets.
 
 ## Read a registry value
 

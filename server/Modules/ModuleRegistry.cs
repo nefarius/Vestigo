@@ -176,6 +176,7 @@ public static class ModuleRegistry
         bool performanceKernel = performance && options.Performance.AllowKernelTrace;
         bool performanceRawEtl = performance && options.Performance.AllowRawEtlCapture;
         bool performanceStorage = performance && options.Performance.AllowStorageProbes;
+        bool performancePacketDrop = performance && options.Performance.AllowPacketDropCapture;
         bool diagnostics = enabled.Any(module => module.Name == "Diagnostics");
         bool diagnosticsOnline = diagnostics && options.Diagnostics.AllowOnlineRevocation;
         bool diagnosticsProbes = diagnostics && options.Diagnostics.AllowCaptureProbes;
@@ -252,7 +253,7 @@ public static class ModuleRegistry
             if (performance)
             {
                 names.Add("Performance");
-                clauses.Add(PerformanceClause(reach, performanceKernel, performanceRawEtl, performanceStorage));
+                clauses.Add(PerformanceClause(reach, performanceKernel, performanceRawEtl, performanceStorage, performancePacketDrop));
             }
 
             string named = names.Count == 1
@@ -311,7 +312,7 @@ public static class ModuleRegistry
 
         if (performance)
         {
-            extras += "The Performance module is also enabled, so the same clients can " + PerformanceDetail(performanceKernel, performanceRawEtl, performanceStorage) + " ";
+            extras += "The Performance module is also enabled, so the same clients can " + PerformanceDetail(performanceKernel, performanceRawEtl, performanceStorage, performancePacketDrop) + " ";
         }
 
         if (options.Updates.AllowSelfUpdate && enabled.Any(module => module.Name == "Updates"))
@@ -331,8 +332,8 @@ public static class ModuleRegistry
     private static string DiagnosticsDetail(bool online, bool probes, bool network, bool playback, bool dumps, bool firewall, bool verifier, bool kernelDumps)
     {
         string text = online
-            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, read Driver Verifier state, and list kernel dump file names and header metadata."
-            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list TCP and UDP bindings owned by a process, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, read Driver Verifier state, and list kernel dump file names and header metadata.";
+            ? "inspect binaries inside configured roots, verify signatures including online revocation checks, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list TCP and UDP bindings owned by a process or the whole machine, inspect TCP connection statistics, read routing, DNS, and proxy configuration, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, read Driver Verifier state, and list kernel dump file names and header metadata."
+            : "inspect binaries inside configured roots, verify signatures, list loaded modules of running processes, read SetupAPI device-install logs, explain a device problem code, explain a driver load failure from cited evidence, list graphics adapters, list TCP and UDP bindings owned by a process or the whole machine, inspect TCP connection statistics, read routing, DNS, and proxy configuration, list Media Foundation video encoders and camera formats, check an audio format, list Windows Error Reporting report metadata, read Driver Verifier state, and list kernel dump file names and header metadata.";
         if (probes)
         {
             text += " Capture probes may observe whether frames arrive, and they do not return pixels.";
@@ -340,7 +341,7 @@ public static class ModuleRegistry
 
         if (network)
         {
-            text += " Network probes may contact allow-listed destinations, and they do not capture packets.";
+            text += " Network probes may contact allow-listed destinations for endpoint, latency, and path tests, and they do not capture packets.";
         }
 
         if (playback)
@@ -371,15 +372,15 @@ public static class ModuleRegistry
         return text;
     }
 
-    private static string PerformanceClause(string reach, bool kernel, bool rawEtl, bool storage) =>
-        $"{reach} can {PerformanceDetail(kernel, rawEtl, storage)}";
+    private static string PerformanceClause(string reach, bool kernel, bool rawEtl, bool storage, bool packetDrop) =>
+        $"{reach} can {PerformanceDetail(kernel, rawEtl, storage, packetDrop)}";
 
-    private static string PerformanceDetail(bool kernel, bool rawEtl, bool storage)
+    private static string PerformanceDetail(bool kernel, bool rawEtl, bool storage, bool packetDrop)
     {
-        string text = "sample performance counters, inspect storage topology and filesystem minifilters, inspect VM and hypervisor environment, probe scheduler jitter, sample process I/O and EcoQoS, inspect wait chains, and read memory and kernel-pool pressure.";
+        string text = "sample performance counters, inspect storage topology, filesystem minifilters, and network adapters, offloads, and NDIS/WFP filters, inspect VM and hypervisor environment, probe scheduler jitter, sample process I/O and EcoQoS, inspect wait chains, and read memory and kernel-pool pressure.";
         if (kernel)
         {
-            text += " Kernel ETW capture may record a bounded Vestigo-Perf-* session and return latency summaries.";
+            text += " Kernel ETW capture may record a bounded Vestigo-Perf-* session and return latency and network summaries.";
         }
 
         if (rawEtl)
@@ -390,6 +391,11 @@ public static class ModuleRegistry
         if (storage)
         {
             text += " Storage latency probes may write a temporary file in a Write root.";
+        }
+
+        if (packetDrop)
+        {
+            text += " Packet-drop capture may start a machine-global drop-only pktmon session and return drop-reason counts, not payloads.";
         }
 
         return text;

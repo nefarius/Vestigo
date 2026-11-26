@@ -136,6 +136,11 @@ public static class KernelEtwWorker
             keywords |= KernelTraceEventParser.Keywords.MemoryHardFaults;
         }
 
+        if (KernelTraceGroups.Includes(groups, KernelTraceGroups.Network))
+        {
+            keywords |= KernelTraceEventParser.Keywords.NetworkTCPIP;
+        }
+
         return keywords;
     }
 

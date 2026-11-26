@@ -14,6 +14,9 @@ public sealed class PerformanceOptions
     /// <summary>Allows <c>probe_storage_latency</c>. The tool stays disabled until this is true.</summary>
     public bool AllowStorageProbes { get; set; }
 
+    /// <summary>Allows <c>capture_packet_drops</c>. The tool stays disabled until this is true.</summary>
+    public bool AllowPacketDropCapture { get; set; }
+
     /// <summary>Upper bound for one <c>sample_performance_counters</c> or <c>sample_process_metrics</c> window.</summary>
     public TimeSpan MaxSampleDuration { get; set; } = TimeSpan.FromMinutes(1);
 
@@ -43,6 +46,9 @@ public sealed class PerformanceOptions
 
     /// <summary>Upper bound for one storage latency probe.</summary>
     public TimeSpan MaxStorageProbeDuration { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Upper bound for one <c>capture_packet_drops</c> window.</summary>
+    public TimeSpan MaxPacketDropDuration { get; set; } = TimeSpan.FromSeconds(15);
 
     public void Validate()
     {
@@ -94,6 +100,11 @@ public sealed class PerformanceOptions
         if (MaxStorageProbeDuration < TimeSpan.FromSeconds(1) || MaxStorageProbeDuration > TimeSpan.FromMinutes(2))
         {
             throw new InvalidOperationException("Vestigo:Performance:MaxStorageProbeDuration must be between 00:00:01 and 00:02:00.");
+        }
+
+        if (MaxPacketDropDuration < TimeSpan.FromSeconds(1) || MaxPacketDropDuration > TimeSpan.FromMinutes(1))
+        {
+            throw new InvalidOperationException("Vestigo:Performance:MaxPacketDropDuration must be between 00:00:01 and 00:01:00.");
         }
     }
 }
