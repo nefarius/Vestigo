@@ -1362,7 +1362,7 @@ Restarts this machine with InitiateShutdown SHUTDOWN_RESTART. Requires Vestigo:S
 
 ## `record_wpr_trace`
 
-Starts a bounded WPR recording job that writes a .etl file into a root with Write access. Requires Vestigo:Performance:AllowRawEtlCapture. Profiles are GeneralProfile, CPU, DiskIO, FileIO, Minifilter, Network, or Heap. When the job has finished, the result includes size, SHA-256, and a one-time download ticket when the output root also has Read access. wait > 0 waits that many seconds.
+Starts a bounded WPR recording job that writes a .etl file into a root with Write access. Requires Vestigo:Performance:AllowRawEtlCapture. Profiles are GeneralProfile, CPU, DiskIO, FileIO, Minifilter, Network, or Heap. When the job has finished, the result includes size, SHA-256, and a download link (a one-time ticket when ApiTokens is set) when the output root also has Read access. wait > 0 waits that many seconds.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

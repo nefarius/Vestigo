@@ -28,11 +28,9 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
         }
 
         List<Snapshot> first = Capture(pid, nameFilter);
-        long started = TimeProvider.System.GetTimestamp();
         await Task.Delay(duration, cancellationToken).ConfigureAwait(false);
         List<Snapshot> second = Capture(pid, nameFilter);
         Dictionary<int, Snapshot> later = second.ToDictionary(item => item.Pid);
-        double elapsedSec = Math.Max(TimeProvider.System.GetElapsedTime(started).TotalSeconds, 0.001);
         List<ProcessMetricSample> samples = [];
         foreach (Snapshot before in first)
         {
@@ -44,7 +42,7 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
                 continue;
             }
 
-            samples.Add(after.Delta(before, elapsedSec));
+            samples.Add(after.Delta(before));
         }
 
         samples = samples
@@ -92,6 +90,7 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
     {
         public required int Pid { get; init; }
         public required string Name { get; init; }
+        public required long Timestamp { get; init; }
         public DateTimeOffset? StartTime { get; init; }
         public long KernelTime { get; init; }
         public long UserTime { get; init; }
@@ -109,6 +108,7 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
 
         public static Snapshot Read(Process process)
         {
+            long timestamp = TimeProvider.System.GetTimestamp();
             DateTimeOffset? start = null;
             try
             {
@@ -125,6 +125,7 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
                 {
                     Pid = process.Id,
                     Name = process.ProcessName,
+                    Timestamp = timestamp,
                     StartTime = start,
                     Threads = SafeThreads(process),
                     Error = "access_denied"
@@ -148,6 +149,7 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
             {
                 Pid = process.Id,
                 Name = process.ProcessName,
+                Timestamp = timestamp,
                 StartTime = start,
                 KernelTime = kernel,
                 UserTime = user,
@@ -164,8 +166,11 @@ public sealed class WindowsProcessMetrics : IProcessMetricSource
             };
         }
 
-        public ProcessMetricSample Delta(Snapshot before, double elapsedSec)
+        public ProcessMetricSample Delta(Snapshot before)
         {
+            double elapsedSec = Math.Max(
+                TimeProvider.System.GetElapsedTime(before.Timestamp, Timestamp).TotalSeconds,
+                0.001);
             double cpuTicks = (KernelTime - before.KernelTime) + (UserTime - before.UserTime);
             double cpuPercent = elapsedSec <= 0 ? 0 : cpuTicks / TimeSpan.TicksPerSecond / elapsedSec / Environment.ProcessorCount * 100.0;
             return new ProcessMetricSample(

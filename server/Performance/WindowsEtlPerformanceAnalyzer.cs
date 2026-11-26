@@ -57,7 +57,7 @@ public sealed class WindowsEtlPerformanceAnalyzer(RootPolicy roots, VestigoOptio
         try
         {
             using ETWTraceEventSource source = new(located.FullPath);
-            KernelTraceEventSink.Attach(source, aggregator, parsed.Value!, maxEvents);
+            KernelTraceEventSink.Attach(source, aggregator, parsed.Value!);
             source.Process();
             aggregator.EventsLost = source.EventsLost > 0;
             TimeSpan duration = source.SessionEndTime - source.SessionStartTime;

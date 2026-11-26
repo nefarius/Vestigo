@@ -19,6 +19,7 @@ public sealed class WindowsStorageLatencyProbe : IStorageLatencyProbe
         }
 
         string path = Path.Combine(directory, $"vestigo-probe-{Guid.NewGuid():N}.tmp");
+        List<string> leftover = [];
         bool cleaned = false;
         try
         {
@@ -27,13 +28,13 @@ public sealed class WindowsStorageLatencyProbe : IStorageLatencyProbe
             modes.Add(await RunModeAsync("buffered", path, size, FileOptions.None, duration, cancellationToken).ConfigureAwait(false));
             modes.Add(await RunUnbufferedAsync(path, size, duration, cancellationToken).ConfigureAwait(false));
             modes.Add(await RunFlushAsync(path, size, duration, cancellationToken).ConfigureAwait(false));
-            modes.Add(await RunMetadataAsync(directory, duration, cancellationToken).ConfigureAwait(false));
-            cleaned = Delete(path);
+            modes.Add(await RunMetadataAsync(directory, duration, leftover, cancellationToken).ConfigureAwait(false));
+            cleaned = Delete(path) && leftover.TrueForAll(item => Delete(item) && !File.Exists(item));
             return OperationResult<StorageProbeResult>.Ok(new StorageProbeResult(directory, cleaned, modes));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            cleaned = Delete(path);
+            cleaned = Delete(path) && leftover.TrueForAll(item => Delete(item) && !File.Exists(item));
             return OperationResult<StorageProbeResult>.Fail("storage_probe_failed", ex.Message);
         }
         finally
@@ -41,6 +42,7 @@ public sealed class WindowsStorageLatencyProbe : IStorageLatencyProbe
             if (!cleaned)
             {
                 Delete(path);
+                leftover.ForEach(item => Delete(item));
             }
         }
     }
@@ -86,6 +88,7 @@ public sealed class WindowsStorageLatencyProbe : IStorageLatencyProbe
         try
         {
             Span<byte> buffer = new(native, Block);
+            buffer.Clear();
             using FileStream stream = new(
                 path,
                 FileMode.Create,
@@ -145,7 +148,11 @@ public sealed class WindowsStorageLatencyProbe : IStorageLatencyProbe
         return new StorageProbeModeResult("flush", (int)ops, ops / seconds, 0, PercentileStats.From(samples));
     }
 
-    private static async Task<StorageProbeModeResult> RunMetadataAsync(string directory, TimeSpan duration, CancellationToken cancellationToken)
+    private static async Task<StorageProbeModeResult> RunMetadataAsync(
+        string directory,
+        TimeSpan duration,
+        List<string> leftover,
+        CancellationToken cancellationToken)
     {
         List<double> samples = [];
         int ops = 0;
@@ -162,12 +169,9 @@ public sealed class WindowsStorageLatencyProbe : IStorageLatencyProbe
             }
             finally
             {
-                try
+                if (!Delete(path) || File.Exists(path))
                 {
-                    File.Delete(path);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
+                    leftover.Add(path);
                 }
             }
 

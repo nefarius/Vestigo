@@ -83,7 +83,7 @@ public static class KernelEtwWorker
                 return 2;
             }
 
-            KernelTraceEventSink.Attach(session.Source, aggregator, parsed.Value!, maxEvents);
+            KernelTraceEventSink.Attach(session.Source, aggregator, parsed.Value!);
             using CancellationTokenSource cts = new(TimeSpan.FromMilliseconds(durationMs));
             cts.Token.Register(() =>
             {

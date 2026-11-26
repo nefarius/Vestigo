@@ -119,7 +119,10 @@ public sealed class PerformanceTests : IDisposable
         Assert.Equal("0", summary.SlowestDiskIo[0].Disk);
         Assert.Contains(summary.FileIo, item => item.Kind == "create");
         Assert.Equal("disk.sys", summary.Dpc[0].Image);
-        Assert.Contains(summary.Scheduler[0].WaitReasons, item => item.Reason == "WrFilterContext");
+        SchedulerProcessSummary incoming = Assert.Single(summary.Scheduler, item => item.Pid == 4);
+        Assert.Contains(incoming.WaitReasons, item => item.Reason == "WrFilterContext");
+        Assert.Equal(20, incoming.BlockedMs);
+        Assert.Equal(5, Assert.Single(summary.Scheduler, item => item.Pid == 100).CpuMs);
         Assert.Equal(7, summary.ReadyDelay!.DelayMs.Max);
         Assert.Equal(1, summary.HardFaults[0].Count);
     }
@@ -147,11 +150,16 @@ public sealed class PerformanceTests : IDisposable
     [Fact]
     public void WprPlanner_AllowsOnlyBuiltInProfilesAndFixedArguments()
     {
+        const string instance = "Vestigo-Wpr-abc123def456";
         Assert.Null(WprPlanner.ValidateProfile("DiskIO"));
         Assert.NotNull(WprPlanner.ValidateProfile("Custom"));
-        Assert.Equal(["-start", "GeneralProfile"], WprPlanner.StartArguments("generalprofile"));
-        Assert.Equal(["-stop", @"C:\out.etl"], WprPlanner.StopArguments(@"C:\out.etl"));
-        Assert.Equal(["-cancel"], WprPlanner.CancelArguments());
+        Assert.StartsWith(WprPlanner.InstancePrefix, WprPlanner.NewInstanceName());
+        Assert.True(WprPlanner.IsOwnedInstance(instance));
+        Assert.False(WprPlanner.IsOwnedInstance(null));
+        Assert.False(WprPlanner.IsOwnedInstance("GeneralProfile"));
+        Assert.Equal(["-start", "GeneralProfile", "-instancename", instance], WprPlanner.StartArguments("generalprofile", instance));
+        Assert.Equal(["-stop", @"C:\out.etl", "-instancename", instance], WprPlanner.StopArguments(@"C:\out.etl", instance));
+        Assert.Equal(["-cancel", "-instancename", instance], WprPlanner.CancelArguments(instance));
     }
 
     [Fact]

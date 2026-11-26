@@ -35,21 +35,36 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
         WprCheckpoint? recorded = Load();
         if (recorded is { NativeStarted: true })
         {
-            OperationResult<int> cancelled = await Run(WprPlanner.CancelArguments(), CancellationToken.None)
-                .ConfigureAwait(false);
-            if (!cancelled.Success)
+            if (!WprPlanner.IsOwnedInstance(recorded.InstanceName))
             {
                 _logger.LogWarning(
-                    "Could not cancel orphan WPR recording {Profile}: {Error}",
-                    recorded.Profile,
-                    cancelled.Error);
-                return;
+                    "Ignoring nameless WPR checkpoint {Profile}; will not run unqualified wpr -cancel",
+                    recorded.Profile);
             }
+            else
+            {
+                OperationResult<int> cancelled = await Run(
+                        WprPlanner.CancelArguments(recorded.InstanceName!),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!cancelled.Success)
+                {
+                    _logger.LogWarning(
+                        "Could not cancel orphan WPR recording {Profile} ({Instance}): {Error}",
+                        recorded.Profile,
+                        recorded.InstanceName,
+                        cancelled.Error);
+                    return;
+                }
 
-            _logger.LogInformation("Cancelled orphan WPR recording {Profile}", recorded.Profile);
+                _logger.LogInformation(
+                    "Cancelled orphan WPR recording {Profile} ({Instance})",
+                    recorded.Profile,
+                    recorded.InstanceName);
+            }
         }
 
-        Save(null);
+        _ = TrySave(null);
     }
 
     Task IHostedService.StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -121,14 +136,36 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
             }
 
             _status = new WprStatus("running", planned.Value, outputPath, null);
-            OperationResult<int> started = await Run(WprPlanner.StartArguments(planned.Value!), cancellationToken).ConfigureAwait(false);
+            string instance = WprPlanner.NewInstanceName();
+            OperationResult<int> started = await Run(
+                    WprPlanner.StartArguments(planned.Value!, instance),
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!started.Success)
             {
                 _status = new WprStatus("failed", planned.Value, outputPath, started.Error);
                 return started.FailAs<WprCopyOutcome>();
             }
 
-            Save(new WprCheckpoint(planned.Value!, true));
+            if (!TrySave(new WprCheckpoint(planned.Value!, true, instance)))
+            {
+                OperationResult<int> rolledBack = await Run(
+                        WprPlanner.CancelArguments(instance),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                _status = new WprStatus("failed", planned.Value, outputPath, "WPR checkpoint save failed.");
+                if (!rolledBack.Success)
+                {
+                    _logger.LogWarning(
+                        "WPR checkpoint save failed and cancel of {Instance} returned {Error}",
+                        instance,
+                        rolledBack.Error);
+                }
+
+                return OperationResult<WprCopyOutcome>.Fail(
+                    "wpr_checkpoint_failed",
+                    "The WPR recording started but the ownership checkpoint could not be saved.");
+            }
 
             bool stop = true;
             try
@@ -153,12 +190,14 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
                 stop = false;
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    OperationResult<int> cancelled = await Run(WprPlanner.CancelArguments(), CancellationToken.None)
+                    OperationResult<int> cancelled = await Run(
+                            WprPlanner.CancelArguments(instance),
+                            CancellationToken.None)
                         .ConfigureAwait(false);
                     _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled.Error);
                     if (cancelled.Success)
                     {
-                        Save(null);
+                        _ = TrySave(null);
                     }
 
                     throw;
@@ -172,25 +211,30 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
 
             if (!stop)
             {
-                OperationResult<int> cancelled = await Run(WprPlanner.CancelArguments(), CancellationToken.None)
+                OperationResult<int> cancelled = await Run(
+                        WprPlanner.CancelArguments(instance),
+                        CancellationToken.None)
                     .ConfigureAwait(false);
                 _status = new WprStatus("cancelled", planned.Value, outputPath, cancelled.Error);
                 if (cancelled.Success)
                 {
-                    Save(null);
+                    _ = TrySave(null);
                 }
 
                 return OperationResult<WprCopyOutcome>.Fail("wpr_cancelled", "The WPR recording was cancelled.");
             }
 
-            OperationResult<int> stopped = await Run(WprPlanner.StopArguments(outputPath), cancellationToken).ConfigureAwait(false);
+            OperationResult<int> stopped = await Run(
+                    WprPlanner.StopArguments(outputPath, instance),
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!stopped.Success)
             {
                 _status = new WprStatus("failed", planned.Value, outputPath, stopped.Error);
                 return stopped.FailAs<WprCopyOutcome>();
             }
 
-            Save(null);
+            _ = TrySave(null);
             if (!File.Exists(outputPath))
             {
                 _status = new WprStatus("failed", planned.Value, outputPath, "WPR did not write an ETL file.");
@@ -325,7 +369,7 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
             catch (JsonException)
             {
                 string? profile = JsonSerializer.Deserialize<string>(json);
-                return string.IsNullOrWhiteSpace(profile) ? null : new WprCheckpoint(profile, true);
+                return string.IsNullOrWhiteSpace(profile) ? null : new WprCheckpoint(profile, true, null);
             }
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
@@ -334,21 +378,30 @@ public sealed class WindowsWprRecorder : IWprRecorder, IHostedService
         }
     }
 
-    private static void Save(WprCheckpoint? checkpoint)
+    private bool TrySave(WprCheckpoint? checkpoint)
     {
-        Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
-        if (checkpoint is null)
+        try
         {
-            if (File.Exists(CheckpointPath))
+            Directory.CreateDirectory(VestigoPaths.SettingsDirectory);
+            if (checkpoint is null)
             {
-                File.Delete(CheckpointPath);
+                if (File.Exists(CheckpointPath))
+                {
+                    File.Delete(CheckpointPath);
+                }
+
+                return true;
             }
 
-            return;
+            File.WriteAllText(CheckpointPath, JsonSerializer.Serialize(checkpoint));
+            return true;
         }
-
-        File.WriteAllText(CheckpointPath, JsonSerializer.Serialize(checkpoint));
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not update the WPR ownership checkpoint");
+            return false;
+        }
     }
 
-    private sealed record WprCheckpoint(string Profile, bool NativeStarted);
+    private sealed record WprCheckpoint(string Profile, bool NativeStarted, string? InstanceName);
 }

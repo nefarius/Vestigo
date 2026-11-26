@@ -474,7 +474,7 @@ The `Performance` module is disabled by default (`Vestigo:Modules:Performance:En
 
 `capture_kernel_latency_summary` stays off until `Vestigo:Performance:AllowKernelTrace` is true. It starts a bounded `Vestigo-Perf-*` kernel session in an isolated worker and returns structured DiskIO, FileIO, DPC/ISR, scheduler, and hard-fault summaries with loss and truncation flags. It does not return raw events.
 
-`record_wpr_trace` stays off until `Vestigo:Performance:AllowRawEtlCapture` is true. It runs an allow-listed `wpr.exe` profile into a new `.etl` in a Write root as a job. When finished, the result includes size, SHA-256, and a one-time download ticket when that root also has Read access. With `wait=0`, the job output later includes those fields and the download URL. `stop_wpr_trace` flushes the file; `cancel_wpr_trace` discards a Vestigo-owned session and returns `wpr_not_running` when none exists.
+`record_wpr_trace` stays off until `Vestigo:Performance:AllowRawEtlCapture` is true. It runs an allow-listed `wpr.exe` profile into a new `.etl` in a Write root as a job. When finished, the result includes size, SHA-256, and a download link (a one-time ticket when `ApiTokens` is set) when that root also has Read access. With `wait=0`, the job output later includes those fields and the download URL. `stop_wpr_trace` flushes the file; `cancel_wpr_trace` discards a Vestigo-owned session and returns `wpr_not_running` when none exists.
 
 `analyze_etl_performance` runs the same kernel aggregator against an existing `.etl` in a Read root. The file must be no larger than `MaxRawEtlBytes`.
 

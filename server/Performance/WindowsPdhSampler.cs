@@ -11,6 +11,8 @@ public sealed partial class WindowsPdhSampler : ICounterSampler
 {
     private const uint PdhMoreData = 0x800007D2;
     private const uint PdhFmtNoCap100 = 0x00008000;
+    private const uint PdhCstatusValidData = 0;
+    private const uint PdhCstatusNewData = 1;
 
     public async Task<OperationResult<CounterSampleResult>> SampleAsync(
         IReadOnlyList<string> paths,
@@ -123,7 +125,18 @@ public sealed partial class WindowsPdhSampler : ICounterSampler
 
             foreach (string path in errors.Keys)
             {
-                series.TryAdd(path, []);
+                if (series.ContainsKey(path))
+                {
+                    continue;
+                }
+
+                if (series.Count >= maxPaths)
+                {
+                    truncated = true;
+                    continue;
+                }
+
+                series[path] = [];
             }
 
             List<CounterSample> samples = [];
@@ -292,7 +305,8 @@ public sealed partial class WindowsPdhSampler : ICounterSampler
                     string english = Path.Contains("(*)", StringComparison.Ordinal)
                         ? Path.Replace("(*)", "(" + instance + ")", StringComparison.Ordinal)
                         : Path;
-                    if (formatted.CStatus != 0 || !double.IsFinite(formatted.doubleValue))
+                    if ((formatted.CStatus != PdhCstatusValidData && formatted.CStatus != PdhCstatusNewData)
+                        || !double.IsFinite(formatted.doubleValue))
                     {
                         result.Add((english, 0, $"PDH status 0x{formatted.CStatus:X8}"));
                         continue;

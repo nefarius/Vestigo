@@ -31,18 +31,22 @@ public sealed class KernelLatencyAggregator
 
     public void NoteProcess(int pid, string? name)
     {
-        if (!string.IsNullOrWhiteSpace(name))
+        if (Truncated || string.IsNullOrWhiteSpace(name))
         {
-            _processNames[pid] = name;
+            return;
         }
+
+        _processNames[pid] = name;
     }
 
     public void NoteImage(ulong address, ulong size, string? file)
     {
-        if (!string.IsNullOrWhiteSpace(file))
+        if (Truncated || string.IsNullOrWhiteSpace(file))
         {
-            _images[address] = (ImageName(file), size == 0 ? 1 : size);
+            return;
         }
+
+        _images[address] = (ImageName(file), size == 0 ? 1 : size);
     }
 
     public void AddDiskIo(string disk, int pid, string? process, string kind, string? path, long bytes, long offset, double elapsedMs)
@@ -92,12 +96,12 @@ public sealed class KernelLatencyAggregator
 
         NoteProcess(oldPid, oldName);
         NoteProcess(newPid, newName);
-        SchedulerAcc oldAcc = Acc(oldPid);
-        oldAcc.BlockedMs += Math.Max(0, blockedMs);
-        oldAcc.WaitReasons.TryGetValue(waitReason, out (int Count, double Ms) wait);
-        oldAcc.WaitReasons[waitReason] = (wait.Count + 1, wait.Ms + Math.Max(0, blockedMs));
-        Acc(newPid).CpuMs += Math.Max(0, cpuMs);
-        _waitReasons[oldPid] = waitReason;
+        Acc(oldPid).CpuMs += Math.Max(0, cpuMs);
+        SchedulerAcc incoming = Acc(newPid);
+        incoming.BlockedMs += Math.Max(0, blockedMs);
+        incoming.WaitReasons.TryGetValue(waitReason, out (int Count, double Ms) wait);
+        incoming.WaitReasons[waitReason] = (wait.Count + 1, wait.Ms + Math.Max(0, blockedMs));
+        _waitReasons[newPid] = waitReason;
     }
 
     public void AddReadyDelay(double delayMs)
