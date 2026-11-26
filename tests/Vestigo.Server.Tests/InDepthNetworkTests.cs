@@ -110,6 +110,12 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.Equal(["stop"], PktmonPlanner.StopArguments());
         Assert.Equal(["status"], PktmonPlanner.StatusArguments());
         Assert.Equal(["counters", "--type", "drop", "--json"], PktmonPlanner.CountersArguments());
+        Assert.True(PktmonPlanner.IndicatesIdle("Packet Monitor is not running."));
+        Assert.False(PktmonPlanner.IndicatesIdle("pktmon status failed"));
+        Assert.True(PktmonPlanner.IndicatesActive("Packet Monitor is running."));
+        Assert.False(PktmonPlanner.IndicatesActive("Packet Monitor is not running."));
+        Assert.True(PktmonPlanner.IndicatesSessionInUse("Packet Monitor is already running."));
+        Assert.False(PktmonPlanner.IndicatesSessionInUse("Failed to open log file."));
 
         IReadOnlyList<PacketDropCounter> counters = PktmonPlanner.ParseCounters(
             """

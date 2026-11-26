@@ -45,6 +45,19 @@ public static class PktmonPlanner
                (mask & RawPacketFlag) == 0;
     }
 
+    public static bool IndicatesIdle(string output) =>
+        output.Contains("not running", StringComparison.OrdinalIgnoreCase)
+        || output.Contains("is not started", StringComparison.OrdinalIgnoreCase)
+        || output.Contains("No packet monitor", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IndicatesActive(string output) =>
+        output.Contains("running", StringComparison.OrdinalIgnoreCase)
+        && !output.Contains("not running", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IndicatesSessionInUse(string output) =>
+        output.Contains("already running", StringComparison.OrdinalIgnoreCase)
+        || output.Contains("already started", StringComparison.OrdinalIgnoreCase);
+
     public static IReadOnlyList<PacketDropCounter> ParseCounters(string text)
     {
         if (string.IsNullOrWhiteSpace(text))

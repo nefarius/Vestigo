@@ -93,9 +93,9 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
 
                 foreach (TCP_ESTATS_TYPE type in Categories)
                 {
-                    if (!TryReadEnabled(row, type, out bool enabled))
+                    if (!TryReadEnabled(row, type, out bool enabled, out uint queryStatus))
                     {
-                        Note(enableErrors, row, $"{CategoryName(type)} enable query failed");
+                        Note(enableErrors, row, $"{CategoryName(type)} enable query failed ({queryStatus})");
                         continue;
                     }
 
@@ -104,9 +104,9 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
                         continue;
                     }
 
-                    if (!TrySetEnabled(row, type, true))
+                    if (!TrySetEnabled(row, type, true, out uint enableStatus))
                     {
-                        Note(enableErrors, row, $"{CategoryName(type)} enable failed");
+                        Note(enableErrors, row, $"{CategoryName(type)} enable failed ({enableStatus})");
                         continue;
                     }
 
@@ -204,23 +204,30 @@ public sealed class WindowsTcpEstatsSource : ITcpEstatsSource
             snapshot.Error);
     }
 
-    private static bool TryReadEnabled(ConnectionRecord row, TCP_ESTATS_TYPE type, out bool enabled)
+    private static bool TryReadEnabled(ConnectionRecord row, TCP_ESTATS_TYPE type, out bool enabled, out uint status)
     {
         TCP_ESTATS_DATA_RW_v0 rw = default;
-        uint status = Get(row, type, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)), [], []);
+        status = Get(row, type, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)), [], []);
         enabled = status == 0 && rw.EnableCollection;
         return status == 0;
     }
 
     private static bool TrySetEnabled(ConnectionRecord row, TCP_ESTATS_TYPE type, bool enable)
     {
+        return TrySetEnabled(row, type, enable, out _);
+    }
+
+    private static bool TrySetEnabled(ConnectionRecord row, TCP_ESTATS_TYPE type, bool enable, out uint status)
+    {
         try
         {
             TCP_ESTATS_DATA_RW_v0 rw = new() { EnableCollection = enable };
-            return Set(row, type, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw))) == 0;
+            status = Set(row, type, MemoryMarshal.AsBytes(new Span<TCP_ESTATS_DATA_RW_v0>(ref rw)));
+            return status == 0;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            status = unchecked((uint)-1);
             return false;
         }
     }

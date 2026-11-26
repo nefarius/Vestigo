@@ -123,6 +123,13 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
                     throw new OperationCanceledException(cancellationToken);
                 }
 
+                if (PktmonPlanner.IndicatesSessionInUse(started.Output))
+                {
+                    _ = TrySave(null);
+                    nativeStarted = false;
+                    return FailNative<PacketDropResult>(started);
+                }
+
                 stopped = await StopOwnedAsync().ConfigureAwait(false);
                 if (stopped)
                 {
@@ -243,9 +250,15 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
             return false;
         }
 
-        if (IndicatesActive(status))
+        if (PktmonPlanner.IndicatesActive(status.Output))
         {
             _logger.LogWarning("pktmon is still active after stop: {Output}", status.Output);
+            return false;
+        }
+
+        if (!PktmonPlanner.IndicatesIdle(status.Output))
+        {
+            _logger.LogWarning("pktmon status after stop was unconfirmed: {Exit} {Output}", status.ExitCode, status.Output);
             return false;
         }
 
@@ -278,14 +291,7 @@ public sealed class WindowsPktmonDropRecorder : IPacketDropCapture, IHostedServi
     }
 
     private static bool Stopped(NativeResult result) =>
-        result.Succeeded
-        || result.Output.Contains("not running", StringComparison.OrdinalIgnoreCase)
-        || result.Output.Contains("is not started", StringComparison.OrdinalIgnoreCase)
-        || result.Output.Contains("No packet monitor", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IndicatesActive(NativeResult result) =>
-        result.Output.Contains("running", StringComparison.OrdinalIgnoreCase)
-        && !result.Output.Contains("not running", StringComparison.OrdinalIgnoreCase);
+        result.Succeeded || PktmonPlanner.IndicatesIdle(result.Output);
 
     private static OperationResult<T> FailNative<T>(NativeResult result) =>
         OperationResult<T>.Fail(result.ErrorCode, string.IsNullOrWhiteSpace(result.Output) ? $"pktmon.exe exited {result.ExitCode}." : result.Output.Trim());
