@@ -133,6 +133,9 @@ public sealed class InDepthNetworkTests : IDisposable
         Assert.True(PktmonPlanner.ShouldRecoverStop(true, @"C:\state\drop.etl", true));
         Assert.False(PktmonPlanner.ShouldRecoverStop(true, @"C:\state\drop.etl", false));
         Assert.False(PktmonPlanner.ShouldRecoverStop(false, @"C:\state\drop.etl", true));
+        Assert.True(PktmonPlanner.ShouldConfirmIdle(true, false));
+        Assert.False(PktmonPlanner.ShouldConfirmIdle(true, true));
+        Assert.False(PktmonPlanner.ShouldConfirmIdle(false, false));
         Assert.Equal("O''Reilly", NetworkTopologyPlanner.EscapeWqlString("O'Reilly"));
         Assert.Equal("disabled", NetworkTopologyPlanner.TimestampPolicy(0, null));
         Assert.Equal("enabled", NetworkTopologyPlanner.TimestampPolicy(1, "1"));

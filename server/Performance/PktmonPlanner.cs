@@ -66,6 +66,9 @@ public static class PktmonPlanner
     public static bool ShouldRecoverStop(bool nativeStarted, string? etlPath, bool captureExists) =>
         nativeStarted && !string.IsNullOrWhiteSpace(etlPath) && captureExists;
 
+    public static bool ShouldConfirmIdle(bool nativeStarted, bool captureExists) =>
+        nativeStarted && !captureExists;
+
     public static IReadOnlyList<PacketDropCounter> ParseCounters(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
