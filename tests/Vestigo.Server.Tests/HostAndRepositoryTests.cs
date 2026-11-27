@@ -70,6 +70,46 @@ public class HostTests : IDisposable
     }
 
     [Fact]
+    public async Task Favicon_IsServedAnonymouslyAndLinkedFromLandingPage()
+    {
+        await using VestigoApplication application = CreateApplication(["secret-token"]);
+        using HttpClient client = application.CreateClient();
+
+        byte[] expected = File.ReadAllBytes(Path.Combine(RepositoryBoundaryTests.FindRepositoryRoot(), "installer", "Assets", "vestigo.ico"));
+        using HttpResponseMessage get = await client.GetAsync("/favicon.ico");
+        using HttpResponseMessage head = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "/favicon.ico"));
+
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        Assert.Equal("image/x-icon", get.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(expected, await get.Content.ReadAsByteArrayAsync());
+        Assert.Equal(HttpStatusCode.OK, head.StatusCode);
+        Assert.Empty(await head.Content.ReadAsByteArrayAsync());
+
+        string landing = await client.GetStringAsync("/");
+        Assert.Contains("href=\"/favicon.ico\"", landing, StringComparison.Ordinal);
+        string root = RepositoryBoundaryTests.FindRepositoryRoot();
+        foreach (string razor in new[] { "ConfigApp.razor", "LogonConsentPage.razor" })
+        {
+            string source = File.ReadAllText(Path.Combine(root, "server", "Hosting", "Components", razor));
+            Assert.Contains("href=\"/favicon.ico\"", source, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ServerAndInstaller_WireTheVestigoIconEverywhere()
+    {
+        string root = RepositoryBoundaryTests.FindRepositoryRoot();
+        string csproj = File.ReadAllText(Path.Combine(root, "server", "Vestigo.Server.csproj"));
+        Assert.Contains(@"<ApplicationIcon>..\installer\Assets\vestigo.ico</ApplicationIcon>", csproj, StringComparison.Ordinal);
+        Assert.Contains("LogicalName=\"Vestigo.Hosting.favicon.ico\"", csproj, StringComparison.Ordinal);
+
+        string program = File.ReadAllText(Path.Combine(root, "installer", "Program.cs"));
+        Assert.Contains("ControlPanelInfo.ProductIcon = productIconPath", program, StringComparison.Ordinal);
+        Assert.Contains(@"Uninstall\[ProductCode]", program, StringComparison.Ordinal);
+        Assert.Contains("\"DisplayIcon\", \"[INSTALLDIR]Vestigo.exe,0\"", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Mcp_AllowsAnonymousPostWhenNoTokensAreConfigured()
     {
         await using VestigoApplication application = CreateApplication([]);
@@ -525,7 +565,7 @@ public class RepositoryBoundaryTests
         return Path.Combine([FindRepositoryRoot(), "server", "bin", .. segments[(bin + 1)..], "Vestigo.runtimeconfig.json"]);
     }
 
-    private static string FindRepositoryRoot()
+    internal static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Vestigo.sln")))
